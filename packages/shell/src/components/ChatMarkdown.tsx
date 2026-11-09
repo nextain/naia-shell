@@ -93,9 +93,13 @@ const components: Components = {
 };
 
 export function ChatMarkdown({ children }: { children: string }) {
+	const normalized = children.replace(
+		/([)\]}])\*\*(?=[가-힣A-Za-z0-9])/g,
+		"$1**\u200B",
+	);
 	return (
 		<Markdown remarkPlugins={[remarkGfm]} skipHtml components={components}>
-			{children}
+			{normalized}
 		</Markdown>
 	);
 }

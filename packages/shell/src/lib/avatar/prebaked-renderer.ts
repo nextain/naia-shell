@@ -22,6 +22,14 @@ import type {
 	PreparedSpeech,
 	SpeechPlan,
 } from "./nva-speech/speech-timing";
+import { isStackedAlphaClipUrl } from "./nva-stacked-alpha";
+import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
+
+export interface StackedAlphaCompositorLike {
+	readonly canvas: HTMLCanvasElement;
+	draw(video: HTMLVideoElement): boolean;
+	dispose(): void;
+}
 
 interface Config {
 	modelId?: string;
@@ -33,7 +41,10 @@ interface Config {
 	/** Test seam for the canonical speech stage. */
 	createSpeechStage?: (host: HTMLVideoElement) => CanonicalSpeechStage | null;
 	onSpeaking?: (speaking: boolean) => void;
+	createStackedAlpha?: () => StackedAlphaCompositorLike;
 	onPlaybackFailure?: (reason: string) => void;
+	/** Optional interval (ms) to periodically play non-greeting gesture clips while idle. */
+	idleGestureIntervalMs?: number;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -74,6 +85,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private clipVideos = new Map<string, HTMLVideoElement>();
 	private canvas: HTMLCanvasElement | null = null;
 	private ctx: CanvasRenderingContext2D | null = null;
+	private stackedAlpha: StackedAlphaCompositorLike | null = null;
+	private stackedAlphaFailed = false;
+	private currentClipUrl = "";
 	private keyer: NvaChromakeyGL | null = null;
 	private keyerFailed = false;
 	private currentKeyColor: string | undefined;
@@ -83,6 +97,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private disposed = false;
 	private generation = 0;
 	private speakingVisual = false;
+	private activeGesture = false;
+	private greetingGestureActive = false;
 	private cancelOneShot: (() => void) | null = null;
 	private idleOverride: string | null = null;
 	private tail = Promise.resolve();
@@ -90,6 +106,19 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private running = false;
 	private playbackTimers = new Map<ReturnType<typeof setTimeout>, () => void>();
 	private mediaFailed = false;
+	private speechStage: CanonicalSpeechStage | null = null;
+	private prefetchedSpeechStage: CanonicalSpeechStage | null = null;
+	private speechKeyColor: string | undefined;
+	private assetBlobCache = new Map<string, Promise<Blob>>();
+	private idleGestureTimer: ReturnType<typeof setInterval> | null = null;
+	private idleGestureCursor = 0;
+	private zoom = 1;
+
+	setZoom(zoom: number): void {
+		if (typeof zoom === "number" && Number.isFinite(zoom)) {
+			this.zoom = Math.min(3, Math.max(0.5, zoom));
+		}
+	}
 
 	private failMedia(reason: string): void {
 		if (this.disposed || this.mediaFailed) return;
@@ -98,6 +127,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			reason,
 			...this.mediaDiagnostics(this.video),
 		});
+		if (this.canvas && this.ctx) {
+			this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+		}
 		this.stop(true);
 		this.config.onPlaybackFailure?.(reason);
 	}
@@ -117,9 +149,6 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			sourceKind: video?.src.split(":", 1)[0],
 		};
 	}
-	private speechStage: CanonicalSpeechStage | null = null;
-	private prefetchedSpeechStage: CanonicalSpeechStage | null = null;
-	private speechKeyColor: string | undefined;
 
 	constructor(private readonly config: Config) {
 		this.motionSpec = parseMotionSpec(config.manifest);
@@ -137,9 +166,19 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.mountedVideo = video;
 		this.canvas = canvas;
 		this.ctx = canvas.getContext("2d", { alpha: true });
+		if (this.ctx) {
+			this.ctx.imageSmoothingEnabled = true;
+			this.ctx.imageSmoothingQuality = "high";
+		}
 		this.speechStage = this.createSpeechStage(video);
 		void this.playIdle();
 		this.startDrawLoop();
+		if (
+			typeof this.config.idleGestureIntervalMs === "number" &&
+			this.config.idleGestureIntervalMs > 0
+		) {
+			this.startIdleGestureLoop(this.config.idleGestureIntervalMs);
+		}
 	}
 
 	async setVoice(): Promise<boolean> {
@@ -203,12 +242,106 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			.map(([key, animation]) => ({ key, label: animation.label || key }));
 	}
 
+	/**
+	 * Return gesture actions suitable for periodic idle variation
+	 * (prefers non-`greeting` clips like `idea`, `happy`; falls back to all gestures).
+	 */
+	getIdleGestureActions(): NvaGestureAction[] {
+		const all = this.getGestureActions();
+		const nonGreeting = all.filter((action) => action.key !== "greeting");
+		return nonGreeting.length > 0 ? nonGreeting : all;
+	}
+
+	/**
+	 * Play the greeting gesture clip (`greeting` if present in `manifest.animations`,
+	 * otherwise the first available gesture clip). Preserved across initial greeting TTS.
+	 */
+	async playGreetingAction(): Promise<string | null> {
+		const actions = this.getGestureActions();
+		if (actions.length === 0) return null;
+		const greeting =
+			actions.find((action) => action.key === "greeting") ?? actions[0]!;
+		const ok = await this.playActionInternal(greeting.key, true);
+		return ok ? greeting.key : null;
+	}
+
+	/**
+	 * Trigger the next idle variation gesture clip in round-robin order
+	 * when the avatar is currently idle and not speaking.
+	 */
+	async triggerNextIdleGesture(): Promise<string | null> {
+		if (
+			!this.video ||
+			this.disposed ||
+			this.speakingVisual ||
+			this.speechStage?.speaking ||
+			this.activeGesture
+		) {
+			return null;
+		}
+		const actions = this.getIdleGestureActions();
+		if (actions.length === 0) return null;
+		const action = actions[this.idleGestureCursor % actions.length]!;
+		this.idleGestureCursor = (this.idleGestureCursor + 1) % actions.length;
+		const ok = await this.playAction(action.key);
+		return ok ? action.key : null;
+	}
+
+	/**
+	 * Start a periodic timer that plays idle variation gestures (`idea`, `happy`, etc.)
+	 * while the avatar is idle and not speaking.
+	 */
+	startIdleGestureLoop(intervalMs = 18_000): void {
+		this.stopIdleGestureLoop();
+		if (this.disposed || intervalMs <= 0) return;
+		this.idleGestureTimer = setInterval(() => {
+			if (
+				!this.disposed &&
+				!this.speakingVisual &&
+				!this.speechStage?.speaking &&
+				!this.activeGesture
+			) {
+				void this.triggerNextIdleGesture();
+			}
+		}, intervalMs);
+	}
+
+	stopIdleGestureLoop(): void {
+		if (this.idleGestureTimer !== null) {
+			clearInterval(this.idleGestureTimer);
+			this.idleGestureTimer = null;
+		}
+	}
+
 	/** Play a manifest gesture once, silently. Speech visuals take priority. */
 	async playAction(key: string): Promise<boolean> {
-		if (!this.video || this.disposed || this.speakingVisual) return false;
-		const animation = this.config.manifest.animations[key];
+		return this.playActionInternal(key, false);
+	}
+
+	private async playActionInternal(
+		key: string,
+		preserveDuringSpeech: boolean,
+	): Promise<boolean> {
+		if (
+			!this.video ||
+			this.disposed ||
+			this.speechStage?.speaking ||
+			(this.speakingVisual && !preserveDuringSpeech)
+		) {
+			return false;
+		}
+		const resolvedKey = this.config.manifest.animations[key]
+			? key
+			: key === "guidance"
+				? this.config.manifest.animations.greeting
+					? "greeting"
+					: "idea"
+				: key;
+		const animation = this.config.manifest.animations[resolvedKey];
 		if (!animation || animKind(animation) !== "gesture") return false;
 		const generation = ++this.generation;
+		this.activeGesture = true;
+		this.greetingGestureActive = preserveDuringSpeech;
 		let resolveStarted!: (started: boolean) => void;
 		let startSettled = false;
 		const started = new Promise<boolean>((resolve) => {
@@ -227,15 +360,24 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			false,
 		).then(
 			async () => {
+				if (generation === this.generation) {
+					this.activeGesture = false;
+					this.greetingGestureActive = false;
+				}
 				resolveStarted(false);
 				if (
 					generation === this.generation &&
 					!this.disposed &&
-					!this.speakingVisual
-				)
+					(!this.speakingVisual || preserveDuringSpeech)
+				) {
 					await this.playIdle();
+				}
 			},
 			async () => {
+				if (generation === this.generation) {
+					this.activeGesture = false;
+					this.greetingGestureActive = false;
+				}
 				resolveStarted(false);
 				if (generation === this.generation && !this.disposed)
 					await this.playIdle();
@@ -261,18 +403,33 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		void this.playIdle();
 	}
 
-	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
+	/**
+	 * Speaking state only. The mouth moves solely through playSpeechTiming
+	 * (canonical player); without a plan the idle clip keeps playing.
+	 */
 	setSpeakingVisual(active: boolean): void {
 		if (!this.video || this.disposed) return;
-		++this.generation;
 		this.speakingVisual = active;
 		this.config.onSpeaking?.(active);
-		if (active && this.cancelOneShot) {
-			// Speech takes priority over a gesture without starting a vowel loop.
-			this.cancelOneShot();
-			void this.playIdle();
+		if (this.greetingGestureActive && this.activeGesture) {
+			if (!active) {
+				this.speechStage?.stop();
+			}
+			return;
 		}
-		if (!active) {
+		this.generation++;
+		if (active) {
+			const needsFallbackClip =
+				Boolean(this.speechStage) &&
+				this.speechStage?.assetsLoaded === false &&
+				!this.speechStage.speaking &&
+				Boolean(this.config.manifest.animations.talking?.clip);
+			if (this.activeGesture || needsFallbackClip) {
+				this.activeGesture = false;
+				this.cancelOneShot?.();
+				void this.playIdle();
+			}
+		} else {
 			this.speechStage?.stop();
 			void this.playIdle();
 		}
@@ -282,6 +439,13 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	async playSpeechTiming(timing: AvatarSpeechTiming): Promise<boolean> {
 		const stage = this.speechStage;
 		if (!stage || this.disposed) return false;
+		if (this.activeGesture) {
+			this.generation++;
+			this.activeGesture = false;
+			this.greetingGestureActive = false;
+			this.cancelOneShot?.();
+			void this.playIdle();
+		}
 		this.speechKeyColor = this.keyColorFor(
 			this.config.manifest.animations.talking?.clip ?? "",
 		);
@@ -291,6 +455,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	/** True when this avatar carries the canonical speech set. */
 	canPlaySpeechPlans(): boolean {
 		return Boolean(this.speechStage) && !this.disposed;
+	}
+
+	/** Pre-fetch canonical speech assets (`speech/atlas.bin`, etc.) in the background after greeting. */
+	async warmSpeechAssets(): Promise<void> {
+		if (!this.speechStage || this.disposed) return;
+		await this.speechStage.warmAssets();
 	}
 
 	/** Load a plan ahead of its sound; play(clock) once the sound starts. */
@@ -361,15 +531,26 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			return new CanonicalSpeechStage({
 				manifest: this.config.manifest,
 				host,
-				loadAsset:
-					this.config.loadAssetBlob ??
-					(async (path) => {
-						const response = await fetch(
-							await this.config.resolveAssetUrl(path),
-						);
-						if (!response.ok) throw new Error(`NVA asset ${path} unavailable`);
-						return response.blob();
-					}),
+				loadAsset: (path) => {
+					const cached = this.assetBlobCache.get(path);
+					if (cached) return cached;
+					const loader = this.config.loadAssetBlob
+						? this.config.loadAssetBlob(path)
+						: (async () => {
+								const response = await fetch(
+									await this.config.resolveAssetUrl(path),
+								);
+								if (!response.ok)
+									throw new Error(`NVA asset ${path} unavailable`);
+								return response.blob();
+							})();
+					const tracked = loader.catch((err) => {
+						this.assetBlobCache.delete(path);
+						throw err;
+					});
+					this.assetBlobCache.set(path, tracked);
+					return tracked;
+				},
 			});
 		} catch {
 			return null;
@@ -403,7 +584,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			expectedGeneration !== this.generation
 		)
 			return;
-		this.currentKeyColor = this.keyColorFor(path);
+		this.currentClipUrl = url;
+		this.currentKeyColor = isStackedAlphaClipUrl(url)
+			? undefined
+			: this.keyColorFor(path);
 		const video = this.videoForClip(url);
 		this.cancelOneShot?.();
 		if (this.video !== video) {
@@ -416,24 +600,50 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		if (loop) {
 			await new Promise<void>((resolve, reject) => {
 				let settled = false;
+				const cleanup = () => {
+					clearTimeout(timer);
+					this.playbackTimers.delete(timer);
+					if (this.cancelOneShot === cancel) this.cancelOneShot = null;
+				};
+				const cancel = () => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					resolve();
+				};
 				const finish = (reason?: string) => {
 					if (settled) return;
 					settled = true;
-					clearTimeout(timer);
-					this.playbackTimers.delete(timer);
+					cleanup();
 					if (reason) {
 						this.failMedia(reason);
 						reject(new Error(reason));
 					} else resolve();
 				};
 				const timer = setTimeout(
-					() => finish("NVA playback start timeout"),
+					() =>
+						this.video !== video ||
+						(expectedGeneration !== undefined &&
+							expectedGeneration !== this.generation)
+							? cancel()
+							: finish("NVA playback start timeout"),
 					8000,
 				);
-				this.playbackTimers.set(timer, () => finish());
+				// Loop waits are cancelled through clearPlaybackTimers; cancelOneShot
+				// stays reserved for one-shot clips so setIdleOverride is not blocked.
+				this.playbackTimers.set(timer, cancel);
 				video.play().then(
 					() => finish(),
-					() => finish("NVA playback rejected"),
+					(err: unknown) => {
+						const isAbort = (err as DOMException)?.name === "AbortError";
+						const superseded =
+							this.disposed ||
+							this.video !== video ||
+							(expectedGeneration !== undefined &&
+								expectedGeneration !== this.generation);
+						if (isAbort || superseded) cancel();
+						else finish("NVA playback rejected");
+					},
 				);
 			});
 			return;
@@ -472,61 +682,63 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	}
 
 	/**
-	 * 클립마다 <video> 를 하나씩 두고 재사용한다. WebKitGTK 에서 `src=` 재대입은 이전
-	 * GStreamer 파이프라인을 메인 스레드에서 동기 해체하는데, 그 파이프라인의 demuxer
-	 * 스레드가 bus 동기 핸들러에서 메인 스레드를 기다리는 순간과 겹치면 서로 기다리며
-	 * 웹뷰 전체가 멈춘다(gdb: HTMLMediaElement::prepareForLoad → MediaPlayerPrivateGStreamer
-	 * ::tearDown ↔ matroskademux → callOnMainThreadAndWait; 슬라이드 낭독 idle/talking
-	 * 전환에서 3/3 재현, 2026-09-11). 첫 클립은 마운트된 요소를 쓰고, 다른 클립은 같은
-	 * 부모 아래 같은 스타일의 숨은 형제 요소를 만든다. 그래서 idle↔talking 왕복에 해체가 없다.
+	 * Return the persistent `<video>` for `url`, creating and loading it once.
+	 * The first clip re-uses the React-mounted element; each additional clip
+	 * gets a hidden sibling so switching clips is pause/play, never `src =`.
 	 */
 	private videoForClip(url: string): HTMLVideoElement {
-		const mounted = this.mountedVideo;
-		if (!mounted) throw new Error("NVA video is not mounted");
-		const pooled = this.clipVideos.get(url);
-		if (pooled) return pooled;
-		let video: HTMLVideoElement;
-		if (this.clipVideos.size === 0) {
-			video = mounted;
-		} else {
-			video = document.createElement("video");
-			video.playsInline = true;
-			video.crossOrigin = mounted.crossOrigin;
-			video.style.cssText = mounted.style.cssText;
-			mounted.parentNode?.insertBefore(video, mounted.nextSibling);
+		const existing = this.clipVideos.get(url);
+		if (existing) return existing;
+		const mounted = this.mountedVideo!;
+		const element =
+			this.clipVideos.size === 0
+				? mounted
+				: (mounted.cloneNode(false) as HTMLVideoElement);
+		if (element !== mounted) {
+			element.playsInline = true;
+			mounted.parentElement?.insertBefore(element, mounted.nextSibling);
 		}
-		video.addEventListener(
+		element.addEventListener(
 			"error",
 			() => {
 				Logger.warn(
 					"PrebakedAvatarRenderer",
 					"decoder error",
-					this.mediaDiagnostics(video),
+					this.mediaDiagnostics(element),
 				);
-				if (video.loop) this.failMedia("NVA decoder error");
+				if (element.loop) this.failMedia("NVA decoder error");
 			},
 			{ once: true },
 		);
-		video.src = url;
-		video.dataset.naiaClipUrl = url;
-		this.clipVideos.set(url, video);
-		return video;
+		element.src = url;
+		element.dataset.naiaClipUrl = url;
+		this.clipVideos.set(url, element);
+		return element;
 	}
 
 	private async playIdle(): Promise<void> {
 		if (!this.video || this.disposed) return;
 		const generation = this.generation;
+		const fallbackClip =
+			this.speakingVisual &&
+			this.speechStage?.assetsLoaded === false &&
+			!this.speechStage.speaking
+				? this.config.manifest.animations.talking?.clip
+				: undefined;
 		const override = this.idleOverride
 			? this.config.manifest.animations[this.idleOverride]?.clip
 			: undefined;
 		await this.playClip(
-			override ?? defaultClipOf(this.config.manifest).video,
+			fallbackClip ?? override ?? defaultClipOf(this.config.manifest).video,
 			true,
 			true,
 			undefined,
 			generation,
-			true,
-		).catch(() => this.failMedia("NVA idle playback failed"));
+			!fallbackClip,
+		).catch(() => {
+			if (generation === this.generation && !this.disposed)
+				this.failMedia("NVA idle playback failed");
+		});
 	}
 
 	private ensureOffscreen(
@@ -547,6 +759,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.offscreenCanvas.height = height;
 		}
 		if (!this.offscreenCtx) return null;
+		this.offscreenCtx.imageSmoothingEnabled = true;
+		this.offscreenCtx.imageSmoothingQuality = "high";
 		return { canvas: this.offscreenCanvas, ctx: this.offscreenCtx };
 	}
 
@@ -561,12 +775,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			const source: HTMLVideoElement | HTMLCanvasElement | null = stage
 				? stage.canvas
 				: video;
-			const sourceWidth = stage ? stage.canvas.width : (video?.videoWidth ?? 0);
-			const sourceHeight = stage
-				? stage.canvas.height
-				: (video?.videoHeight ?? 0);
 			const canvas = this.canvas;
 			const ctx = this.ctx;
+			const clipUrl = stage
+				? ""
+				: video?.dataset.naiaClipUrl ||
+					this.currentClipUrl ||
+					video?.getAttribute("src") ||
+					video?.src ||
+					"";
+			const isStacked = !stage && Boolean(video) && isStackedAlphaClipUrl(clipUrl);
+			const sourceWidth = stage ? stage.canvas.width : (video?.videoWidth ?? 0);
+			const rawHeight = stage ? stage.canvas.height : (video?.videoHeight ?? 0);
+			const sourceHeight = isStacked
+				? Math.max(1, Math.floor(rawHeight / 2))
+				: rawHeight;
 			if (
 				source &&
 				canvas &&
@@ -581,29 +804,104 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					sourceWidth,
 					sourceHeight,
 				);
+				ctx.imageSmoothingEnabled = true;
+				ctx.imageSmoothingQuality = "high";
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
 					const keyColor = stage ? this.speechKeyColor : this.currentKeyColor;
-					const motionSpec = this.motionSpec;
+					const baseMotion = this.motionSpec;
+					const motionSpec: MotionSpec | null =
+						baseMotion && this.activeGesture
+							? {
+									...baseMotion,
+									breath: baseMotion.breath,
+									breath_period_s: Math.max(
+										1.5,
+										Math.min(baseMotion.breath_period_s, 2.2),
+									),
+									sway_deg: Math.min(
+										2.4,
+										Math.max(baseMotion.sway_deg * 1.8, 1.6),
+									),
+									sway_period_s: Math.max(
+										2.0,
+										Math.min(baseMotion.sway_period_s, 2.6),
+									),
+								}
+							: baseMotion;
 					const offscreen = motionSpec
 						? this.ensureOffscreen(canvas.width, canvas.height)
 						: null;
 					const drawTarget = offscreen ? offscreen.ctx : ctx;
+					drawTarget.imageSmoothingEnabled = true;
+					drawTarget.imageSmoothingQuality = "high";
 
 					if (offscreen) {
 						offscreen.ctx.clearRect(0, 0, canvas.width, canvas.height);
 					}
 
+					const applyDirectZoom = !offscreen && Math.abs(this.zoom - 1) > 1e-4;
+					if (applyDirectZoom) {
+						ctx.save?.();
+						ctx.translate?.(canvas.width / 2, canvas.height / 2);
+						ctx.scale?.(this.zoom, this.zoom);
+						ctx.translate?.(-canvas.width / 2, -canvas.height / 2);
+					}
+
 					let drew = false;
-					if (keyColor && !this.keyerFailed) {
-						try {
-							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
-							else this.keyer.setParams({ keyColor });
-							const keyed = this.keyer.process(
-								source,
+					if (isStacked && video) {
+						if (!this.stackedAlphaFailed) {
+							try {
+								if (!this.stackedAlpha) {
+									this.stackedAlpha = this.config.createStackedAlpha
+										? this.config.createStackedAlpha()
+										: new NvaStackedAlphaGL();
+								}
+								if (!this.stackedAlpha.draw(video)) {
+									throw new Error("stacked-alpha context lost");
+								}
+								drawTarget.drawImage(
+									this.stackedAlpha.canvas,
+									rect.dx,
+									rect.dy,
+									rect.dw,
+									rect.dh,
+								);
+								drew = true;
+							} catch (error) {
+								this.stackedAlphaFailed = true;
+								this.stackedAlpha?.dispose();
+								this.stackedAlpha = null;
+								Logger.warn(
+									"PrebakedAvatarRenderer",
+									"stacked-alpha WebGL failed; drawing top half only",
+									{ error: String(error) },
+								);
+							}
+						}
+						if (!drew) {
+							drawTarget.drawImage(
+								video,
+								0,
+								0,
 								sourceWidth,
 								sourceHeight,
+								rect.dx,
+								rect.dy,
+								rect.dw,
+								rect.dh,
 							);
+							drew = true;
+						}
+					} else if (keyColor && !this.keyerFailed) {
+						try {
+							if (!this.keyer)
+								this.keyer = new NvaChromakeyGL({
+									mode: "chromakey",
+									keyColor,
+								});
+							else this.keyer.setParams({ mode: "chromakey", keyColor });
+							const keyed = this.keyer.process(source, sourceWidth, sourceHeight);
 							drawTarget.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
 							drew = true;
 						} catch {
@@ -611,11 +909,46 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 							// (possibly opaque-backdrop) draw rather than a blank canvas.
 							this.keyerFailed = true;
 						}
+					} else if (
+						this.config.manifest.background?.type === "transparent" &&
+						!this.keyerFailed
+					) {
+						try {
+							if (!this.keyer)
+								this.keyer = new NvaChromakeyGL({ mode: "alpha-repair" });
+							else this.keyer.setParams({ mode: "alpha-repair" });
+							const repaired = this.keyer.process(
+								source,
+								sourceWidth,
+								sourceHeight,
+							);
+							drawTarget.drawImage(
+								repaired,
+								rect.dx,
+								rect.dy,
+								rect.dw,
+								rect.dh,
+							);
+							drew = true;
+						} catch {
+							this.keyerFailed = true;
+						}
 					}
 					if (!drew)
 						drawTarget.drawImage(source, rect.dx, rect.dy, rect.dw, rect.dh);
 
+					if (applyDirectZoom) {
+						ctx.restore?.();
+					}
+
 					if (offscreen) {
+						const applyMotionZoom = Math.abs(this.zoom - 1) > 1e-4;
+						if (applyMotionZoom) {
+							ctx.save?.();
+							ctx.translate?.(canvas.width / 2, canvas.height / 2);
+							ctx.scale?.(this.zoom, this.zoom);
+							ctx.translate?.(-canvas.width / 2, -canvas.height / 2);
+						}
 						drawWithMotion(
 							ctx,
 							offscreen.canvas,
@@ -623,6 +956,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 							motionSpec,
 							performance.now(),
 						);
+						if (applyMotionZoom) {
+							ctx.restore?.();
+						}
 					}
 				}
 			}
@@ -640,6 +976,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.clearPlaybackTimers();
 		this.generation++;
 		this.cancelOneShot?.();
+		this.activeGesture = false;
+		this.greetingGestureActive = false;
 		this.speakingVisual = false;
 		this.speechStage?.stop();
 		this.config.onSpeaking?.(false);
@@ -650,8 +988,11 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.disposed = true;
 		this.clearPlaybackTimers();
 		this.running = false;
+		this.stopIdleGestureLoop();
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
+		this.stackedAlpha?.dispose();
+		this.stackedAlpha = null;
 		this.keyer?.dispose();
 		this.keyer = null;
 		this.offscreenCanvas = null;
@@ -664,7 +1005,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			v.pause();
 			if (!preserveMedia && v !== this.mountedVideo) v.remove();
 		}
-		if (!preserveMedia) this.clipVideos.clear();
+		if (!preserveMedia) {
+			this.clipVideos.clear();
+			this.assetBlobCache.clear();
+		}
 		this.video?.pause();
 		this.video = null;
 		if (!preserveMedia) this.mountedVideo = null;

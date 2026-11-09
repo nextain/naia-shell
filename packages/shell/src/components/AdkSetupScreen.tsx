@@ -11,10 +11,11 @@ import {
 	setAdkPath,
 	writeNaiaConfigAtPath,
 } from "../lib/adk-store";
-import { NAIA_WEB_BASE_URL, saveConfigSecure } from "../lib/config";
+import { LAB_GATEWAY_URL, NAIA_WEB_BASE_URL, saveConfigSecure } from "../lib/config";
 import { type TranslationKey, getLocale, t } from "../lib/i18n";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
-import { NAIA_SLOT_DEFAULTS, applyNaiaSlotDefaults } from "../lib/slots/model";
+import { applyNaiaSlotDefaults } from "../lib/slots/model";
+import { fetchGatewayModelCatalog } from "../lib/llm/registry";
 
 interface AdkSetupScreenProps {
 	onComplete: () => void;
@@ -163,17 +164,19 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				void (async () => {
 					try {
 						const selectedConfig = (await readNaiaConfig(adkPath)) ?? {};
-						// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용(비파괴).
-						// §9 #5: stale hardcode gemini-2.5-flash → NAIA_SLOT_DEFAULTS.main.model(gemini-3.5-flash).
+						const catalog = await fetchGatewayModelCatalog(LAB_GATEWAY_URL);
+						const models = (catalog ?? [])
+							.filter((m) => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase()))
+							.map((m) => ({ id: m.id, label: m.id, capabilities: ["llm" as const] }));
 						const loginConfig = applyNaiaSlotDefaults({
-							provider: "nextain",
-							model: NAIA_SLOT_DEFAULTS.main.model,
+							provider: "",
+							model: "",
 							apiKey: "",
 							...(selectedConfig as Record<string, unknown>),
 							naiaKey: event.payload.naiaKey,
 							naiaUserId: event.payload.naiaUserId,
 							onboardingComplete: true,
-						} as import("../lib/config").AppConfig);
+						} as import("../lib/config").AppConfig, models);
 						const persistedLoginConfig = preserveWorkspaceRoot(
 							loginConfig as unknown as Record<string, unknown>,
 							adkPath,

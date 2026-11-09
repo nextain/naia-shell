@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
+import { WebLoginScreen } from "./components/WebLoginScreen";
 import { useAgentAuthSync } from "./hooks/useAgentAuthSync";
 import {
 	applyTheme,
@@ -40,9 +41,23 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
-import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
+import {
+	resolveInitialShellChatLayout,
+	resolveShellAvatarSelection,
+} from "./lib/config-seed";
+import { isKioskDemo } from "./lib/kiosk-demo/flag";
+import {
+	WEB_DEFAULT_BACKGROUND,
+	WEB_DEFAULT_VRM,
+	isWebMode,
+} from "./lib/web-runtime/web-assets";
+import {
+	consumeWebAuthCallbackFromLocation,
+	isWebAuthenticated,
+	isWebLoginRequired,
+} from "./lib/web-runtime/web-auth";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
@@ -86,12 +101,48 @@ import {
 import "./apps/browser/index"; // register browser app
 import "./apps/workspace/index"; // register workspace app
 import "./apps/settings/index"; // register settings app
+import "./apps/slides/index"; // register slides app in kiosk demo mode
 // sample-note app removed — will be replaced by a proper memo app later
 import { useAppStore } from "./stores/app";
 
-const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
+const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
+let startupBackgroundRestoreSeq = 0;
+
+export async function restoreStartupBackground(options: {
+	isCancelled?: () => boolean;
+	setBackgroundMediaType: (type: "iframe" | "image" | "video" | "") => void;
+	setBackgroundVideoUrl: (url: string) => void;
+}): Promise<void> {
+	const seq = ++startupBackgroundRestoreSeq;
+	const isStale = () =>
+		(options.isCancelled?.() ?? false) || seq !== startupBackgroundRestoreSeq;
+	const paths = await listNaiaAssets("background");
+	if (isStale() || paths.length === 0) return;
+	const config = loadConfig();
+	// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
+	const saved =
+		(config?.backgroundVideo as string | undefined) ??
+		(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
+	let match = paths.find((p) => p.endsWith(saved));
+	if (!match && isWebMode()) {
+		Logger.warn(
+			"App",
+			"saved background not found in web assets; falling back to default background",
+			{
+				requestedBackground: saved,
+				fallbackBackground: WEB_DEFAULT_BACKGROUND,
+			},
+		);
+		match = paths.find((p) => p.endsWith(WEB_DEFAULT_BACKGROUND));
+	}
+	if (!match || isStale()) return;
+	const blobUrl = await toLocalBlobUrl(match);
+	if (isStale()) return;
+	options.setBackgroundMediaType(getBackgroundMediaType(match));
+	options.setBackgroundVideoUrl(blobUrl);
+}
 
 function applyPersistedPresentationConfig(
 	config: ReturnType<typeof loadConfig>,
@@ -211,6 +262,33 @@ export function App() {
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [configHydrated, setConfigHydrated] = useState(false);
 	const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+	const [webAuthenticated, setWebAuthenticated] = useState(() =>
+		isWebAuthenticated(),
+	);
+	const [webAuthError, setWebAuthError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!isWebMode()) return;
+		const syncAuth = () => setWebAuthenticated(isWebAuthenticated());
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		void consumeWebAuthCallbackFromLocation().then((res) => {
+			if (res.handled) {
+				if (res.ok) {
+					setWebAuthError(null);
+					setWebAuthenticated(true);
+				} else if (res.error === "state_mismatch") {
+					setWebAuthError(
+						t("webAuth.stateFailed"),
+					);
+				} else if (res.error === "invalid_key") {
+					setWebAuthError(t("webAuth.invalidKey"));
+				}
+			}
+		});
+		return () => {
+			window.removeEventListener("naia-web-auth-changed", syncAuth);
+		};
+	}, []);
 	// Start the E2E native bind after commit. Starting it during render lets
 	// React StrictMode invoke the native command twice before the ref from the
 	// first render is retained.
@@ -244,14 +322,26 @@ export function App() {
 	}, [e2eAdkPath]);
 	useAgentAuthSync(showAdkSetup, showOnboarding, configHydrated);
 	const [naiaVisible, setNaiaVisible] = useState(true);
-	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
+	const [naiaWidth, setNaiaWidth] = useState(
+		() => resolveInitialShellChatLayout(window.innerHeight).naiaWidth,
+	);
 	const [appTitle, setAppTitle] = useState(
 		() => loadConfig()?.agentName?.trim() || "Naia",
 	);
 	const [chatVisible, setChatVisible] = useState(true);
-	const [chatHeight, setChatHeight] = useState(() =>
-		Math.round(window.innerHeight * 0.4),
+	const [chatHeight, setChatHeight] = useState(
+		() => resolveInitialShellChatLayout(window.innerHeight).chatHeight,
 	);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const syncLayoutOnResize = () => {
+			setChatHeight(
+				resolveInitialShellChatLayout(window.innerHeight).chatHeight,
+			);
+		};
+		window.addEventListener("resize", syncLayoutOnResize);
+		return () => window.removeEventListener("resize", syncLayoutOnResize);
+	}, []);
 	// 챗 레이아웃 2-way 수동 override. 이전 "home" 중앙 모드는 읽을 때
 	// 좌측 소형(app)으로 마이그레이션한다.
 	const persistedChatMode = useUiPreference<"workspace" | "app">(
@@ -317,8 +407,10 @@ export function App() {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>("vrm");
-	const [nvaModel, setNvaModel] = useState(() => loadConfig()?.nvaModel ?? "");
+	>(() => resolveShellAvatarSelection(loadConfig()).avatarProvider);
+	const [nvaModel, setNvaModel] = useState(
+		() => resolveShellAvatarSelection(loadConfig()).nvaModel,
+	);
 	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
 
 	useEffect(() => {
@@ -333,11 +425,25 @@ export function App() {
 			try {
 				const cfg = await loadConfigWithSecrets();
 				if (!active || currentRevision !== revision) return;
-				setAvatarProvider(
-					effectiveAvatarProviderFromConfig(cfg, detectedVramGb),
-				);
-				setNvaModel(cfg?.nvaModel ?? "");
-				const nextAvatarModelPath = cfg?.vrmModel ?? "";
+				const resolvedAvatar = resolveShellAvatarSelection(cfg, detectedVramGb);
+				setAvatarProvider(resolvedAvatar.avatarProvider);
+				setNvaModel(resolvedAvatar.nvaModel);
+				// WO-03: 웹판은 dist 번들 VRM이 항상 있으므로, VRM 미선택 상태를
+				// 기본 아바타로 채운다 (NVA 선택 provider는 건드리지 않는다).
+				// 공개 config에만 영속한다 (cfg는 secret 복원본일 수 있음).
+				let nextAvatarModelPath = cfg?.vrmModel ?? "";
+				if (
+					import.meta.env.MODE === "web" &&
+					!isKioskDemo() &&
+					!nextAvatarModelPath &&
+					cfg?.avatarProvider !== "naia-video-avatar"
+				) {
+					nextAvatarModelPath = WEB_DEFAULT_VRM;
+					const pub = loadConfig();
+					if (pub && !pub.vrmModel) {
+						saveConfig({ ...pub, vrmModel: WEB_DEFAULT_VRM });
+					}
+				}
 				if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
 					setAvatarModelPath(nextAvatarModelPath);
 				}
@@ -450,7 +556,9 @@ export function App() {
 				}),
 			)
 			.catch((err) =>
-				Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
+				Logger.warn("App", "startup bgm skill failed", {
+					error: String(err),
+				}),
 			);
 		// #611: skill_environment is not model-facing. Clear any stale registration
 		// from older shells; observation still hydrates for `always` awareness.
@@ -486,6 +594,7 @@ export function App() {
 		}
 		const all = appRegistry.list();
 		for (const descriptor of all) {
+			if (isWebMode() && descriptor.id === "browser") continue;
 			if (
 				descriptor.keepAlive &&
 				descriptor.tools &&
@@ -512,21 +621,13 @@ export function App() {
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
 	// #342 / #447-3: default to the naia-dawn-city still when no saved preference
 	// (this default had regressed back to morning-coffee).
-	const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
-		void listNaiaAssets("background").then(async (paths) => {
-			if (cancelled || paths.length === 0) return;
-			const config = loadConfig();
-			const saved =
-				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
-			const match = paths.find((p) => p.endsWith(saved));
-			if (!match || cancelled) return;
-			const blobUrl = await toLocalBlobUrl(match);
-			if (cancelled) return;
-			setBackgroundMediaType(getBackgroundMediaType(match));
-			setBackgroundVideoUrl(blobUrl);
+		void restoreStartupBackground({
+			isCancelled: () => cancelled,
+			setBackgroundMediaType,
+			setBackgroundVideoUrl,
 		});
 		return () => {
 			cancelled = true;
@@ -584,7 +685,26 @@ export function App() {
 				if (!fileConfig && !uiConfig) {
 					setTtsEnabled(false);
 					if (adkPath) {
+						const preservedWebBackgroundVideo = isWebMode()
+							? (() => {
+									const cached = loadConfig() as unknown as Record<
+										string,
+										unknown
+									> | null;
+									return typeof cached?.backgroundVideo === "string"
+										? cached.backgroundVideo
+										: undefined;
+								})()
+							: undefined;
 						localStorage.removeItem("naia-config");
+						if (isWebMode() && preservedWebBackgroundVideo) {
+							localStorage.setItem(
+								"naia-config",
+								JSON.stringify({
+									backgroundVideo: preservedWebBackgroundVideo,
+								}),
+							);
+						}
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: false,
@@ -597,7 +717,12 @@ export function App() {
 						// onboarding seed. The wizard's eventual complete config write
 						// persists it; never write a partial config snapshot here.
 						const detectedLocale = getLocale();
-						saveConfig({ locale: detectedLocale } as AppConfig);
+						saveConfig({
+							locale: detectedLocale,
+							...(preservedWebBackgroundVideo
+								? { backgroundVideo: preservedWebBackgroundVideo }
+								: {}),
+						} as AppConfig);
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: true,
@@ -616,18 +741,31 @@ export function App() {
 					canPersist: false,
 				});
 				if (cancelled || getAdkPath() !== adkPath) return;
+				const localBeforeMerge = loadConfig() as unknown as Record<
+					string,
+					unknown
+				> | null;
 				const merged = mergeBootConfig(
-					loadConfig() as unknown as Record<string, unknown> | null,
+					localBeforeMerge,
 					fileConfig ?? null,
 					uiConfig ?? null,
 				);
 				let detectedLocaleConfig: Record<string, unknown> | null = null;
 				if (merged) {
+					const mergedForBoot =
+						isWebMode() &&
+						typeof localBeforeMerge?.backgroundVideo === "string" &&
+						merged.backgroundVideo === undefined
+							? {
+									...merged,
+									backgroundVideo: localBeforeMerge.backgroundVideo,
+								}
+							: merged;
 					// `naia-adk-path` mirrors the native bootstrap pointer.
 					// Never let a stale render-cache workspaceRoot redirect the next
 					// file read/write cycle to another workspace.
 					const reconciled = reconcileExplicitLocalProfile({
-						...merged,
+						...mergedForBoot,
 						...(adkPath ? { workspaceRoot: adkPath } : {}),
 					} as unknown as Parameters<typeof reconcileExplicitLocalProfile>[0]);
 					if (!reconciled.locale) {
@@ -686,6 +824,16 @@ export function App() {
 					error: error instanceof Error ? error.message : String(error),
 				});
 				setLocaleHydrated(true);
+				if (isWebMode() && !configHydratedRef.current) {
+					void restoreStartupBackground({
+						isCancelled: () =>
+							cancelled ||
+							configHydratedRef.current ||
+							getAdkPath() !== adkPathAtRead,
+						setBackgroundMediaType,
+						setBackgroundVideoUrl,
+					});
+				}
 			});
 		return () => {
 			cancelled = true;
@@ -715,20 +863,28 @@ export function App() {
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(() => {
 				void refreshInstalledAppsIfChanged().catch((error: unknown) => {
-					Logger.warn("App", "Failed to reload installed apps after App Store change", {
-						error: error instanceof Error ? error.message : String(error),
-					});
+					Logger.warn(
+						"App",
+						"Failed to reload installed apps after App Store change",
+						{
+							error: error instanceof Error ? error.message : String(error),
+						},
+					);
 				});
 			}, 300);
 		};
-		void listen("installed-apps-changed", refreshAfterStoreChange).then((unlisten) => {
-			if (disposed) unlisten();
-			else unlistenStoreChanged = unlisten;
-		});
-		void listen("app-store-closed", refreshAfterStoreChange).then((unlisten) => {
-			if (disposed) unlisten();
-			else unlistenStoreClosed = unlisten;
-		});
+		void listen("installed-apps-changed", refreshAfterStoreChange).then(
+			(unlisten) => {
+				if (disposed) unlisten();
+				else unlistenStoreChanged = unlisten;
+			},
+		);
+		void listen("app-store-closed", refreshAfterStoreChange).then(
+			(unlisten) => {
+				if (disposed) unlisten();
+				else unlistenStoreClosed = unlisten;
+			},
+		);
 		return () => {
 			disposed = true;
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
@@ -931,11 +1087,13 @@ export function App() {
 				})
 				.catch(() => {});
 		}
-		fetchUnreadAnnouncements()
-			.then((list) => {
-				if (active && list.length > 0) setAnnouncements(list);
-			})
-			.catch(() => {});
+		if (import.meta.env.MODE !== "web") {
+			fetchUnreadAnnouncements()
+				.then((list) => {
+					if (active && list.length > 0) setAnnouncements(list);
+				})
+				.catch(() => {});
+		}
 		return () => {
 			active = false;
 		};
@@ -1105,6 +1263,9 @@ export function App() {
 		: showAdkSetup
 			? "setup"
 			: chatModeOverride;
+	if (isWebLoginRequired() && !webAuthenticated) {
+		return <WebLoginScreen authError={webAuthError} />;
+	}
 	return (
 		<>
 			<AppShellFrame

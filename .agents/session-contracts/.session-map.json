@@ -24,6 +24,11 @@
       "contract_id": "app-sandbox-workspace-protocol-local-2026-09-02",
       "contract_path": ".agents/session-contracts/app-sandbox-workspace-protocol-local-2026-09-02.json",
       "contract_digest": "375873249ce0cb3f0bce87039aaa63f6705809a6101f8929b3a77083a3940090"
+    },
+    "01a190a2-0ab1-70f0-afa4-f1421153d9d4": {
+      "contract_id": "webgpu-r3-20261031",
+      "contract_path": ".agents/session-contracts/webgpu-r3-20261031.json",
+      "contract_digest": "0eaebef4d6d4acc7ae51754938ded914d5bf6ed93307bd0f8d8134ef35dad2c3"
     }
   }
 }

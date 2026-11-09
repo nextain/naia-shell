@@ -9,10 +9,22 @@ import {
 import { StrictMode } from "react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
 	beginNaiaConfigHydration,
 	completeNaiaConfigHydration,
 } from "../../lib/adk-store";
+
+const transferMocks = vi.hoisted(() => ({
+	moduleLoaded: vi.fn(),
+	loadTransfer: vi.fn().mockResolvedValue({}),
+	downloadWebTransfer: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../../lib/transfer/entry", () => {
+	transferMocks.moduleLoaded();
+	return transferMocks;
+});
 
 const eventListeners = vi.hoisted(
 	() =>
@@ -82,9 +94,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 			nativeSecrets.delete(args!.name!);
 			return secureStoreMock.delete(args?.name);
 		}
-		if (command === "device_list" || command === "device_list_requests")
-			return [];
 		const result = await mockInvoke(...call);
+		if (command === "device_list" || command === "device_list_requests") {
+			return Array.isArray(result) ? result : [];
+		}
 		// Older fixtures use [] as their catch-all. Native config reads return
 		// JSON text; CLI discovery returns a snapshot, never a bare array.
 		if (Array.isArray(result) && result.length === 0) {
@@ -141,10 +154,25 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
-import { setLocale } from "../../lib/i18n";
+import { setLocale, t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
-import { SettingsTab } from "../SettingsTab";
+import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
+import { COMMAND_TABLE } from "../../lib/web-runtime/router";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import {
+	getWebModelStatus,
+	resetWebModelStatusForTests,
+	setWebModelStatus,
+} from "../../lib/web-runtime/web-model-status";
+import {
+	WEB_LLM_FALLBACK_F32,
+	WEB_LLM_MODEL_ID,
+	WEB_LLM_MODEL_PREF_KEY,
+	formatWebLlmModelLabel,
+} from "../../lib/web-runtime/webllm-model";
+import { SettingsTab, reloadAfterWebProviderWrite } from "../SettingsTab";
+import { WebModelStatusBar } from "../WebModelStatusBar";
 
 // SettingsTab order:
 // profile | brain | voice | avatar | persona | memory | knowledge | skills | connections | general
@@ -183,6 +211,45 @@ function gotoAvatarVrm() {
 	expect(select).toBeTruthy();
 	fireEvent.change(select!, { target: { value: "vrm" } });
 }
+
+describe("web provider switch persistence", () => {
+	it("persists a user's existing local model when switching from the server", async () => {
+		setWebAssetsModeForTests(true);
+		registerWebLlmProvider();
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "deepseek-v4-flash", llmRoles: { main: { provider: "nextain", model: "deepseek-v4-flash" } } }));
+		localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, WEB_LLM_FALLBACK_F32);
+		let finishWrite!: () => void;
+		const pendingWrite = new Promise<void>((resolve) => { finishWrite = resolve; });
+		mockInvoke.mockImplementation((command: string) => command === "write_naia_config" ? pendingWrite : Promise.resolve([]));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		fireEvent.change(document.getElementById("provider-select")!, { target: { value: "webllm" } });
+		await waitFor(() => expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "write_naia_config")).toBe(true));
+		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({ provider: "webllm", model: WEB_LLM_FALLBACK_F32 });
+		await act(async () => { finishWrite(); await pendingWrite; });
+		cleanup();
+		localStorage.clear();
+		setWebAssetsModeForTests(null);
+		mockInvoke.mockReset();
+	});
+
+	it("reloads only after the workspace write succeeds", async () => {
+		let resolveWrite!: () => void;
+		const write = new Promise<void>((resolve) => { resolveWrite = resolve; });
+		const reload = vi.fn();
+		const pending = reloadAfterWebProviderWrite(write, reload);
+		expect(reload).not.toHaveBeenCalled();
+		resolveWrite();
+		await pending;
+		expect(reload).toHaveBeenCalledOnce();
+	});
+	it("does not reload when saving fails", async () => {
+		const reload = vi.fn();
+		await expect(reloadAfterWebProviderWrite(Promise.reject(new Error("write failed")), reload)).rejects.toThrow("write failed");
+		expect(reload).not.toHaveBeenCalled();
+	});
+});
 
 describe("SettingsTab", () => {
 	it("applies the sole vLLM model after config hydration resets the empty selection", async () => {
@@ -775,6 +842,7 @@ describe("SettingsTab", () => {
 				provider: "gemini",
 				model: "gemini-2.5-flash",
 				locale: "ko",
+				llmRoles: { sub: { inherit: "main" } },
 			}),
 		);
 		mockInvoke.mockImplementation((command: string) => {
@@ -811,6 +879,7 @@ describe("SettingsTab", () => {
 				provider: "gemini",
 				model: "gemini-2.5-flash",
 				locale: "ko",
+				llmRoles: { sub: { inherit: "main" } },
 			}),
 		);
 		let reloadAttempts = 0;
@@ -905,8 +974,8 @@ describe("SettingsTab", () => {
 		// #602: 이 테스트는 게이트웨이 전체 카탈로그(fetchGatewayModelCatalog)가
 		// <provider>:<id> 를 파싱해 해당 그룹에 가격표와 함께 모델을 추가하는 경로를
 		// 본다. 타사 직결 클라우드 공급자(gemini 등)는 제거됐고, 나이아 계정(nextain)
-		// 그룹은 라이브 가격 effect 가 정적 목록으로 다시 채워 카탈로그 추가분을 덮어쓴다.
-		// 그래서 카탈로그가 채우고 이후 덮어쓰이지 않는 잔존 공급자(claude-code-cli, 스킬
+		// 그룹은 카탈로그와 라이브 가격을 병합한다.
+		// 잔존 공급자(claude-code-cli, 스킬
 		// 탭 CLI)로 파싱·가격 렌더를 관찰한다. (나이아 경로 vertexai/azure/upstage/clova →
 		// nextain 그룹핑·가격은 별도 nextain 테스트가 이미 검증한다.)
 		localStorage.setItem(
@@ -930,7 +999,10 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 
 		await vi.waitFor(() => {
-			expect(screen.getByText("test-model-1 ($1.5 / $2.5)")).toBeDefined();
+			const select = document.getElementById("model-select") as HTMLSelectElement;
+			const option = [...select.options].find(item => item.value === "test-model-1");
+			expect(option?.text).toContain("test-model-1");
+			expect(option?.text).not.toContain("$");
 		});
 	});
 
@@ -957,7 +1029,8 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 
 		await vi.waitFor(() => {
-			expect(screen.getByText(/gemini-ultra-test/)).toBeDefined();
+			const select = document.getElementById("model-select") as HTMLSelectElement;
+			expect([...select.options].some(option => option.value === "gemini-ultra-test")).toBe(true);
 		});
 	});
 
@@ -1011,6 +1084,107 @@ describe("SettingsTab", () => {
 		);
 	});
 
+	it("FR-SM.1: model setting names and guidance exist in all 14 locales", async () => {
+		const locales = ["ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "ko", "pt", "ru", "vi", "zh"] as const;
+		const keys = ["settings.mainModel", "settings.smallModel", "settings.smallModelInherit", "settings.smallModelLocal", "settings.smallModelDesktopSelected", "settings.smallModelLocalHint"] as const;
+		for (const locale of locales) {
+			await setLocale(locale);
+			for (const key of keys) expect(t(key), `${locale}: ${key}`).not.toBe(key);
+		}
+	});
+
+	it("FR-SM.1: model details use the selected locale and show the price once", async () => {
+		await setLocale("ko");
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", subLlmProvider: "nextain", subLlmModel: "gpt-5.6-luna" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />); gotoSettingsTab("brain");
+		await waitFor(() => expect(screen.getByTestId("small-model-selected-label")).toHaveTextContent("100만 토큰당 가격"));
+		const label = screen.getByTestId("small-model-selected-label").textContent!;
+		expect(label.match(/100만 토큰당 가격/g)).toHaveLength(1);
+		expect(label).toContain("입력"); expect(label).toContain("출력"); expect(label).not.toContain("$");
+	});
+
+	it("IT-SM-11: keeps catalog Luna and preserves a legacy memory-only selection across resync", async () => {
+		const legacy = { provider: "nextain", model: "gpt-6.1-terra", apiKey: "", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "memory-key", memoryEnabled: false };
+		localStorage.setItem("naia-config", JSON.stringify(legacy));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		await waitFor(() => expect([...small.options].some(option => option.value === JSON.stringify(["nextain", "gpt-5.6-luna"]))).toBe(true));
+		await waitFor(() => expect(small.value).toBe(JSON.stringify(["ollama", "memory-model"])));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}")).toMatchObject(legacy);
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBeUndefined();
+		fireEvent.change(small, { target: { value: JSON.stringify(["nextain", "gpt-5.6-luna"]) } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}")).toMatchObject({ ...legacy, subLlmModel: "gpt-5.6-luna" });
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(small.value).toBe(JSON.stringify(["nextain", "gpt-5.6-luna"]));
+	});
+
+	it("IT-SM-11: fills only an empty selection and retains an explicit choice on resync", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		await waitFor(() => expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.sub).toMatchObject({ model: "gpt-5.6-luna", thinkingLevel: "low" }));
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", subLlmProvider: "nextain", subLlmModel: "chosen" }));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBe("chosen");
+	});
+
+	it("NFR-SM.1: exposes keyboard-focusable selectors and the full chosen model label", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", naiaKey: "test-key", subLlmProvider: "nextain", subLlmModel: "gpt-5.6-luna" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const main = document.getElementById("model-select") as HTMLSelectElement;
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		await waitFor(() => expect([...main.options].some(o => o.value === "solar-pro4")).toBe(true));
+		main.focus(); expect(document.activeElement).toBe(main);
+		fireEvent.keyDown(main, { key: "ArrowDown" });
+		// JSDOM does not perform the native select default action; dispatch the
+		// resulting change separately. Browser keyboard behavior is checked in UI.
+		fireEvent.change(main, { target: { value: "solar-pro4" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").model).toBe("solar-pro4");
+		small.focus(); expect(document.activeElement).toBe(small);
+		fireEvent.keyDown(small, { key: "ArrowDown" });
+		fireEvent.change(small, { target: { value: JSON.stringify(["nextain", "solar-pro4"]) } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBe("solar-pro4");
+		await waitFor(() => expect(screen.getByTestId("small-model-selected-label")).toHaveTextContent("Solar Pro 4"));
+	});
+
+	it("excludes Solar Mini from recommendations but offers it in price order", () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		expect([...small.options].some(option => option.text.includes("Solar Mini"))).toBe(false);
+		fireEvent.change(document.getElementById("small-model-sort")!, { target: { value: "price" } });
+		expect([...small.options].some(option => option.text.includes("Solar Mini"))).toBe(true);
+	});
+
+	it("persists the small model separately and retains memory settings", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", llmRoles: { memory: { provider: "ollama", model: "memory-model" } } }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		expect(document.getElementById("model-select")).toBeTruthy();
+		fireEvent.change(small, { target: { value: JSON.stringify(["ollama", "huihui_ai/qwen3.5-abliterated:4B"]) } });
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.llmRoles.sub).toMatchObject({ provider: "ollama", model: "huihui_ai/qwen3.5-abliterated:4B" });
+		expect(saved.subLlmModel).toBe("huihui_ai/qwen3.5-abliterated:4B");
+		expect(saved.llmRoles.memory.model).toBe("memory-model");
+	});
+
 	it("hides API key input for Naia (nextain) provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
@@ -1060,17 +1234,11 @@ describe("SettingsTab", () => {
 			"model-select",
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((option) => option.text);
-		expect(labels).toContain(
-			"Solar Mini (Price per 1M tokens: Input 165 credits / Output 165 credits)",
-		);
+		expect(labels).toContain("Solar Mini");
 		expect(labels.some((label) => label.includes("(Naia)"))).toBe(false);
 		expect(labels.some((label) => label.includes("Analysis only"))).toBe(false);
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
-			"solar-mini",
-			"deepseek-v4-flash",
-			"solar-pro4",
-			"motif-3",
-			"gpt-5.6-luna",
+			"gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "motif-3", "deepseek-v4-flash", "solar-mini",
 		]);
 		expect(
 			[...modelSelect.options].map((option) => option.value),
@@ -1091,11 +1259,13 @@ describe("SettingsTab", () => {
 		const sortSelect = screen.getByTestId(
 			"model-sort-mode",
 		) as HTMLSelectElement;
-		expect(sortSelect.value).toBe("price");
+		expect(sortSelect.value).toBe("recommended");
 		expect([...sortSelect.options].map((option) => option.value)).toEqual([
-			"price",
+			"recommended", "price",
 			"performance",
 		]);
+		fireEvent.change(sortSelect, { target: { value: "price" } });
+		modelSelect = document.getElementById("model-select") as HTMLSelectElement;
 		expect(screen.getByTestId("model-price-sort-basis").textContent).toContain(
 			"3 uncached input tokens",
 		);
@@ -1168,35 +1338,18 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 		await screen.findByText(/Price per 1M tokens/, { selector: "span" });
+		// Solar Mini is available under price ordering, rather than recommended.
+		fireEvent.change(screen.getByTestId("model-sort-mode"), { target: { value: "price" } });
 
 		const modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((o) => o.text);
-		expect(
-			labels.some(
-				(l) =>
-					l.includes("Solar Pro 4") &&
-					l.includes("330 credits") &&
-					l.includes("1.32K credits"),
-			),
-		).toBe(true);
-		expect(
-			labels.some(
-				(l) =>
-					l.includes("Solar Mini") &&
-					l.includes("165 credits") &&
-					!l.includes("$"),
-			),
-		).toBe(true);
-		expect(
-			labels.some(
-				(l) =>
-					l.includes("Motif 3") &&
-					l.includes("260 credits") &&
-					l.includes("1.04K credits"),
-			),
-		).toBe(true);
+		expect(labels).toEqual(expect.arrayContaining(["Solar Pro 4", "Solar Mini", "Motif 3"]));
+		for (const [value, price] of [["solar-pro4", "330 credits"], ["solar-mini", "165 credits"], ["motif-3", "260 credits"]]) {
+			fireEvent.change(modelSelect, { target: { value } });
+			expect(screen.getByText(new RegExp(price))).toBeDefined();
+		}
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
@@ -1321,15 +1474,8 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			const labels = [...modelSelect.options].map((o) => o.text);
-			expect(
-				labels.some(
-					(l) =>
-						l.includes("Motif 3") &&
-						l.includes("260 credits") &&
-						l.includes("1.04K credits"),
-				),
-			).toBe(true);
+		expect([...modelSelect.options].map(o => o.text)).toContain("Motif 3");
+			expect(screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/)).toBeDefined();
 		});
 		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
 		expect(
@@ -1390,15 +1536,8 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			const labels = [...modelSelect.options].map((o) => o.text);
-			expect(
-				labels.some(
-					(l) =>
-						l.includes("Motif 3") &&
-						l.includes("260 credits") &&
-						l.includes("1.04K credits"),
-				),
-			).toBe(true);
+		expect([...modelSelect.options].map(o => o.text)).toContain("Motif 3");
+			expect(screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/)).toBeDefined();
 		});
 		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
 		expect(
@@ -1433,7 +1572,7 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			expect(modelSelect.value).toBe("deepseek-v4-flash");
+			expect(modelSelect.value).toBe("gpt-6.1-terra");
 			expect(
 				[...modelSelect.options].map((option) => option.value),
 			).not.toContain("claude-opus-5");
@@ -1496,6 +1635,76 @@ describe("SettingsTab", () => {
 		});
 	});
 
+	it("UT-SM-04: shows xhigh and does not copy it to a different model", () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", naiaKey: "test-key", llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" }, sub: { inherit: "main" } } }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveAttribute("aria-checked", "true");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveTextContent("xhigh");
+		fireEvent.change(document.getElementById("model-select")!, { target: { value: "solar-pro4" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main).toMatchObject({ model: "solar-pro4" });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBeUndefined();
+		fireEvent.click(screen.getByTestId("thinking-level-low"));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBe("low");
+		fireEvent.change(document.getElementById("model-select")!, { target: { value: "gpt-6.1-terra" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBe("xhigh");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveAttribute("aria-checked", "true");
+		fireEvent.change(document.getElementById("model-select")!, { target: { value: "solar-pro4" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBe("low");
+	});
+
+	it("UT-SM-04: delayed catalog fills a fresh blank main with Terra xhigh", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "", model: "", apiKey: "" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-6.1-terra", input_price_per_million: 1, output_price_per_million: 2, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		await waitFor(() => expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main).toMatchObject({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" }));
+	});
+
+	it("IT-SM-14: defaults button and online merge retain legacy memory after catalog and notification", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		const legacy = { provider: "nextain", model: "gpt-6.1-terra", apiKey: "", naiaKey: "test-key", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "ref", memoryEnabled: false };
+		localStorage.setItem("naia-config", JSON.stringify(legacy));
+		mockInvoke.mockResolvedValue([]);
+		vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+			const u = String(url);
+			if (u.includes("/v1/pricing")) return { ok: true, json: async () => [{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }] };
+			if (u.includes("api/gateway/config")) return { ok: true, json: async () => ({ config: { userName: "Online name" } }) };
+			if (u.includes("balance")) return { ok: true, json: async () => ({ credits: 10 }) };
+			return { ok: false, json: async () => [] };
+		}));
+		render(<SettingsTab />);
+		await waitFor(() => expect(eventListeners.get("naia_auth_complete")).toBeDefined());
+		gotoSettingsTab("brain");
+		await waitFor(() => expect((screen.getByTestId("small-model-select") as HTMLSelectElement).value).toBe(JSON.stringify(["ollama", "memory-model"])));
+		gotoSettingsTab("profile");
+		fireEvent.click(screen.getByTestId("slot-apply-defaults"));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}")).toMatchObject(legacy);
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBeUndefined();
+		await act(async () => { await eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		fireEvent.click(await screen.findByRole("button", { name: "Use Online" }));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		const merged = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(merged).toMatchObject({ ...legacy, userName: "Online name" });
+		expect(merged.subLlmModel).toBeUndefined();
+	});
+
+	it("IT-SM-14: Naia login preserves an explicitly selected main and legacy memory model", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "ollama", model: "local-explicit", apiKey: "", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		await vi.waitFor(() => expect(eventListeners.get("naia_auth_complete")).toBeDefined());
+		await act(async () => { await eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved).toMatchObject({ provider: "ollama", model: "local-explicit", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model" });
+		expect(saved.subLlmModel).toBeUndefined();
+	});
+
 	it("persists Naia auth callback even when no config exists yet", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		mockInvoke.mockResolvedValue([]);
@@ -1527,7 +1736,7 @@ describe("SettingsTab", () => {
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBeTruthy();
+		expect(saved.model).toBe("");
 		expect(saved.apiKey).toBe("");
 		expect(saved.naiaKey).toBe("gw-test-key");
 		expect(saved.naiaUserId).toBe("user-123");
@@ -1593,7 +1802,7 @@ describe("SettingsTab", () => {
 		window.removeEventListener("naia_auth_ready", authReady);
 	});
 
-	it("replaces a stale Gemini main role when logging in to Naia from Settings", async () => {
+	it("preserves a configured Gemini main role when logging in to Naia from Settings", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		localStorage.setItem(
 			"naia-config",
@@ -1631,11 +1840,11 @@ describe("SettingsTab", () => {
 		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBe("deepseek-v4-flash");
+		expect(saved.provider).toBe("gemini");
+		expect(saved.model).toBe("gemini-3.5-flash");
 		expect(saved.llmRoles.main).toEqual({
-			provider: "nextain",
-			model: "deepseek-v4-flash",
+			provider: "gemini",
+			model: "gemini-3.5-flash",
 		});
 		expect(saved.llmRoles.sub).toEqual({
 			provider: "openai",
@@ -1643,8 +1852,8 @@ describe("SettingsTab", () => {
 		});
 		expect(chatServiceMocks.activateNaiaLlm).toHaveBeenCalledWith(
 			"gw-test-key",
-			"nextain",
-			"deepseek-v4-flash",
+			"gemini",
+			"gemini-3.5-flash",
 		);
 	});
 
@@ -2039,7 +2248,7 @@ describe("SettingsTab", () => {
 			render(<SettingsTab />);
 			gotoSettingsTab("brain");
 			const select = screen.getByRole("combobox", {
-				name: /model/i,
+				name: "Main model",
 			}) as HTMLSelectElement;
 			expect([...select.options].map((option) => option.value)).toContain(
 				modelId,
@@ -4117,18 +4326,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		// 이미 설정한 main 보존(비파괴).
 		expect(saved.provider).toBe("nextain");
 		expect(saved.model).toBe("gemini-3.5-flash");
-		// 미설정 슬롯 = Gemini 기본값.
-		expect(saved.subLlmProvider).toBe("naia");
-		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
-		expect(saved.llmRoles.sub).toMatchObject({
-			provider: "naia",
-			model: "gemini-3.1-flash-lite",
-		});
-		expect(saved.memoryLlmProvider).toBe("nextain");
-		expect(saved.llmRoles?.memory).toMatchObject({
-			provider: "nextain",
-			model: "gpt-5.4-nano",
-		}); // #692
+		// 목록 도착 전 작은 역할은 대기하고 기억 설정을 자동으로 덮지 않는다.
+		expect(saved.subLlmProvider).toBeUndefined();
+		expect(saved.memoryLlmProvider).toBeUndefined();
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
@@ -4154,6 +4354,24 @@ describe("SettingsTab — memory tab (#298)", () => {
 			(t) => t === "Memory" || t === "기억",
 		);
 		expect(hasMemoryDivider).toBe(false);
+	});
+
+	it("UT-TRANSFER-12 loads the transfer entry only after the web export click", async () => {
+		vi.stubEnv("MODE", "web");
+		mockInvoke.mockResolvedValue([]);
+		try {
+			render(<SettingsTab />);
+			expect(document.querySelector('[data-settings-tab="memory"]')).toBeNull();
+			expect(document.querySelector('[data-settings-tab="profile"]')).toHaveClass("settings-tab-btn--active");
+			expect(transferMocks.moduleLoaded).not.toHaveBeenCalled();
+			expect(transferMocks.loadTransfer).not.toHaveBeenCalled();
+			fireEvent.click(screen.getByTestId("memory-transfer-export"));
+			await waitFor(() => expect(transferMocks.moduleLoaded).toHaveBeenCalledOnce());
+			await waitFor(() => expect(transferMocks.loadTransfer).toHaveBeenCalledOnce());
+			await waitFor(() => expect(transferMocks.downloadWebTransfer).toHaveBeenCalledOnce());
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("clicking memory tab button shows memory section", () => {
@@ -5421,5 +5639,718 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
 			).toBe("llama3.2:8b");
 		});
+	});
+});
+
+describe("web mode brain tab (r4)", () => {
+	beforeEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+		mockInvoke.mockResolvedValue([]);
+		resetWebModelStatusForTests();
+	});
+
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		resetWebModelStatusForTests();
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("preserves a desktop Qwen selection without exposing its model on web", () => {
+		setWebAssetsModeForTests(true);
+		const local = { provider: "ollama", model: "huihui_ai/qwen3.5-abliterated:4B" };
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", llmRoles: { sub: local } }));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const select = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		expect(select.textContent?.toLowerCase()).not.toContain("qwen");
+		expect(select.value).not.toContain("qwen");
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.sub).toEqual(local);
+	});
+
+	it("hides DevicePairingSection and does not call device_list in web mode, while keeping both in desktop mode", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+				enableTools: true,
+			}),
+		);
+
+		setWebAssetsModeForTests(true);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		expect(screen.queryByTestId("device-section")).toBeNull();
+		expect(
+			screen.queryByText(/디바이스 페어링|Device Pairing/i),
+		).toBeNull();
+		expect(mockInvoke).not.toHaveBeenCalledWith("device_list");
+		expect(mockInvoke).not.toHaveBeenCalledWith("device_list_requests");
+
+		cleanup();
+		vi.clearAllMocks();
+
+		setWebAssetsModeForTests(false);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		expect(await screen.findByTestId("device-section")).toBeTruthy();
+		expect(
+			await screen.findByText(/디바이스 페어링|Device Pairing/i),
+		).toBeTruthy();
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("device_list");
+			expect(mockInvoke).toHaveBeenCalledWith("device_list_requests");
+		});
+	});
+
+	it("derives both SettingsTab brain model label and WebModelStatusBar text from the single runtime getWebModelStatus().model source", async () => {
+		registerWebLlmProvider();
+		setWebAssetsModeForTests(true);
+		// Seed initial config with the default f16 model ID, simulating bootstrap
+		// before startWebModel auto-selects f32 on a GPU without shader-f16.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				llmRoles: {
+					main: {
+						provider: "webllm",
+						model: WEB_LLM_MODEL_ID,
+					},
+				},
+			}),
+		);
+		setWebModelStatus({
+			phase: "loading",
+			progress: 0.05,
+			model: WEB_LLM_FALLBACK_F32,
+		});
+
+		render(
+			<>
+				<WebModelStatusBar />
+				<SettingsTab />
+			</>,
+		);
+		gotoSettingsTab("brain");
+
+		const activeSourceModel = getWebModelStatus().model;
+		expect(activeSourceModel).toBe(WEB_LLM_FALLBACK_F32);
+		const expectedF32Label = formatWebLlmModelLabel(activeSourceModel);
+		expect(expectedF32Label).toBe("Qwen3 4B (4bit f32)");
+
+		const modelSelect = document.getElementById(
+			"model-select",
+		) as HTMLSelectElement;
+		expect(modelSelect).toBeTruthy();
+		expect(modelSelect.value).toBe(activeSourceModel);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF32Label);
+
+		const modelHint = modelSelect
+			.closest(".settings-field")
+			?.querySelector(".settings-hint");
+		expect(modelHint?.textContent).toBe(expectedF32Label);
+
+		const statusBar = screen.getByTestId("web-model-status");
+		expect(statusBar.getAttribute("data-model")).toBe(activeSourceModel);
+		expect(statusBar.textContent).toContain(expectedF32Label);
+		expect(statusBar.textContent).not.toContain("Qwen3 4B (4bit f16)");
+
+		// When the single runtime source changes to f16, both UI places update together.
+		act(() => {
+			setWebModelStatus({
+				phase: "ready",
+				progress: 1,
+				model: WEB_LLM_MODEL_ID,
+			});
+		});
+
+		const updatedSourceModel = getWebModelStatus().model;
+		expect(updatedSourceModel).toBe(WEB_LLM_MODEL_ID);
+		const expectedF16Label = formatWebLlmModelLabel(updatedSourceModel);
+		expect(expectedF16Label).toBe("Qwen3 4B (4bit f16)");
+
+		expect(modelSelect.value).toBe(updatedSourceModel);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF16Label);
+		expect(modelHint?.textContent).toBe(expectedF16Label);
+		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
+		expect(statusBar.textContent).toContain(expectedF16Label);
+	});
+
+	it("switches the running engine on web model select (save choice + reload) instead of only rewriting runtime status", () => {
+		registerWebLlmProvider();
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				llmRoles: { main: { provider: "webllm", model: WEB_LLM_MODEL_ID } },
+			}),
+		);
+		setWebModelStatus({ phase: "ready", progress: 1, model: WEB_LLM_FALLBACK_F32 });
+		const originalLocation = window.location;
+		const reload = vi.fn();
+		Object.defineProperty(window, "location", {
+			configurable: true,
+			value: { ...originalLocation, reload },
+		});
+		vi.useFakeTimers();
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			expect(modelSelect.value).toBe(WEB_LLM_FALLBACK_F32);
+
+			fireEvent.change(modelSelect, { target: { value: WEB_LLM_MODEL_ID } });
+
+			// 실행 중 엔진은 아직 f32 이므로 상태를 미리 f16 으로 바꾸지 않는다.
+			expect(getWebModelStatus().model).toBe(WEB_LLM_FALLBACK_F32);
+			expect(localStorage.getItem(WEB_LLM_MODEL_PREF_KEY)).toBe(WEB_LLM_MODEL_ID);
+			act(() => {
+				vi.runOnlyPendingTimers();
+			});
+			expect(reload).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+			Object.defineProperty(window, "location", {
+				configurable: true,
+				value: originalLocation,
+			});
+		}
+	});
+});
+
+
+
+describe("web mode account login error (r6)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("shows web-login-error when starting login throws because crypto.getRandomValues is missing", () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const origCrypto = globalThis.crypto;
+		Object.defineProperty(globalThis, "crypto", {
+			value: {},
+			configurable: true,
+		});
+		try {
+			fireEvent.click(screen.getByTestId("web-login-btn"));
+			expect(screen.getByTestId("web-login-error").textContent).toMatch(
+				/crypto\.getRandomValues/,
+			);
+		} finally {
+			Object.defineProperty(globalThis, "crypto", {
+				value: origCrypto,
+				configurable: true,
+			});
+		}
+	});
+});
+
+describe("web mode backgrounds and NVA (r7)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("renders Korean catalog labels in settings-bg-select in web mode and sets video media type when selecting a live MP4 background", async () => {
+		await setLocale("ko");
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				backgroundVideo: "naia-dawn-city-uhd.webp",
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const bgSelect = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() => {
+			expect(bgSelect.options.length).toBe(11); // None + 10 catalog entries
+		});
+		const labels = Array.from(bgSelect.options)
+			.slice(1)
+			.map((opt) => opt.textContent);
+		expect(labels).toEqual([
+			"새벽 도시",
+			"작전실 — 나이아·지나·민호",
+			"강변 해돋이",
+			"비 오는 작업실",
+			"가을 사무실",
+			"별빛 호수",
+			"하늘 정원",
+			"가을 사무실 (움직임)",
+			"별빛 호수 (움직이는 배경)",
+			"비 오는 작업실 (움직이는 배경)",
+		]);
+
+		fireEvent.change(bgSelect, {
+			target: { value: "/backgrounds/naia-starlight-lake-live.mp4" },
+		});
+
+		const { useAvatarStore } = await import("../../stores/avatar");
+		await waitFor(() => {
+			expect(useAvatarStore.getState().backgroundMediaType).toBe("video");
+			expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+				"/backgrounds/naia-starlight-lake-live.mp4",
+			);
+		});
+		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(saved.backgroundVideo).toBe("naia-starlight-lake-live.mp4");
+	});
+
+	it("exposes naia-video-avatar option and 6 NVA bundles in web mode without calling desktop-only invoke commands", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				avatarProvider: "vrm",
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+
+		const providerSelect = document.getElementById(
+			"avatar-provider",
+		) as HTMLSelectElement;
+		expect(providerSelect).toBeTruthy();
+		const optionValues = Array.from(providerSelect.options).map((o) => o.value);
+		expect(optionValues).toEqual(["vrm", "naia-video-avatar"]);
+
+		mockInvoke.mockClear();
+		fireEvent.change(providerSelect, {
+			target: { value: "naia-video-avatar" },
+		});
+
+		for (const bundle of [
+			"naia",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]) {
+			expect(await screen.findByRole("button", { name: bundle })).toBeTruthy();
+		}
+
+		fireEvent.click(screen.getByRole("button", { name: "jina-anime" }));
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(saved.avatarProvider).toBe("naia-video-avatar");
+		expect(saved.nvaModel).toBe("jina-anime");
+
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
+		});
+
+		const invokedCommands = mockInvoke.mock.calls.map(([cmd]) => String(cmd));
+		const disallowedCommands = invokedCommands.filter(
+			(c) => COMMAND_TABLE[c] !== "web" && COMMAND_TABLE[c] !== "stub",
+		);
+		expect(disallowedCommands).toEqual([]);
+		expect(
+			invokedCommands.every(
+				(c) => COMMAND_TABLE[c] === "web" || COMMAND_TABLE[c] === "stub",
+			),
+			`Disallowed desktop-only commands invoked in web mode: ${disallowedCommands.join(", ")}`,
+		).toBe(true);
+		expect(invokedCommands).not.toContain("list_naia_assets");
+		expect(invokedCommands).not.toContain("detect_gpu_vram");
+		expect(invokedCommands).not.toContain("write_slots_manifest");
+		expect(invokedCommands).not.toContain("read_local_binary");
+	});
+
+	it("locks #provider-select, #model-select, #tools-toggle, #thinking-level-select, and #environment-awareness as read-only and hides #environment-terminal-input in kiosk mode while preserving normal web and desktop controls", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		const { registerWebLlmProvider } = await import(
+			"../../lib/web-runtime/llm-provider"
+		);
+		const { unregisterLlmProvider } = await import("../../lib/llm/registry");
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		registerWebLlmProvider();
+
+		const { unmount } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const normalSelect = document.getElementById(
+			"provider-select",
+		) as HTMLSelectElement;
+		expect(normalSelect.tagName).toBe("SELECT");
+		expect(
+			Array.from(normalSelect.options).map((o) => o.value),
+		).toContain("webllm");
+		const normalTools = document.getElementById(
+			"tools-toggle",
+		) as HTMLInputElement;
+		expect(normalTools.tagName).toBe("INPUT");
+		expect(normalTools.type).toBe("checkbox");
+		expect(screen.getByTestId("thinking-level-low")).toBeTruthy();
+		const normalEnvAwareness = document.getElementById(
+			"environment-awareness",
+		) as HTMLSelectElement;
+		expect(normalEnvAwareness.tagName).toBe("SELECT");
+		expect(
+			Array.from(normalEnvAwareness.options).map((o) => o.value),
+		).toEqual(["off", "auto", "always"]);
+		const normalTerminalInput = document.getElementById(
+			"environment-terminal-input",
+		) as HTMLInputElement;
+		expect(normalTerminalInput.tagName).toBe("INPUT");
+		expect(normalTerminalInput.type).toBe("checkbox");
+		unmount();
+
+		setWebAssetsModeForTests(false);
+		vi.stubEnv("MODE", "production");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		const { unmount: unmountDesktop } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const desktopEnvAwareness = document.getElementById(
+			"environment-awareness",
+		) as HTMLSelectElement;
+		expect(desktopEnvAwareness.tagName).toBe("SELECT");
+		const desktopTerminalInput = document.getElementById(
+			"environment-terminal-input",
+		) as HTMLInputElement;
+		expect(desktopTerminalInput.tagName).toBe("INPUT");
+		expect(desktopTerminalInput.type).toBe("checkbox");
+		unmountDesktop();
+
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				apiKey: "",
+				enableTools: false,
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				environmentAwareness: "always",
+				environmentTerminalInput: true,
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6.1-terra",
+						thinkingLevel: "xhigh",
+					},
+				},
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const kioskProvider = document.getElementById("provider-select")!;
+		expect(kioskProvider.tagName).toBe("DIV");
+		expect(kioskProvider.getAttribute("data-testid")).toBe("provider-single");
+		expect(kioskProvider.textContent).toBe("Naia");
+		const kioskModel = document.getElementById("model-select")!;
+		expect(kioskModel.tagName).toBe("DIV");
+		expect(kioskModel.getAttribute("data-testid")).toBe("model-single");
+		expect(kioskModel.textContent).toContain("Naia Luna");
+		const kioskSmallModel = document.getElementById("small-model-select")!;
+		expect(kioskSmallModel.tagName).toBe("DIV");
+		expect(kioskSmallModel.getAttribute("data-testid")).toBe("small-model-single");
+		const kioskTools = document.getElementById("tools-toggle")!;
+		expect(kioskTools.tagName).toBe("DIV");
+		expect(kioskTools.getAttribute("data-testid")).toBe("tools-single");
+		expect(kioskTools.textContent).toMatch(/On|켬/);
+		const kioskThinking = document.getElementById("thinking-level-select")!;
+		expect(kioskThinking.tagName).toBe("DIV");
+		expect(kioskThinking.getAttribute("data-testid")).toBe(
+			"thinking-level-single",
+		);
+		expect(kioskThinking.textContent).toMatch(/low|낮음/i);
+		expect(screen.queryByTestId("thinking-level-low")).toBeNull();
+		expect(screen.queryByTestId("thinking-level-xhigh")).toBeNull();
+		const kioskEnvAwareness = document.getElementById(
+			"environment-awareness",
+		)!;
+		expect(kioskEnvAwareness.tagName).toBe("DIV");
+		expect(kioskEnvAwareness.getAttribute("data-testid")).toBe(
+			"environment-awareness-single",
+		);
+		expect(kioskEnvAwareness.textContent).toMatch(/Off|끔/);
+		expect(document.getElementById("environment-terminal-input")).toBeNull();
+		unregisterLlmProvider("webllm");
+		vi.unstubAllEnvs();
+	});
+
+	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, defaults to Naia Cloud TTS in both profile and voice tabs without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.setItem("naia-remote-key", "test-kiosk-fixture-only");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-5.6-luna",
+				apiKey: "",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+			}),
+		);
+
+		render(<SettingsTab />);
+		// Profile tab: no lab-disconnect-btn, no memory-transfer-export in kiosk mode, no local-voice starting badge, LLM main shows nextain / gpt-5.6-luna, profile-tts-provider defaults to nextain (Naia Cloud TTS) with browser fallback option
+		expect(document.querySelector(".lab-disconnect-btn")).toBeNull();
+		expect(screen.queryByTestId("memory-transfer-export")).toBeNull();
+		expect(document.querySelector('[data-testid="slot-tts-live"]')).toBeNull();
+		expect(screen.getByTestId("slot-main").textContent).toContain(
+			"nextain / gpt-5.6-luna",
+		);
+		const profileTtsSelect = screen.getByTestId(
+			"profile-tts-provider",
+		) as HTMLSelectElement;
+		expect(Array.from(profileTtsSelect.options).map((o) => o.value)).toEqual([
+			"nextain",
+			"browser",
+		]);
+		expect(profileTtsSelect.value).toBe("nextain");
+
+		// Knowledge tab is visible in kiosk mode
+		expect(
+			document.querySelector('[data-settings-tab="knowledge"]'),
+		).not.toBeNull();
+
+		// General tab: no web-logout-btn in kiosk mode
+		gotoSettingsTab("general");
+		expect(screen.queryByTestId("web-logout-btn")).toBeNull();
+
+		// Voice tab: shows the same Naia Cloud TTS value and options
+		gotoSettingsTab("voice");
+		const voiceTtsSelect = document.getElementById(
+			"tts-provider-select",
+		) as HTMLSelectElement;
+		expect(Array.from(voiceTtsSelect.options).map((o) => o.value)).toEqual([
+			"nextain",
+			"browser",
+		]);
+		expect(voiceTtsSelect.value).toBe("nextain");
+		const nextainVoiceSelect = document.getElementById(
+			"tts-voice-select",
+		) as HTMLSelectElement;
+		expect(nextainVoiceSelect).not.toBeNull();
+		expect(nextainVoiceSelect.value).toBe("ko-KR-Neural2-A");
+		expect(nextainVoiceSelect.disabled).toBe(true);
+		expect(
+			Array.from(nextainVoiceSelect.options).map((o) => ({
+				value: o.value,
+				label: o.textContent,
+			})),
+		).toEqual([
+			{
+				value: "ko-KR-Neural2-A",
+				label: "기본 여성(Neural2)",
+			},
+		]);
+
+		vi.unstubAllEnvs();
+	});
+
+	it("FR-WEB-KIOSK-FIX.10, R3.2 shows nextain / gpt-5.6-luna on profile tab in kiosk mode even without saved model and styles memory-transfer-export with voice-preview-btn in normal web mode", () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.removeItem("naia-config");
+
+		const { unmount } = render(<SettingsTab />);
+		expect(screen.getByTestId("slot-main").textContent).toContain(
+			"nextain / gpt-5.6-luna",
+		);
+		expect(screen.queryByTestId("memory-transfer-export")).toBeNull();
+		unmount();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		render(<SettingsTab />);
+		const exportBtn = screen.getByTestId("memory-transfer-export");
+		expect(exportBtn).toHaveClass("voice-preview-btn");
+
+		vi.unstubAllEnvs();
+	});
+
+	it("keeps settings tab bar fixed without collapsing on persona tab and keeps actions bar in flow below content", () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		expect(document.querySelector(".settings-tab-bar")).not.toBeNull();
+		expect(document.querySelector(".settings-actions")).not.toBeNull();
+
+		gotoSettingsTab("persona");
+		const tabBar = document.querySelector(".settings-tab-bar");
+		expect(tabBar).not.toBeNull();
+		expect(
+			tabBar?.querySelector('[data-settings-tab="persona"]'),
+		).toHaveClass("settings-tab-btn--active");
+
+		// CSS contract: sticky non-collapsing tab bar, non-overlapping mobile close margin, and in-flow sticky actions bar
+		const globalCss = readFileSync(
+			resolve(__dirname, "../../styles/global.css"),
+			"utf8",
+		);
+		const webModeCss = readFileSync(
+			resolve(__dirname, "../../styles/web-mode.css"),
+			"utf8",
+		);
+		expect(globalCss).toMatch(
+			/\.settings-tab-bar\s*\{[^}]*position:\s*sticky;[^}]*min-height:\s*46px;[^}]*overflow-y:\s*hidden;/s,
+		);
+		expect(globalCss).toMatch(
+			/\.settings-actions\s*\{[^}]*position:\s*sticky;[^}]*bottom:\s*0;/s,
+		);
+		expect(globalCss).not.toMatch(
+			/\.settings-actions\s*\{[^}]*position:\s*fixed;/s,
+		);
+		expect(webModeCss).toMatch(
+			/\[data-naia-web="true"\]\s*\.settings-tab-bar\s*\{[^}]*margin-right:\s*44px;/s,
+		);
+
+		vi.unstubAllEnvs();
+	});
+
+	it("FR-WEB-KIOSK-FIX7B.6 renders all Jina card fields in the Persona tab, marks edited fields with '카드에서 바꿈', injects edits into the conversation prompt, and reverts on '카드 원래대로'", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const { buildKioskDemoConfigSeed } = await import("../../lib/config-seed");
+		const { buildSystemPrompt } = await import("../../lib/persona");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify(buildKioskDemoConfigSeed()),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("persona");
+
+		expect(screen.getByTestId("charcard-fields-editor")).toBeInTheDocument();
+		expect(screen.getByTestId("charcard-field-name")).toHaveValue("지나");
+		expect(
+			(
+				screen.getByTestId(
+					"charcard-field-description",
+				) as HTMLTextAreaElement
+			).value,
+		).toContain("넥스테인");
+		expect(
+			(
+				screen.getByTestId(
+					"charcard-field-personality",
+				) as HTMLTextAreaElement
+			).value,
+		).toContain("존댓말");
+		expect(
+			(screen.getByTestId("charcard-field-scenario") as HTMLTextAreaElement)
+				.value,
+		).toContain("시연 공간");
+		expect(
+			(screen.getByTestId("charcard-field-first_mes") as HTMLTextAreaElement)
+				.value,
+		).toContain("게스트님, 안녕하세요.");
+		expect(screen.getByTestId("charcard-greeting-select")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("charcard-field-mes_example"),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("charcard-lorebook-list")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("charcard-field-system_prompt"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByTestId("charcard-field-post_history_instructions"),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("charcard-field-creator")).toHaveValue("Nextain");
+		expect(
+			screen.getByTestId("charcard-field-creator_notes"),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("charcard-field-tags")).toHaveValue(
+			"지나, Jina, Nextain, NAIA",
+		);
+		expect(screen.queryByTestId("card-field-modified-badge")).toBeNull();
+		expect(screen.getByTestId("card-revert-original-btn")).toBeDisabled();
+
+		// Edit personality and scenario
+		fireEvent.change(screen.getByTestId("charcard-field-personality"), {
+			target: { value: "고친 성격: 명랑하고 씩씩한 안내원" },
+		});
+		fireEvent.change(screen.getByTestId("charcard-field-scenario"), {
+			target: { value: "고친 상황: 미래형 전시관 로비" },
+		});
+
+		expect(screen.getByTestId("card-modified-personality")).toHaveTextContent(
+			"카드에서 바꿈",
+		);
+		expect(screen.getByTestId("card-modified-scenario")).toHaveTextContent(
+			"카드에서 바꿈",
+		);
+		expect(
+			screen.getByTestId("card-field-modified-badge"),
+		).toHaveTextContent("카드에서 바꿈");
+		expect(screen.getByTestId("card-revert-original-btn")).not.toBeDisabled();
+
+		// Verify edited values enter the actual conversation system prompt
+		const updatedCfg = JSON.parse(localStorage.getItem("naia-config")!);
+		const promptAfterEdit = buildSystemPrompt(updatedCfg.persona, updatedCfg);
+		expect(promptAfterEdit).toContain("고친 성격: 명랑하고 씩씩한 안내원");
+		expect(promptAfterEdit).toContain("고친 상황: 미래형 전시관 로비");
+
+		// Click "카드 원래대로"
+		fireEvent.click(screen.getByTestId("card-revert-original-btn"));
+		expect(screen.queryByTestId("card-modified-personality")).toBeNull();
+		expect(screen.queryByTestId("card-modified-scenario")).toBeNull();
+		expect(screen.queryByTestId("card-field-modified-badge")).toBeNull();
+		expect(screen.getByTestId("card-revert-original-btn")).toBeDisabled();
+
+		const revertedCfg = JSON.parse(localStorage.getItem("naia-config")!);
+		const promptAfterRevert = buildSystemPrompt(
+			revertedCfg.persona,
+			revertedCfg,
+		);
+		expect(promptAfterRevert).not.toContain(
+			"고친 성격: 명랑하고 씩씩한 안내원",
+		);
+		expect(promptAfterRevert).toContain("존댓말");
+
+		vi.unstubAllEnvs();
 	});
 });

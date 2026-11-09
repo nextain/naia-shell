@@ -1,3 +1,5 @@
+import englishWeb from "./en-web";
+
 // 이 파일이 이 언어의 정본이다. 생성물이 아니다.
 //
 // 예전에는 `scripts/i18n-translations.source.ts` 에서 생성한다고 적혀 있었는데,
@@ -7,7 +9,13 @@
 //
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
-export default {
+// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
+// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
+// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+//
+// 웹 모드 전용 문구(`webModel.*`, `webWorkspace.*`)는 데스크톱 첫 번들 예산 절약을
+// 위해 데스크톱 운영 빌드(MODE === "production")에서 번들 대상에서 제외된다.
+const englishCore = {
 	"settings.embeddingRevision": "Model revision (change when replacing the model)",
 	"settings.embeddingDimensions": "Vector dimensions (match the served model)",
 	"settings.embeddingIdentityMissing": "A model revision is required for vector search. Recall uses matching words until it is set. Local e5-large uses 1024 dimensions. Enter the revision you actually deployed.",
@@ -219,7 +227,17 @@ export default {
 	"settings.appPosition": "App Position",
 	"settings.pricing": "Pricing",
 	"settings.pricingPerMillionTokens": "Price per 1M tokens",
+	"settings.mainModel": "Main model",
+	"settings.smallModel": "Small model",
+	"settings.smallModelInherit": "Use main model",
+	"settings.smallModelLocal": "Local",
+	"settings.smallModelDesktopSelected": "Desktop local model selected",
+	"settings.smallModelLocalHint": "Recommended for PCs with at least 8 GB of memory.",
 	"settings.modelSort": "Sort order",
+	"settings.modelCostSaving": "Cost saving",
+	"settings.modelLocal8gb": "8 GB or more PC",
+	"settings.modelLocal24gb": "24 GB or more PC",
+	"settings.modelSortRecommended": "Recommended order",
 	"settings.modelSortPrice": "Models by price",
 	"settings.modelSortPriceBasis": "Basis: 3 uncached input tokens per 1 output token. Cache pricing is excluded because hit rates vary.",
 	"settings.modelSortPerformance": "Models by performance",
@@ -233,6 +251,8 @@ export default {
 	"settings.appRight": "Right",
 	"settings.appBottom": "Bottom",
 	"settings.background": "Background Image",
+	"settings.bgAutumnOffice": "Autumn Office",
+	"settings.bgAutumnOfficeLive": "Autumn Office (Animated)",
 	"settings.bgNone": "None (Default)",
 	"settings.assetImport": "Add file",
 	"settings.assetDelete": "Delete",
@@ -370,6 +390,7 @@ export default {
 	"settings.liveVoice": "Live Voice",
 	"tool.execute_command": "Execute Command",
 	"tool.read_file": "Read File",
+	"tool.list_dir": "List folder",
 	"tool.search_files": "Search Files",
 	"tool.web_search": "Web Search",
 	"tool.apply_diff": "Apply Diff",
@@ -386,6 +407,7 @@ export default {
 	"settings.environmentTerminalInput": "Allow typing into your terminal",
 	"settings.thinkingLevel": "Thinking Level",
 	"settings.thinkingLevelOff": "Off",
+	"settings.thinkingLevelOn": "On",
 	"settings.thinkingLevelLow": "Low",
 	"settings.thinkingLevelHigh": "High",
 	"settings.thinkingLevelHint": "Enabling thinking slows down responses and increases token cost.",
@@ -964,6 +986,8 @@ export default {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "Backup feature is coming in a future version.",
+	"settings.memoryTransferExport": "Export memory",
+	"settings.memoryTransferError": "Memory export failed. Please try again.",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",
@@ -1417,6 +1441,9 @@ export default {
 	"studioNvaApply.cancel": "Cancel",
 	"studioNvaApply.applying": "Applying…",
 	"studioNvaApply.confirm": "Apply",
+	"appBar.closeSettings": "Close settings",
+	"webSpeech.interrupt": "Interrupt (stop speech)",
+	"settings.currentModel": "{model}{asr} (current)",
 	"broadcast.btnLabel": "Broadcast",
 	"broadcast.keyRequiredHint": "Enter a stream key in Settings first",
 	"broadcast.disconnectedLabel": "Disconnected",
@@ -1469,3 +1496,11 @@ export default {
 	"slides.videoLabel": "{position} / Video {name}",
 	"slides.videoIndicator": "{position} / Video",
 } as const;
+
+type EnglishTable = Readonly<Record<keyof typeof englishCore, string>> &
+	Readonly<Partial<Record<keyof typeof englishWeb, string>>>;
+const english: EnglishTable =
+	import.meta.env.MODE === "production"
+		? englishCore
+		: { ...englishCore, ...englishWeb };
+export default english;

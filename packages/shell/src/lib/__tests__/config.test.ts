@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_VOICE_REF_URL,
 	addAllowedTool,
@@ -8,6 +8,7 @@ import {
 	isToolAllowed,
 	loadConfig,
 	migrateLegacyDna3OllamaModel,
+	normalizeRetiredVoiceConfig,
 	reconcileExplicitLocalProfile,
 	removeAllowedTool,
 	resolveConfiguredGatewayUrl,
@@ -15,6 +16,7 @@ import {
 	resolveThinkingLevel,
 	saveConfig,
 } from "../config";
+import { KIOSK_DEMO_TTS_VOICE } from "../config-seed";
 
 describe("config", () => {
 	beforeEach(() => {
@@ -347,6 +349,9 @@ describe("legacy NVA runtime migration on save", () => {
 });
 
 describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
+	it("UT-SM-04 sends the chosen main role xhigh", () => {
+		expect(resolveThinkingLevel({ llmRoles: { main: { thinkingLevel: "xhigh" } } })).toBe("xhigh");
+	});
 	it("defaults to off when config is null or undefined or empty", () => {
 		expect(resolveThinkingLevel(null)).toBe("off");
 		expect(resolveThinkingLevel(undefined)).toBe("off");
@@ -394,6 +399,60 @@ describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
 				thinkingLevel: "auto" as any,
 			}),
 		).toBe("off");
+	});
+});
+
+describe("normalizeRetiredVoiceConfig kiosk vs desktop Neural2 handling", () => {
+	afterEach(() => {
+		localStorage.clear();
+		vi.unstubAllEnvs();
+	});
+
+	it("preserves ko-KR-Neural2-A and downgrades stored naia-voice:tpl-jina to ko-KR-Neural2-A in kiosk mode while keeping desktop DragonHD migration intact", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const kioskNormalized = normalizeRetiredVoiceConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: KIOSK_DEMO_TTS_VOICE,
+		});
+		expect(kioskNormalized.changed).toBe(false);
+		expect(kioskNormalized.config.ttsVoice).toBe("ko-KR-Neural2-A");
+
+		const kioskTplJinaNormalized = normalizeRetiredVoiceConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: "naia-voice:tpl-jina",
+		});
+		expect(kioskTplJinaNormalized.changed).toBe(true);
+		expect(kioskTplJinaNormalized.config.ttsVoice).toBe("ko-KR-Neural2-A");
+
+		saveConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: "naia-voice:tpl-jina",
+		});
+		expect(loadConfig()?.ttsVoice).toBe("ko-KR-Neural2-A");
+
+		vi.stubEnv("MODE", "production");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		const desktopNormalized = normalizeRetiredVoiceConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: "ko-KR-Neural2-A",
+		});
+		expect(desktopNormalized.changed).toBe(true);
+		expect(desktopNormalized.config.ttsVoice).toBe(
+			"ko-KR-SunHi:DragonHDLatestNeural",
+		);
 	});
 });
 

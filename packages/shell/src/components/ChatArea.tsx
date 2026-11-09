@@ -1,3 +1,37 @@
+import { resetKioskMemory } from "../lib/kiosk-demo/memory";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	buildKioskSlideQuestionPrompt,
+	buildKioskSlideReferencePrompt,
+	getActiveKioskIrSlide,
+	handleKioskSlidesChatTurn,
+	isKioskSlideQuestionTurnActive,
+	notifyKioskSlidesTurnSettled,
+} from "../lib/kiosk-demo/slides";
+import {
+	consumeKioskGreeting,
+	notifyKioskDemoUnavailable,
+	recordKioskVisitActivity,
+	requestKioskGreeting,
+	resetKioskVisit,
+} from "../lib/kiosk-demo/entry";
+import {
+	KIOSK_DEMO_LLM_PROVIDER,
+	KIOSK_DEMO_THINKING_LEVEL,
+	applyKioskDemoMainModel,
+	isKioskLocalAnswerEnabled,
+	setKioskLocalAnswerEnabled,
+} from "../lib/config-seed";
+import { KIOSK_DEMO_GREETING } from "../lib/persona";
+import { verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
+import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
+import { startWebModel } from "../lib/web-runtime/model-start";
+import { WEB_LLM_MODEL_ID } from "../lib/web-runtime/webllm-model";
+import {
+	checkWebGpu,
+	readNavigatorGpu,
+} from "../lib/web-runtime/webgpu-check";
+import { openWebWorkspaceFile } from "../apps/workspace/WebWorkspace";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -26,6 +60,14 @@ import {
 	INSTALLED_APP_SPEECH_RESULT_EVENT,
 } from "../apps/generic-installed/installed-app-host-bridge";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
+import { WebModelStatusBar, useWebModelStatus } from "./WebModelStatusBar";
+import { WebWorkspaceSetup, useWebAdkStatus } from "./WebWorkspaceSetup";
+import {
+	getWebModelStatus,
+	isWebSendBlocked,
+} from "../lib/web-runtime/web-model-status";
+import { getWebAdkStatus } from "../lib/web-runtime/web-adk-status";
+
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -42,9 +84,11 @@ import {
 import { NvaGestureRateLimiter } from "../lib/avatar/nva-gesture-rate-limiter";
 import { GestureTriggerStream } from "../lib/avatar/nva-gesture-trigger";
 import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
+import { bgmPlayback } from "../lib/bgm-playback";
 import {
 	BGM_APP_ID,
 	SKILL_YOUTUBE_BGM,
+	classifyWebBgmIntent,
 	executeBgmSkill,
 	shouldActivateRadioDj,
 } from "../lib/bgm-skill";
@@ -165,7 +209,9 @@ import {
 	createApiSttSession,
 	createWebSpeechSttSession,
 	getSttProvider,
+	isWebSpeechAvailable,
 } from "../lib/stt";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
@@ -227,7 +273,10 @@ import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import type { AtMentionHandle, AtMentionResult } from "./AtMentionPopover";
 import { NvaGestureActions } from "./NvaGestureActions";
-import { formatStructuredAgentChunk } from "./chat-presentation";
+import {
+	formatStructuredAgentChunk,
+	resolveKioskEvidenceFiles,
+} from "./chat-presentation";
 import {
 	buildEnvironmentSegments,
 	buildMemoryContext,
@@ -271,6 +320,37 @@ const WorkProgressArea = lazy(() =>
 		default: WorkProgressArea,
 	})),
 );
+
+export interface WebSpeakingSttHooks {
+	isSpeaking: boolean;
+	pipelineActive: boolean;
+	hasActiveSpeechActivity: boolean;
+	clearCooldownTimer: () => void;
+	pauseStt: () => void;
+	scheduleResumeStt: (delayMs: number) => void;
+}
+
+/**
+ * 웹판 브라우저 TTS 발화 시작·종료 시에만 마이크(Web Speech STT)를 일시 정지·재개한다.
+ * 데스크톱(`!isWebMode()`)에서는 기준 동작(`4f06f040`)과 같게 아무 동작도 하지 않는다.
+ */
+export function syncWebSttOnSpeakingChange(hooks: WebSpeakingSttHooks): void {
+	if (!isWebMode()) return;
+	if (hooks.isSpeaking) {
+		hooks.clearCooldownTimer();
+		if (hooks.pipelineActive) {
+			try {
+				if (shouldPauseSttForTts(hooks.hasActiveSpeechActivity)) {
+					hooks.pauseStt();
+				}
+			} catch {
+				// 마이크 일시정지 실패는 2차 텍스트 필터가 방어
+			}
+		}
+	} else if (hooks.pipelineActive) {
+		hooks.scheduleResumeStt(800);
+	}
+}
 const ChatMarkdown = lazy(() =>
 	import("./ChatMarkdown").then(({ ChatMarkdown }) => ({
 		default: ChatMarkdown,
@@ -447,11 +527,22 @@ export async function loadOrCreateSession(): Promise<void> {
 		if (currentStore.localSessionId !== storedKey) return;
 		currentStore.setSessionId("agent:main:main");
 		if (history.length > 0) {
-			if (currentStore.messages.length === 0) {
-				currentStore.setMessages(history);
+			const onlyKioskGreeting =
+				isKioskDemo() &&
+				currentStore.messages.length === 1 &&
+				currentStore.messages[0]?.role === "assistant" &&
+				currentStore.messages[0]?.content === KIOSK_DEMO_GREETING;
+			if (currentStore.messages.length === 0 || onlyKioskGreeting) {
+				const restored =
+					onlyKioskGreeting &&
+					history[0]?.content !== KIOSK_DEMO_GREETING &&
+					currentStore.messages[0]
+						? [currentStore.messages[0], ...history]
+						: history;
+				currentStore.setMessages(restored);
 				Logger.info("ChatArea", "Restored local conversation transcript", {
 					sessionId: storedKey,
-					messageCount: history.length,
+					messageCount: restored.length,
 				});
 			}
 		} else {
@@ -469,7 +560,13 @@ export async function loadOrCreateSession(): Promise<void> {
 
 export function ChatArea({
 	variant = "floating",
-}: { variant?: ChatVariant } = {}) {
+	headerControls,
+}: { variant?: ChatVariant; headerControls?: ReactNode } = {}) {
+	const webModelStatus = useWebModelStatus();
+	const webAdkStatus = useWebAdkStatus();
+	const webSendBlocked =
+		import.meta.env.MODE === "web" &&
+		isWebSendBlocked(webModelStatus, webAdkStatus, loadConfig()?.provider);
 	const [input, setInput] = useState("");
 	const [greetingPreparing, setGreetingPreparing] = useState(false);
 	type OutputStage = "thinking" | "tts" | "render" | null;
@@ -668,6 +765,7 @@ export function ChatArea({
 	} | null>(null);
 	const activeSlidePrefetchIdsRef = useRef(new Set<string>());
 	const invalidSlideSpeechGenerationsRef = useRef(new Set<number>());
+	const kioskAutoRetriedRef = useRef(false);
 	if (!sentencePipelineRef.current) {
 		sentencePipelineRef.current = createSentenceTtsPipeline({
 			onPlaybackFailure: () => {
@@ -720,8 +818,39 @@ export function ChatArea({
 				}
 				if (on && activeSlidePresenterSpeechRef.current?.appId)
 					activeSlidePresenterSpeechRef.current.started = true;
-				// #423: browser speech end/error releases the held expression.
+				syncWebSttOnSpeakingChange({
+					isSpeaking: on,
+					pipelineActive: pipelineActiveRef.current,
+					hasActiveSpeechActivity: activeSpeechActivityRef.current !== null,
+					clearCooldownTimer: () => {
+						if (sttCooldownTimerRef.current) {
+							clearTimeout(sttCooldownTimerRef.current);
+							sttCooldownTimerRef.current = null;
+						}
+					},
+					pauseStt: () => {
+						sttPauseRef.current?.();
+					},
+					scheduleResumeStt: (delayMs) => {
+						ttsCooldownUntilRef.current = Date.now() + delayMs;
+						setSttState("initializing");
+						if (sttCooldownTimerRef.current)
+							clearTimeout(sttCooldownTimerRef.current);
+						sttCooldownTimerRef.current = setTimeout(() => {
+							setSttState("listening");
+							sttCooldownTimerRef.current = null;
+							if (pipelineActiveRef.current) {
+								try {
+									sttResumeRef.current?.();
+								} catch {
+									// 재개 실패 시 다음 발화 토글로 복구
+								}
+							}
+						}, delayMs);
+					},
+				});
 				if (!on) {
+					// #423: browser speech end/error releases the held expression.
 					settleAvatarEmotionIfIdle();
 				}
 			},
@@ -783,6 +912,7 @@ export function ChatArea({
 	const [bgmSidecarError, setBgmSidecarError] = useState<string | null>(null);
 
 	useEffect(() => {
+		if (import.meta.env.MODE === "web") return;
 		let cancelled = false;
 		void ensureBgmSidecar()
 			.then(() => {
@@ -892,6 +1022,11 @@ export function ChatArea({
 		if (!isAvatarSpeechIdle()) return;
 		setEmotion("neutral");
 		flushPendingAiGestureAction();
+		if (activeSlidePresenterSpeechRef.current?.appId) {
+			settleSlidePresenterSpeech("finished");
+		} else if (!activeSlidePresenterSpeechRef.current) {
+			notifyKioskSlidesTurnSettled();
+		}
 	}
 
 	function scheduleNextQueuedMessage() {
@@ -942,8 +1077,9 @@ export function ChatArea({
 		// fallback audio from the response the user just stopped.
 		interruptTts();
 		const reqId = currentRequestId.current;
+		let cancellation: Promise<void> | undefined;
 		if (reqId) {
-			cancelChat(reqId).catch((err) => {
+			cancellation = cancelChat(reqId).catch((err) => {
 				Logger.warn("ChatArea", "Failed to cancel stream", {
 					error: String(err),
 				});
@@ -955,6 +1091,7 @@ export function ChatArea({
 		commitPendingCost();
 		setEmotion("neutral");
 		completeCurrentRequest(reqId);
+		return cancellation;
 	}
 
 	// ESC key to cancel streaming
@@ -1184,8 +1321,9 @@ export function ChatArea({
 					sentencePipelineRef.current?.hasActiveRequests() ||
 					cascadeTtsJobsRef.current > 0 ||
 					audioQueueRef.current?.isActive))
-		)
+		) {
 			return;
+		}
 		activeSlidePresenterSpeechRef.current = null;
 		slideSpeechProgressRef.current = null;
 		window.dispatchEvent(
@@ -1503,18 +1641,116 @@ export function ChatArea({
 				},
 			});
 		}
+		const resolvedNaiaKey =
+			config.naiaKey ||
+			(isWebMode() && typeof localStorage !== "undefined"
+				? localStorage.getItem("naia-remote-key")?.trim() || undefined
+				: undefined);
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
 		pipelineVoiceConfigRef.current = {
 			voice: resolveTtsVoiceId(config),
-			ttsProvider: config.ttsProvider || "edge",
+			ttsProvider:
+				isWebMode() && !isKioskDemo()
+					? "browser"
+					: config.ttsProvider ||
+						(isKioskDemo() ? "nextain" : isWebMode() ? "browser" : "edge"),
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
-			naiaKey: config.naiaKey,
+			naiaKey: resolvedNaiaKey,
 			gatewayUrl: LAB_GATEWAY_URL,
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 			vllmTtsHost: config.vllmTtsHost,
 		};
 	}
+
+	// Warm canonical speech assets (speech/atlas.bin, etc.) immediately when the avatar renderer is ready.
+	useEffect(() => {
+		let speechWarmed = false;
+		const runWarmSpeechAssets = (
+			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
+		): boolean => {
+			if (speechWarmed || !renderer?.warmSpeechAssets) return false;
+			speechWarmed = true;
+			void renderer.warmSpeechAssets();
+			return true;
+		};
+		if (runWarmSpeechAssets(useCascadeAvatarStore.getState().renderer)) {
+			return;
+		}
+		const unsubWarmRenderer = useCascadeAvatarStore.subscribe((state) => {
+			if (runWarmSpeechAssets(state.renderer)) {
+				unsubWarmRenderer();
+			}
+		});
+		return () => {
+			unsubWarmRenderer();
+		};
+	}, []);
+
+	// The entry gesture authorizes this greeting. Consume synchronously before
+	// any await so StrictMode cannot speak twice; use the shared TTS/avatar lane.
+	useEffect(() => {
+		if (!isKioskDemo() || !consumeKioskGreeting()) return;
+		recordKioskVisitActivity();
+		const config = loadConfig();
+		if (!config) return;
+		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
+		if (
+			!useChatStore
+				.getState()
+				.messages.some(
+					(m) => m.role === "assistant" && m.content === KIOSK_DEMO_GREETING,
+				)
+		) {
+			useChatStore
+				.getState()
+				.addMessage({ role: "assistant", content: KIOSK_DEMO_GREETING });
+		}
+		initializeSpeechTts(config);
+		let greetingMotionTriggered = false;
+		const tryTriggerGreetingMotion = (
+			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
+		): boolean => {
+			if (greetingMotionTriggered || !renderer) return false;
+			greetingMotionTriggered = true;
+			void renderer.warmSpeechAssets?.();
+			const withGreeting = renderer as typeof renderer & {
+				playGreetingAction?: () => Promise<string | null>;
+			};
+			if (typeof withGreeting.playGreetingAction === "function") {
+				void withGreeting.playGreetingAction();
+			} else {
+				void getCameraActions().playAction("greeting");
+			}
+			return true;
+		};
+		let unsubRenderer: (() => void) | null = null;
+		let rendererWaitTimer: ReturnType<typeof setTimeout> | null = null;
+		if (!tryTriggerGreetingMotion(useCascadeAvatarStore.getState().renderer)) {
+			unsubRenderer = useCascadeAvatarStore.subscribe((state) => {
+				if (tryTriggerGreetingMotion(state.renderer)) {
+					unsubRenderer?.();
+					unsubRenderer = null;
+					if (rendererWaitTimer) clearTimeout(rendererWaitTimer);
+				}
+			});
+			rendererWaitTimer = setTimeout(() => {
+				unsubRenderer?.();
+				unsubRenderer = null;
+			}, 4000);
+		}
+		sentencePipelineRef.current?.sendSentence(KIOSK_DEMO_GREETING, {
+			skipSpeechPlan: true,
+		});
+		finishLocalVoicePrebuffer();
+		return () => {
+			if (sentencePipelineRef.current?.hasActiveRequests()) {
+				requestKioskGreeting();
+			}
+			unsubRenderer?.();
+			if (rendererWaitTimer) clearTimeout(rendererWaitTimer);
+		};
+	}, []);
 
 	// Slides requests narration but never synthesizes or plays audio itself.
 	// This bridge is the only presentation entry into the Shell TTS pipeline.
@@ -1576,7 +1812,11 @@ export function ChatArea({
 					return;
 				}
 				const config = await loadConfigWithSecrets();
-				if (activeSlidePresenterSpeechRef.current !== detail) return;
+				if (
+					disposed ||
+					activeSlidePresenterSpeechRef.current?.requestId !== detail.requestId
+				)
+					return;
 				if (!config || config.ttsEnabled !== true) {
 					settleSlidePresenterSpeech("failed", "tts_disabled");
 					return;
@@ -1966,6 +2206,120 @@ export function ChatArea({
 		};
 	}, []);
 
+	const [kioskResetting, setKioskResetting] = useState(false);
+	const [kioskResetFailed, setKioskResetFailed] = useState(false);
+	const kioskResetPending = useRef(false);
+	const [kioskLocalAnswer, setKioskLocalAnswer] = useState(() =>
+		isKioskLocalAnswerEnabled(),
+	);
+	const [kioskLocalNotice, setKioskLocalNotice] = useState<string | null>(null);
+	const [kioskLocalConfirmOpen, setKioskLocalConfirmOpen] = useState(false);
+
+	async function handleKioskLocalAnswerToggle() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		if (kioskLocalAnswer) {
+			setKioskLocalConfirmOpen(false);
+			setKioskLocalAnswerEnabled(false);
+			setKioskLocalAnswer(false);
+			setKioskLocalNotice(null);
+			useChatStore.getState().setProvider(KIOSK_DEMO_LLM_PROVIDER);
+			const current = loadConfig();
+			if (current) {
+				saveConfig(applyKioskDemoMainModel(current));
+			}
+			getStartableAgentBridge().start({ model: null });
+			return;
+		}
+		const gpu = readNavigatorGpu();
+		const gpuResult = await checkWebGpu(gpu);
+		if (!gpuResult.ok) {
+			setKioskLocalConfirmOpen(false);
+			setKioskLocalAnswerEnabled(false);
+			setKioskLocalAnswer(false);
+			setKioskLocalNotice(
+				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
+			);
+			return;
+		}
+		setKioskLocalNotice(null);
+		setKioskLocalConfirmOpen(true);
+	}
+
+	async function handleConfirmKioskLocalAnswer() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		setKioskLocalConfirmOpen(false);
+		const gpu = readNavigatorGpu();
+		const gpuResult = await checkWebGpu(gpu);
+		if (!gpuResult.ok) {
+			setKioskLocalAnswerEnabled(false);
+			setKioskLocalAnswer(false);
+			setKioskLocalNotice(
+				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
+			);
+			return;
+		}
+		setKioskLocalNotice(null);
+		setKioskLocalAnswerEnabled(true);
+		setKioskLocalAnswer(true);
+		useChatStore.getState().setProvider("webllm");
+		const current = loadConfig();
+		if (current) {
+			saveConfig(
+				applyKioskDemoMainModel({
+					...current,
+					provider: "webllm",
+					model: WEB_LLM_MODEL_ID,
+					llmRoles: {
+						...current.llmRoles,
+						main: {
+							...(current.llmRoles?.main ?? {}),
+							provider: "webllm",
+							model: WEB_LLM_MODEL_ID,
+							thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+						},
+					},
+				}),
+			);
+		}
+		await startWebModel({
+			gpu,
+			storage: typeof localStorage !== "undefined" ? localStorage : null,
+			engineKind: import.meta.env.VITE_NAIA_WEB_LLM,
+			buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
+			bridge: getStartableAgentBridge(),
+		});
+	}
+
+	function handleCancelKioskLocalAnswer() {
+		setKioskLocalConfirmOpen(false);
+	}
+
+	function handleOpenKioskEvidenceFile(filePath: string) {
+		useAppStore.getState().setActiveApp("workspace");
+		openWebWorkspaceFile(filePath);
+	}
+
+	async function handleKioskReset() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		kioskResetPending.current = true;
+		setKioskResetting(true);
+		setKioskResetFailed(false);
+		Logger.debug("ChatArea", "kiosk reset requested");
+		try {
+			await resetKioskVisit({
+				cancel: handleCancelStreaming,
+				resetMemory: resetKioskMemory,
+				newConversation: () => useChatStore.getState().newConversation(),
+				reload: () => window.location.reload(),
+			});
+		} catch {
+			Logger.debug("ChatArea", "kiosk reset failed");
+			setKioskResetFailed(true);
+			kioskResetPending.current = false;
+			setKioskResetting(false);
+		}
+	}
+
 	useEffect(() => {
 		const start = () => {
 			void handleNewConversation();
@@ -2055,9 +2409,85 @@ export function ChatArea({
 		}
 	}
 
-	async function handleSend(overrideText?: string, installedAppTurn = false) {
+	async function handleKioskTurnFailure(
+		retryText: string,
+		installedAppTurn: boolean,
+	): Promise<void> {
+		if (typeof verifyKioskDemoWebAuth === "function") {
+			try {
+				const v = await verifyKioskDemoWebAuth();
+				if (!v.ok && v.reason === "unavailable") {
+					notifyKioskDemoUnavailable();
+					return;
+				}
+			} catch {
+				// Balance lookup failed -> do not pause; proceed to 1x retry / chat error message
+			}
+		}
+		if (!kioskAutoRetriedRef.current && retryText) {
+			kioskAutoRetriedRef.current = true;
+			await handleSend(retryText, installedAppTurn, true);
+			return;
+		}
+		kioskAutoRetriedRef.current = false;
+		useChatStore.getState().addMessage({
+			role: "assistant",
+			content: "잠시 문제가 있어요, 다시 말해 주세요.",
+		});
+	}
+
+	async function handleWebBgmChatTurn(rawText: string): Promise<boolean> {
+		if (import.meta.env.MODE !== "web") return false;
+		const bgmArgs = classifyWebBgmIntent(rawText);
+		if (!bgmArgs) return false;
+		const store = useChatStore.getState();
+		store.addMessage({ role: "user", content: rawText });
+		const toolCallId = `bgm-${Date.now()}`;
+		store.startStreaming();
+		store.addStreamingToolUse(toolCallId, SKILL_YOUTUBE_BGM.name, bgmArgs);
+		let output: string;
+		let ok = true;
+		try {
+			output = await executeBgmSkill(bgmArgs);
+			ok = !output.startsWith("Error:");
+		} catch (err) {
+			output = `Error: ${String(err)}`;
+			ok = false;
+		}
+		useChatStore.getState().updateStreamingToolResult(toolCallId, ok, output);
+		const action = String(bgmArgs.action ?? "play");
+		const trackTitle =
+			bgmPlayback.current()?.selected.title || "YouTube BGM";
+		const replyText = !ok
+			? "유튜브 재생 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요."
+			: action === "stop" || action === "pause"
+				? "유튜브 재생을 멈췄어요."
+				: action === "resume"
+					? `유튜브 '${trackTitle}' 재생을 다시 시작했어요.`
+					: action === "next" || action === "prev"
+						? `유튜브 '${trackTitle}' 곡으로 바꿨어요.`
+						: `유튜브에서 '${trackTitle}' 재생을 시작했어요. 상단 재생 카드에서 곡 목록을 열거나 멈출 수 있어요.`;
+		useChatStore.getState().appendStreamChunk(replyText);
+		useChatStore.getState().finishStreaming();
+		return true;
+	}
+
+	async function handleSend(
+		overrideText?: string,
+		installedAppTurn = false,
+		isKioskAutoRetry = false,
+	) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (
+			import.meta.env.MODE === "web" &&
+			isWebSendBlocked(
+				getWebModelStatus(),
+				getWebAdkStatus(),
+				loadConfig()?.provider,
+			)
+		)
+			return;
 		if (useChatStore.getState().characterTransitionPending) {
 			Logger.debug("ChatArea", "retain input while card commit is pending");
 			if (installedAppTurn) {
@@ -2074,8 +2504,24 @@ export function ChatArea({
 		}
 		pendingAiGestureActionRef.current = null;
 		if (!installedAppTurn && (await handleSpeechProfilePhrase(text))) return;
+		if (
+			!installedAppTurn &&
+			isKioskDemo() &&
+			(await handleKioskSlidesChatTurn(text))
+		) {
+			setInput("");
+			return;
+		}
+		if (!installedAppTurn && (await handleWebBgmChatTurn(text))) {
+			setInput("");
+			return;
+		}
 		// A card can commit while command classification yields to the event loop.
-		if (useChatStore.getState().characterTransitionPending || useChatStore.getState().localSessionId !== sendSession) return;
+		if (
+			useChatStore.getState().characterTransitionPending ||
+			useChatStore.getState().localSessionId !== sendSession
+		)
+			return;
 		if (isRadioDjLabObserverAttached()) {
 			const activeConfig = loadConfig();
 			if (
@@ -2154,15 +2600,19 @@ export function ChatArea({
 		// #572 — 실패했을 때 "같은 입력을 다시" 를 제안하려면 그 입력을 알아야 한다.
 		lastSentTextRef.current = text;
 
-		setInput("");
 		const appName =
 			installedAppTurn && installedAppRequestRef.current
 				? appRegistry.get(installedAppRequestRef.current.appId)?.name ||
 					installedAppRequestRef.current.appId
 				: undefined;
-		useChatStore
-			.getState()
-			.addMessage({ role: "user", content: text, appName });
+		if (!isKioskAutoRetry) {
+			kioskAutoRetriedRef.current = false;
+			setKioskLocalNotice(null);
+			setInput("");
+			useChatStore
+				.getState()
+				.addMessage({ role: "user", content: text, appName });
+		}
 
 		useChatStore.getState().startStreaming(appName);
 		// New turn supersedes any in-flight TTS: stop the previous response's
@@ -2173,7 +2623,8 @@ export function ChatArea({
 
 		const store = useChatStore.getState();
 
-		const config = await loadConfigWithSecrets();
+		const rawConfig = await loadConfigWithSecrets();
+		const config = rawConfig ? applyKioskDemoMainModel(rawConfig) : null;
 		// Structured llmRoles.main is the source of truth. The flat provider/model
 		// fields remain a compatibility mirror and may be stale or absent after an
 		// ADK seed, so route the turn from the same effective role as Settings.
@@ -2193,7 +2644,12 @@ export function ChatArea({
 			return;
 		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
-		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
+		if (
+			!isNewCore() &&
+			!isKioskDemo() &&
+			configuredProvider === "nextain" &&
+			!config?.naiaKey
+		) {
 			settleInstalledAppReply("", t("apps.loginRequired"));
 			useChatStore.getState().appendStreamChunk(t("apps.loginRequired"));
 			useChatStore.getState().finishStreaming();
@@ -2269,6 +2725,34 @@ export function ChatArea({
 
 		const memoryCtx = await buildMemoryContext();
 		memoryCtx.avatarGestures = getCameraActions().getGestureActions();
+		const kioskSlideTurnActive = isKioskSlideQuestionTurnActive();
+		const activeKioskSlide = getActiveKioskIrSlide();
+		if (activeKioskSlide) {
+			const slidePrompt = kioskSlideTurnActive
+				? buildKioskSlideQuestionPrompt(activeKioskSlide, text)
+				: buildKioskSlideReferencePrompt(activeKioskSlide, text);
+			memoryCtx.appContexts = [
+				...(memoryCtx.appContexts ?? []),
+				{
+					type: "Active IR Slide Context",
+					data: {
+						page: activeKioskSlide.page,
+						title: activeKioskSlide.title,
+						subtitle: activeKioskSlide.subtitle,
+						source: activeKioskSlide.source,
+						bullets: activeKioskSlide.bullets,
+						script: activeKioskSlide.script,
+						restrictToSlide: kioskSlideTurnActive,
+						instructions: slidePrompt,
+					},
+				},
+			];
+			if (kioskSlideTurnActive) {
+				useChatStore
+					.getState()
+					.setStreamingEvidenceFiles([`knowledge/${activeKioskSlide.source}`]);
+			}
+		}
 		Logger.info("ChatArea", "handleSend → sendChatMessage", {
 			pipelineActive: pipelineActiveRef.current,
 			chatTtsEnabled,
@@ -2324,7 +2808,7 @@ export function ChatArea({
 				ready: bgmSkillReady,
 				requestId,
 			});
-			if (!bgmSkillReady) {
+			if (!bgmSkillReady && import.meta.env.MODE !== "web") {
 				throw new Error("skill_youtube_bgm_registration_failed");
 			}
 			// #502 (FR-ENV-ATTENTION.5): 싣기 직전에 관측을 갱신한다.
@@ -2441,7 +2925,7 @@ export function ChatArea({
 				),
 				enableTools:
 					config.enableTools === true
-						? boundary!.toolsAllowed
+						? boundary!.toolsAllowed || isKioskDemo()
 						: config.enableTools,
 				enableThinking: resolveThinkingLevel(config) !== "off",
 				thinking: { level: resolveThinkingLevel(config) },
@@ -2454,6 +2938,15 @@ export function ChatArea({
 									...boundary!.disabledSkills,
 									...((config.disabledGestures ?? []).includes("youtube")
 										? ["skill_youtube_bgm"]
+										: []),
+									...(kioskSlideTurnActive
+										? [
+												"skill_knowledge_search",
+												"skill_knowledge_ask",
+												"read_file",
+												"list_dir",
+												"search_files",
+											]
 										: []),
 								]),
 							]
@@ -2472,6 +2965,13 @@ export function ChatArea({
 		} catch (err) {
 			const errStr = String(err);
 			settleInstalledAppReply("", t("apps.requestFailed"));
+			if (isKioskDemo()) {
+				finishStreamingWithVoiceTail();
+				finishLocalVoicePrebuffer();
+				completeCurrentRequest(requestId);
+				await handleKioskTurnFailure(text, installedAppTurn);
+				return;
+			}
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
@@ -2804,6 +3304,23 @@ export function ChatArea({
 		// App tools use the same answer stream as model tool rounds. Preserve a
 		// boundary even for tools that do not expose a streaming tool-call row.
 		useChatStore.getState().markStreamingToolBoundary();
+		if (
+			isWebMode() &&
+			(req.toolName.startsWith("skill_browser_") ||
+				isBrowserHostTool(req.toolName))
+		) {
+			Logger.warn("ChatArea", "blocked browser tool in web mode", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available in web mode: ${req.toolName}`,
+				false,
+				req.activityId,
+			);
+			return;
+		}
 		if (!isModelFacingToolAllowed(req.toolName)) {
 			const unavailableStoreApp = appRegistry
 				.list()
@@ -2910,6 +3427,11 @@ export function ChatArea({
 			// Activity-owned playback (for example Radio DJ change_vibe) replaces
 			// the current track immediately unless preserveActive is set (autonomous
 			// DJ startup while a user-chosen song is already playing).
+			if (!req.activityId) {
+				useChatStore
+					.getState()
+					.addStreamingToolUse(req.toolCallId, req.toolName, req.args ?? {});
+			}
 			const radioDjRequested = shouldActivateRadioDj(req.args);
 			Promise.resolve()
 				.then(() => (radioDjRequested ? activateRadioDjFromSkill() : undefined))
@@ -2922,6 +3444,15 @@ export function ChatArea({
 				)
 				.then((result) => {
 					Logger.info("ChatArea", "bgm skill result", { result });
+					if (!req.activityId) {
+						useChatStore
+							.getState()
+							.updateStreamingToolResult(
+								req.toolCallId,
+								!result.startsWith("Error:"),
+								result,
+							);
+					}
 					return sendAppToolResult(
 						req.requestId,
 						req.toolCallId,
@@ -2932,6 +3463,11 @@ export function ChatArea({
 				})
 				.catch((err) => {
 					Logger.warn("ChatArea", "bgm skill error", { error: String(err) });
+					if (!req.activityId) {
+						useChatStore
+							.getState()
+							.updateStreamingToolResult(req.toolCallId, false, String(err));
+					}
 					return sendAppToolResult(
 						req.requestId,
 						req.toolCallId,
@@ -3027,6 +3563,9 @@ export function ChatArea({
 	}
 
 	function dispatchAppControl(req: { action: string; appId?: string }) {
+		if (isWebMode() && req.action === "switch" && req.appId === "browser") {
+			return;
+		}
 		const { setActiveApp } = useAppStore.getState();
 		if (req.action === "switch" && req.appId) {
 			setActiveApp(req.appId);
@@ -3277,6 +3816,7 @@ export function ChatArea({
 				break;
 			}
 			case "finish":
+				kioskAutoRetriedRef.current = false;
 				flushThinkingStream();
 				flushGestureTriggerStream();
 				settleInstalledAppReply(useChatStore.getState().streamingContent);
@@ -3390,6 +3930,15 @@ export function ChatArea({
 				// #572 — 원시 오류를 답변 자리에 흘리지 않는다. 지금까지 온 본문이
 				// 있으면 그대로 보존하고, 실패는 재시도를 낀 별도 알림으로 세운다.
 				finishStreamingWithVoiceTail();
+				if (isKioskDemo()) {
+					finishLocalVoicePrebuffer();
+					completeCurrentRequest(chunk.requestId);
+					void handleKioskTurnFailure(
+						lastSentTextRef.current,
+						installedAppTurnRef.current,
+					);
+					break;
+				}
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: "",
@@ -3729,12 +4278,21 @@ export function ChatArea({
 				pipelineActiveRef.current = true;
 				// Re-arm the local-voice-unavailable notice for this new session.
 				sentencePipelineRef.current?.rearmLocalVoiceNotice();
+				const resolvedSessionNaiaKey =
+					config.naiaKey ||
+					(isWebMode() && typeof localStorage !== "undefined"
+						? localStorage.getItem("naia-remote-key")?.trim() || undefined
+						: undefined);
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
-					ttsProvider: config.ttsProvider || "edge",
+					ttsProvider:
+						isWebMode() && !isKioskDemo()
+							? "browser"
+							: config.ttsProvider ||
+								(isKioskDemo() ? "nextain" : isWebMode() ? "browser" : "edge"),
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
-					naiaKey: config.naiaKey,
+					naiaKey: resolvedSessionNaiaKey,
 					gatewayUrl: LAB_GATEWAY_URL,
 					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 					vllmTtsHost: config.vllmTtsHost,
@@ -3744,7 +4302,11 @@ export function ChatArea({
 				setSttState("initializing");
 				try {
 					const sttLang = localeToSttLanguage(getLocale());
-					const sttEngine = isAsrModel ? "vllm" : config.sttProvider || "vosk";
+					const sttEngine = isWebMode()
+						? "web-speech"
+						: isAsrModel
+							? "vllm"
+							: config.sttProvider || "vosk";
 					const sttMeta = getSttProvider(sttEngine);
 					const isApiBased =
 						sttMeta?.engineType === "api" || sttMeta?.engineType === "vllm";
@@ -3818,6 +4380,13 @@ export function ChatArea({
 											"Skipping duplicate send (already streaming)",
 											{ text },
 										);
+										return;
+									}
+									if (
+										import.meta.env.MODE === "web" &&
+										isWebSendBlocked(getWebModelStatus(), getWebAdkStatus(), loadConfig()?.provider)
+									) {
+										setInput(text);
 										return;
 									}
 									handleSend(text);
@@ -4758,6 +5327,7 @@ export function ChatArea({
 								{TAB_ICONS.chat}
 							</span>
 						</button>
+						{/* Item 4: Show persistent OPFS conversation history in web mode. */}
 						<button
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
@@ -4772,8 +5342,45 @@ export function ChatArea({
 							</span>
 						</button>
 					</div>
+					{headerControls}
 					<div className="chat-header-right">
+						{isKioskDemo() && (
+							<div
+								className="kiosk-local-answer-header"
+								data-testid="kiosk-local-answer-header"
+							>
+								<button
+									type="button"
+									className={`settings-icon-btn kiosk-local-answer-toggle${kioskLocalAnswer ? " active" : ""}`}
+									data-testid="kiosk-local-answer-toggle"
+									aria-pressed={kioskLocalAnswer}
+									aria-label="내 PC 에서 대답하기"
+									title="내 PC 에서 대답하기 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+									onClick={() => void handleKioskLocalAnswerToggle()}
+									disabled={kioskResetting}
+								>
+									<span className="kiosk-local-answer-label-prefix">내 PC</span>
+									<span className="kiosk-local-answer-label-suffix">
+										{" "}
+										에서 대답하기
+									</span>
+								</button>
+								<span
+									className="kiosk-local-answer-hint"
+									data-testid="kiosk-local-answer-hint"
+								>
+									그래픽 메모리 8GB 이상 기기에서만 됩니다
+								</span>
+							</div>
+						)}
+						{isKioskDemo() && (
+							<button type="button" className="settings-icon-btn kiosk-chat-reset" onClick={handleKioskReset} disabled={kioskResetting}>
+								처음으로
+							</button>
+						)}
+
 						{totalSessionCost > 0 &&
+							!isKioskDemo() &&
 							provider !== "ollama" &&
 							provider !== "vllm" && (
 								<button
@@ -4799,6 +5406,59 @@ export function ChatArea({
 					</div>
 				</div>
 
+				{isKioskDemo() && kioskLocalConfirmOpen && (
+					<div
+						role="dialog"
+						aria-modal="false"
+						aria-label="내 PC 모델 내려받기 확인"
+						className="kiosk-local-answer-notice kiosk-local-answer-confirm"
+						data-testid="kiosk-local-answer-confirm"
+					>
+						<span>
+							내 PC에서 대답하려면 AI 모델(약 2.5GB)을 처음 한 번 내려받아요. 지금 내려받을까요?
+						</span>
+						<div
+							className="kiosk-local-answer-confirm__actions"
+							style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}
+						>
+							<button
+								type="button"
+								className="settings-icon-btn kiosk-local-answer-toggle active"
+								data-testid="kiosk-local-answer-confirm-accept"
+								onClick={() => void handleConfirmKioskLocalAnswer()}
+							>
+								확인
+							</button>
+							<button
+								type="button"
+								className="settings-icon-btn kiosk-local-answer-toggle"
+								data-testid="kiosk-local-answer-confirm-cancel"
+								onClick={handleCancelKioskLocalAnswer}
+							>
+								취소
+							</button>
+						</div>
+					</div>
+				)}
+				{isKioskDemo() && kioskLocalNotice && (
+					<div
+						role="status"
+						className="kiosk-local-answer-notice"
+						data-testid="kiosk-local-answer-notice"
+					>
+						<span>{kioskLocalNotice}</span>
+						<button
+							type="button"
+							className="kiosk-local-answer-notice__close"
+							aria-label="안내 닫기"
+							onClick={() => setKioskLocalNotice(null)}
+						>
+							×
+						</button>
+					</div>
+				)}
+				{isKioskDemo() && kioskResetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
+				{isKioskDemo() && kioskResetFailed && <p role="alert">기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.</p>}
 				<Suspense fallback={null}>
 					{/* Progress tab */}
 					{activeTab === "progress" && <WorkProgressArea />}
@@ -4826,7 +5486,7 @@ export function ChatArea({
 
 					{/* Settings tab */}
 
-					{/* History tab */}
+					{/* History tab (item 4: mount persistent OPFS history in web mode) */}
 					{activeTab === "history" && (
 						<HistoryTab onLoadSession={() => setActiveTab("chat")} />
 					)}
@@ -4873,7 +5533,12 @@ export function ChatArea({
 					className="chat-messages"
 					style={{ display: activeTab === "chat" ? "flex" : "none" }}
 				>
-					{messages
+					{import.meta.env.MODE === "web" &&
+					webAdkStatus.phase !== "ready" ? (
+						<WebWorkspaceSetup status={webAdkStatus} />
+					) : (
+						<>
+							{messages
 						.filter((msg) => {
 							if (
 								msg.role === "user" &&
@@ -4928,7 +5593,43 @@ export function ChatArea({
 										)}
 									</div>
 								)}
-								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
+								{msg.role === "assistant" &&
+									(msg.localAnswer || msg.cost?.provider === "webllm") && (
+										<span
+											className="kiosk-local-answer-badge"
+											data-testid="kiosk-local-answer-badge"
+										>
+											내 PC 에서 나온 답
+										</span>
+									)}
+								{isKioskDemo() &&
+									msg.role === "assistant" &&
+									!msg.failure &&
+									resolveKioskEvidenceFiles(msg).length > 0 && (
+										<div
+											className="chat-kiosk-evidence"
+											data-testid="chat-kiosk-evidence"
+										>
+											<span className="chat-kiosk-evidence__label">근거:</span>
+											{resolveKioskEvidenceFiles(msg).map((evidencePath) => (
+												<button
+													key={evidencePath}
+													type="button"
+													className="chat-kiosk-evidence__chip"
+													data-evidence-path={evidencePath}
+													onClick={() =>
+														handleOpenKioskEvidenceFile(evidencePath)
+													}
+												>
+													{evidencePath}
+												</button>
+											))}
+										</div>
+									)}
+								{msg.cost &&
+									!isKioskDemo() &&
+									provider !== "ollama" &&
+									provider !== "vllm" && (
 									<span className="cost-badge">
 										{formatUsageCost(msg.cost.cost, msg.cost.provider)} ·{" "}
 										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
@@ -4986,6 +5687,8 @@ export function ChatArea({
 							</span>
 						</output>
 					)}
+						</>
+					)}
 
 					<div ref={messagesEndRef} />
 				</div>
@@ -5033,6 +5736,12 @@ export function ChatArea({
 					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
+				{(import.meta.env.MODE === "web" || isKioskDemo()) &&
+					activeTab === "chat" &&
+					(kioskLocalAnswer || loadConfig()?.provider === "webllm") && (
+						<WebModelStatusBar />
+					)}
+
 				{(characterTransitionPending || greetingPreparing) && (
 					<output role="status">{t("chat.cardPreparing")}</output>
 				)}
@@ -5045,15 +5754,25 @@ export function ChatArea({
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
 						onClick={handleVoiceToggle}
-						disabled={voiceMode === "connecting"}
+						disabled={
+							voiceMode === "connecting" ||
+							(isWebMode() && !isWebSpeechAvailable())
+						}
+						aria-label={
+							isWebMode() && !isWebSpeechAvailable()
+								? t("webSpeech.recognitionUnsupported")
+								: undefined
+						}
 						title={
-							voiceMode === "off"
-								? t("chat.voiceStart")
-								: voiceMode === "connecting"
-									? t("chat.voiceConnecting")
-									: ttsPlaying
-										? "끼어들기 (TTS 중단)"
-										: t("chat.voiceEnd")
+							isWebMode() && !isWebSpeechAvailable()
+								? t("webSpeech.recognitionUnsupported")
+								: voiceMode === "off"
+									? t("chat.voiceStart")
+									: voiceMode === "connecting"
+										? t("chat.voiceConnecting")
+										: ttsPlaying
+											? t("webSpeech.interrupt")
+											: t("chat.voiceEnd")
 						}
 					>
 						<span className="voice-bar" />
@@ -5116,7 +5835,10 @@ export function ChatArea({
 						<button
 							type="button"
 							onClick={() => handleSend()}
-							disabled={!input.trim() || characterTransitionPending}
+							disabled={
+								!input.trim() || webSendBlocked || characterTransitionPending
+							}
+							aria-describedby={webSendBlocked ? "web-model-status" : undefined}
 							className="chat-send-btn"
 						>
 							↑

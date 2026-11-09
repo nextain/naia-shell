@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getAdkPath } from "../lib/adk-store";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { listKioskKnowledgeManuscripts } from "../lib/kiosk-demo/knowledge";
 import {
 	addSource,
 	emptyKnowledgeConfig,
@@ -30,6 +34,21 @@ export function KnowledgeSettingsTab() {
 	const [graphOpen, setGraphOpen] = useState(false);
 	const [compiling, setCompiling] = useState(false);
 	const [error, setError] = useState("");
+	const kioskDemo = isKioskDemo();
+	const kioskManuscripts = useMemo(
+		() => (kioskDemo ? listKioskKnowledgeManuscripts() : []),
+		[kioskDemo],
+	);
+	const [selectedManuscriptName, setSelectedManuscriptName] = useState<string>(
+		() => listKioskKnowledgeManuscripts()[0]?.name ?? "",
+	);
+	const selectedManuscript = useMemo(
+		() =>
+			kioskManuscripts.find((m) => m.name === selectedManuscriptName) ??
+			kioskManuscripts[0] ??
+			null,
+		[kioskManuscripts, selectedManuscriptName],
+	);
 
 	const loadStats = useCallback(async (scope: string) => {
 		const adkPath = getAdkPath();
@@ -146,7 +165,11 @@ export function KnowledgeSettingsTab() {
 		: t("settings.knowledgeStatusEmpty");
 
 	return (
-		<div className="knowledge-settings" data-testid="knowledge-settings">
+		<div
+			className="knowledge-settings"
+			data-testid="knowledge-settings"
+			style={{ gridColumn: "1 / -1" }}
+		>
 			<div className="settings-section-divider">
 				<span>{t("settings.tabKnowledge")}</span>
 			</div>
@@ -185,27 +208,170 @@ export function KnowledgeSettingsTab() {
 									{sourceLabel(src)}
 								</span>
 								<span className="knowledge-source-path">{src.path}</span>
-								<button
-									type="button"
-									className="knowledge-source-remove"
-									data-testid="knowledge-source-remove"
-									onClick={() => handleRemove(src.path)}
-								>
-									{t("settings.knowledgeRemove")}
-								</button>
+								{!kioskDemo && (
+									<button
+										type="button"
+										className="knowledge-source-remove"
+										data-testid="knowledge-source-remove"
+										onClick={() => handleRemove(src.path)}
+									>
+										{t("settings.knowledgeRemove")}
+									</button>
+								)}
 							</li>
 						))}
 					</ul>
 				)}
-				<button
-					type="button"
-					className="knowledge-add-folder"
-					data-testid="knowledge-add-folder"
-					onClick={handleAddFolder}
-				>
-					{t("settings.knowledgeAddFolder")}
-				</button>
+				{!kioskDemo && (
+					<button
+						type="button"
+						className="knowledge-add-folder"
+						data-testid="knowledge-add-folder"
+						onClick={handleAddFolder}
+					>
+						{t("settings.knowledgeAddFolder")}
+					</button>
+				)}
 			</div>
+
+			{kioskDemo && kioskManuscripts.length > 0 && (
+				<div
+					className="settings-field kiosk-knowledge-browser"
+					data-testid="kiosk-knowledge-browser"
+				>
+					<label>시연 지식 원고 ({kioskManuscripts.length}개)</label>
+					<div
+						style={{
+							display: "grid",
+							gridTemplateColumns: "minmax(160px, 210px) minmax(0, 1fr)",
+							gap: "10px",
+							marginTop: "8px",
+							alignItems: "start",
+						}}
+					>
+						<ul
+							className="kiosk-knowledge-manuscript-list"
+							data-testid="kiosk-knowledge-manuscript-list"
+							style={{
+								listStyle: "none",
+								margin: 0,
+								padding: "6px",
+								maxHeight: "360px",
+								overflowY: "auto",
+								border: "1px solid var(--border-color, #333)",
+								borderRadius: "8px",
+								background: "var(--surface, #242424)",
+							}}
+						>
+							{kioskManuscripts.map((item) => {
+								const active = selectedManuscript?.name === item.name;
+								return (
+									<li key={item.name} style={{ marginBottom: "4px" }}>
+										<button
+											type="button"
+											data-testid={`kiosk-knowledge-item-${item.name}`}
+											aria-pressed={active}
+											onClick={() => setSelectedManuscriptName(item.name)}
+											style={{
+												width: "100%",
+												textAlign: "left",
+												padding: "5px 6px",
+												borderRadius: "6px",
+												border: active
+													? "1px solid var(--accent, #7ca0ff)"
+													: "1px solid transparent",
+												background: active
+													? "var(--active-bg, rgba(80, 120, 255, 0.18))"
+													: "transparent",
+												color: "var(--text-primary, #eee)",
+												cursor: "pointer",
+												fontSize: "11.5px",
+												lineHeight: 1.35,
+											}}
+										>
+											<div style={{ fontWeight: active ? 600 : 500 }}>
+												{item.title}
+											</div>
+											<div
+												style={{
+													fontSize: "10.5px",
+													opacity: 0.72,
+													fontFamily: "var(--font-mono, monospace)",
+												}}
+											>
+												{item.name}
+											</div>
+										</button>
+									</li>
+								);
+							})}
+						</ul>
+						{selectedManuscript && (
+							<div
+								className="kiosk-knowledge-manuscript-viewer"
+								data-testid="kiosk-knowledge-manuscript-body"
+								style={{
+									padding: "10px 12px",
+									maxHeight: "360px",
+									overflowY: "auto",
+									border: "1px solid var(--border-color, #333)",
+									borderRadius: "8px",
+									background: "var(--bg-base, #1a1a1a)",
+									minWidth: 0,
+								}}
+							>
+								<div
+									style={{
+										display: "flex",
+										justifyContent: "space-between",
+										alignItems: "baseline",
+										flexWrap: "nowrap",
+										marginBottom: "8px",
+										gap: "8px",
+										minWidth: 0,
+									}}
+								>
+									<strong
+										style={{
+											fontSize: "12.5px",
+											whiteSpace: "nowrap",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											minWidth: 0,
+										}}
+									>
+										{selectedManuscript.title}
+									</strong>
+									<code
+										style={{
+											fontSize: "11px",
+											opacity: 0.75,
+											whiteSpace: "nowrap",
+											flexShrink: 0,
+										}}
+									>
+										knowledge/{selectedManuscript.name}
+									</code>
+								</div>
+								<article
+									className="workspace-editor__preview"
+									aria-label="Markdown 미리보기"
+									style={{
+										padding: "4px 2px",
+										fontSize: "13px",
+										lineHeight: 1.65,
+										overflowY: "visible",
+									}}
+								>
+									<Markdown remarkPlugins={[remarkGfm]} skipHtml>
+										{selectedManuscript.text}
+									</Markdown>
+								</article>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
 
 			{/* 컴파일 상태 + 트리거 */}
 			<div className="settings-field">

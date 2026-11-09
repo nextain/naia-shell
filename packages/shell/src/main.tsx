@@ -1,3 +1,5 @@
+import { KioskDemoGate } from "./components/KioskDemoGate";
+import "./lib/web-runtime/auto-install";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
@@ -5,8 +7,28 @@ import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri
 import { bootstrapAdkPath } from "./lib/adk-store";
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
+import { isKioskDemo } from "./lib/kiosk-demo/flag";
 import { Logger } from "./lib/logger";
+import { syncWebModeRootAttribute } from "./lib/web-runtime/web-assets";
 import "./styles/global.css";
+import "./styles/web-mode.css";
+
+syncWebModeRootAttribute();
+
+if (import.meta.env.MODE === "web" && "serviceWorker" in navigator) {
+	void navigator.serviceWorker.register("/sw.js").then(async () => {
+		const registration = await navigator.serviceWorker.ready;
+		const cacheAssets = (entries: PerformanceEntry[]) => {
+			registration.active?.postMessage({ type: "CACHE_PUBLIC_ASSETS", urls: entries.map((entry) => entry.name) });
+		};
+		cacheAssets(performance.getEntriesByType("resource"));
+		if (typeof PerformanceObserver !== "undefined") {
+			new PerformanceObserver((list) => cacheAssets(list.getEntries())).observe({ type: "resource" });
+		}
+	}).catch((error: unknown) => {
+		Logger.warn("PWA", "Service worker registration failed", { error: String(error) });
+	});
+}
 
 if (
 	import.meta.env.DEV &&
@@ -30,7 +52,9 @@ async function bootstrap() {
 			// biome-ignore lint/style/noNonNullAssertion: root element always exists
 			createRoot(document.getElementById("root")!).render(
 				<StrictMode>
-					<App />
+					<KioskDemoGate>
+						<App />
+					</KioskDemoGate>
 				</StrictMode>,
 			);
 		},
@@ -53,7 +77,8 @@ async function bootstrap() {
 					);
 			});
 		},
-		registerProjectApp: () => import("./apps/projects/index"),
+		registerProjectApp: () =>
+			isKioskDemo() ? Promise.resolve(null) : import("./apps/projects/index"),
 		onProjectRegistrationFailure: (error) => {
 			Logger.error("Main", "Built-in app registration failed", {
 				error: String(error),

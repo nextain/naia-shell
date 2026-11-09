@@ -1267,6 +1267,18 @@ body.resizing-col .naia-work-rail::before {
 	stroke-linejoin: round;
 }
 
+.bgm-ai-toggle--active .bgm-ai-toggle__icon {
+	stroke: #34d399;
+}
+
+.bgm-ai-toggle--off .bgm-ai-toggle__icon {
+	stroke: rgba(148, 163, 184, 0.85);
+}
+
+.bgm-ai-toggle[data-broadcast-state="live"] .bgm-ai-toggle__icon {
+	stroke: #ef4444;
+}
+
 .ai-control-tooltip {
 	position: absolute;
 	z-index: 30;
@@ -1389,28 +1401,53 @@ body.resizing-col .naia-work-rail::before {
    workspace 모드에서 드래그 토글은 숨지만(아래) 이 스위치는 유지돼 어느 모드서도 전환 가능. */
 .naia-chat-modes {
 	position: absolute;
-	top: 0;
+	top: -8px;
 	right: 4px;
-	z-index: 4;
+	z-index: 6;
 	display: flex;
-	gap: 2px;
+	align-items: center;
+	gap: 4px;
 	pointer-events: auto;
 }
+.naia-avatar-corner-panel {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 5px;
+	border-radius: 7px;
+	background: rgba(8, 14, 28, 0.88);
+	border: 1px solid rgba(100, 160, 255, 0.32);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
 .naia-chat-mode {
-	width: 20px;
-	height: 18px;
+	width: 24px;
+	height: 22px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: 0;
-	background: rgba(8, 14, 28, 0.5);
-	border: 1px solid rgba(100, 160, 255, 0.15);
-	border-radius: 4px;
-	color: rgba(255, 255, 255, 0.35);
-	font-size: 10px;
+	background: rgba(8, 14, 28, 0.72);
+	border: 1px solid rgba(100, 160, 255, 0.28);
+	border-radius: 5px;
+	color: rgba(226, 232, 240, 0.82);
+	font-size: 11px;
 	line-height: 1;
 	cursor: pointer;
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.naia-avatar-corner-trigger {
+	width: 28px;
+	height: 26px;
+	border-radius: 7px;
+}
+.naia-avatar-corner-trigger__icon {
+	width: 14px;
+	height: 14px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.9;
+	stroke-linecap: round;
+	stroke-linejoin: round;
 }
 .naia-chat-mode:hover {
 	background: rgba(100, 160, 255, 0.12);
@@ -2712,26 +2749,38 @@ body.resizing-row {
 
 /* ── Settings tab bar ──────────────────────────────────────────────────────── */
 .settings-tab-bar {
+	position: sticky;
+	top: 0;
+	z-index: 20;
 	display: flex;
 	flex-direction: row;
+	align-items: center;
+	min-height: 46px;
+	box-sizing: border-box;
+	background: var(--espresso, #181c26);
 	border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-	padding: 0 12px;
+	margin: 0 -12px 12px;
+	padding: 4px 12px 0;
 	gap: 0;
 	flex-shrink: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
 }
 
 .settings-tab-btn {
 	background: none;
 	border: none;
 	border-bottom: 2px solid transparent;
-	padding: 10px 16px;
+	padding: 10px 14px;
 	font-size: 13px;
+	line-height: 1.35;
 	color: var(--text-secondary, rgba(255, 255, 255, 0.5));
 	cursor: pointer;
 	transition: color 0.15s, border-color 0.15s, background 0.15s;
 	border-radius: 4px 4px 0 0;
-	margin-bottom: -1px;
+	margin-bottom: 0;
 	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .settings-tab-btn:hover {
@@ -2752,12 +2801,13 @@ body.resizing-row {
 	align-content: start;
 	overflow-y: auto;
 	min-height: 0; /* required for flex overflow-y: auto to work */
-	padding: 12px 12px 120px; /* bottom: space for fixed save button */
+	padding: 0 12px 20px;
 }
 
 .settings-tab > .settings-tab-bar,
 .settings-tab > .settings-section-divider,
 .settings-tab > .settings-danger-zone,
+.settings-tab > .settings-actions,
 .settings-tab > .skills-tab {
 	grid-column: 1 / -1;
 }
@@ -3191,6 +3241,7 @@ body.resizing-row {
 }
 
 .settings-field select,
+.settings-field textarea,
 .settings-field input:not([type="checkbox"]):not([type="radio"]) {
 	width: 100%;
 	padding: 8px 10px;
@@ -3202,6 +3253,12 @@ body.resizing-row {
 	outline: none;
 	-webkit-appearance: none;
 	appearance: none;
+	box-sizing: border-box;
+}
+
+.settings-field textarea {
+	font-family: inherit;
+	resize: vertical;
 }
 
 .settings-field input:not([type="checkbox"]):not([type="radio"]) {
@@ -3285,6 +3342,7 @@ body.resizing-row {
 }
 
 .settings-field select:focus,
+.settings-field textarea:focus,
 .settings-field input:not([type="checkbox"]):focus {
 	border-color: var(--wood);
 }
@@ -3296,13 +3354,18 @@ body.resizing-row {
 }
 
 .settings-actions {
-	position: fixed;
-	bottom: 24px;
-	right: 24px;
-	z-index: 100;
+	position: sticky;
+	bottom: 0;
+	z-index: 20;
 	display: flex;
+	justify-content: flex-end;
+	align-items: center;
 	gap: 8px;
-	pointer-events: none;
+	margin: 12px -12px -20px;
+	padding: 12px 16px;
+	background: var(--espresso, #181c26);
+	border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+	pointer-events: auto;
 }
 
 /* Card library controls keep their labels and touch targets at narrow widths. */
@@ -5747,18 +5810,6 @@ body.resizing-row {
 	}
 }
 
-@keyframes splash-ring-pulse {
-	0%,
-	100% {
-		transform: scale(1);
-		opacity: 0.3;
-	}
-	50% {
-		transform: scale(1.12);
-		opacity: 0.7;
-	}
-}
-
 @keyframes splash-text-in {
 	0% {
 		opacity: 0;
@@ -5879,14 +5930,6 @@ body.resizing-row {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-}
-
-.splash-ring {
-	position: absolute;
-	inset: -12px;
-	border-radius: 50%;
-	border: 1.5px solid rgba(34, 211, 238, 0.4);
-	animation: splash-ring-pulse 1.6s ease-in-out infinite;
 }
 
 .splash-logo-spin {
@@ -6793,6 +6836,42 @@ body.resizing-row {
 	backdrop-filter: blur(10px);
 	-webkit-backdrop-filter: blur(10px);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Inside the chat header the bar sits between the tabs and the new-chat button */
+.chat-header .ai-control-bar {
+	flex: 1 1 auto;
+	flex-wrap: nowrap;
+	justify-content: flex-start;
+	min-width: 0;
+	max-width: none;
+	margin: 0 6px;
+	padding: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	background: none;
+	border: none;
+	box-shadow: none;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+
+.chat-header .ai-control-bar .bgm-ai-toggle {
+	color: var(--cream-dim);
+	border-color: var(--espresso-light);
+}
+
+.chat-header .ai-control-bar .bgm-ai-toggle:hover {
+	color: var(--cream);
+}
+
+.chat-header .ai-control-bar .bgm-ai-toggle--active {
+	color: var(--cream);
+	border-color: rgba(52, 211, 153, 0.62);
+}
+
+.chat-header .ai-control-bar__sep {
+	background: var(--espresso-light);
 }
 
 .ai-control-bar__sep {
@@ -9009,6 +9088,12 @@ body.resizing-row {
 	text-overflow: ellipsis;
 	text-transform: none;
 	white-space: nowrap;
+}
+
+.herdr-workspace__web-path {
+	padding: 4px 8px;
+	overflow-wrap: anywhere;
+	user-select: text;
 }
 
 .herdr-workspace__toggle-btn {
@@ -12028,8 +12113,8 @@ body.resizing-col * {
 }
 .onboarding-step__nva-crop-media {
 	position: absolute;
-	/* NVA characters sit at different scales inside their 720×1280 frame (naia is
-	   taller, naia-anime is smaller and sits lower). A tight fixed crop that suits
+	/* NVA characters sit at different scales inside their 720×1280 frame (live
+	   and anime portraits sit at different heights). A tight fixed crop that suits
 	   one shows only ears/headroom on the other, so keep the zoom moderate and the
 	   window near the top — head + shoulders land in frame across heights. */
 	top: -12px;
@@ -12497,6 +12582,12 @@ body.resizing-col * {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
+.settings-model-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.settings-model-roles .settings-field { min-width: 0; }
+@media (max-width: 600px) { .settings-model-roles { grid-template-columns: minmax(0, 1fr); } }
+
+.settings-model-selected-label { overflow-wrap: anywhere; white-space: normal; font-size: 12px; opacity: 1; }
+
 /* Character/theme settings need usable space beside the companion on narrow
    windows. Only the active Settings surface takes the full available width. */
 @media (max-width: 700px) {
@@ -12506,7 +12597,9 @@ body.resizing-col * {
 	}
 	.settings-tab-bar {
 		overflow-x: auto;
+		overflow-y: hidden;
 		min-width: 0;
+		min-height: 46px;
 	}
 }
 
