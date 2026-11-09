@@ -1453,6 +1453,8 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 - 정본 https://ax.nextain.io/d/eae97c 및 docs/progress/usage-events/event-inventory.md. 다운로드 연결 없음, 첫 실행 선택, Application Insights 단일 수신, Steam 동일 이름표.
 - 동의 전 번호 생성·메모리 수집·요청 0. 설정 끄기는 모든 창 수집·예약 전송 중지 및 메모리 삭제. 저장 오류는 닫힌 상태로 처리한다.
 - 설치 난수(ADK/음성 ID와 분리), 불변 event_id, 원자적 지속 순번/발생 시각, 고정 이름·화면·판·플랫폼·채널·필요한 로그인 시도 난수만. 사용자 입력/계정/기기 지문/URL/경로 없음. 허용 목록 밖 이름·화면·추가 칸 거절, 사건 2KB 이하.
+- 통계 연결·BroadcastChannel·Web Locks 중 하나라도 없으면 동의 화면과 설정 선택을 표시하지 않고 수집하지 않는다. 기존 선택은 보존한다.
+- 셸과 독립 Slides 빌드는 같은 셸 패키지 버전을 통계 모듈에 주입한다. 설정 로그인은 자격 저장과 잔액 확인 성공 후 성공 사건을 기록하며 브라우저 열기 실패는 해당 오류에서만 기록한다.
 - 빌드 환경 변수 VITE_APPLICATIONINSIGHTS_CONNECTION_STRING만 사용. 누락/잘못된 값은 보내기 끔. 자동 계측 SDK 없이 최소 EventData HTTP 전송; 쿠키·인증·상관 헤더·referrer 없음.
 - 메모리 큐 50, 초과 oldest 폐기/로컬 계수, 10분 TTL/1회 재시도, 오프라인·종료 폐기. 끄면 AbortController 취소 시도.
 - 첫 관측은 동의 후 ADK 설정보다 먼저, 순번 1. 이후 실행은 launch. 설치 첫 실제 대화 응답은 중복 제거. 로그인 결과와 누름은 구분.

@@ -1,9 +1,13 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { t } from "../lib/i18n";
-import { installUsageListeners, usage } from "../lib/usage-runtime";
+import {
+	installUsageListeners,
+	usage,
+	usageAvailable,
+} from "../lib/usage-runtime";
 
 export function UsageConsentGate({ children }: { children: ReactNode }) {
-	const [ready, setReady] = useState(false);
+	const [ready, setReady] = useState(!usageAvailable);
 	const [error, setError] = useState(false);
 	useEffect(() => {
 		installUsageListeners();
@@ -65,6 +69,7 @@ export function UsageSettings() {
 		window.addEventListener("storage", sync);
 		return () => window.removeEventListener("storage", sync);
 	}, []);
+	if (!usageAvailable) return null;
 	return (
 		<section className="usage-settings" aria-labelledby="usage-settings-title">
 			<h3 id="usage-settings-title">{t("usage.title")}</h3>

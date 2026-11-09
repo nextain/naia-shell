@@ -2826,7 +2826,6 @@ export function SettingsTab() {
 			if (requireValid) throw err;
 			return null;
 		} finally {
-			finishUsageLogin("settings", "browser_open");
 			window.clearTimeout(timeout);
 			// 마운트 여부를 묻지 않는다. 물으면 StrictMode 의 setup→cleanup→setup 이나
 			// 언마운트와 겹친 실패에서 "잔액 조회 중…" 이 영원히 남는다 — 실패해도

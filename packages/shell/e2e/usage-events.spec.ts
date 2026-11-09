@@ -193,3 +193,63 @@ test("Korean consent states the optional data and renders without overflow", asy
 		await page.evaluate(() => localStorage.getItem("naia-usage-state-v1")),
 	).toBeNull();
 });
+
+for (const missing of ["locks", "BroadcastChannel"] as const) {
+	test(`skips consent and settings when ${missing} is unavailable`, async ({
+		page,
+	}) => {
+		await page.addInitScript((feature) => {
+			if (feature === "locks")
+				Object.defineProperty(navigator, "locks", { value: undefined });
+			else Reflect.deleteProperty(window, "BroadcastChannel");
+		}, missing);
+		await page.goto("/");
+		await expect(page.locator(".chat-app")).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: "Optional usage statistics" }),
+		).toHaveCount(0);
+		await page.locator(".app-bar-settings").click();
+		await page.locator('[data-settings-tab="general"]').click();
+		await expect(
+			page.getByRole("checkbox", { name: "Send usage statistics" }),
+		).toHaveCount(0);
+		expect(
+			await page.evaluate(() => localStorage.getItem("naia-usage-state-v1")),
+		).toBeNull();
+		expect(
+			await page.evaluate(() => localStorage.getItem("naia-usage-consent-v1")),
+		).toBeNull();
+	});
+}
+
+test("missing Web Locks preserves an earlier opt-in without collecting", async ({
+	page,
+}) => {
+	const requests: string[] = [];
+	page.on("request", (request) => {
+		if (request.url().includes("/v2.1/track")) requests.push(request.url());
+	});
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator, "locks", { value: undefined });
+		localStorage.setItem(
+			"naia-usage-consent-v1",
+			JSON.stringify({ enabled: true, epoch: "existing" }),
+		);
+	});
+	await page.goto("/");
+	await expect(page.locator(".chat-app")).toBeVisible();
+	await page.locator(".app-bar-settings").click();
+	await page.locator('[data-settings-tab="general"]').click();
+	await expect(
+		page.getByRole("checkbox", { name: "Send usage statistics" }),
+	).toHaveCount(0);
+	expect(
+		await page.evaluate(() =>
+			JSON.parse(localStorage.getItem("naia-usage-consent-v1")!),
+		),
+	).toEqual({ enabled: true, epoch: "existing" });
+	expect(
+		await page.evaluate(() => localStorage.getItem("naia-usage-state-v1")),
+	).toBeNull();
+	expect(requests).toEqual([]);
+});

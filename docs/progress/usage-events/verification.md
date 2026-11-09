@@ -56,3 +56,12 @@ pnpm 10 frozen-lockfile 검증 PASS, 새 Chromium 설치 PASS, 새 버전의 `pl
 ### 통계 E2E 테스트 서버 설정
 
 원격 run 41832056375는 브라우저 시험 235 PASS/49 SKIP 뒤 통계 수신 시험 1건이 실패했다. CI에 연결 문자열이 없으므로 의도대로 수집이 꺼져 있었지만, 신규 E2E가 수동 환경 변수에 의존하고 있었다. Playwright dev webServer의 env에 고정 합성 연결 문자열을 지정했다. 이 endpoint는 통계 spec의 route가 모의 응답하며 생산 빌드/설치본에는 설정되지 않는다. 부모 환경의 VITE_APPLICATIONINSIGHTS_CONNECTION_STRING을 unset한 상태에서 통계 E2E 4건 PASS를 확인했다. 제품의 연결 문자열 누락 시 수집 0 동작은 유지한다.
+
+
+## PR #830 리뷰 회귀 요구사항
+
+- 연결 설정과 BroadcastChannel, Web Locks가 모두 있어야 동의 화면과 설정 선택을 제공한다. 지원이 없을 때 기존 동의는 보존하고 수집은 닫는다. `e2e/usage-events.spec.ts`에서 두 API의 부재를 실제 브라우저로 검사한다.
+- 설정 로그인 시작 후 자격 저장과 잔액 확인이 성공하면 같은 시도의 `login.credentials.saved`를 남기고 `browser_open` 실패를 남기지 않는다. `SettingsTab.test.tsx`에서 콜백과 잔액 조회를 모의해 검사한다.
+- 셸과 독립 Slides는 동일한 `packages/shell/package.json` 버전을 주입한다. `e2e/slides-standalone-build.spec.ts`는 Slides 산출물을 빌드해 브라우저에서 실제로 실행하고 초기화 오류를 확인한다.
+
+2026-11-09 재현 및 검증: 수정 전 설정 로그인 시험에서 `browser_open` 실패가 성공 사건을 대체했고, 독립 Slides 빌드는 빈 화면, Web Locks/BroadcastChannel 각각 제거한 브라우저는 동의 화면에 머물렀다. 수정 후 SettingsTab·usage 단위 3파일 142 PASS / 8 SKIP, 실제 Chromium 9 PASS(독립 빌드·설정 판정·기존 선택 보존 포함), 셸 및 코어 타입 검사와 UC 추적·assembly 검사가 통과했다. 실행 로그와 브라우저 출력은 실행 폴더의 `tmp/r3-*.log`, `tmp/r3-playwright-final/`에 두었다. 이미 설치된 다른 작업 사본의 의존성을 사용했으므로 로컬 Playwright는 1.60.0이며 PR 잠금 파일은 1.64.1이다. CI의 잠금 의존성 실행 결과는 별도로 확인한다. Azure 실수신이나 실제 네이티브 로그인 증거는 아니다.

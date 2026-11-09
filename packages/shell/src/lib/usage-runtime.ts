@@ -27,6 +27,10 @@ const consentChannel =
 	typeof window !== "undefined" && "BroadcastChannel" in window
 		? new BroadcastChannel("naia-usage-consent-v1")
 		: null;
+export const usageAvailable =
+	connection !== null &&
+	consentChannel !== null &&
+	typeof navigator.locks?.request === "function";
 export const usage = new UsageEvents({
 	storage: {
 		getItem: (key) => localStorage.getItem(key),
@@ -41,7 +45,7 @@ export const usage = new UsageEvents({
 	now: () => Date.now(),
 	online: () => navigator.onLine,
 	onDisable: () => consentChannel?.postMessage("off"),
-	configured: connection !== null && consentChannel !== null,
+	configured: usageAvailable,
 	version: __USAGE_VERSION__,
 	platform: platform(),
 	channel: "unknown",

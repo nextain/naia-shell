@@ -22,7 +22,7 @@
     "usage_events_20261104": {
       "title": "0.2.6 opt-in anonymous usage events",
       "branch": "feat/usage-events",
-      "last_updated": "2026-11-04T12:30:49.945846+00:00",
+      "last_updated": "2026-11-09T02:50:39.081075+00:00",
       "gates": {
         "P01": "done",
         "P02": "done",
@@ -34,7 +34,7 @@
       "requirements": "docs/requirements.md FR-USAGE-EVENTS",
       "evidence": "docs/progress/usage-events/event-inventory.md",
       "status": "implementation_complete_release_gated",
-      "verification": "Usage Vitest 19; focused UI+logic 234 pass/9 skip; browser consent/Steam/two-window/disable/storage recovery/Korean 4 pass; core/Shell/BGM types and Shell bundle budget pass; Rust deep_link 3 and distribution 10 pass. Full Shell 2612 pass/21 skip. Full lint has existing failures (590 vs main 592, no new file/rule errors); existing core failures reproduce on main. See docs/progress/usage-events/verification.md and execution result.md for final full Shell counts.",
+      "verification": "Usage Vitest 19; focused UI+logic 234 pass/9 skip; browser consent/Steam/two-window/disable/storage recovery/Korean 4 pass; core/Shell/BGM types and Shell bundle budget pass; Rust deep_link 3 and distribution 10 pass. Full Shell 2612 pass/21 skip. Full lint has existing failures (590 vs main 592, no new file/rule errors); existing core failures reproduce on main. See docs/progress/usage-events/verification.md and execution result.md for final full Shell counts. PR #830 review regressions: see verification.md for standalone Slides, settings login, and capability consent tests.",
       "remaining": "No merge/deploy/Azure resource creation. Actual Azure reception/storage/report, cost/cap/IP/access/privacy/policy gates, native live login paths and 0.2.4 performance comparison remain release gates."
     },
     "project_panels_class_reset_20261025": {

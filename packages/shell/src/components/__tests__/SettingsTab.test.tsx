@@ -141,6 +141,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
+import { usage } from "../../lib/usage-runtime";
 import { setLocale } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
@@ -1396,6 +1397,52 @@ describe("SettingsTab", () => {
 			provider: "openai",
 			model: "gpt-5.4",
 		});
+	});
+
+	it("records a successful settings login after balance lookup without a browser failure", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		mockInvoke.mockResolvedValue([]);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ credits: 10 }),
+			}),
+		);
+		const choice = vi
+			.spyOn(usage, "choice")
+			.mockReturnValue({ enabled: true, epoch: "test" });
+		const record = vi.spyOn(usage, "record").mockImplementation(() => {});
+		render(<SettingsTab />);
+		await waitFor(() =>
+			expect(eventListeners.get("naia_auth_complete")).toBeDefined(),
+		);
+		fireEvent.click(screen.getByTestId("profile-login-naia"));
+		await waitFor(() =>
+			expect(record).toHaveBeenCalledWith(
+				"login.browser.start",
+				"settings",
+				expect.anything(),
+			),
+		);
+		await act(async () => {
+			await eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key" },
+			});
+		});
+		expect(record).toHaveBeenCalledWith(
+			"login.credentials.saved",
+			"settings",
+			expect.anything(),
+		);
+		expect(record).not.toHaveBeenCalledWith(
+			"login.attempt.fail",
+			"settings",
+			expect.anything(),
+		);
+		choice.mockRestore();
+		record.mockRestore();
 	});
 
 	it("persists Naia auth callback even when no config exists yet", async () => {

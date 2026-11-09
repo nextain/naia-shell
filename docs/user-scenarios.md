@@ -2469,6 +2469,9 @@ Test Coverage Map (P02)
 | UC-USAGE-EVENTS | `packages/shell/src/lib/__tests__/usage-events.test.ts`: 미선택/거절 0건, 허용 후 최초 관측, 끄기·재켜기·창 경합 |
 | 허용 목록·값 검사·본문 2KB·개인 정보 칸 없음, 묶음·실패·포화·만료 | packages/shell/src/lib/__tests__/usage-events.test.ts |
 | 동의 기본/거절/허용/저장 오류·좁은 폭·키보드, 빈 목록/진행은 해당 없음(두 선택 단추), 실제 UI | packages/shell/e2e/usage-events.spec.ts |
+| BroadcastChannel 또는 Web Locks 부재 시 동의·설정 선택 생략 및 저장 없음 | packages/shell/e2e/usage-events.spec.ts |
+| 설정 로그인 성공·잔액 조회 뒤 성공 사건, 브라우저 실패 사건 없음 | packages/shell/src/components/__tests__/SettingsTab.test.tsx |
+| 독립 Slides 실제 빌드의 시작 및 셸 패키지 버전 주입 | packages/shell/e2e/slides-standalone-build.spec.ts |
 | 14개 언어 동일 키·한국어/영어 실제 문구 | packages/shell/src/lib/__tests__/i18n-user-facing.test.ts |
 | 네이티브 분류 | 기존 distribution.rs/배포 시험 재사용, Rust 변경 없음 |
 | DOM 누름 선언과 허용 목록/문서 전수 정합 | packages/shell/src/lib/__tests__/usage-inventory.test.ts |

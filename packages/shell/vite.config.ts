@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import packageJson from "./package.json";
 
 function readPositiveIntegerEnv(
 	name: string,
@@ -28,7 +29,7 @@ function readPositiveIntegerEnv(
 const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
-export default defineConfig(async () => ({
+export default defineConfig(() => ({
 	plugins: [react()],
 	build: {
 		// Bundle-budget verification uses this graph to prove that large optional
@@ -37,7 +38,7 @@ export default defineConfig(async () => ({
 		manifest: true,
 	},
 	define: {
-		__USAGE_VERSION__: JSON.stringify((await import("./package.json")).version),
+		__USAGE_VERSION__: JSON.stringify(packageJson.version),
 		__BUILD_ID__: JSON.stringify(
 			new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
 		),
