@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 const NEXTAIN_ACCOUNT_PICKER_IDS = [
+	"gpt-6.1-terra",
 	"deepseek-v4-flash",
 	"solar-pro4",
 	"solar-mini",
@@ -25,6 +26,7 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 		const ids = naia!.models.map((m) => m.id);
 		expect(ids).toEqual([...NEXTAIN_ACCOUNT_PICKER_IDS]);
 		expect(naia!.models.map((m) => m.label)).toEqual([
+			"GPT-6.1 Terra",
 			"DeepSeek V4 Flash",
 			"Solar Pro 4",
 			"Solar Mini",
@@ -88,7 +90,7 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 	it("Naia default model is deepseek-v4-flash", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		expect(naia!.defaultModel).toBe("deepseek-v4-flash");
+		expect(naia!.defaultModel).toBe("gpt-6.1-terra");
 	});
 
 	it("does not remove Codex ChatGPT models", async () => {
@@ -115,9 +117,9 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		const d = shouldMigrateNextainModel(
 			"nextain",
 			"some-deprecated-model",
-			new Set(["gpt-5.4-nano"]),
+			new Set(["gpt-5.4-nano", "gpt-5.6-luna"]),
 		);
-		expect(d).toEqual({ migrate: true, to: "deepseek-v4-flash" });
+		expect(d).toEqual({ migrate: true, to: "gpt-5.6-luna" });
 	});
 
 	it("gpt-5.4-nano with catalog set containing it does not migrate (#707)", async () => {
@@ -142,45 +144,45 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 
 	it("does NOT migrate the four remaining Naia-account models", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
-		for (const valid of NEXTAIN_ACCOUNT_PICKER_IDS) {
+		for (const valid of NEXTAIN_ACCOUNT_PICKER_IDS.filter(
+			(id) => id !== "gpt-6.1-terra",
+		)) {
 			expect(shouldMigrateNextainModel("nextain", valid).migrate).toBe(false);
 			expect(
-				shouldMigrateNextainModel(
-					"nextain",
-					valid,
-					new Set<string>(),
-				).migrate,
+				shouldMigrateNextainModel("nextain", valid, new Set<string>()).migrate,
 			).toBe(false);
 			expect(
-				shouldMigrateNextainModel(
-					"nextain",
-					valid,
-					new Set<string>([valid]),
-				).migrate,
+				shouldMigrateNextainModel("nextain", valid, new Set<string>([valid]))
+					.migrate,
 			).toBe(false);
-			expect(
-				shouldMigrateNextainModel("nextain", valid, null).migrate,
-			).toBe(false);
+			expect(shouldMigrateNextainModel("nextain", valid, null).migrate).toBe(
+				false,
+			);
 		}
 	});
 
-	it("migrates dropped Naia-account models to the default", async () => {
+	it("migrates retired models only after the catalog confirms a fallback", async () => {
 		const { shouldMigrateNextainModel, RETIRED_NEXTAIN_MODEL_IDS } =
 			await import("../registry.js");
 		for (const dropped of RETIRED_NEXTAIN_MODEL_IDS) {
-			const d = shouldMigrateNextainModel("nextain", dropped);
-			expect(d.migrate).toBe(true);
-			if (d.migrate) expect(d.to).toBe("deepseek-v4-flash");
+			expect(shouldMigrateNextainModel("nextain", dropped)).toEqual({
+				migrate: false,
+				needsCatalog: true,
+			});
+			expect(shouldMigrateNextainModel("nextain", dropped, null)).toEqual({
+				migrate: false,
+			});
+			expect(
+				shouldMigrateNextainModel("nextain", dropped, new Set([dropped])),
+			).toEqual({ migrate: false });
+			expect(
+				shouldMigrateNextainModel(
+					"nextain",
+					dropped,
+					new Set([dropped, "gpt-5.6-luna"]),
+				),
+			).toEqual({ migrate: true, to: "gpt-5.6-luna" });
 		}
-		const grokWithCatalog = shouldMigrateNextainModel(
-			"nextain",
-			"grok-4.3",
-			new Set(["grok-4.3"]),
-		);
-		expect(grokWithCatalog).toEqual({
-			migrate: true,
-			to: "deepseek-v4-flash",
-		});
 	});
 
 	it("does NOT migrate non-nextain providers (scoped to nextain only)", async () => {
@@ -235,5 +237,28 @@ describe("gatewayServedModelIds (#707)", () => {
 		expect(served!.has("solar-pro4")).toBe(true);
 		expect(served!.has("claude-opus-5")).toBe(false);
 		expect(served!.size).toBe(2);
+	});
+});
+
+describe("Terra availability", () => {
+	it("uses the fixed fallback order independent of recommendations", async () => {
+		const { shouldMigrateNextainModel: decide } = await import(
+			"../registry.js"
+		);
+		expect(decide("nextain", "gpt-6.1-terra")).toEqual({
+			migrate: false,
+			needsCatalog: true,
+		});
+		expect(decide("nextain", "gpt-6.1-terra", null)).toEqual({
+			migrate: false,
+		});
+		expect(
+			decide("nextain", "gpt-6.1-terra", new Set(["solar-pro4", "gpt-5.6-luna", "deepseek-v4-pro"])),
+		).toEqual({ migrate: true, to: "gpt-5.6-luna" });
+		expect(decide("nextain", "gpt-6.1-terra", new Set(["solar-pro4", "deepseek-v4-pro"]))).toEqual({ migrate: true, to: "deepseek-v4-pro" });
+		expect(decide("nextain", "gpt-6.1-terra", new Set(["solar-pro4"]))).toEqual({ migrate: false });
+		expect(
+			decide("nextain", "gpt-6.1-terra", new Set(["gpt-6.1-terra"])),
+		).toEqual({ migrate: false });
 	});
 });

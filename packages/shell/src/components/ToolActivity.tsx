@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import type { ToolCall } from "../lib/types";
 import { BrowserHostResult, browserHostCardFor } from "./BrowserHostResult";
 
 const TOOL_NAME_KEYS: Record<string, string> = {
 	execute_command: "tool.execute_command",
+	list_dir: "tool.list_dir",
 	read_file: "tool.read_file",
 	search_files: "tool.search_files",
 	web_search: "tool.web_search",
@@ -33,11 +35,65 @@ interface Props {
 	tool: ToolCall;
 }
 
+export const extractKioskToolFiles = (tool: ToolCall): string[] => {
+	const found = new Set<string>();
+	let knowledgeCount = 0;
+	const addNormalized = (raw: string) => {
+		const match = raw.match(/([a-zA-Z0-9_-]+\.md)\b/g);
+		if (!match) return;
+		for (const fileName of match) {
+			if (/^AGENTS\.md$/i.test(fileName)) {
+				found.add("AGENTS.md");
+			} else if (/^jina\.md$/i.test(fileName)) {
+				found.add("persona/jina.md");
+			} else if (/^guest-memory\.md$/i.test(fileName)) {
+				found.add("memory/guest-memory.md");
+			} else if (/^response-rules\.md$/i.test(fileName)) {
+				found.add("rules/response-rules.md");
+			} else if (!found.has(`knowledge/${fileName}`) && knowledgeCount < 2) {
+				found.add(`knowledge/${fileName}`);
+				knowledgeCount += 1;
+			}
+		}
+	};
+	if (typeof tool.output === "string" && tool.output) {
+		addNormalized(tool.output);
+	}
+	if (tool.args && typeof tool.args.path === "string") {
+		addNormalized(tool.args.path);
+	}
+	return Array.from(found);
+};
+
 export function ToolActivity({ tool }: Props) {
 	const [expanded, setExpanded] = useState(false);
 
 	const label = getToolLabel(tool.toolName);
 	const icon = STATUS_ICON[tool.status];
+
+	if (isKioskDemo()) {
+		const kioskStatus = tool.status === "running" ? "running" : "success";
+		const kioskIcon = STATUS_ICON[kioskStatus];
+		const kioskLabel =
+			tool.status === "running" ? "자료 찾는 중" : "자료 찾음";
+		const kioskFiles = extractKioskToolFiles(tool);
+		return (
+			<div
+				className={`tool-activity tool-${kioskStatus} tool-activity-kiosk`}
+				data-tool-name={tool.toolName}
+			>
+				<div className="tool-activity-header tool-activity-header-static">
+					<span className="tool-status-icon">{kioskIcon}</span>
+					<span className="tool-name">{kioskLabel}</span>
+					{kioskFiles.length > 0 && (
+						<span className="tool-kiosk-files">
+							{kioskFiles.join(" · ")}
+						</span>
+					)}
+				</div>
+			</div>
+		);
+	}
 
 	// #582 S6a — 브라우저 호스트 결과는 증거 카드로 그린다. 백그라운드 브라우저는 화면이 없어
 	// 사용자가 직접 볼 수 없고, 증거(스냅샷·캡처·주소 개정)가 유일한 확인 수단이다.

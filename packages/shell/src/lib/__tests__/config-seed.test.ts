@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { reconcileExplicitLocalProfile } from "../config";
 import {
+	KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+	KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
 	RETIRED_CONFIG_KEYS,
+	applyKioskDemoMainModel,
+	buildKioskDemoConfigSeed,
 	buildSeedShellConfig,
 	type SeedableShellConfig,
 } from "../config-seed";
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
 
 describe("config-seed (FR-VOICE.15)", () => {
 	it("passes a clean product-schema seed through unchanged", () => {
@@ -62,5 +70,46 @@ describe("config-seed (FR-VOICE.15)", () => {
 				`retired key '${key}' must be stripped by the migration`,
 			).toBeUndefined();
 		}
+	});
+
+	it("pins environmentAwareness to off and environmentTerminalInput to false in kiosk seed and applyKioskDemoMainModel while preserving them when kiosk is off", () => {
+		expect(KIOSK_DEMO_ENVIRONMENT_AWARENESS).toBe("off");
+		expect(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT).toBe(false);
+
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const seed = buildKioskDemoConfigSeed();
+		expect(seed.environmentAwareness).toBe("off");
+		expect(seed.environmentTerminalInput).toBe(false);
+
+		const pinned = applyKioskDemoMainModel({
+			provider: "codex",
+			model: "gpt-5.4",
+			environmentAwareness: "always",
+			environmentTerminalInput: true,
+		});
+		expect(pinned.environmentAwareness).toBe("off");
+		expect(pinned.environmentTerminalInput).toBe(false);
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		expect(buildKioskDemoConfigSeed()).toEqual({});
+		const preservedWeb = applyKioskDemoMainModel({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			environmentAwareness: "always",
+			environmentTerminalInput: true,
+		});
+		expect(preservedWeb.environmentAwareness).toBe("always");
+		expect(preservedWeb.environmentTerminalInput).toBe(true);
+
+		vi.stubEnv("MODE", "production");
+		const preservedDesktop = applyKioskDemoMainModel({
+			provider: "codex",
+			model: "gpt-5.4",
+			environmentAwareness: "auto",
+			environmentTerminalInput: true,
+		});
+		expect(preservedDesktop.environmentAwareness).toBe("auto");
+		expect(preservedDesktop.environmentTerminalInput).toBe(true);
 	});
 });

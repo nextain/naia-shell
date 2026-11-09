@@ -340,7 +340,9 @@ export function reduceSlidePresenter(
 			if (state.totalPages === 0) return state;
 			return invalidateSpeech(state, {
 				mode: "answering",
-				resumeAfterAnswer: state.mode === "presenting",
+				resumeAfterAnswer:
+					state.mode === "presenting" ||
+					(state.mode === "answering" && state.resumeAfterAnswer),
 			});
 		case "speech-requested":
 			if (

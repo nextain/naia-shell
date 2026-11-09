@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_LOCAL_LLM_MODEL, DEFAULT_OLLAMA_HOST } from "../../config";
+import { DEFAULT_LOCAL_LLM_MODEL } from "../../config";
 import {
 	NO_LLM,
 	chooseLoggedOutLlm,
@@ -7,7 +7,7 @@ import {
 	resolveLoggedOutLlm,
 } from "../logged-out-default";
 
-describe("chooseLoggedOutLlm (FR-LLM-LOGOUT.1)", () => {
+describe("IT-SM-13 chooseLoggedOutLlm (FR-LLM-LOGOUT.1)", () => {
 	it("returns no LLM when Ollama is unreachable", () => {
 		expect(chooseLoggedOutLlm({ connected: false, modelIds: ["qwen3:8b"] })).toEqual(
 			NO_LLM,
@@ -18,19 +18,19 @@ describe("chooseLoggedOutLlm (FR-LLM-LOGOUT.1)", () => {
 		expect(chooseLoggedOutLlm({ connected: true, modelIds: [] })).toEqual(NO_LLM);
 	});
 
-	it("prefers the default local model when it is installed", () => {
+	it("does not automatically choose the default installed model", () => {
 		expect(
 			chooseLoggedOutLlm({
 				connected: true,
 				modelIds: ["qwen3:8b", DEFAULT_LOCAL_LLM_MODEL],
 			}),
-		).toEqual({ provider: "ollama", model: DEFAULT_LOCAL_LLM_MODEL });
+		).toEqual(NO_LLM);
 	});
 
-	it("falls back to the first installed model", () => {
+	it("does not automatically choose the first installed model", () => {
 		expect(
 			chooseLoggedOutLlm({ connected: true, modelIds: ["qwen3:8b", "gemma3:4b"] }),
-		).toEqual({ provider: "ollama", model: "qwen3:8b" });
+		).toEqual(NO_LLM);
 	});
 
 	it("never chooses gemini or a keyless Naia account", () => {
@@ -44,26 +44,20 @@ describe("chooseLoggedOutLlm (FR-LLM-LOGOUT.1)", () => {
 	});
 });
 
-describe("resolveLoggedOutLlm", () => {
-	it("probes the configured host, or the default host when none is set", async () => {
+describe("IT-SM-13 resolveLoggedOutLlm", () => {
+	it("does not probe or choose a local model", async () => {
 		const probe = vi.fn().mockResolvedValue({ models: [], connected: false });
 		await resolveLoggedOutLlm("http://gpu-box:11434", probe);
 		await resolveLoggedOutLlm(undefined, probe);
-		expect(probe.mock.calls.map((call) => call[0])).toEqual([
-			"http://gpu-box:11434",
-			DEFAULT_OLLAMA_HOST,
-		]);
+		expect(probe).not.toHaveBeenCalled();
 	});
 
-	it("maps installed models to the chosen model", async () => {
+	it("does not choose an installed model", async () => {
 		const probe = vi.fn().mockResolvedValue({
 			models: [{ id: "qwen3:8b", label: "qwen3:8b" }],
 			connected: true,
 		});
-		await expect(resolveLoggedOutLlm(undefined, probe)).resolves.toEqual({
-			provider: "ollama",
-			model: "qwen3:8b",
-		});
+		await expect(resolveLoggedOutLlm(undefined, probe)).resolves.toEqual(NO_LLM);
 	});
 
 	it("treats a probe that does not answer in time as no LLM", async () => {

@@ -42,7 +42,7 @@ export function readConfiguredLlmRoles(config: AppConfig): Partial<Record<LlmRol
 					baseUrl: config.subLlmBaseUrl,
 					credentialRef: config.subLlmCredentialRef,
 				}
-			: memory
+			: config.memoryLlmProvider && config.memoryLlmProvider !== "none" && clean(config.memoryLlmModel)
 				? { inherit: "memory" as const }
 				: { inherit: "main" as const }
 	);

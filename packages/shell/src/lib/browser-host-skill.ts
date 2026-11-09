@@ -40,6 +40,7 @@ import type { NaiaTool } from "./app-registry";
 import { getAdkPath } from "./adk-store";
 import { loadConfig } from "./config";
 import { Logger } from "./logger";
+import { isWebMode } from "./web-runtime/web-assets";
 
 /** appExec 등록용 앱 id — 브라우저 호스트는 화면 앱이 아니라 상시 표면이라 app_skills_clear 대상이 아니다. */
 export const BROWSER_HOST_APP_ID = "browser-host";
@@ -721,5 +722,6 @@ export function browserHostTools(
 	platform: EgoPlatform = detectPlatform(navigatorUserAgent()),
 	source: BrowserHostFlagSource = { env: viteEnv(), config: loadConfig() },
 ): readonly NaiaTool[] {
+	if (isWebMode()) return [];
 	return browserHostEnabled(platform, source) ? BROWSER_HOST_TOOLS : [];
 }

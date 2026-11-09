@@ -1,11 +1,18 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../../lib/i18n";
+import { registerKioskSlidesController } from "../../lib/kiosk-demo/slides";
 import type { ToolCall } from "../../lib/types";
+import { isToolResultDump } from "../../lib/visible-chat-text";
+import { useAppStore } from "../../stores/app";
 import { ToolActivity } from "../ToolActivity";
 
 describe("ToolActivity", () => {
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllEnvs();
+	});
 
 	const baseTool: ToolCall = {
 		toolCallId: "tc-1",
@@ -121,5 +128,132 @@ describe("ToolActivity", () => {
 		fireEvent.click(screen.getByRole("button"));
 		expect(screen.queryByText("{}")).toBeNull();
 		expect(screen.getByText("No results")).toBeDefined();
+	});
+
+	it("WO13C-S3 list-dir-label", async () => {
+		const listTool: ToolCall = {
+			toolCallId: "tc-list",
+			toolName: "list_dir",
+			args: { path: "/test" },
+			status: "running",
+		};
+		try {
+			await setLocale("ko");
+			const { unmount } = render(<ToolActivity tool={listTool} />);
+			expect(screen.getByText("폴더 보기")).toBeDefined();
+			expect(screen.queryByText("도구 실행")).toBeNull();
+			unmount();
+
+			await setLocale("en");
+			render(<ToolActivity tool={listTool} />);
+			expect(screen.getByText("List folder")).toBeDefined();
+			expect(screen.queryByText("Tool Execution")).toBeNull();
+		} finally {
+			await setLocale("en");
+		}
+	});
+
+	it("FR-WEB-KIOSK-R3.1 hides raw tool args/output JSON and expand button in kiosk demo mode", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const runningTool: ToolCall = {
+			toolCallId: "tc-kiosk-1",
+			toolName: "skill_knowledge_search",
+			args: { query: "나이아 서비스 소개" },
+			status: "running",
+		};
+		const { container, rerender } = render(<ToolActivity tool={runningTool} />);
+		expect(screen.getByText("자료 찾는 중")).toBeDefined();
+		expect(container.querySelector("button.tool-activity-header")).toBeNull();
+		expect(container.querySelector(".tool-expand")).toBeNull();
+		expect(container.querySelector(".tool-activity-body")).toBeNull();
+		expect(screen.queryByText(/나이아 서비스 소개/)).toBeNull();
+
+		const finishedTool: ToolCall = {
+			...runningTool,
+			status: "success",
+			output: JSON.stringify({
+				abstained: false,
+				hits: [
+					{
+						id: "card-naia-1",
+						title: "나이아 서비스 소개",
+						sourceUris: ["opfs://naia-adk/kiosk-demo/knowledge/naia.md"],
+					},
+				],
+			}),
+		};
+		rerender(<ToolActivity tool={finishedTool} />);
+		expect(screen.getByText("자료 찾음")).toBeDefined();
+		expect(screen.getByText("knowledge/naia.md")).toBeDefined();
+		expect(
+			container.querySelector(".tool-status-icon")?.textContent,
+		).toBe("✓");
+		expect(container.querySelector(".tool-activity-body")).toBeNull();
+		expect(screen.queryByText(/abstained/)).toBeNull();
+		expect(screen.queryByText(/card-naia-1/)).toBeNull();
+
+		// Even if a tool call returns status="error" in kiosk mode, "자료 찾음" shows ✓ instead of red ✗
+		rerender(<ToolActivity tool={{ ...finishedTool, status: "error" }} />);
+		expect(screen.getByText("자료 찾음")).toBeDefined();
+		expect(
+			container.querySelector(".tool-status-icon")?.textContent,
+		).toBe("✓");
+		expect(container.querySelector(".tool-error")).toBeNull();
+
+		expect(isToolResultDump(JSON.stringify({ query: "나이아" }))).toBe(true);
+		expect(
+			isToolResultDump(
+				JSON.stringify({ abstained: false, hits: [{ id: "1" }] }),
+			),
+		).toBe(true);
+	});
+
+	it("P2-1 reads kiosk tool file label only from tool payload and never overwrites past tool badges when slides open or change pages", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const companyTool: ToolCall = {
+			toolCallId: "tc-company-1",
+			toolName: "skill_knowledge_search",
+			args: { query: "넥스테인은 뭘 하는 회사예요?" },
+			status: "success",
+			output: JSON.stringify({
+				abstained: false,
+				hits: [
+					{
+						id: "card-company-1",
+						sourceUris: ["opfs://naia-adk/kiosk-demo/knowledge/company.md"],
+					},
+				],
+			}),
+		};
+
+		const { rerender } = render(<ToolActivity tool={companyTool} />);
+		expect(screen.getByText("자료 찾음")).toBeDefined();
+		expect(screen.getByText("knowledge/company.md")).toBeDefined();
+
+		let currentPage = 3;
+		useAppStore.getState().setActiveApp("land.naia.slides");
+		const unregister = registerKioskSlidesController({
+			performAction: vi.fn(),
+			isPresenting: () => true,
+			isAnsweringQuestion: () => false,
+			getCurrentPage: () => currentPage,
+			onTurnSettled: vi.fn(),
+		});
+		try {
+			// Opening slides on slide 3 (naia.md) or moving to slide 5 (adk.md) must not overwrite past tool file badge
+			rerender(<ToolActivity tool={{ ...companyTool }} />);
+			expect(screen.getByText("knowledge/company.md")).toBeDefined();
+			expect(screen.queryByText("knowledge/naia.md")).toBeNull();
+
+			currentPage = 5;
+			rerender(<ToolActivity tool={{ ...companyTool }} />);
+			expect(screen.getByText("knowledge/company.md")).toBeDefined();
+			expect(screen.queryByText("knowledge/adk.md")).toBeNull();
+		} finally {
+			unregister();
+			useAppStore.getState().setActiveApp(null);
+		}
 	});
 });

@@ -22,6 +22,8 @@
 
 import { bgmSidecarBaseUrl, ensureBgmSidecar } from "../bgm-sidecar-url";
 import { DEFAULT_LOCAL_VOICE_HOST, type TtsProviderId } from "../config";
+import { KIOSK_DEMO_TTS_VOICE } from "../config-seed";
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import {
 	isOwnLocalVoiceUrl,
@@ -66,6 +68,7 @@ const LOCAL_VOICE_BUSY_MAX_RETRY_DELAY_MS = 3_500;
 // #688 — one local synthesis on the RTX 4060 takes 3-17 s (runaway observed 50 s, cold first voice up to ~60 s).
 // A request that has produced no response after this long is treated as failed so the turn is never stuck.
 export const LOCAL_VOICE_REQUEST_TIMEOUT_MS = 90_000;
+export const KIOSK_DEMO_VOICE_TIMEOUT_MS = 8_000;
 
 export class LocalVoiceTimeoutError extends Error {
 	constructor(ms: number) {
@@ -278,7 +281,9 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 		},
 		body: JSON.stringify({
 			input: opts.text,
-			voice: opts.voice || "ko-KR-SunHi:DragonHDLatestNeural",
+			voice: isKioskDemo()
+				? KIOSK_DEMO_TTS_VOICE
+				: opts.voice || "ko-KR-SunHi:DragonHDLatestNeural",
 			audio_encoding: opts.encoding || "MP3",
 		}),
 		signal: opts.signal,
@@ -287,6 +292,14 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 		throw new Error(
 			`Naia TTS 실패 (${resp.status}): ${await errorDetail(resp)}`,
 		);
+	}
+	const contentType = resp.headers?.get?.("content-type")?.toLowerCase() ?? "";
+	if (contentType.startsWith("audio/")) {
+		const buf = await resp.arrayBuffer();
+		if (buf.byteLength === 0) {
+			throw new Error("Naia TTS 오디오를 수신하지 못했습니다.");
+		}
+		return { audioBase64: arrayBufferToBase64(buf) };
 	}
 	const data = (await resp.json()) as {
 		audio_content?: string;
@@ -300,21 +313,48 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 
 /** vllm → local OpenAI-compatible `/v1/audio/speech`. */
 async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
-	const base = opts.vllmHost?.replace(/\/$/, "");
+	const base = (opts.vllmTtsHost || opts.vllmHost)?.replace(/\/$/, "");
 	if (!base) {
 		throw new Error("vLLM 호스트가 설정되지 않았습니다.");
 	}
-	const resp = await fetch(`${base}/v1/audio/speech`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			model: "tts",
-			input: opts.text,
-			voice: opts.voice || "default",
-			response_format: "mp3",
-		}),
-		signal: opts.signal,
-	});
+	const attemptController = new AbortController();
+	let timedOut = false;
+	const onCallerAbort = () => {
+		attemptController.abort(opts.signal?.reason);
+	};
+	if (opts.signal?.aborted) {
+		attemptController.abort(opts.signal.reason);
+	} else {
+		opts.signal?.addEventListener("abort", onCallerAbort, { once: true });
+	}
+	const timer = isKioskDemo()
+		? setTimeout(() => {
+				timedOut = true;
+				attemptController.abort();
+			}, KIOSK_DEMO_VOICE_TIMEOUT_MS)
+		: null;
+	let resp: Response;
+	try {
+		resp = await fetch(`${base}/v1/audio/speech`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model: "tts",
+				input: opts.text,
+				voice: opts.voice || "default",
+				response_format: "mp3",
+			}),
+			signal: attemptController.signal,
+		});
+	} catch (err) {
+		opts.signal?.removeEventListener("abort", onCallerAbort);
+		if (timedOut && !opts.signal?.aborted) {
+			throw new LocalVoiceTimeoutError(KIOSK_DEMO_VOICE_TIMEOUT_MS);
+		}
+		throw err;
+	} finally {
+		if (timer !== null) clearTimeout(timer);
+	}
 	if (!resp.ok) {
 		throw new Error(
 			`vLLM TTS 실패 (${resp.status}): ${await errorDetail(resp)}`,
@@ -392,6 +432,9 @@ async function synthNaiaLocalVoice(
 			effectiveVoice = defaultVoice;
 		}
 	}
+	const requestTimeoutMs = isKioskDemo()
+		? KIOSK_DEMO_VOICE_TIMEOUT_MS
+		: LOCAL_VOICE_REQUEST_TIMEOUT_MS;
 	const request = async (voice: string) => {
 		const attemptController = new AbortController();
 		let timedOut = false;
@@ -406,7 +449,7 @@ async function synthNaiaLocalVoice(
 		const timer = setTimeout(() => {
 			timedOut = true;
 			attemptController.abort();
-		}, LOCAL_VOICE_REQUEST_TIMEOUT_MS);
+		}, requestTimeoutMs);
 		try {
 			return await fetch(`${base}/v1/audio/speech`, {
 				method: "POST",
@@ -433,7 +476,7 @@ async function synthNaiaLocalVoice(
 		} catch (err) {
 			opts.signal?.removeEventListener("abort", onCallerAbort);
 			if (timedOut && !opts.signal?.aborted) {
-				throw new LocalVoiceTimeoutError(LOCAL_VOICE_REQUEST_TIMEOUT_MS);
+				throw new LocalVoiceTimeoutError(requestTimeoutMs);
 			}
 			throw err;
 		} finally {
@@ -477,9 +520,11 @@ async function synthNaiaLocalVoice(
 				// A REMOTE host has no "engine boot" — an unreachable custom host must
 				// fail fast (3 tries), not hang the turn for two minutes.
 				if (opts.signal?.aborted) throw err;
-				const budget = isOwnLoopbackEngine
-					? LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS.length
-					: 3;
+				const budget = isKioskDemo()
+					? 0
+					: isOwnLoopbackEngine
+						? LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS.length
+						: 3;
 				if (retry >= budget) throw err;
 				const delayMs = LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS[retry];
 				// Tell the chat surface the wait is the VOICE MODEL booting, not the
@@ -545,7 +590,7 @@ async function synthNaiaLocalVoice(
 			const retryDelays = starting
 				? LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS
 				: LOCAL_VOICE_BUSY_RETRY_DELAYS_MS;
-			if ((!busy && !starting) || retry >= retryDelays.length) {
+			if (isKioskDemo() || (!busy && !starting) || retry >= retryDelays.length) {
 				return { response, detail };
 			}
 			const delayMs = starting

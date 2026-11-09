@@ -1,0 +1,146 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Naia (\uae30\ubcf8 \uce90\ub9ad\ud130)",
+    "tagline": "Naia \u2014 The Liquid Cat",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 \u2014 Naia mascot \u00a9 Nextain",
+    "created": "2026-08-05",
+    "description": "\uc561\uccb4 \ud0c4\uc18c\ub85c \uc774\ub8e8\uc5b4\uc9c4 \ub514\uc9c0\ud138 \uace0\uc591\uc774 Naia \uce90\ub9ad\ud130\uc785\ub2c8\ub2e4.",
+    "note": "\uc54c\ud30c \ucc44\ub110\uc744 \ud3ec\ud568\ud574 \ubc30\uacbd\uc744 \uc790\uc720\ub86d\uac8c \ud569\uc131\ud558\ub294 \ub300\uae30\u00b7\ubc1c\ud654\u00b7\ub3d9\uc791 NVA \uc608\uc81c.",
+    "style_label": "2D \uc140 \uc560\ub2c8",
+    "creation": {
+      "body_type": "chibi"
+    }
+  },
+  "canvas": {
+    "width": 720,
+    "height": 1280,
+    "fps": 24
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/idle.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.2,
+        0.13,
+        0.6,
+        0.29
+      ],
+      "label": "\ub300\uae30"
+    },
+    "talking": {
+      "clip": "clips/talking-ko.webm",
+      "loop": true,
+      "can_talk": true,
+      "face_bbox": [
+        0.2,
+        0.13,
+        0.6,
+        0.29
+      ],
+      "label": "\ub9d0\ud558\uae30"
+    },
+    "greeting": {
+      "loop": false,
+      "can_talk": false,
+      "label": "\ubc18\uac00\uc6b4 \uc778\uc0ac",
+      "clip": "clips/greeting.webm"
+    },
+    "happy": {
+      "loop": false,
+      "can_talk": false,
+      "label": "\ubcc4\ube5b \ud658\ud638",
+      "clip": "clips/happy.webm"
+    }
+  },
+  "speech_clips": {
+    "speech-ko": {
+      "clip": "clips/talking-ko.webm",
+      "label": "\ud55c\uad6d\uc5b4 \ubc1c\ud654 \u00b7 Naia voice profile",
+      "audio": "embedded",
+      "locale": "ko-KR"
+    }
+  },
+  "expressions": {
+    "neutral": "idle",
+    "listening": "idle",
+    "speaking": "talking",
+    "idle": "idle",
+    "talking": "talking",
+    "greeting": "greeting",
+    "happy": "happy"
+  },
+  "scenario": {
+    "nodes": {
+      "start": {
+        "type": "start"
+      },
+      "idle": {
+        "type": "scene",
+        "animation": "idle",
+        "label": "\ub300\uae30"
+      }
+    },
+    "edges": [
+      {
+        "from": "start",
+        "to": "idle"
+      }
+    ]
+  },
+  "speech_motion": {
+    "version": "1",
+    "representation": "whole-head-layer",
+    "region": [
+      104,
+      96,
+      512,
+      512
+    ],
+    "ditto_region": {
+      "crop_xywh": [
+        104,
+        96,
+        512,
+        512
+      ],
+      "canvas_wh": [
+        720,
+        1280
+      ],
+      "mapping": "offset-only",
+      "face_bbox_source": "animations.talking.face_bbox",
+      "input_background": "gray",
+      "placement": "legacy-centered"
+    },
+    "inventory_version": "1.0.0",
+    "inventory": [
+      "sil",
+      "closed",
+      "labiodental",
+      "dental",
+      "alveolar",
+      "postalveolar",
+      "palatal",
+      "velar",
+      "glottal",
+      "vowel-open",
+      "vowel-mid",
+      "vowel-spread",
+      "vowel-round"
+    ],
+    "neutral_head": "speech/neutral-head.png",
+    "atlas": "speech/atlas.bin",
+    "atlas_index": "speech/atlas-index.json",
+    "validation_report": "speech/validation-report.json",
+    "quality_report": "speech/quality-report.json",
+    "provenance": "speech/generation-result.json"
+  }
+}

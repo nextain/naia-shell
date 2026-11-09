@@ -1,0 +1,91 @@
+{
+  "version": "1",
+  "job_id": "job_c3aa0360f6cc85de69b66f34",
+  "assets": [
+    {
+      "role": "neutral_head",
+      "path": "speech/neutral-head.png",
+      "sha256": "ff29aade20dbbeb4a7deed8d14bb36f57acd376357c87c4810144463576846c5",
+      "bytes": 462609
+    },
+    {
+      "role": "speech_atlas",
+      "path": "speech/atlas.bin",
+      "sha256": "df25f515c01d94b4a13a2088bfda9070766826af6f77a70deacf5cc69cff86fb",
+      "bytes": 144328142
+    },
+    {
+      "role": "speech_atlas_index",
+      "path": "speech/atlas-index.json",
+      "sha256": "aba2fcec4fe35fc28f69ac172ee0e2a28dc7a90a48b44cc56a9437889e611e02",
+      "bytes": 61347
+    },
+    {
+      "role": "validation_report",
+      "path": "speech/validation-report.json",
+      "sha256": "f9fb361dcb665949a5f46b8a9107e27dab1d7289ec219d4410e3dad00f5736ff",
+      "bytes": 134453
+    },
+    {
+      "role": "quality_report",
+      "path": "speech/quality-report.json",
+      "sha256": "4f4bafb07f947a29f9724dafce69d458b558df1fe4ea7d11a922262a324823fd",
+      "bytes": 268644
+    }
+  ],
+  "provenance": {
+    "generator": {
+      "kind": "studio-nva-canonical-set",
+      "version": "studio-nva-canonical-set-v2"
+    },
+    "input_sha256": "8d446de10d2e85e20a89d8958ac2b71b99371c522cfb938503c3e080188d9e5c",
+    "settings_sha256": "c3aa0360f6cc85de69b66f34a2d6814e6ff5ff499035b2e7131ee62ed30496ab",
+    "inventory_version": "1.0.0",
+    "inventory": [
+      "sil",
+      "closed",
+      "labiodental",
+      "dental",
+      "alveolar",
+      "postalveolar",
+      "palatal",
+      "velar",
+      "glottal",
+      "vowel-open",
+      "vowel-mid",
+      "vowel-spread",
+      "vowel-round"
+    ],
+    "representation": "whole-head-layer",
+    "region": [
+      104,
+      96,
+      512,
+      512
+    ],
+    "validation": {
+      "status": "passed",
+      "report_sha256": "f9fb361dcb665949a5f46b8a9107e27dab1d7289ec219d4410e3dad00f5736ff"
+    }
+  },
+  "quality": {
+    "report_sha256": "4f4bafb07f947a29f9724dafce69d458b558df1fe4ea7d11a922262a324823fd",
+    "sync": {
+      "status": "not_evaluated"
+    },
+    "continuity": {
+      "status": "not_evaluated"
+    },
+    "naturalness": {
+      "status": "not_evaluated"
+    },
+    "performance": {
+      "status": "not_evaluated"
+    },
+    "bundle": {
+      "status": "not_evaluated"
+    }
+  },
+  "source_deleted_at": null,
+  "source_retention": "local-operator-file"
+}

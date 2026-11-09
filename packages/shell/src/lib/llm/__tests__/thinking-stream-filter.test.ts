@@ -74,4 +74,31 @@ describe("ThinkingStreamFilter", () => {
 		});
 		expect(filter.flush()).toEqual({ visible: "", thinking: "" });
 	});
+
+	it("WO13D-F1 whitespace-not-candidate", () => {
+		const filter = new ThinkingStreamFilter();
+		expect(filter.push("\n\n")).toEqual({ visible: "\n\n", thinking: "" });
+		expect(filter.push("답")).toEqual({ visible: "답", thinking: "" });
+		expect(filter.flush()).toEqual({ visible: "", thinking: "" });
+	});
+
+	it("WO13D-F2 streams-after-leading-blank", () => {
+		const filter = new ThinkingStreamFilter();
+		expect(filter.push("\n\n").visible).toBe("\n\n");
+		expect(filter.push("안녕").visible).toBe("안녕");
+		expect(filter.push("하세요").visible).toBe("하세요");
+	});
+
+	it("WO13D-F3 split-bracket-after-blank", () => {
+		expect(collect(["\n\n", "[TH", "INK]x</think>답"])).toEqual({
+			visible: "\n\n답",
+			thinking: "x",
+		});
+	});
+
+	it("WO13D-F4 empty-push", () => {
+		const filter = new ThinkingStreamFilter();
+		expect(filter.push("")).toEqual({ visible: "", thinking: "" });
+		expect(filter.push("답")).toEqual({ visible: "답", thinking: "" });
+	});
 });

@@ -4,6 +4,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { t } from "../../lib/i18n";
+import type { KioskIrSlide } from "../../lib/kiosk-demo/slides";
 
 type SlidesWorkerLocation = Pick<Location, "protocol" | "host" | "pathname">;
 
@@ -74,6 +75,7 @@ export interface SlidesViewerProps {
 	viewerWidth: number;
 	totalPages: number;
 	hidden?: boolean;
+	slideCard?: KioskIrSlide | null;
 	onReady: (file: File, totalPages: number, texts: string[]) => void;
 	onError: (file: File, error: unknown) => void;
 }
@@ -86,6 +88,7 @@ export function SlidesViewer({
 	viewerWidth,
 	totalPages,
 	hidden = false,
+	slideCard,
 	onReady,
 	onError,
 }: SlidesViewerProps) {
@@ -97,44 +100,81 @@ export function SlidesViewer({
 			hidden={hidden}
 		>
 			{file ? (
-				<Document
-					file={file}
-					onLoadSuccess={async (document) => {
-						const texts: string[] = [];
-						for (let page = 1; page <= document.numPages; page++) {
-							const pdfPage = await document.getPage(page);
-							const content = await pdfPage.getTextContent();
-							texts.push(
-								content.items
-									.map((item) => ("str" in item ? item.str : ""))
-									.join(" ")
-									.replace(/\s+/g, " ")
-									.trim(),
-							);
+				<div className="slides-app__stage">
+					<Document
+						file={file}
+						onLoadSuccess={async (document) => {
+							const texts: string[] = [];
+							for (let page = 1; page <= document.numPages; page++) {
+								const pdfPage = await document.getPage(page);
+								const content = await pdfPage.getTextContent();
+								texts.push(
+									content.items
+										.map((item) => ("str" in item ? item.str : ""))
+										.join(" ")
+										.replace(/\s+/g, " ")
+										.trim(),
+								);
+							}
+							onReady(file, document.numPages, texts);
+						}}
+						onLoadError={(error) => onError(file, error)}
+						loading={
+							slideCard ? null : (
+								<div className="slides-app__empty">{t("slides.loading")}</div>
+							)
 						}
-						onReady(file, document.numPages, texts);
-					}}
-					onLoadError={(error) => onError(file, error)}
-					loading={
-						<div className="slides-app__empty">{t("slides.loading")}</div>
-					}
-					error={
-						<div className="slides-app__empty slides-app__empty--error">
-							{t("slides.loadError")}
-						</div>
-					}
-				>
-					{totalPages > 0 ? (
-						<PdfPage
-							key={`${fileName}-${totalPages}`}
-							pageNumber={page}
-							width={viewerWidth}
-							renderAnnotationLayer={false}
-							renderTextLayer={false}
-							className="slides-app__page"
-						/>
+						error={
+							slideCard ? null : (
+								<div className="slides-app__empty slides-app__empty--error">
+									{t("slides.loadError")}
+								</div>
+							)
+						}
+					>
+						{totalPages > 0 ? (
+							<PdfPage
+								key={`${fileName}-${totalPages}`}
+								pageNumber={page}
+								width={viewerWidth}
+								renderAnnotationLayer={false}
+								renderTextLayer={false}
+								className="slides-app__page"
+							/>
+						) : null}
+					</Document>
+					{slideCard ? (
+						<article
+							className="slides-app__card-overlay"
+							data-testid="slides-card-overlay"
+							data-slide-page={slideCard.page}
+						>
+							<div className="slides-app__card-meta">
+								<span className="slides-app__card-badge">
+									IR {String(slideCard.page).padStart(2, "0")} /{" "}
+									{String(Math.max(1, totalPages)).padStart(2, "0")}
+								</span>
+								<span className="slides-app__card-subtitle">
+									{slideCard.subtitle}
+								</span>
+							</div>
+							<h2
+								className="slides-app__card-title"
+								data-testid="slides-card-title"
+							>
+								{slideCard.title}
+							</h2>
+							<ul
+								className="slides-app__card-bullets"
+								data-testid="slides-card-bullets"
+							>
+								{slideCard.bullets.map((bullet, index) => (
+									<li key={`${slideCard.id}-${index}`}>{bullet}</li>
+								))}
+							</ul>
+						</article>
 					) : null}
-				</Document>
+				</div>
 			) : (
 				<div className="slides-app__empty">
 					<div className="slides-app__empty-icon">▣</div>

@@ -48,11 +48,19 @@ fn main() {
         env,
         path::{Path, PathBuf},
     };
-    // ⚠️ agent-pairing.json 과 같은 값이어야 한다. 두 곳에 따로 적혀 있으므로
-    //    src/test/agent-pairing-drift.contract.test.ts 가 둘이 갈라지는 것을 막는다.
-    const REQUIRED_AGENT_COMMIT: &str = "bfa2aa956fc356b50f853c03316faf1b773d0f9e";
-    const REQUIRED_PROTO_SHA256: &str =
-        "6fb0b1f9b249e41fc16c7a0f673bbb2a82f52cb7c0977773bf03e9e297e2b175";
+    // The manifest is the shared source for native code generation and CI.
+    let manifest_path =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../agent-pairing.json");
+    println!("cargo:rerun-if-changed={}", manifest_path.display());
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("read agent-pairing.json"))
+            .expect("parse agent-pairing.json");
+    let required_agent_commit = manifest["agentCommit"]
+        .as_str()
+        .expect("agentCommit missing");
+    let required_proto_sha256 = manifest["protoSha256"]
+        .as_str()
+        .expect("protoSha256 missing");
     const REQUIRED_PROTO_MARKERS: &[&str] = &[
         "optional string app_name = 16;",
         "optional string app_name = 5;",
@@ -192,7 +200,7 @@ fn main() {
     for marker in REQUIRED_PROTO_MARKERS {
         if !proto_text.contains(marker) {
             panic!(
-                "naia_agent.proto is missing UC-WIRE-V1 marker `{marker}`; use the exact paired naia-agent checkout {REQUIRED_AGENT_COMMIT}"
+                "naia_agent.proto is missing UC-WIRE-V1 marker `{marker}`; use the exact paired naia-agent checkout {required_agent_commit}"
             );
         }
     }
@@ -202,9 +210,9 @@ fn main() {
         "{:x}",
         Sha256::digest(proto_text.replace("\r\n", "\n").as_bytes())
     );
-    if proto_sha256 != REQUIRED_PROTO_SHA256 {
+    if proto_sha256 != required_proto_sha256 {
         panic!(
-            "NAIA_AGENT_PROTO_DIR must point to the paired naia_agent.proto SHA256 {REQUIRED_PROTO_SHA256}; got {proto_sha256}"
+            "NAIA_AGENT_PROTO_DIR must point to the paired naia_agent.proto SHA256 {required_proto_sha256}; got {proto_sha256}"
         );
     }
     let proto_root = git_root_for_path(&proto_dir);
@@ -240,9 +248,9 @@ fn main() {
     }
     let agent_commit = git_output(&proto_root_path, &["rev-parse", "HEAD"])
         .unwrap_or_else(|| "uncommitted-worktree".to_string());
-    if agent_commit != REQUIRED_AGENT_COMMIT {
+    if agent_commit != required_agent_commit {
         panic!(
-            "NAIA_AGENT_PROTO_DIR must point to exact paired naia-agent commit {REQUIRED_AGENT_COMMIT}; got {agent_commit}"
+            "NAIA_AGENT_PROTO_DIR must point to exact paired naia-agent commit {required_agent_commit}; got {agent_commit}"
         );
     }
     let proto_dirty = git_output(
@@ -292,10 +300,10 @@ fn main() {
     }
     println!("cargo:rustc-env=NAIA_AGENT_PAIRED_ROOT={proto_root}");
     println!("cargo:rustc-env=NAIA_AGENT_PAIRED_SCRIPT={paired_agent_script}");
-    println!("cargo:rustc-env=NAIA_AGENT_REQUIRED_COMMIT={REQUIRED_AGENT_COMMIT}");
+    println!("cargo:rustc-env=NAIA_AGENT_REQUIRED_COMMIT={required_agent_commit}");
     println!("cargo:rustc-env=NAIA_AGENT_PAIRED_PROTO_SHA256={proto_sha256}");
     println!("cargo:rustc-env=NAIA_AGENT_PAIRED_SCRIPT_SHA256={paired_agent_script_sha256}");
-    println!("cargo:warning=NAIA_AGENT_REQUIRED_COMMIT={REQUIRED_AGENT_COMMIT}");
+    println!("cargo:warning=NAIA_AGENT_REQUIRED_COMMIT={required_agent_commit}");
     println!("cargo:warning=NAIA_AGENT_PAIRED_COMMIT={agent_commit}");
     println!("cargo:warning=NAIA_AGENT_PROTO_SHA256={proto_sha256}");
     println!("cargo:warning=NAIA_AGENT_PAIRED_DIRTY={proto_dirty}");

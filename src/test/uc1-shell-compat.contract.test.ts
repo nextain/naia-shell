@@ -109,7 +109,7 @@ describe("makeShellChatService (drop-in seam)", () => {
     expect(msg.apiKey).toBe("sk-x");
     expect(msg.adkPath).toBeUndefined();
   });
-  it("thinking: level 유효값(off/low/high) 전달 및 무효값 필터링 (#709)", async () => {
+  it("UT-SM-04 thinking levels 전달 및 무효값 필터링 (#709)", async () => {
     const { live, invokes } = mockTauri();
     const svc = makeShellChatService({ live });
     await svc.sendChatMessage({
@@ -139,6 +139,8 @@ describe("makeShellChatService (drop-in seam)", () => {
     });
     const msgInvalid = JSON.parse(invokes[2]!.args["message"] as string);
     expect("thinking" in msgInvalid).toBe(false);
+    await svc.sendChatMessage({ message: "hi", provider: { provider: "gemini", model: "flash" }, history: [], onChunk: () => {}, requestId: "r-xhigh", thinking: { level: "xhigh" }, enableThinking: true });
+    expect(JSON.parse(invokes[3]!.args["message"] as string).thinking).toEqual({ level: "xhigh" });
   });
 });
 

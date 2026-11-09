@@ -887,7 +887,8 @@ export function plausibleResource(token: string): boolean {
 }
 
 export function attestationPath(repoRoot: string, spec: string): string {
-  return resolve(repoRoot, "benchmark", ".attest", `${spec.replace(/[^A-Za-z0-9]+/g, "_")}.json`);
+  const outputDir = process.env.NAIA_ATTEST_DIR || resolve(repoRoot, "benchmark", ".attest");
+  return resolve(outputDir, `${spec.replace(/[^A-Za-z0-9]+/g, "_")}.json`);
 }
 
 /** 테스트가 부른다. 자기가 실제로 만진 것을 남긴다. */

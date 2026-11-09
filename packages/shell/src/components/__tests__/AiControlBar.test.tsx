@@ -189,7 +189,54 @@ describe("AiControlBar proactive cost control", () => {
 			states.push((event as CustomEvent<{ enabled: boolean }>).detail.enabled);
 		});
 		render(<AiControlBar />);
-		fireEvent.click(screen.getByRole("button", { name: "TTS" }));
+		fireEvent.click(screen.getByRole("button", { name: /TTS/i }));
 		expect(states).toEqual([false]);
+	});
+
+	it("renders AI, TTS, and Broadcast controls as icon buttons with accessible labels and distinct on/off SVG shapes", async () => {
+		useAppStore.setState({ aiInterferenceEnabled: true, ttsEnabled: true });
+		mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
+		render(<AiControlBar />);
+
+		const aiBtn = screen.getByTestId("ai-bar-interference-btn");
+		const ttsBtn = screen.getByTestId("ai-bar-tts-btn");
+		const broadcastBtn = screen.getByTestId("ai-bar-broadcast-btn");
+
+		expect(aiBtn).toHaveClass("bgm-ai-toggle--icon");
+		expect(ttsBtn).toHaveClass("bgm-ai-toggle--icon");
+		expect(broadcastBtn).toHaveClass("bgm-ai-toggle--icon");
+
+		expect(aiBtn.getAttribute("aria-label")).toBeTruthy();
+		expect(aiBtn.getAttribute("title")).toBe(aiBtn.getAttribute("aria-label"));
+		expect(ttsBtn.getAttribute("aria-label")).toBeTruthy();
+		expect(ttsBtn.getAttribute("title")).toBe(ttsBtn.getAttribute("aria-label"));
+		expect(broadcastBtn.getAttribute("aria-label")).toBeTruthy();
+		expect(broadcastBtn.getAttribute("title")).toBe(
+			broadcastBtn.getAttribute("aria-label"),
+		);
+
+		const ttsOnSvg = ttsBtn.querySelector("svg")?.innerHTML;
+		expect(ttsOnSvg).toBeTruthy();
+		fireEvent.click(ttsBtn);
+		const ttsOffSvg = ttsBtn.querySelector("svg")?.innerHTML;
+		expect(ttsOffSvg).not.toBe(ttsOnSvg);
+		expect(ttsBtn).toHaveAttribute("data-control-state", "off");
+	});
+
+	it("FR-WEB-KIOSK-FIX7B.7 hides Broadcast and AI interference buttons in kiosk demo mode while keeping TTS and layout orientation toggle visible", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		try {
+			mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
+			render(<AiControlBar />);
+
+			expect(screen.queryByTestId("ai-bar-interference-btn")).toBeNull();
+			expect(screen.queryByTestId("ai-bar-proactive-btn")).toBeNull();
+			expect(screen.queryByTestId("ai-bar-broadcast-btn")).toBeNull();
+			expect(screen.getByTestId("ai-bar-tts-btn")).toBeInTheDocument();
+			expect(screen.getByTestId("layout-orientation-toggle")).toBeInTheDocument();
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 });
