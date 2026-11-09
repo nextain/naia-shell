@@ -330,6 +330,14 @@ describe("ChatService + MessageRouter 계약", () => {
     expect(got).toContainEqual({ kind: "error", message: "future boom" });
     expect(sessions.ownerOf("r1")).toBeUndefined();
   });
+  it("CONTEXT_WINDOW_EXCEEDED(naia-agent#176) 는 code 와 원래 문구를 함께 넘긴다", async () => {
+    const { transport, chat } = wire();
+    const got: ChatChunk[] = [];
+    const { sent } = chat.startTurn(req(), (c) => got.push(c));
+    await sent;
+    transport.emit({ type: "error", requestId: "r1", message: "문맥 길이 초과", code: "CONTEXT_WINDOW_EXCEEDED" });
+    expect(got).toContainEqual({ kind: "error", message: "문맥 길이 초과", code: "CONTEXT_WINDOW_EXCEEDED" });
+  });
   it("ownership 충돌: 중복 requestId 등록 거부(throw)", async () => {
     const { chat } = wire();
     const { sent } = chat.startTurn(req(), () => {});

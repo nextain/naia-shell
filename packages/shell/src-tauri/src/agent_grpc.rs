@@ -55,15 +55,11 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
         Some(Event::Finish(_)) => json!({"type":"finish","requestId":rid}),
         Some(Event::Error(e)) => {
             let mut value = json!({"type":"error","requestId":rid,"message":e.message});
-            if let Some(raw) = e.code {
-                match pb::WireErrorCode::try_from(raw) {
-                    Ok(code) if code != pb::WireErrorCode::Unspecified => {
-                        value["code"] = json!(code.as_str_name());
-                    }
-                    _ => {
-                        value["message"] = json!("Unsupported wire enum");
-                        value["code"] = json!("WIRE_UNSUPPORTED_ENUM");
-                    }
+            // A code newer than this build's proto (e.g. a paired agent ahead of
+            // agent-pairing.json) still carries a valid message: keep it, drop the code.
+            if let Some(Ok(code)) = e.code.map(pb::WireErrorCode::try_from) {
+                if code != pb::WireErrorCode::Unspecified {
+                    value["code"] = json!(code.as_str_name());
                 }
             }
             value
@@ -920,6 +916,18 @@ mod transcode_tests {
         let error_json = agent_event_to_ui_json(&error);
         assert_eq!(error_json["type"], "error");
         assert_eq!(error_json["code"], "ATTACHMENT_INVALID_REF");
+
+        let future_error = pb::AgentEvent {
+            request_id: "wire-r1".into(),
+            event: Some(Event::Error(pb::ErrorEvent {
+                message: "문맥 길이 초과".into(),
+                code: Some(9999),
+            })),
+            ..Default::default()
+        };
+        let future_json = agent_event_to_ui_json(&future_error);
+        assert_eq!(future_json["message"], "문맥 길이 초과");
+        assert!(future_json.get("code").is_none());
 
         let provider_session = pb::AgentEvent {
             request_id: "wire-r1".into(),
