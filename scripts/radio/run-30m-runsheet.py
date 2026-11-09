@@ -256,17 +256,67 @@ def play_song_file(mp3_path, label, max_duration_sec=None):
     set_bgm_volume(0.35)
 
 
-def is_failed_response(raw_out: str, prompt_text: str = "") -> bool:
-    """Detect empty output, LLM 400 error banner, or reasoning truncation failure."""
+def classify_error_reason(raw_out: str, prompt_text: str = "", timed_out: bool = False) -> str:
+    """Return an explicit, unambiguous failure reason code (or 'NONE' on success)."""
+    if timed_out or (raw_out and "TimeoutExpired" in raw_out):
+        return "TURN_TIMEOUT"
     if not raw_out or not raw_out.strip():
-        return True
-    for marker in ERROR_MARKERS:
-        if marker in raw_out:
-            return True
+        return "EMPTY_RESPONSE"
+    if any(m in raw_out for m in ("400 Bad Request", "maximum context length", "input_tokens")):
+        return "HTTP_400_CONTEXT_LENGTH"
+    if "provider returned reasoning" in raw_out:
+        return "REASONING_TRUNCATION"
+    if any(m in raw_out for m in ("답을 만들다 실패했어요", "다시 시도할까요")):
+        return "UI_AGENT_ERROR_BANNER"
+    if "ERR:" in raw_out:
+        return "RUNNER_EXEC_ERROR"
     stripped = raw_out.strip()
     if prompt_text and stripped == prompt_text.strip():
-        return True
-    return False
+        return "ECHO_PROMPT_ONLY"
+    return "NONE"
+
+
+def is_failed_response(raw_out: str, prompt_text: str = "") -> bool:
+    """Detect empty output, LLM 400 error banner, or reasoning truncation failure."""
+    return classify_error_reason(raw_out, prompt_text, timed_out=False) != "NONE"
+
+
+def reset_tts_telemetry(eval_fn=wk_eval):
+    eval_fn("""(() => {
+      if (window.__naiaTtsTelemetry && typeof window.__naiaTtsTelemetry.reset === "function") {
+        window.__naiaTtsTelemetry.reset();
+        return "reset";
+      }
+      return "no_telemetry";
+    })()""")
+
+
+def collect_tts_telemetry(eval_fn=wk_eval, wait_until_done_sec: float = 8.0, sleep_fn=time.sleep) -> dict:
+    """Poll window.__naiaTtsTelemetry until speaking finishes (up to wait_until_done_sec)."""
+    deadline = time.time() + max(0.0, float(wait_until_done_sec))
+    last_snap = {}
+    while True:
+        raw = eval_fn("""(() => {
+          return window.__naiaTtsTelemetry && typeof window.__naiaTtsTelemetry.snapshot === "function"
+            ? JSON.stringify(window.__naiaTtsTelemetry.snapshot())
+            : "{}";
+        })()""")
+        try:
+            unwrapped = json.loads(raw) if raw and raw.startswith('"') else raw
+            snap = json.loads(unwrapped) if isinstance(unwrapped, str) else (unwrapped or {})
+            if isinstance(snap, dict):
+                last_snap = snap
+        except Exception:
+            pass
+        if not last_snap.get("is_speaking") or time.time() >= deadline:
+            break
+        sleep_fn(0.4)
+    return {
+        "tts_start_ts": last_snap.get("tts_start_ts"),
+        "tts_end_ts": last_snap.get("tts_end_ts"),
+        "tts_dur_sec": float(last_snap.get("tts_dur_sec") or 0.0),
+        "utterance_count": int(last_snap.get("utterance_count") or 0),
+    }
 
 
 def get_fallback_utterance(situation: str) -> str:
@@ -313,6 +363,8 @@ def send_chat(
         f"est_in_tokens={est_input_tokens}/{MAX_INPUT_TOKENS}, timeout={effective_wait}s): {bounded_prompt}"
     )
     t0 = time.time()
+    turn_start_iso = datetime.now().astimezone().isoformat(timespec="milliseconds")
+    reset_tts_telemetry(eval_fn=eval_fn)
     env = os.environ.copy()
     env["WAIT"] = str(effective_wait)
     cmd = [f"{BASE_DIR}/jun-send-nz.sh", bounded_prompt]
@@ -337,12 +389,17 @@ def send_chat(
     except Exception as e:
         raw_out = f"ERR: {e}"
 
-    failed = timed_out or is_failed_response(raw_out, bounded_prompt)
+    initial_error_reason = classify_error_reason(raw_out, bounded_prompt, timed_out=timed_out)
+    failed = initial_error_reason != "NONE"
     used_fallback = False
+    error_reason = initial_error_reason
 
     if failed and retry_on_error and not timed_out:
         compact_prompt = truncate_text_to_tokens(prompt_text, 240)
-        log(f"RETRYING [{situation} / {trigger}] with clean new_chat and compact prompt ({estimate_tokens(compact_prompt)} tok)")
+        log(
+            f"RETRYING [{situation} / {trigger}] (cause={initial_error_reason}) "
+            f"with clean new_chat and compact prompt ({estimate_tokens(compact_prompt)} tok)"
+        )
         retry_env = env.copy()
         retry_env["WAIT"] = "10"
         try:
@@ -355,11 +412,17 @@ def send_chat(
                 timeout=14,
             )
             retry_out = (retry_res.stdout or "").strip()
-            if not is_failed_response(retry_out, compact_prompt):
+            retry_reason = classify_error_reason(retry_out, compact_prompt, timed_out=False)
+            if retry_reason == "NONE":
                 raw_out = retry_out
                 failed = False
+                error_reason = f"RECOVERED_FROM_{initial_error_reason}"
+            else:
+                error_reason = f"{initial_error_reason}->RETRY_{retry_reason}"
+        except subprocess.TimeoutExpired:
+            error_reason = f"{initial_error_reason}->RETRY_TURN_TIMEOUT"
         except Exception:
-            pass
+            error_reason = f"{initial_error_reason}->RETRY_EXEC_ERROR"
 
     if failed:
         fallback_line = get_fallback_utterance(situation)
@@ -367,13 +430,24 @@ def send_chat(
         raw_out = f"[FALLBACK] {fallback_line}"
         used_fallback = True
 
+    tts_info = collect_tts_telemetry(eval_fn=eval_fn, wait_until_done_sec=0.0 if used_fallback else 8.0)
+    turn_end_iso = datetime.now().astimezone().isoformat(timespec="milliseconds")
+    tts_start_ts = tts_info.get("tts_start_ts") or turn_start_iso
+    tts_end_ts = tts_info.get("tts_end_ts") or turn_end_iso
+    tts_dur_sec = float(tts_info.get("tts_dur_sec") or 0.0)
+    tts_utts = int(tts_info.get("utterance_count") or 0)
+
     hw.record_turn(situation, bounded_prompt, raw_out, failed=used_fallback)
     dt = time.time() - t0
     dom_extract = eval_fn("""(() => {
       const msgs = [...document.querySelectorAll("[data-message-role], .prose, main p")].map(e => e.innerText.trim()).filter(Boolean);
       return JSON.stringify(msgs.slice(-6));
     })()""")
-    log(f"RESPONSE [{situation} / {trigger}] ({dt:.1f}s, fallback={used_fallback}): {raw_out}")
+    log(
+        f"RESPONSE [{situation} / {trigger}] ({dt:.1f}s, fallback={used_fallback}, "
+        f"tts_start_ts={tts_start_ts}, tts_end_ts={tts_end_ts}, tts_dur_sec={tts_dur_sec:.2f}s, "
+        f"tts_utts={tts_utts}, error_reason={error_reason}): {raw_out}"
+    )
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "elapsed_sec": int(time.time() - START_TS),
@@ -383,6 +457,11 @@ def send_chat(
         "estimated_input_tokens": est_input_tokens,
         "raw_output": raw_out,
         "used_fallback": used_fallback,
+        "error_reason": error_reason,
+        "tts_start_ts": tts_start_ts,
+        "tts_end_ts": tts_end_ts,
+        "tts_dur_sec": round(tts_dur_sec, 2),
+        "tts_utterance_count": tts_utts,
         "dom_tail": dom_extract,
         "latency_sec": round(dt, 2),
     }
