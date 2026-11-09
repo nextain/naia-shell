@@ -184,6 +184,21 @@ describe("SlidesCenterArea", () => {
 		Reflect.deleteProperty(document, "exitFullscreen");
 	});
 
+	it("UT-01 moves from page 1 to page 2 when the next slide button is pressed", async () => {
+		render(<SlidesCenterArea naia={new MockBridge()} />);
+		fireEvent.change(screen.getByLabelText(/PDF/), {
+			target: { files: [new File(["pdf"], "deck.pdf")] },
+		});
+		await waitFor(() => expect(screen.getByText("1 / 3")).toBeInTheDocument());
+		expect(screen.getByTestId("pdf-page-1")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "다음 슬라이드" }));
+
+		await waitFor(() => expect(screen.getByText("2 / 3")).toBeInTheDocument());
+		expect(screen.getByTestId("pdf-page-2")).toBeInTheDocument();
+		expect(screen.queryByTestId("pdf-page-1")).not.toBeInTheDocument();
+	});
+
 	it("closes and restores notes without interrupting presentation or discarding the script", async () => {
 		picker.available = true;
 		picker.open.mockResolvedValue({

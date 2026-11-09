@@ -244,9 +244,6 @@ export function AppMainContent(props: AppMainContentProps) {
 						</div>
 					)}
 					<div className="naia-overlay">
-						<Suspense fallback={null}>
-							<AiControlBar />
-						</Suspense>
 						<div className="naia-chat-area">
 							<button
 								type="button"
@@ -315,7 +312,16 @@ export function AppMainContent(props: AppMainContentProps) {
 										: undefined
 								}
 							>
-								<DeferredChatArea variant={chatVariant} />
+								<DeferredChatArea
+									variant={chatVariant}
+									headerControls={
+										<Suspense fallback={null}>
+											<AiControlBar
+												isNva={avatarProvider === "naia-video-avatar"}
+											/>
+										</Suspense>
+									}
+								/>
 							</div>
 						</div>
 					</div>

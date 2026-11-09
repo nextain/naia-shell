@@ -65,3 +65,7 @@ pnpm 10 frozen-lockfile 검증 PASS, 새 Chromium 설치 PASS, 새 버전의 `pl
 - 셸과 독립 Slides는 동일한 `packages/shell/package.json` 버전을 주입한다. `e2e/slides-standalone-build.spec.ts`는 Slides 산출물을 빌드해 브라우저에서 실제로 실행하고 초기화 오류를 확인한다.
 
 2026-11-09 재현 및 검증: 수정 전 설정 로그인 시험에서 `browser_open` 실패가 성공 사건을 대체했고, 독립 Slides 빌드는 빈 화면, Web Locks/BroadcastChannel 각각 제거한 브라우저는 동의 화면에 머물렀다. 수정 후 SettingsTab·usage 단위 3파일 142 PASS / 8 SKIP, 실제 Chromium 9 PASS(독립 빌드·설정 판정·기존 선택 보존 포함), 셸 및 코어 타입 검사와 UC 추적·assembly 검사가 통과했다. 실행 로그와 브라우저 출력은 실행 폴더의 `tmp/r3-*.log`, `tmp/r3-playwright-final/`에 두었다. 이미 설치된 다른 작업 사본의 의존성을 사용했으므로 로컬 Playwright는 1.60.0이며 PR 잠금 파일은 1.64.1이다. CI의 잠금 의존성 실행 결과는 별도로 확인한다. Azure 실수신이나 실제 네이티브 로그인 증거는 아니다.
+
+### 최신 main 병합 검증 (2026-11-09)
+
+main `349c69c3`의 방송·설치 앱·접근성·카메라 제어를 유지하며 기존 통계 이름을 보존하고, 새 고정 JSX 제어 20개를 대조표에 추가했다. 입력값·방송 키·앱 내용은 이름표에 넣지 않는다. 선택·통계 및 설치 앱·방송 집중 Vitest 163 PASS / 8 SKIP, Chromium 9 PASS, Shell·core 타입, OSS 하드게이트, UC 추적·assembly·E2E 목록·vacuous 및 통계 변경 파일 Biome을 확인했다. 다른 작업 사본의 기존 의존성을 임시 연결해 로컬 Playwright 1.60.0으로 실행했으며 잠금 파일의 1.64.1 원격 실행은 별도 확인한다. 설치 앱 iframe 내부 클릭은 기존 수집 범위 밖이다.

@@ -8,7 +8,7 @@
 
 | 항목 | 구현 계약 / 이유 |
 |---|---|
-| 세부 누름 보완 | 아래 432개 네이티브 JSX 누름/선택/제출/문맥 메뉴 위치. 코드에 고정 data-usage-event를 선언한다. 동적 텍스트·앱 이름·주소를 이름표로 만들지 않는다. 반복 목록은 같은 동작 이름으로 합산한다. |
+| 세부 누름 보완 | 아래 452개 네이티브 JSX 누름/선택/제출/문맥 메뉴 위치. 코드에 고정 data-usage-event를 선언한다. 동적 텍스트·앱 이름·주소를 이름표로 만들지 않는다. 반복 목록은 같은 동작 이름으로 합산한다. |
 | 이름 안정성 | 화면.요소.동작; 요소 뒤 번호는 같은 화면의 중복 요소를 구별하는 영구 식별자. 코드 행이 바뀌어도 바꾸지 않는다. 새 요소는 새 이름을 배정한다. |
 | 입력 | 자유 입력·슬라이더 값은 수집하지 않는다. 세부 선택값은 보내지 않고, 정본 의미 사건에 필요한 choice는 고정 허용값만 센다. 소개 단계·로그인 결과 등은 아래 의미 사건으로 별도 기록한다. |
 | 개인정보 최소화 | 정본 4·7절의 event_id·순번·시각·로그인 시도 번호는 중복·순서·성공 분모 보존을 위해 유지. 그 밖에는 설치 난수·이름표·고정 화면·고정 choice·앱 판·OS 종류·배포 채널만 허용한다. |
@@ -486,3 +486,28 @@
 동의 끄기는 storage 이벤트에 더해 값 없는 BroadcastChannel 신호로 다른 창을 중단한다. 저장소 쓰기 실패 때에도 살아 있는 창을 즉시 중지시키며, 성공적으로 저장한 재동의 이후에만 수집을 재개한다. 이미 수신 완료된 요청의 취소는 보장하지 않는다.
 
 전송 형식 참고(구현 시 확인): [Microsoft 연결 문자열 문서](https://learn.microsoft.com/en-us/azure/azure-monitor/app/sdk-connection-string), [Microsoft 수집 경로 설명](https://github.com/microsoft/appinsights-telemetry-flow/blob/main/docs/architecture.md). 실제 자원과 CORS·수신 표·IP/접근 기록 정책은 아직 검증하지 않았으며 출시 관문이다.
+
+## 최신 main에서 추가된 고정 제어
+
+| 이름표 | 화면 | 제어/핸들러 | 소스 (병합 시점 행) |
+|---|---|---|---|
+| `ai-control-bar.main-merge-1.click` | ai-control-bar | button / onClick | packages/shell/src/components/AiControlBar.tsx:252 |
+| `ai-control-bar.main-merge-2.click` | ai-control-bar | button / onClick | packages/shell/src/components/AiControlBar.tsx:290 |
+| `bgm-player.main-merge-1.select` | bgm-player | input / onChange | packages/shell/src/components/BgmPlayer.tsx:2585 |
+| `settings-tab.main-merge-1.select` | settings-tab | select / onChange | packages/shell/src/components/SettingsTab.tsx:7926 |
+| `settings-tab.main-merge-2.select` | settings-tab | select / onChange | packages/shell/src/components/SettingsTab.tsx:7969 |
+| `settings-tab.main-merge-3.click` | settings-tab | button / onClick | packages/shell/src/components/SettingsTab.tsx:8010 |
+| `char-card-app.main-merge-1.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:527 |
+| `char-card-app.main-merge-2.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:577 |
+| `char-card-app.main-merge-3.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:605 |
+| `char-card-app.main-merge-4.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:630 |
+| `char-card-app.main-merge-5.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:687 |
+| `char-card-app.main-merge-6.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:695 |
+| `char-card-app.main-merge-7.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:721 |
+| `char-card-app.main-merge-8.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:729 |
+| `char-card-app.main-merge-9.select` | char-card-app | select / onChange | packages/shell/src/apps/charcard/CharCardApp.tsx:825 |
+| `char-card-app.main-merge-10.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:845 |
+| `char-card-app.main-merge-11.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:857 |
+| `char-card-app.main-merge-12.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:868 |
+| `char-card-app.main-merge-13.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:1018 |
+| `char-card-app.main-merge-14.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:1027 |

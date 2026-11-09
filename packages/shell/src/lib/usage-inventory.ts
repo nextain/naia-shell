@@ -1728,4 +1728,84 @@ export const usageControls = {
 		screen: "shell",
 		trigger: "click",
 	},
+	"ai-control-bar.main-merge-1.click": {
+		screen: "ai-control-bar",
+		trigger: "click",
+	},
+	"ai-control-bar.main-merge-2.click": {
+		screen: "ai-control-bar",
+		trigger: "click",
+	},
+	"bgm-player.main-merge-1.select": {
+		screen: "bgm-player",
+		trigger: "change",
+	},
+	"settings-tab.main-merge-1.select": {
+		screen: "settings-tab",
+		trigger: "change",
+	},
+	"settings-tab.main-merge-2.select": {
+		screen: "settings-tab",
+		trigger: "change",
+	},
+	"settings-tab.main-merge-3.click": {
+		screen: "settings-tab",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-1.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-2.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-3.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-4.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-5.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-6.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-7.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-8.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-9.select": {
+		screen: "char-card-app",
+		trigger: "change",
+	},
+	"char-card-app.main-merge-10.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-11.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-12.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-13.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
+	"char-card-app.main-merge-14.click": {
+		screen: "char-card-app",
+		trigger: "click",
+	},
 } as const;

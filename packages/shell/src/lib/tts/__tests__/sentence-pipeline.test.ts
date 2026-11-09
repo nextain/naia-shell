@@ -93,6 +93,17 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		expect(synthesizeMock).not.toHaveBeenCalled();
 	});
 
+	it("reports browser speech failure to the host", () => {
+		const utterances: Array<{ onerror: (() => void) | null }> = [];
+		vi.stubGlobal("speechSynthesis", { speak: (utterance: { onerror: (() => void) | null }) => utterances.push(utterance), cancel: vi.fn() });
+		vi.stubGlobal("SpeechSynthesisUtterance", class { lang = ""; onstart = null; onend = null; onerror: (() => void) | null = null; });
+		const onPlaybackFailure = vi.fn();
+		const { deps } = makeDeps({ getVoiceConfig: () => ({ ttsProvider: "browser" }), onPlaybackFailure });
+		createSentenceTtsPipeline(deps).sendSentence("Hello.");
+		utterances[0].onerror?.();
+		expect(onPlaybackFailure).toHaveBeenCalledOnce();
+	});
+
 	it("sends the same normalized text to browser and remote providers", async () => {
 		const utterances: Array<{ text: string }> = [];
 		vi.stubGlobal("speechSynthesis", {

@@ -42,6 +42,7 @@ import {
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
+import { setBroadcastBridgeSnapshot } from "../lib/broadcast-audio-bridge";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
@@ -4381,6 +4382,8 @@ export function SettingsTab() {
 							저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
 						</div>
 					</div>
+
+					<BroadcastSettingsSection />
 				</>
 			)}
 			{activeSettingsTab === "avatar" && (
@@ -7831,6 +7834,189 @@ export function SettingsTab() {
 					</div>
 				</div>
 			)}
+		</div>
+	);
+}
+
+const BROADCAST_DEFAULT_URLS: Record<
+	NonNullable<AppConfig["broadcastPlatform"]>,
+	string
+> = {
+	youtube: "rtmps://a.rtmp.youtube.com/live2",
+	twitch: "rtmp://live.twitch.tv/app",
+	chzzk: "rtmp://global-rtmp.lip2.navercorp.com:8080/relay",
+	soop: "rtmp://stream.sooplive.co.kr/app",
+};
+
+function BroadcastSettingsSection() {
+	const initial = loadConfig();
+	const [platform, setPlatform] = useState<
+		NonNullable<AppConfig["broadcastPlatform"]>
+	>(initial?.broadcastPlatform ?? "youtube");
+	const [serverUrl, setServerUrl] = useState<string>(
+		initial?.broadcastServerUrl ??
+			BROADCAST_DEFAULT_URLS[initial?.broadcastPlatform ?? "youtube"],
+	);
+	const [resolution, setResolution] = useState<
+		NonNullable<AppConfig["broadcastResolution"]>
+	>(initial?.broadcastResolution ?? "1080p30");
+	const [streamKeyInput, setStreamKeyInput] = useState<string>("");
+	const [hasStoredStreamKey, setHasStoredStreamKey] = useState<boolean>(false);
+
+	useEffect(() => {
+		let cancelled = false;
+		void loadConfigWithSecrets()
+			.then((cfg) => {
+				if (!cfg || cancelled) return;
+				const nextPlatform = cfg.broadcastPlatform ?? "youtube";
+				setPlatform(nextPlatform);
+				setServerUrl(
+					cfg.broadcastServerUrl?.trim() ||
+						BROADCAST_DEFAULT_URLS[nextPlatform],
+				);
+				setResolution(cfg.broadcastResolution ?? "1080p30");
+				const hasKey = Boolean(cfg.broadcastStreamKey?.trim());
+				setHasStoredStreamKey(hasKey);
+				setBroadcastBridgeSnapshot({ hasStreamKey: hasKey });
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const persistBroadcastSettings = async (override?: {
+		platform?: NonNullable<AppConfig["broadcastPlatform"]>;
+		serverUrl?: string;
+		resolution?: NonNullable<AppConfig["broadcastResolution"]>;
+		streamKey?: string;
+	}) => {
+		const current = (await loadConfigWithSecrets()) ?? loadConfig();
+		if (!current) return;
+		const nextPlatform = override?.platform ?? platform;
+		const nextServerUrl = (override?.serverUrl ?? serverUrl).trim();
+		const nextResolution = override?.resolution ?? resolution;
+		const typedKey = (override?.streamKey ?? streamKeyInput).trim();
+		const effectiveKey = typedKey || current.broadcastStreamKey?.trim() || "";
+		const nextConfig: AppConfig = {
+			...current,
+			broadcastPlatform: nextPlatform,
+			broadcastServerUrl:
+				nextServerUrl || BROADCAST_DEFAULT_URLS[nextPlatform],
+			broadcastResolution: nextResolution,
+			...(effectiveKey ? { broadcastStreamKey: effectiveKey } : {}),
+		};
+		await saveConfigSecure(nextConfig);
+		await writeNaiaUiConfig(nextConfig as unknown as Record<string, unknown>);
+		const hasKey = Boolean(effectiveKey);
+		setHasStoredStreamKey(hasKey);
+		setStreamKeyInput("");
+		setBroadcastBridgeSnapshot({ hasStreamKey: hasKey });
+	};
+
+	return (
+		<div data-testid="broadcast-settings-section">
+			<div className="settings-section-divider">
+				<span>{t("settings.broadcastSection")}</span>
+			</div>
+			<div className="settings-field">
+				<label htmlFor="broadcast-platform-select">
+					{t("settings.broadcastPlatform")}
+				</label>
+				<select
+					id="broadcast-platform-select"
+					data-testid="broadcast-platform-select"
+					value={platform}
+					data-usage-event="settings-tab.main-merge-1.select" onChange={(e) => {
+						const nextPlatform = e.target.value as NonNullable<
+							AppConfig["broadcastPlatform"]
+						>;
+						const nextUrl = BROADCAST_DEFAULT_URLS[nextPlatform];
+						setPlatform(nextPlatform);
+						setServerUrl(nextUrl);
+						void persistBroadcastSettings({
+							platform: nextPlatform,
+							serverUrl: nextUrl,
+						});
+					}}
+				>
+					<option value="youtube">YouTube</option>
+					<option value="twitch">Twitch</option>
+					<option value="chzzk">Chzzk</option>
+					<option value="soop">SOOP</option>
+				</select>
+			</div>
+			<div className="settings-field">
+				<label htmlFor="broadcast-server-url-input">
+					{t("settings.broadcastServerUrl")}
+				</label>
+				<input
+					id="broadcast-server-url-input"
+					data-testid="broadcast-server-url-input"
+					type="text"
+					className="settings-input"
+					value={serverUrl}
+					onChange={(e) => setServerUrl(e.target.value)}
+					onBlur={(e) =>
+						void persistBroadcastSettings({ serverUrl: e.target.value })
+					}
+				/>
+			</div>
+			<div className="settings-field">
+				<label htmlFor="broadcast-resolution-select">
+					{t("settings.broadcastResolution")}
+				</label>
+				<select
+					id="broadcast-resolution-select"
+					data-testid="broadcast-resolution-select"
+					value={resolution}
+					data-usage-event="settings-tab.main-merge-2.select" onChange={(e) => {
+						const nextRes = e.target.value as NonNullable<
+							AppConfig["broadcastResolution"]
+						>;
+						setResolution(nextRes);
+						void persistBroadcastSettings({ resolution: nextRes });
+					}}
+				>
+					<option value="1080p30">1080p30</option>
+					<option value="720p30">720p30</option>
+				</select>
+			</div>
+			<div className="settings-field">
+				<label htmlFor="broadcast-stream-key-input">
+					{t("settings.broadcastStreamKey")}
+				</label>
+				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<input
+						id="broadcast-stream-key-input"
+						data-testid="broadcast-stream-key-input"
+						type="text"
+						autoComplete="off"
+						className="settings-input"
+						style={
+							{
+								flex: 1,
+								WebkitTextSecurity: "disc",
+							} as React.CSSProperties
+						}
+						value={streamKeyInput}
+						onChange={(e) => setStreamKeyInput(e.target.value)}
+						placeholder={
+							hasStoredStreamKey
+								? "••••••••"
+								: t("settings.broadcastStreamKeyPlaceholder")
+						}
+					/>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						data-testid="broadcast-save-btn"
+						data-usage-event="settings-tab.main-merge-3.click" onClick={() => void persistBroadcastSettings()}
+					>
+						{t("settings.broadcastSave")}
+					</button>
+				</div>
+			</div>
 		</div>
 	);
 }

@@ -1,4 +1,44 @@
+fn ensure_ffmpeg_sidecar_for_tauri_build() {
+    use std::{env, fs, path::PathBuf};
+    println!("cargo:rerun-if-env-changed=NAIA_FFMPEG_SIDECAR_SOURCE");
+    let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") else {
+        return;
+    };
+    let Ok(target) = env::var("TARGET") else {
+        return;
+    };
+    let ext = if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
+    let binaries_dir = PathBuf::from(manifest_dir).join("binaries");
+    let target_sidecar = binaries_dir.join(format!("ffmpeg-{target}{ext}"));
+    if target_sidecar.is_file() {
+        return;
+    }
+    let _ = fs::create_dir_all(&binaries_dir);
+    if let Ok(src) = env::var("NAIA_FFMPEG_SIDECAR_SOURCE") {
+        let src_path = PathBuf::from(src.trim());
+        if src_path.is_file() {
+            let _ = fs::copy(&src_path, &target_sidecar);
+            return;
+        }
+    }
+    let _ = fs::write(&target_sidecar, b"#!naia-ffmpeg-dev-placeholder\n");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&target_sidecar) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&target_sidecar, perms);
+        }
+    }
+}
+
 fn main() {
+    ensure_ffmpeg_sidecar_for_tauri_build();
     tauri_build::build();
 
     // os <-> agent gRPC client codegen. The proto must come from the

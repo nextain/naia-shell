@@ -11,6 +11,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import {
+	attachMediaElementToSharedContext,
+	isBroadcastActive,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import {
@@ -268,7 +273,11 @@ const MARQUEE_THRESHOLD = 22;
 const PLAYBACK_TIMEOUT_MS = 12_000;
 
 /** Native E2E uses a same-origin fixture; normal Shell runs always use YouTube. */
-function youtubeEmbedUrl(videoId: string, playbackId?: string): string {
+function youtubeEmbedUrl(
+	videoId: string,
+	playbackId?: string,
+	captions = false,
+): string {
 	const fixture = import.meta.env.VITE_NAIA_E2E_BGM_IFRAME_URL?.trim();
 	if (fixture) {
 		const url = new URL(fixture, window.location.origin);
@@ -279,6 +288,9 @@ function youtubeEmbedUrl(videoId: string, playbackId?: string): string {
 	return (
 		`https://www.youtube-nocookie.com/embed/${videoId}` +
 		`?autoplay=1&enablejsapi=1` +
+		// Captions must be requested at load: a later loadModule("captions") is
+		// ignored until the player has started, so the toggle alone showed none.
+		`&cc_load_policy=${captions ? 1 : 0}` +
 		`&origin=${encodeURIComponent(window.location.origin)}` +
 		(playbackId ? `&naiaPlayback=${encodeURIComponent(playbackId)}` : "")
 	);
@@ -292,6 +304,30 @@ function loadAppHeight(): number {
 }
 
 export function BgmPlayer({ naia }: Props) {
+	const captionsEnabled =
+		useUiPreference<boolean>(UI_PREFERENCE_KEYS.youtubeCaptions, false) ===
+		true;
+	const captionsRef = useRef(captionsEnabled);
+	captionsRef.current = captionsEnabled;
+	function applyCaptions(enabled: boolean) {
+		const iframe = document.querySelector(
+			".app-bg-iframe",
+		) as HTMLIFrameElement | null;
+		if (!iframe?.contentWindow) return;
+		try {
+			const origin = new URL(iframe.src, window.location.href).origin;
+			iframe.contentWindow.postMessage(
+				JSON.stringify({
+					event: "command",
+					func: enabled ? "loadModule" : "unloadModule",
+					args: ["captions"],
+				}),
+				origin,
+			);
+		} catch {
+			Logger.warn("BgmPlayer", "Unable to apply captions to iframe");
+		}
+	}
 	const audioRef = useRef<HTMLAudioElement>(null);
 	const playerRef = useRef<HTMLDivElement>(null);
 	const [appPos, setAppPos] = useState<{
@@ -385,6 +421,7 @@ export function BgmPlayer({ naia }: Props) {
 	const playbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const manuallyStoppedPlaybackRef = useRef<string | null>(null);
 	const lastEndedPlaybackIdRef = useRef<string | null>(null);
+	const keyboardSeekTargetRef = useRef<{ time: number; expiresAt: number } | null>(null);
 	const lastErroredPlaybackIdRef = useRef<string | null>(null);
 	const failedVideoIdsRef = useRef<Set<string>>(new Set());
 	const observedIframeStateRef = useRef<{
@@ -455,6 +492,28 @@ export function BgmPlayer({ naia }: Props) {
 	// appTab: which tab is currently shown in the app (independent of what's playing)
 	const [appExpanded, setAppExpanded] = useState(false);
 	const [appTab, setAppTab] = useState<AppTab>("youtube");
+	const broadcastBridge = useBroadcastBridge();
+	const broadcasting = isBroadcastActive(broadcastBridge.state);
+	const broadcastingRef = useRef(broadcasting);
+	broadcastingRef.current = broadcasting;
+	const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (audioRef.current) {
+			attachMediaElementToSharedContext(audioRef.current);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!broadcasting) {
+			setBroadcastNotice(null);
+			return;
+		}
+		if (source === "youtube" && currentYt) {
+			setBroadcastNotice(t("broadcast.bgmYoutubeCopyrightNotice"));
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [broadcasting]);
 
 	const [library, setLibrary] = useState<BgmLibraryState>(() => {
 		// 첫 페인트는 캐시/구 config 로 즉시, 진짜 SoT(샌드박스)는 마운트 효과가 hydrate.
@@ -623,6 +682,8 @@ export function BgmPlayer({ naia }: Props) {
 			setVideoLive(false);
 		}
 		if (status === "playing" && current.status !== "playing") {
+			// The captions module only exists once playback has started.
+			applyCaptions(captionsRef.current);
 			emitAiInterferenceEvent({
 				source: "bgm",
 				action: "music_started",
@@ -671,6 +732,7 @@ export function BgmPlayer({ naia }: Props) {
 
 	function resetObservedIframeState(playbackId: string | null = null) {
 		clearPlaybackTimeout();
+		keyboardSeekTargetRef.current = null;
 		observedIframeStateRef.current = {
 			playbackId,
 			confirmedVideoId: null,
@@ -1311,6 +1373,10 @@ export function BgmPlayer({ naia }: Props) {
 						if (isSamePlayback && current) {
 							if (Number.isFinite(currentTime) && currentTime >= 0) {
 								observedIframeStateRef.current.lastCurrentTime = currentTime;
+								const target = keyboardSeekTargetRef.current;
+								if (target && (Math.abs(currentTime - target.time) <= 1 || Date.now() >= target.expiresAt)) {
+									keyboardSeekTargetRef.current = null;
+								}
 							}
 							if (Number.isFinite(duration) && duration > 0) {
 								observedIframeStateRef.current.lastDuration = duration;
@@ -1470,6 +1536,7 @@ export function BgmPlayer({ naia }: Props) {
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
 					if (typeof iframe?.contentWindow?.postMessage !== "function") return;
+					applyCaptions(captionsRef.current);
 					const current = bgmPlayback.current();
 					if (
 						current &&
@@ -1826,7 +1893,11 @@ export function BgmPlayer({ naia }: Props) {
 				beginPlaybackTimeout(pending.playbackId);
 			}
 			setBackgroundVideoUrl(
-				youtubeEmbedUrl(pending.selected.videoId, pending.playbackId),
+				youtubeEmbedUrl(
+					pending.selected.videoId,
+					pending.playbackId,
+					captionsRef.current,
+				),
 			);
 			setBackgroundMediaType("iframe");
 			setVideoLive(pending.status === "playing");
@@ -1927,6 +1998,11 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
 	function handleYtSelect(video: YtVideo, requestedPlaybackId?: string) {
+		if (broadcastingRef.current) {
+			setBroadcastNotice(t("broadcast.bgmYoutubeCopyrightNotice"));
+		} else {
+			setBroadcastNotice(null);
+		}
 		if (!requestedPlaybackId) {
 			cancelRadioDjRecovery();
 			failedVideoIdsRef.current.delete(video.id);
@@ -1963,12 +2039,16 @@ export function BgmPlayer({ naia }: Props) {
 		}
 		// The playback id makes the URL and React iframe key unique. Selecting the
 		// same video again must create a fresh player instead of a Zustand no-op.
-		const embedUrl = youtubeEmbedUrl(video.id, snapshot.playbackId);
+		const embedUrl = youtubeEmbedUrl(
+			video.id,
+			snapshot.playbackId,
+			captionsRef.current,
+		);
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 	}
 
-	function sendYtCmd(func: string) {
+	function sendYtCmd(func: string, args: (number | boolean)[] = []) {
 		const iframe = document.querySelector(
 			".app-bg-iframe",
 		) as HTMLIFrameElement | null;
@@ -1980,7 +2060,7 @@ export function BgmPlayer({ naia }: Props) {
 			"*",
 		);
 		iframe.contentWindow.postMessage(
-			JSON.stringify({ event: "command", func, args: [] }),
+			JSON.stringify({ event: "command", func, args }),
 			"*",
 		);
 		return true;
@@ -2034,6 +2114,7 @@ export function BgmPlayer({ naia }: Props) {
 			if (localTracks.length > 0 && !audio.src) {
 				audio.src = localTracks[localIndex];
 			}
+			attachMediaElementToSharedContext(audio);
 			audio
 				.play()
 				.then(() => setPlaying(true))
@@ -2084,6 +2165,7 @@ export function BgmPlayer({ naia }: Props) {
 			return;
 		}
 		audio.src = tracks[idx];
+		attachMediaElementToSharedContext(audio);
 		void audio
 			.play()
 			.then(() => {
@@ -2258,16 +2340,60 @@ export function BgmPlayer({ naia }: Props) {
 			</audio>
 
 			{/* ── Compact bar ── */}
-			<div className="bgm-player-controls">
+			<div
+				className="bgm-player-controls"
+				role="group"
+				tabIndex={0}
+				aria-label={t("bgm.keyboardHelp")}
+				title={t("bgm.keyboardHelp")}
+				onKeyDown={(event) => {
+					if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return;
+					switch (event.key.toLowerCase()) {
+						case " ":
+						case "k":
+							togglePlay();
+							break;
+						case "arrowleft":
+						case "arrowright": {
+							const delta = event.key === "ArrowLeft" ? -5 : 5;
+							if (source === "youtube") {
+								const pending = keyboardSeekTargetRef.current;
+								const current = pending && Date.now() < pending.expiresAt
+									? pending.time
+									: observedIframeStateRef.current.lastCurrentTime ?? playbackSnapshot?.currentTime;
+								if (current != null) {
+									const duration = observedIframeStateRef.current.lastDuration ?? Infinity;
+									const target = Math.max(0, Math.min(duration, current + delta));
+									if (sendYtCmd("seekTo", [target, true])) keyboardSeekTargetRef.current = { time: target, expiresAt: Date.now() + 1500 };
+								}
+							} else if (audioRef.current) {
+								audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + delta);
+							}
+							break;
+						}
+						case "arrowup":
+						case "arrowdown":
+							setVolume((value) => Math.max(0, Math.min(1, Math.round((value + (event.key === "ArrowUp" ? 0.05 : -0.05)) * 100) / 100)));
+							break;
+						case "n": playNext(); break;
+						case "p": playPrev(); break;
+						default: return;
+					}
+					event.preventDefault();
+				}}
+			>
 				{/* Fixed BGM icon — pulses when playing */}
-				<span
+				<button
+					type="button"
 					className={`bgm-icon${playing ? " bgm-icon--playing" : ""}`}
 					title={t("bgm.appToggleTitle")}
+					aria-label={t("bgm.appToggleTitle")}
+					aria-expanded={appExpanded}
 					data-usage-event="bgm-player.set-app-expanded-1.click"
 					onClick={() => setAppExpanded((v) => !v)}
 				>
 					♫
-				</span>
+				</button>
 
 				<div className="bgm-player-sep" />
 
@@ -2277,6 +2403,7 @@ export function BgmPlayer({ naia }: Props) {
 					data-usage-event="bgm-player.button-2.click"
 					onClick={playPrev}
 					title={t("bgm.prev")}
+					aria-label={t("bgm.prev")}
 				>
 					‹
 				</button>
@@ -2296,6 +2423,7 @@ export function BgmPlayer({ naia }: Props) {
 					data-usage-event="bgm-player.button-4.click"
 					onClick={playNext}
 					title={t("bgm.next")}
+					aria-label={t("bgm.next")}
 				>
 					›
 				</button>
@@ -2306,6 +2434,7 @@ export function BgmPlayer({ naia }: Props) {
 					onClick={toggleCurrentLike}
 					disabled={!currentLibraryTrack}
 					title={currentLiked ? t("bgm.favRemove") : t("bgm.favAdd")}
+					aria-label={currentLiked ? t("bgm.favRemove") : t("bgm.favAdd")}
 				>
 					{currentLiked ? "♥" : "♡"}
 				</button>
@@ -2316,6 +2445,7 @@ export function BgmPlayer({ naia }: Props) {
 					onClick={addCurrentToPlaylist}
 					disabled={!currentLibraryTrack}
 					title={t("bgm.addToPlaylist")}
+					aria-label={t("bgm.addToPlaylist")}
 				>
 					＋
 				</button>
@@ -2325,6 +2455,7 @@ export function BgmPlayer({ naia }: Props) {
 					type="button"
 					className={`bgm-track-name bgm-track-toggle${appExpanded ? " bgm-track-name--open" : ""}`}
 					title={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
+					aria-label={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
 					data-usage-event="bgm-player.set-app-expanded-7.click"
 					onClick={() => setAppExpanded((v) => !v)}
 				>
@@ -2351,6 +2482,7 @@ export function BgmPlayer({ naia }: Props) {
 						recordRadioDjLabEvent("bgm.volume", { volume: nextVolume });
 					}}
 					title={t("bgm.volume")}
+					aria-label={t("bgm.volume")}
 				/>
 			</div>
 
@@ -2359,6 +2491,9 @@ export function BgmPlayer({ naia }: Props) {
 				createPortal(
 					<div
 						className={`bgm-yt-app${appExpanded ? "" : " bgm-yt-app--hidden"}`}
+						// Hidden via CSS only, so keep its controls (e.g. the captions
+						// checkbox) out of the tab order while closed.
+						{...(appExpanded ? {} : { inert: "" })}
 						style={{
 							position: "fixed",
 							top: appPos.top,
@@ -2407,6 +2542,15 @@ export function BgmPlayer({ naia }: Props) {
 						</div>
 
 						{/* ── 활성 플레이리스트 툴바 — 모든 탭 공통 (선택·셔플·반복) ── */}
+						{broadcastNotice && (
+							<div
+								className="bgm-yt-status"
+								data-testid="bgm-broadcast-youtube-notice"
+								role="status"
+							>
+								{broadcastNotice}
+							</div>
+						)}
 						<div className="bgm-playlist-toolbar">
 							<select
 								value={activePlaylist?.id ?? ""}
@@ -2422,17 +2566,37 @@ export function BgmPlayer({ naia }: Props) {
 						{/* ── YouTube tab ── */}
 						{appTab === "youtube" && (
 							<>
-								<label className="bgm-yt-background-option">
-									<input
-										type="checkbox"
-										checked={showYoutubeBackground}
-										data-usage-event="bgm-player.set-show-youtube-background-15.select"
-										onChange={(event) =>
-											setShowYoutubeBackground(event.target.checked)
-										}
-									/>
-									{t("bgm.showBackgroundVideo")}
-								</label>
+								<div className="bgm-yt-options">
+									<label className="bgm-yt-background-option">
+										<input
+											type="checkbox"
+											checked={showYoutubeBackground}
+											data-usage-event="bgm-player.set-show-youtube-background-15.select"
+											onChange={(event) =>
+												setShowYoutubeBackground(event.target.checked)
+											}
+										/>
+										{t("bgm.showBackgroundVideo")}
+									</label>
+									<label
+										className="bgm-yt-captions-option"
+										data-bgm-captions-toggle=""
+									>
+										<input
+											type="checkbox"
+											checked={captionsEnabled}
+											data-usage-event="bgm-player.main-merge-1.select" onChange={(event) => {
+												const next = event.target.checked;
+												captionsRef.current = next;
+												void patchUiPreferences({
+													[UI_PREFERENCE_KEYS.youtubeCaptions]: next,
+												});
+												applyCaptions(next);
+											}}
+										/>
+										{t("bgm.showCaptions")}
+									</label>
+								</div>
 								<div className="bgm-yt-tabs">
 									<button
 										type="button"
@@ -2628,7 +2792,8 @@ export function BgmPlayer({ naia }: Props) {
 												type="button"
 												className="bgm-yt-fav-btn"
 												title={t("bgm.addToPlaylist")}
-												data-usage-event="bgm-player.stop-propagation-25.click"
+					aria-label={t("bgm.addToPlaylist")}
+					data-usage-event="bgm-player.stop-propagation-25.click"
 												onClick={(event) => {
 													event.stopPropagation();
 													addToActivePlaylist(localLibraryTrack(localPaths[idx], localNames[idx]));
@@ -2740,7 +2905,8 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav, onAdd }: RowP
 				type="button"
 				className="bgm-yt-fav-btn"
 				title={t("bgm.addToPlaylist")}
-				data-usage-event="bgm-player.stop-propagation-27.click"
+					aria-label={t("bgm.addToPlaylist")}
+					data-usage-event="bgm-player.stop-propagation-27.click"
 				onClick={(event) => {
 					event.stopPropagation();
 					onAdd();
