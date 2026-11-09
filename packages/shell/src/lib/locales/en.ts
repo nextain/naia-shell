@@ -1396,4 +1396,9 @@ export default {
 	"studioNvaApply.cancel": "Cancel",
 	"studioNvaApply.applying": "Applying…",
 	"studioNvaApply.confirm": "Apply",
+	"broadcast.btnLabel": "Broadcast",
+	"broadcast.keyRequiredHint": "Enter a stream key in Settings first",
+	"broadcast.disconnectedLabel": "Disconnected",
+	"broadcast.bgmLocalOnlyNotice": "Local music only while broadcasting",
+	"broadcast.bgmYoutubeCopyrightNotice": "Copyrighted tracks may cause your stream to stop",
 } as const;

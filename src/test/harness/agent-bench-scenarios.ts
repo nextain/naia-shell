@@ -167,6 +167,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
+  // 0.2.6 OBS 없이 쉘에서 바로 방송 송출. 셸 미디어·프로세스·UI 표면 기능이다.
+  "UC-BROADCAST-STREAM-026",
   // 자막 표시와 전환이다.
   "UC-025-01",
   // 재생 키 조작이다.

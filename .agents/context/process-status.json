@@ -18,8 +18,24 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-  "last_updated": "2026-10-31T21:24:58+09:00",
+  "last_updated": "2026-11-09T00:43:28.490389+00:00",
   "current_work": {
+    "pr835_main_merge_20261109": {"issue": 835, "title": "Merge main b7401e7b into approved broadcast PR #835", "status": "verified", "verification": "Scenario-source and fixture contracts 29 passed; broadcast suite 8 passed; broadcast name filter 6 passed; adjacent Shell tests 192 passed, 1 failed, 8 skipped; identical SettingsTab failure reproduced on unchanged main. Core TypeScript passed. Shell TypeScript rerun passed after reusing existing bgm-sidecar dependencies. Merge message completion evidence also passed. Completion checks passed for all 9 PR commits.", "last_updated": "2026-11-09T00:42:48.931901+00:00"},
+    "broadcast_stream_026_20261106": {
+      "issue": null,
+      "title": "나이아 쉘 0.2.6 방송 바로 송출 2단계 (OBS 없이)",
+      "requirements": "docs/requirements.md FR-BROADCAST-STREAM.1~6",
+      "scenario": "docs/user-scenarios.md UC-BROADCAST-STREAM-026",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "done",
+      "last_updated": "2026-11-06T12:36:00+09:00"
+    },
     "fix_024_i1_20261031": {"issue": null, "title": "0.2.4 Windows 앱스토어 창 및 설치기 파일 잠금 수정", "requirements": "docs/requirements.md FR-FIX-024-I1", "scenario": "docs/user-scenarios.md UC-FIX-024-I1", "gates": {"P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending"}, "status": "in_progress", "verification": "Background selection Vitest 5/5; app store Playwright 2/2; shell and WDIO TypeScript and compile integrity pass. Windows native UI and installation validation remain pending; full visual state review remains pending.", "last_updated": "2026-10-31T21:24:58+09:00"},
     "project_panels_class_reset_20261025": {
       "issue": null,
