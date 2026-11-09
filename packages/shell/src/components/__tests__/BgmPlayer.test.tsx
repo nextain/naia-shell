@@ -2035,3 +2035,82 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		expect(postedEvents().filter((m) => m.event === "listening")).toHaveLength(0);
 	});
 });
+
+describe("BgmPlayer local folder playlist loop", () => {
+	beforeEach(() => {
+		bgmPlayback.reset();
+		resetBgmLibraryCache();
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]);
+		vi.mocked(toLocalBlobUrl).mockImplementation(async (path) => `blob:${path}`);
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		vi.mocked(listNaiaAssets).mockResolvedValue([]);
+		vi.mocked(toLocalBlobUrl).mockResolvedValue("blob:mock");
+		listeners.clear();
+		bgmPlayback.reset();
+		resetBgmLibraryCache();
+		useAvatarStore.setState(useAvatarStore.getInitialState());
+		localStorage.clear();
+	});
+	async function setup(exclude: string[] = []) {
+		localStorage.setItem("naia-config", JSON.stringify({ locale: "en", bgmSource: "local", bgmLocalLoopExclude: exclude }));
+		const { container } = render(<BgmPlayer />);
+		const audio = container.querySelector("audio")!;
+		await waitFor(() => expect(audio.src).toBe("blob:/music/a.mp3"));
+		await act(async () => { fireEvent.click(container.querySelector(".bgm-btn--play")!); });
+		expect(useAvatarStore.getState().bgmPlaying).toBe("local");
+		return { audio, container };
+	}
+	async function end(audio: HTMLAudioElement, expected: string) {
+		await act(async () => { fireEvent.ended(audio); });
+		expect(audio.src).toBe(`blob:/music/${expected}.mp3`);
+	}
+	it("advances every local track and wraps last to first twice with no library playlist", async () => {
+		const { audio } = await setup();
+		expect(audio.loop).toBe(false);
+		for (const track of ["b", "c", "a", "b", "c", "a"]) await end(audio, track);
+	});
+	it("does not advance after manual stop or before playback starts", async () => {
+		const { audio, container } = await setup();
+		fireEvent.click(container.querySelector(".bgm-btn--play")!);
+		expect(useAvatarStore.getState().bgmPlaying).toBe("");
+		const calls = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+		await end(audio, "a");
+		expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(calls);
+	});
+	it("keeps native single track looping even when excluded", async () => {
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/a.mp3"]);
+		const { audio } = await setup(["a.mp3"]);
+		expect(audio.loop).toBe(true);
+	});
+	it("skips excluded file names including at wraparound", async () => {
+		const { audio } = await setup(["b.mp3", "a.mp3"]);
+		await end(audio, "c");
+		await end(audio, "c");
+	});
+	it("wraps a manually selected last track back to first", async () => {
+		const { audio } = await setup();
+		fireEvent.click(screen.getByText(/Local/, { selector: ".bgm-app-tab" }));
+		await act(async () => { fireEvent.click(screen.getByTitle("c")); });
+		expect(audio.src).toBe("blob:/music/c.mp3");
+		await end(audio, "a");
+	});
+	it("allows manual playback of an excluded track then resumes eligible tracks", async () => {
+		const { audio } = await setup(["b.mp3"]);
+		fireEvent.click(screen.getByText(/Local/, { selector: ".bgm-app-tab" }));
+		await act(async () => { fireEvent.click(screen.getByTitle("b")); });
+		expect(audio.src).toBe("blob:/music/b.mp3");
+		await end(audio, "c");
+		await end(audio, "a");
+	});
+	it("ignores exclusions when every file is excluded", async () => {
+		const { audio } = await setup(["a.mp3", "b.mp3", "c.mp3"]);
+		await end(audio, "b");
+		await end(audio, "c");
+		await end(audio, "a");
+	});
+});

@@ -489,6 +489,8 @@ export interface AppConfig {
 	bgmTrack?: string;
 	/** Last active BGM source ("youtube" or "local"). */
 	bgmSource?: "local" | "youtube";
+	/** Exact file names (including extension) skipped by local automatic playback. */
+	bgmLocalLoopExclude?: string[];
 	/** Last playing YouTube video ID (for session restore). */
 	bgmYoutubeVideoId?: string;
 	/** Last playing YouTube video title. */

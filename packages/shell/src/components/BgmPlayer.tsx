@@ -2132,6 +2132,20 @@ export function BgmPlayer({ naia }: Props) {
 		if (paths.length > 0) playLocalAt(0, track.title);
 	}
 
+	function handleLocalEnded() {
+		const tracks = localTracksRef.current;
+		if (source !== "local" || !playing || tracks.length === 0) return;
+		const excluded = new Set(loadConfig()?.bgmLocalLoopExclude ?? []);
+		const eligible = tracks.map((_, index) => index).filter((index) =>
+			!excluded.has(localPathsRef.current[index]?.split(/[\\/]/).pop() ?? ""),
+		);
+		const order = eligible.length > 0 ? eligible : tracks.map((_, index) => index);
+		const current = tracks.indexOf(bgmTrackUrl);
+		const next = order.find((index) => index > current) ?? order[0];
+		Logger.debug("BgmPlayer", "local playlist ended", { current, next, trackCount: tracks.length });
+		playLocalAt(next);
+	}
+
 	function playNext(): boolean {
 		const state = libraryRef.current;
 		if (state.queue.length > 0) {
@@ -2264,7 +2278,7 @@ export function BgmPlayer({ naia }: Props) {
 			<audio
 				ref={audioRef}
 				loop={source === "local" && localTracks.length <= 1}
-				onEnded={playNext}
+				onEnded={handleLocalEnded}
 				onError={() => setPlaying(false)}
 			>
 				<track kind="captions" />
