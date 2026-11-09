@@ -1,0 +1,2102 @@
+{
+  "version": "1",
+  "entries": {
+    "alveolar>alveolar": {
+      "offset": 0,
+      "length": 328274,
+      "sha256": "5c38f07f3618ec3fb346b97b927ec72742730086b1c198a1eb6bb3ee98b4b94f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>alveolar>alveolar": {
+      "offset": 328274,
+      "length": 328305,
+      "sha256": "d33174df77c0fa5a1bcd20ee8f51c43f2e071c3082141e853ec0a3f057757373",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>alveolar>vowel-mid": {
+      "offset": 656579,
+      "length": 328345,
+      "sha256": "43acf5fdcaabe50ce9514f0dfbcc8f1d3959feee00077cb4555dc122677b69f2",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>alveolar>vowel-open": {
+      "offset": 984924,
+      "length": 328274,
+      "sha256": "6d694c847c09ad763ac7bf6c43c2b523f953d9ed32dc3a7803a714fe7556a631",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>alveolar>vowel-round": {
+      "offset": 1313198,
+      "length": 328325,
+      "sha256": "3c710bb5d441257d644c733b1b850db7c44c3aad5fc6a9485ed19aca29678206",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>alveolar>vowel-spread": {
+      "offset": 1641523,
+      "length": 328310,
+      "sha256": "e595cd3ca782b7dd4401402d8c822bb464eb209026c6e725a1ea59a76146ab14",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>closed": {
+      "offset": 1969833,
+      "length": 328105,
+      "sha256": "d0e583bf53e863cda7677b5d8732b02d55af02a806431c034ae3a959a8aaffe9",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>dental": {
+      "offset": 2297938,
+      "length": 328402,
+      "sha256": "54c75d6c4104c61bb256e8b0bec29b0e939757fd56222549c17cfb30ddeaa272",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>glottal": {
+      "offset": 2626340,
+      "length": 328508,
+      "sha256": "24f28fde88a5d98977d1f9791c92f5358d318df7217eee97f7733a99e0772094",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>glottal>vowel-open": {
+      "offset": 2954848,
+      "length": 328525,
+      "sha256": "f6f44eacfdd0b12f6cfb1d06640da19309c66c5064a853f32074481d04e728c1",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>glottal>vowel-round": {
+      "offset": 3283373,
+      "length": 328493,
+      "sha256": "23401a4ad61fe0ae75815a511e6d30e2b9b1eeb751d8f45a068989ebed8ff3ac",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>labiodental": {
+      "offset": 3611866,
+      "length": 328433,
+      "sha256": "578b1bb33feb41bb198206cdfeea98a9b69d933750299485812feebd784ef7f5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>palatal": {
+      "offset": 3940299,
+      "length": 328474,
+      "sha256": "108b135f4219224906ed10896920ca3bab6e5c834bbce3873182446bc0e2b431",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>postalveolar": {
+      "offset": 4268773,
+      "length": 328455,
+      "sha256": "a7ab8701ab00a113eb64cc4e6a27f56613fea41665e83e129369ee7cdbc60abd",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>sil": {
+      "offset": 4597228,
+      "length": 328175,
+      "sha256": "b8df41e896b4280c373165882bf86227e52d2e8abcf408085ec2e91035021c65",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>velar": {
+      "offset": 4925403,
+      "length": 328216,
+      "sha256": "e87fb8dd36ca63674db303ff26402846e80a01240a94df2f938f5dfd344a0d0e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-mid": {
+      "offset": 5253619,
+      "length": 328286,
+      "sha256": "a84312697de4b536887e04d61a2a8e0d066cc1015e32b61492c10e8c1ab81f4f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-mid>alveolar": {
+      "offset": 5581905,
+      "length": 328306,
+      "sha256": "02d8dd87d2b9f0eb22ada4c1e65d443a346420edaaee3241f4559a59ebda1ee8",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-mid>closed": {
+      "offset": 5910211,
+      "length": 328259,
+      "sha256": "c59fd61b8b9b7af017864ffa7f1b278654cd9ec10d3d0e7c8eaa8bc42db6b268",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-mid>postalveolar": {
+      "offset": 6238470,
+      "length": 328316,
+      "sha256": "0a1e1369feea05a9baa026e1e9a1324214f79688f52f8ce86a33815cb788df43",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-mid>velar": {
+      "offset": 6566786,
+      "length": 328256,
+      "sha256": "21cce16ceefe3a19b4559eee707c5a959f75c927e63278791487e74af458679d",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-open": {
+      "offset": 6895042,
+      "length": 328445,
+      "sha256": "ed21e726bf7475bb627260b894d5ed015023d134ca14bb19f55a7b1761a272d2",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-open>alveolar": {
+      "offset": 7223487,
+      "length": 328479,
+      "sha256": "f147452431cf101d016fa49ca7433a9c2ca07f48fcf9054b9ae5eb7120dea6cf",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-open>velar": {
+      "offset": 7551966,
+      "length": 328497,
+      "sha256": "9da865b7cdd8c833206b7e93473b408148105062452aaa3d271b97585465f1a5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-open>vowel-spread": {
+      "offset": 7880463,
+      "length": 328529,
+      "sha256": "5b2ed901bd68f5178150a0bbac4fbf2f4eb0faddd05f95a6f851f8871f5d3cf8",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-round": {
+      "offset": 8208992,
+      "length": 328031,
+      "sha256": "202ad48bd2c794467626ed71445308f6e15e7b55d8f2ff9b7bc1d32ed0e615ae",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-round>alveolar": {
+      "offset": 8537023,
+      "length": 327970,
+      "sha256": "025ef9fb0bf19fc76c2573ab322ab1d15ccc3fff1fd97d821c9144810f88a26c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-round>postalveolar": {
+      "offset": 8864993,
+      "length": 328010,
+      "sha256": "91808fcb6247c8bf7881425a4bcdad368b63dd14c69799ce56b452dda7cbeae8",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-round>vowel-round": {
+      "offset": 9193003,
+      "length": 328107,
+      "sha256": "0e586ed21eb0bd19f832f1f4ad6c7d5f2c1292b39eb71154ffb001f1ffa433b5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-round>vowel-spread": {
+      "offset": 9521110,
+      "length": 328036,
+      "sha256": "ab3b531a6d416acf7092bf754ffb1fa2de9f8562829e4878fe36ed8ab9bdc3a5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread": {
+      "offset": 9849146,
+      "length": 328523,
+      "sha256": "791f7af35bd93173a7bdddbea09c1a49f3cacddf88d310f70b650d2bb38d2dc1",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread>alveolar": {
+      "offset": 10177669,
+      "length": 328497,
+      "sha256": "a55eed47a0d52ba5d9316c560989bb7e1161c656acecd98a7d05a1bd721d9715",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread>closed": {
+      "offset": 10506166,
+      "length": 328556,
+      "sha256": "986d4cedd004093e35c307360b476d5953acfd0ec21d0420e6bcfad4fd6e6755",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread>postalveolar": {
+      "offset": 10834722,
+      "length": 328562,
+      "sha256": "2c56407aea742ebed4e03aa2cf7d55f9ad5958e49a37204788356d8afdc204ac",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread>velar": {
+      "offset": 11163284,
+      "length": 328608,
+      "sha256": "88409c773fd7ca62195c05631ea3ec006fd6e586aa2af003d5a8fa86c6ee9c75",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread>vowel-mid": {
+      "offset": 11491892,
+      "length": 328455,
+      "sha256": "585e9bcf98dbb639a389339666cb992f6f211d9fd825ef5d14e7f4feb42a953d",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "alveolar>vowel-spread>vowel-spread": {
+      "offset": 11820347,
+      "length": 328518,
+      "sha256": "2cbb8e00cda80a43af2d77a34b3d56c9e97a35bfe717b42a96f2bb8b72397e1f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>alveolar": {
+      "offset": 12148865,
+      "length": 328138,
+      "sha256": "3a229040d6c064d65215ee219d48cfeb8c10ecd4629ee6d1a04df4c73dc74e02",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>closed": {
+      "offset": 12477003,
+      "length": 328098,
+      "sha256": "b7b8c2a4661cc207e2a5f2d185267e509c4215fd5d10269760c3b32b78e248ea",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>dental": {
+      "offset": 12805101,
+      "length": 328209,
+      "sha256": "dbdae6d619f63ee5c5c8e6aa257fd2ab4dfac1e6b8b93315da89af311c149ea3",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>glottal": {
+      "offset": 13133310,
+      "length": 328270,
+      "sha256": "3c31afc5899ef76d4910e50bee1627baba989a4f367420dd33c35d12c839a9aa",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>labiodental": {
+      "offset": 13461580,
+      "length": 328197,
+      "sha256": "5f17ae99785f9c21504e0e48998c301c6bf6d7f68d2396f677728bbab99ba759",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>palatal": {
+      "offset": 13789777,
+      "length": 328156,
+      "sha256": "abe861470e3376db65921edb5dc60244c1a8a547e1000c51fa90932aa6df56b4",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>postalveolar": {
+      "offset": 14117933,
+      "length": 328235,
+      "sha256": "f7ad57ba07a9ea57095ab85a3d6bb4aa545124cb0f7b3e15ccfafdcb6046bb08",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>sil": {
+      "offset": 14446168,
+      "length": 328143,
+      "sha256": "7e6cafe7fb99079da1a77ae8b1f4b40666f4becc4195e3f295e6d552c4ffee49",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>velar": {
+      "offset": 14774311,
+      "length": 328013,
+      "sha256": "efc15ec8085d68bcf209c736d9d483f3af880735487e00445143681796272990",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>vowel-mid": {
+      "offset": 15102324,
+      "length": 328038,
+      "sha256": "e0276f82ea73289531ac554cc5d1150158caed73031a2eedfe39295e42188cfe",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>vowel-mid>alveolar": {
+      "offset": 15430362,
+      "length": 328031,
+      "sha256": "9102945a3f90a78932f3ed62c8879b7707885347d9a4955bf1997253884e5bcd",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>vowel-open": {
+      "offset": 15758393,
+      "length": 328316,
+      "sha256": "f977c32db47387a878d2da4d73041953892e3187ccb09e3c94c16ad573c8d9cb",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>vowel-open>alveolar": {
+      "offset": 16086709,
+      "length": 328328,
+      "sha256": "b032fee655bc93259ba332537c955efaacfd2bf7859ba63e33489ee93c6bfb93",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>vowel-round": {
+      "offset": 16415037,
+      "length": 327977,
+      "sha256": "f7d8c8080e591ff8dd213d1ec86be9f50282fb38a7e890140bab65c82cda8cb6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "closed>vowel-spread": {
+      "offset": 16743014,
+      "length": 328344,
+      "sha256": "8ab507ef096efed8f2a0e4f9a2f67c5776465a88a088ed349241f054bd13c7be",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>alveolar": {
+      "offset": 17071358,
+      "length": 328477,
+      "sha256": "d5bdf73dc091ae2e0eb6cd90c7c485570a9219682462fc5a3da3b92118cb01a7",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>closed": {
+      "offset": 17399835,
+      "length": 328228,
+      "sha256": "cc38d72bb2981adcde3b30700d8c86a3346f6619ccd76ea1af390ccb4cd52f49",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>dental": {
+      "offset": 17728063,
+      "length": 328478,
+      "sha256": "eb983156d57e2857982090d112f91288d68fea06ce3550659615cd28aff97636",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>glottal": {
+      "offset": 18056541,
+      "length": 328587,
+      "sha256": "67a48ee2074521e431719d231a08be90e876d5247b2d6fa71f4803ef891602f1",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>labiodental": {
+      "offset": 18385128,
+      "length": 328448,
+      "sha256": "3188c7e2efc37259f9dfa38d4ef2fae0efb1dc03fecd5a53015d14ed79783555",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>palatal": {
+      "offset": 18713576,
+      "length": 328455,
+      "sha256": "ac95fcabfa09d5d83e0b23d8b94ebe7aabe16c7c4dcbefcfe99ecfcb8993c7a4",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>postalveolar": {
+      "offset": 19042031,
+      "length": 328514,
+      "sha256": "972a2b41deb019f1dc4386640266061cda53036ff7d80e3d882ee601bbe12fd5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>sil": {
+      "offset": 19370545,
+      "length": 328375,
+      "sha256": "9e3efef371ce870921e2ab216529089bda7fb6a72a95b554fc23685e6114e8f3",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>velar": {
+      "offset": 19698920,
+      "length": 328352,
+      "sha256": "67774a71c7fdb42ac067f0edc7f66e453095f4b578b4d73cf4f4ce5b5db27318",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>vowel-mid": {
+      "offset": 20027272,
+      "length": 328382,
+      "sha256": "8bd8a1f817442f28a618f9dfb62f5d94aa7c19e619261640f1026f377514fe0e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>vowel-open": {
+      "offset": 20355654,
+      "length": 328554,
+      "sha256": "252eea9cb0a2483c8f5ff31537569a4773c568fc9018c72e52bec7e9209e936c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>vowel-round": {
+      "offset": 20684208,
+      "length": 328159,
+      "sha256": "826b1d38fdd841cad199efcf11100f071646a316403c74f6d580dfe043cd016f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "dental>vowel-spread": {
+      "offset": 21012367,
+      "length": 328584,
+      "sha256": "2355a0ed016ecc88c7117fbf5291f8146a4eb6a3f63f73704d93851d7de83642",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>alveolar": {
+      "offset": 21340951,
+      "length": 328442,
+      "sha256": "8e068ed4a73476add97ef5e765bb673dbf0905e8d2f5da39dea0d5937e282f92",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>closed": {
+      "offset": 21669393,
+      "length": 328313,
+      "sha256": "e43bd65529d883a28379dee3a21ed255f334a5ecf97fd66ff2dee25bc2efeaf8",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>dental": {
+      "offset": 21997706,
+      "length": 328546,
+      "sha256": "61dfe0930ee41975b9ce3e07df7e461e2ada508dfce8937a475f512edb87a7b2",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>glottal": {
+      "offset": 22326252,
+      "length": 328615,
+      "sha256": "11ea24e27c7ef008bfbe57c9e4461ef99d539bfbbe0fa4bed4c3d56f3e45d87e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>labiodental": {
+      "offset": 22654867,
+      "length": 328489,
+      "sha256": "b906cdb5d93546b80654ebfef94f02aaa59e76d29dae2dfaae4ee85ae8c9252a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>palatal": {
+      "offset": 22983356,
+      "length": 328507,
+      "sha256": "a9234b4a571258a6efc70ea6c2840e0a2c8ae39d86b241946785085c62c2579c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>postalveolar": {
+      "offset": 23311863,
+      "length": 328525,
+      "sha256": "025a370193cb11b59fff48087ad9eb9dbec41b0fc123b95a8fc2e003b6379557",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>sil": {
+      "offset": 23640388,
+      "length": 328307,
+      "sha256": "d037e9b8ecfd64235f132cd4b5dab5b8cdcf4ff0ec1f75a93d7824124a75eb7b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>velar": {
+      "offset": 23968695,
+      "length": 328345,
+      "sha256": "ffbab5cc754457d07e16f3617b3420cca8c261cd5eca857bf07f236abd0a30bd",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>vowel-mid": {
+      "offset": 24297040,
+      "length": 328443,
+      "sha256": "56e27d426d860ae5825ded412afd927df5fae5307d241b3e1dae9c900f5f0aeb",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>vowel-open": {
+      "offset": 24625483,
+      "length": 328644,
+      "sha256": "fe5fdd2b9f3c9c68430628c0132bd06a9cadb7cedad0eb7c196cbc42bb85c184",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>vowel-open>alveolar": {
+      "offset": 24954127,
+      "length": 328559,
+      "sha256": "06bccedcfc19a2985d2f8694aba669bee6c779f2af56a8ecc8f9d5f525a1f560",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>vowel-round": {
+      "offset": 25282686,
+      "length": 328219,
+      "sha256": "653a2fb24ed3cefc7f3947611b8ba6af8f4281aaf26428517400b11f0b4aa29a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "glottal>vowel-spread": {
+      "offset": 25610905,
+      "length": 328658,
+      "sha256": "570d6791deba02433e9e00e00ab9ca3acbb00867137f73b355af2c62cc36a928",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>alveolar": {
+      "offset": 25939563,
+      "length": 328380,
+      "sha256": "cce215a704cf3ea84bec38baecd752ca960b4b9938e8e4f78996f763a8f61a4e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>closed": {
+      "offset": 26267943,
+      "length": 328203,
+      "sha256": "0812c9b94150cd5dad28a9fc7de4895e4ce39c59214cbd4832f6a6cda9523f0a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>dental": {
+      "offset": 26596146,
+      "length": 328514,
+      "sha256": "289c8cec7bb3e98a3f1b1d53414ce4b14ca8327f68830ec1d21204013f706e30",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>glottal": {
+      "offset": 26924660,
+      "length": 328460,
+      "sha256": "b007ffbd17c5a507ce9e05f3f078b1517b4ca94cf9827a7b857e654da0baba89",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>labiodental": {
+      "offset": 27253120,
+      "length": 328411,
+      "sha256": "c7331be99f52c28c1bb31ab465ca75d223247abf4cb6700d1048c0c5382ae590",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>palatal": {
+      "offset": 27581531,
+      "length": 328446,
+      "sha256": "e8d6800e55ff89718588fe9635cb541de4b69da87ed44103c549e3cac6717112",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>postalveolar": {
+      "offset": 27909977,
+      "length": 328549,
+      "sha256": "7fea398b06ca7e0c99c37898939f6a396c5a5fd9457006429d68cb759cd8c1d3",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>sil": {
+      "offset": 28238526,
+      "length": 328228,
+      "sha256": "addb43fffbd803cf0ed336960c991bae68f7071b86d7433d44aba8abd7e15126",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>velar": {
+      "offset": 28566754,
+      "length": 328304,
+      "sha256": "90ef0913914bff2f465e017218343895678403da8b6f76bebc662a7522307391",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>vowel-mid": {
+      "offset": 28895058,
+      "length": 328385,
+      "sha256": "1ada20d18c193f4eda0fbab256f02ab7cc7d7720379036255b648a67c27ab1d4",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>vowel-open": {
+      "offset": 29223443,
+      "length": 328591,
+      "sha256": "7630f0e0b9c8ba0e62457554fc85810c259cb639ac43e564abdd37330b467a88",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>vowel-round": {
+      "offset": 29552034,
+      "length": 328044,
+      "sha256": "1b0bba2fc97b7535ac1704a43cb1308d982b30f8b0810e9e5a9444190d0e29b5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "labiodental>vowel-spread": {
+      "offset": 29880078,
+      "length": 328546,
+      "sha256": "9c7d3898950a5eb47c71253e19a7396b951b9ac848b36a2d900d81956ec93477",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>alveolar": {
+      "offset": 30208624,
+      "length": 328501,
+      "sha256": "829c243cdda79da36fceb5b3d89b69ebb1b2abca2b34f10c5c84d619df2c4703",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>closed": {
+      "offset": 30537125,
+      "length": 328256,
+      "sha256": "c16d5c8b4e953b49b7eb672b001562ec316e7565a1b2ee798997c941df9e3031",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>dental": {
+      "offset": 30865381,
+      "length": 328532,
+      "sha256": "b6bbec25b988256b82f4ecec6e8a1d8b49ad41c4fb77308abf396e931651b0ce",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>glottal": {
+      "offset": 31193913,
+      "length": 328579,
+      "sha256": "479a805656e81f38aaeb0b25d44c068129925f301faf1212fe8dd975b8335c55",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>labiodental": {
+      "offset": 31522492,
+      "length": 328398,
+      "sha256": "a30a01a5e5620e22088aac30005447c5dc3df3b8e454d60200136e32af9c392c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>palatal": {
+      "offset": 31850890,
+      "length": 328464,
+      "sha256": "956cfb06c461af03b2596e9155edf356d7a969bf3e8706503d763edd8fb0d546",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>postalveolar": {
+      "offset": 32179354,
+      "length": 328515,
+      "sha256": "4750554373c5df36af21698c0fecc100970564fcdbd35981e8439a4182334a20",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>sil": {
+      "offset": 32507869,
+      "length": 328288,
+      "sha256": "b72d0d4b39e8ef4f36073bbdd0614fbce89993a9a2b241caffa55fa1c5249f3c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>velar": {
+      "offset": 32836157,
+      "length": 328354,
+      "sha256": "89cced044eb7a165fe6b2e9ddd88021d7d7dfeb93d6d069bc0ac7be098f96973",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>vowel-mid": {
+      "offset": 33164511,
+      "length": 328379,
+      "sha256": "a99238d1e15901c31984bc1213297a3711d204cdb4cf39ca8810829a4bd171cc",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>vowel-open": {
+      "offset": 33492890,
+      "length": 328584,
+      "sha256": "750d67093545baf865f5b6a362faeaf2248c9feb3b91c279de4e4aab57d4dd55",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>vowel-round": {
+      "offset": 33821474,
+      "length": 328113,
+      "sha256": "3d6497aba2e71b1df1f0446a8ad8cfb84ad47b91e52808f8108b221273ae2f57",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "palatal>vowel-spread": {
+      "offset": 34149587,
+      "length": 328619,
+      "sha256": "bb54ebb4ee8be69f19579bdef2c1c3ea88404480875fc5344851951886bd2a14",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>alveolar": {
+      "offset": 34478206,
+      "length": 328381,
+      "sha256": "bf0b21b0297abf965a76aa471717b1ad4cc15221e7814727a95df553bdaa3674",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>closed": {
+      "offset": 34806587,
+      "length": 328163,
+      "sha256": "a1ef98b21a88ed05ad2f8a86a9faccd0faaf711449ea15ff71cc6975cc51d287",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>dental": {
+      "offset": 35134750,
+      "length": 328418,
+      "sha256": "5e72e021cc09e0949503d07b51ec6ff877861e21be5d597ecdde6de082871d34",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>glottal": {
+      "offset": 35463168,
+      "length": 328575,
+      "sha256": "49bbf1246e65587967ffe37e685ab5511f545a7df085de28d039d19fc415c537",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>glottal>vowel-spread": {
+      "offset": 35791743,
+      "length": 328495,
+      "sha256": "4d24053a0f787e4f492e5308d4eee6c93c402c493d8f53b8cd97b129b1b2c837",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>labiodental": {
+      "offset": 36120238,
+      "length": 328410,
+      "sha256": "91fc84e64d37f4e31d427a2aeba9f9fa20b5f8156e833815d2c825333a169487",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>palatal": {
+      "offset": 36448648,
+      "length": 328476,
+      "sha256": "a0ce5256766064e9402c283f5c147f78ba3a59b8ec9e04f750892304e11f4093",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>postalveolar": {
+      "offset": 36777124,
+      "length": 328485,
+      "sha256": "d822f608085c1101e319767ae2dd7f3955f0a3d2eb8354a344545c73fc5eb7f1",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>sil": {
+      "offset": 37105609,
+      "length": 328244,
+      "sha256": "19fb01dd589f0352eef82f5013eb2fed3edd76d1d943bfc1d9d55ccb85f7a59a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>velar": {
+      "offset": 37433853,
+      "length": 328284,
+      "sha256": "a6bad90f3f2b3565ecdfa1454099aca6d377da4d6501c9bf2a1be14785bc1b9e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-mid": {
+      "offset": 37762137,
+      "length": 328331,
+      "sha256": "3c8b4715d69287d2c8b37a3d1579a207cc46443511db233f1b35e5b56a8cede6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-open": {
+      "offset": 38090468,
+      "length": 328603,
+      "sha256": "6c066bd9317d109d1a6984e557c5f159773aa2f041f0e8c8cab0ef2a1c2cb899",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-open>closed": {
+      "offset": 38419071,
+      "length": 328527,
+      "sha256": "868bf264b5c1176fd9d636965601698a7849d778456929e25a8f1ebe6b4b207a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-open>vowel-spread": {
+      "offset": 38747598,
+      "length": 328560,
+      "sha256": "05cdb5f6d9c0d7f012c87643563773fbbaf0419e5b8b45565ac9ba119fcf9b04",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-round": {
+      "offset": 39076158,
+      "length": 328191,
+      "sha256": "86f60eb68793561bfa0c7df1b86f1ec314a85e84f8a629f8ead879c710bf2e93",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-spread": {
+      "offset": 39404349,
+      "length": 328578,
+      "sha256": "896cd6c6f9ef8e836e5e65286f5322e66efb03f1b7855b4de950263c3c20fefa",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "postalveolar>vowel-spread>alveolar": {
+      "offset": 39732927,
+      "length": 328571,
+      "sha256": "d4842007cc980f0a9afbd306f7a3674441bdbfec9f09fb6355f47dd22a215d67",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>alveolar": {
+      "offset": 40061498,
+      "length": 328211,
+      "sha256": "078a623d153cf1b40c41ca14e84be6bf4f4a0267dbce2cdcdd3b0fc51a711d80",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>closed": {
+      "offset": 40389709,
+      "length": 328162,
+      "sha256": "6fa0b672ecea93aa424b1d4f7b82d48d96bc676c4b36121ddf68ffaf7cccaedf",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>dental": {
+      "offset": 40717871,
+      "length": 328353,
+      "sha256": "fe1dfa99f59f1ea8baeb93fe0829f25189351193822825cceb389d61cefdb27c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>glottal": {
+      "offset": 41046224,
+      "length": 328384,
+      "sha256": "2786c65d85e4b43b18bfee74576bc48aa08857622a189b38b8391a28d4508f5e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>labiodental": {
+      "offset": 41374608,
+      "length": 328262,
+      "sha256": "e6c187041013ffb9e2176dd93d20c5f564070aab64e36da978003cab11e392e6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>palatal": {
+      "offset": 41702870,
+      "length": 328228,
+      "sha256": "2237d3af1ee655219c7cdfe2d7aa9561750e0a36306cef9a05540e80aa80f184",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>postalveolar": {
+      "offset": 42031098,
+      "length": 328320,
+      "sha256": "022f03ab3b53925df9c2895b84d0d1dfbb341f5471f99da9977d6262b7bfef32",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>sil": {
+      "offset": 42359418,
+      "length": 328188,
+      "sha256": "1869bbf2bf800ad623c828a0dad86ee8fd6d14ff4d8de6ad8d2afd7eb031ee61",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>velar": {
+      "offset": 42687606,
+      "length": 328225,
+      "sha256": "4c6b30e3d00586b366f3d3617d3171a134bd19250d5c7fe1b5c5a707e7bda537",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>vowel-mid": {
+      "offset": 43015831,
+      "length": 328164,
+      "sha256": "00fc213b1d3516f1642a0ba203bd60abae9d650cae8cbab614d27492e8911e4e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>vowel-open": {
+      "offset": 43343995,
+      "length": 328389,
+      "sha256": "9fe16e46621fd9effa1a3be5398e305b15d4d2f9d4ba600aed7c4ad2507e5d7b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>vowel-round": {
+      "offset": 43672384,
+      "length": 328053,
+      "sha256": "ad4c47245417c2ccffe8cb5adce292b6b8aa44262e9460770807daa4459deff6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "sil>vowel-spread": {
+      "offset": 44000437,
+      "length": 328462,
+      "sha256": "644eeec906aaa8a9a9ef977e9637d63a3a1503748a79592e7dfca9a6a62d601c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>alveolar": {
+      "offset": 44328899,
+      "length": 328181,
+      "sha256": "4d945416c56641745c5fe237c7f10c11f0e68555da60d38260aa51d7c0a3e205",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>alveolar>vowel-spread": {
+      "offset": 44657080,
+      "length": 328184,
+      "sha256": "b9fc13f6903f71240d6f25a2587f1548e179593fd9476be3fbb36ce58db93979",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>closed": {
+      "offset": 44985264,
+      "length": 328050,
+      "sha256": "1753d12dd840affe51ff4acad8e65ac28a739831f2f5de9c3b57cec6402ec08c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>dental": {
+      "offset": 45313314,
+      "length": 328298,
+      "sha256": "2552b9db818a7863f865c93c3a741e1c9561c3f2d99657699e5dda78e07727f5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>glottal": {
+      "offset": 45641612,
+      "length": 328451,
+      "sha256": "90ecac0d791a1d39bb96297023031be5e4b0032da4795f39d3d0fcfd908d5fca",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>labiodental": {
+      "offset": 45970063,
+      "length": 328284,
+      "sha256": "fdb550fdfaaec4b019428e79672c800c17cac82def1691cb04e17737ee12ec75",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>palatal": {
+      "offset": 46298347,
+      "length": 328225,
+      "sha256": "421793643866da66c3d487110fea2673af47d72e3beab8cf71708419b24936f6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>postalveolar": {
+      "offset": 46626572,
+      "length": 328237,
+      "sha256": "e3f88ef58e7df30b0f1faefe837ec949a3870e255007e6a0361b29e000451dde",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>sil": {
+      "offset": 46954809,
+      "length": 328093,
+      "sha256": "486d396a52985236d4d94f2d9ee87f4d8f55c306b300cbf0053a2cca717a6490",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>velar": {
+      "offset": 47282902,
+      "length": 328145,
+      "sha256": "08a73295cab07a4d59ece1c3b13b8919201cdf5c01319701794247f7cb724d07",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>vowel-mid": {
+      "offset": 47611047,
+      "length": 328179,
+      "sha256": "da89607736166f83c1719efd73dbdc31c8a7f6a04c82a089a3d64712123db5c8",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>vowel-mid>alveolar": {
+      "offset": 47939226,
+      "length": 328186,
+      "sha256": "a59cf8cb6f0b8d8ea19561d81f6ed23077902e8c33b1cfe7896fb1590cf6442d",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>vowel-open": {
+      "offset": 48267412,
+      "length": 328439,
+      "sha256": "d5e96f1db3a233e7733dccd9914b18bf871d0f0d910732622ca21ccd80badd2d",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>vowel-round": {
+      "offset": 48595851,
+      "length": 327853,
+      "sha256": "daa1bd27719dc809b2fc29bc7278390ec94947f2167f52a6e550592ec3eb1a3a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "velar>vowel-spread": {
+      "offset": 48923704,
+      "length": 328397,
+      "sha256": "2fabf96bf82c6ce01bbd2df21ee86a0a84dff6c0225777595844c45b2fb50bf1",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>alveolar": {
+      "offset": 49252101,
+      "length": 328271,
+      "sha256": "cd6f7600dd13fd8e4844489b12ada10bd67cef80825349f4cd7c795fe57bfae1",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>alveolar>alveolar": {
+      "offset": 49580372,
+      "length": 328285,
+      "sha256": "82901929d082b93f07f0f606cb1751d461f7eaefa26f4fa86bccebe267537790",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>alveolar>vowel-mid": {
+      "offset": 49908657,
+      "length": 328226,
+      "sha256": "6997e6995e1e29aed8538aa0c0b1ff1c897372fb8d1a34915e17e4f2faf5a8c5",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>alveolar>vowel-open": {
+      "offset": 50236883,
+      "length": 328310,
+      "sha256": "75288dfc9d4dd2ac6b1fe2e7354fb4b05ea7d1307596f3f54d2fe50f2e8f8f29",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>alveolar>vowel-round": {
+      "offset": 50565193,
+      "length": 328231,
+      "sha256": "22b32ef145bf40bbf5f44e155b23904294b774b5f421726da08e5aa7d9fd464f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>alveolar>vowel-spread": {
+      "offset": 50893424,
+      "length": 328257,
+      "sha256": "ba80d37800ec88a72bf009d81cf7e7265771a3796ed47d878425c24b0a36bddd",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>closed": {
+      "offset": 51221681,
+      "length": 328080,
+      "sha256": "55ed19d8bfbf203cec0ec176165eed4e0584fac9c85d2a4de78abaadb42c4baf",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>dental": {
+      "offset": 51549761,
+      "length": 328386,
+      "sha256": "e943be7c320614c8d8a095aa8e58342a3b858f87c7c6197ec1974fbfe46c8c11",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>glottal": {
+      "offset": 51878147,
+      "length": 328443,
+      "sha256": "89aa9cdaadb1a254f143ba8a323c8e196ef7036e3336a9d9f630d4dfd5b0647a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>labiodental": {
+      "offset": 52206590,
+      "length": 328339,
+      "sha256": "e069a736ec2dd2f7595f49b90f1f2a6d69a9306532e68ca10c4d2c171141cc7e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>palatal": {
+      "offset": 52534929,
+      "length": 328307,
+      "sha256": "ad03189b2067667451b237a3e6d72b82752381f8cf5ec3d27d008fcb98867f2a",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>postalveolar": {
+      "offset": 52863236,
+      "length": 328347,
+      "sha256": "405e6c44147b1555d3c1136c33d0515f58728a107802ff8b7b2ae827c7b36eec",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>postalveolar>vowel-open": {
+      "offset": 53191583,
+      "length": 328326,
+      "sha256": "ea26593067c6bdb75d8de013c158eafcb521620d26516cc772d426135394f06d",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>postalveolar>vowel-spread": {
+      "offset": 53519909,
+      "length": 328418,
+      "sha256": "eb3f9a068afea3de1abf0a267a3f32c7d8bfbb4dbb6edd87b6500e743415188f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>sil": {
+      "offset": 53848327,
+      "length": 328254,
+      "sha256": "096415b3994c4bb8d79bfa13b9da81b4cb6cf1e63fad45b36b86284f0b8a1bc0",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>velar": {
+      "offset": 54176581,
+      "length": 328172,
+      "sha256": "765aa379af6643ed0d3d8c76ae223eec523a5ed7443f8b2fcfa0c16fbc2b8d4f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>velar>alveolar": {
+      "offset": 54504753,
+      "length": 328135,
+      "sha256": "eec54cb21d567cadd2b0f143146447ffb535f645eda746af569c1e39125cd797",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>vowel-mid": {
+      "offset": 54832888,
+      "length": 328245,
+      "sha256": "3cd073a989b076529ab857fd33bd5505a34cd4b386a63871e723fc88b70a90f4",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>vowel-open": {
+      "offset": 55161133,
+      "length": 328463,
+      "sha256": "fb2f4eff23f331b8175a16f2debb022cf1cc042ce15a1825674bd63ea76b96c6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>vowel-round": {
+      "offset": 55489596,
+      "length": 328007,
+      "sha256": "497c09d068a06276cb9db598013f5a2f3ac364cef654cf734a32860ea43c99ea",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-mid>vowel-spread": {
+      "offset": 55817603,
+      "length": 328480,
+      "sha256": "fb17315f5c066fcc04a011c63b53af63bece5d051789c924617fe804ae22b2e2",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>alveolar": {
+      "offset": 56146083,
+      "length": 328454,
+      "sha256": "90bca12828369e8cac72ccb35e1f4df14c2860c4817749f6c05cb92409faeb46",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>alveolar>alveolar": {
+      "offset": 56474537,
+      "length": 328420,
+      "sha256": "0ac26f2892b9c58e21399b1836a76ca67bfff0776be87f7a837e867c5c172aea",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>alveolar>vowel-mid": {
+      "offset": 56802957,
+      "length": 328504,
+      "sha256": "2db08d1eb4d892ed076a8977c5948431bc9456b32fddd365ee0cd2c5a2774b13",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>alveolar>vowel-spread": {
+      "offset": 57131461,
+      "length": 328482,
+      "sha256": "34d8e27aa15a90d5abf04ef93238a43c394506b893b8abc2fc7f7cd3a87a1e47",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>closed": {
+      "offset": 57459943,
+      "length": 328406,
+      "sha256": "de4b1c74d55f7f02ebb7fcd85f1e3178ca561ae1a68daa33e3db2e6fbaec1a29",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>closed>vowel-mid": {
+      "offset": 57788349,
+      "length": 328321,
+      "sha256": "2c34850cf5468a477773ec2793b8ee9894d1bce394d19fb94242d607d02e6c66",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>dental": {
+      "offset": 58116670,
+      "length": 328481,
+      "sha256": "0de6b77b383a5fd72166421f4101b7dd665b26d4c2dd51b2c2fcd6e9cb9a2d51",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>glottal": {
+      "offset": 58445151,
+      "length": 328681,
+      "sha256": "c53b900c8a140b9107be7b4d8b1b71ebd4ff8c02b40286c52da09a7635e0f4c6",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>labiodental": {
+      "offset": 58773832,
+      "length": 328430,
+      "sha256": "5af24739c3df3fd6cd5b758cade375b2cc80d09d514186e4168a94f49edc9c9c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>palatal": {
+      "offset": 59102262,
+      "length": 328537,
+      "sha256": "bd325e789996411a64140a2cd395c19987b442c7ce61b9a66668a29132c4d47b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>postalveolar": {
+      "offset": 59430799,
+      "length": 328551,
+      "sha256": "c54281a420fd8b1e036fd58657d82eb48ae4bcdcbd4a1884f4229e915a4808ba",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>postalveolar>vowel-open": {
+      "offset": 59759350,
+      "length": 328556,
+      "sha256": "1f0893c175222855267bf451230c74123f9d3594e5bc29d8ef0568a98a8690ce",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>sil": {
+      "offset": 60087906,
+      "length": 328413,
+      "sha256": "fc1077c3ba9f6d38c1b0c563cff2af30e051d99a6c07dcd218fe7cbc3f73cc32",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>velar": {
+      "offset": 60416319,
+      "length": 328388,
+      "sha256": "7b754f61ae631e4610da92b5388691f9ac7176454dfac41e518b685319ce816c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>vowel-mid": {
+      "offset": 60744707,
+      "length": 328440,
+      "sha256": "34017a9b0f2f7d0f48ae2369a458e29d1bd24b1a335483ed969858622c5e3d0f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>vowel-open": {
+      "offset": 61073147,
+      "length": 328582,
+      "sha256": "ee00676041bba0be26b2a7c9a0477ad0405c172e912dbc97848037d5a3f41f09",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>vowel-round": {
+      "offset": 61401729,
+      "length": 328301,
+      "sha256": "7ad0fbc22458e667b5cf2557e9ae46d3a26231247bf53a17b057195de9ea53e8",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>vowel-spread": {
+      "offset": 61730030,
+      "length": 328664,
+      "sha256": "3b5a3f298f41d516202a41ad9a2b98484f925961a7e9ff341cf92f54b2536e92",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-open>vowel-spread>alveolar": {
+      "offset": 62058694,
+      "length": 328612,
+      "sha256": "e80edcea2ed997743e966ac553e3a1a9965852ac1440fa5a8a2d8ed46995b42f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>alveolar": {
+      "offset": 62387306,
+      "length": 328073,
+      "sha256": "e5e3adfb3737578dd5f54627dfb8cec263a460a5b6f56b9bfb8fe6ce057ab5ff",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>alveolar>alveolar": {
+      "offset": 62715379,
+      "length": 328027,
+      "sha256": "c90d783bea7d581d96ee5418cbec13e4952af7b2c822c28609c8409098d4f573",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>alveolar>velar": {
+      "offset": 63043406,
+      "length": 328018,
+      "sha256": "6831857eeb2348cdf031ed705ded0163c3af157ed89083a1182ac2fe1fd49515",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>alveolar>vowel-mid": {
+      "offset": 63371424,
+      "length": 328072,
+      "sha256": "8522e45795e9d806fbba8ae9993ec3d2d503b9f337662718bb01aae708afc17c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>alveolar>vowel-round": {
+      "offset": 63699496,
+      "length": 328028,
+      "sha256": "7e35d5a42b14665480c9b52ddce5b5378f31103f97d81aaa410eb9a1b537b844",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>alveolar>vowel-spread": {
+      "offset": 64027524,
+      "length": 328125,
+      "sha256": "de8946fae7ae6e41113728a789fb11f551dd6bafb5c875054e90eef278354741",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>closed": {
+      "offset": 64355649,
+      "length": 327942,
+      "sha256": "8019f5e506bf49fe37a2f014296b93c4c7d92456d2a9dee5d25ce0ca3d38da67",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>dental": {
+      "offset": 64683591,
+      "length": 328101,
+      "sha256": "a64abbaf40866cfb6ec49e527d6c7eceba7bc43d02e3c043f6b04ef0d24f85ca",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>glottal": {
+      "offset": 65011692,
+      "length": 328166,
+      "sha256": "d4e1597024047d30344627a2a91d8790b27bbeda838a1124740ff55bf4b9566e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>labiodental": {
+      "offset": 65339858,
+      "length": 328072,
+      "sha256": "9cca6f6b826d82c70de242e84489b19d235e15a147d62b13c3075e7930a11232",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>palatal": {
+      "offset": 65667930,
+      "length": 328114,
+      "sha256": "3b682b09bb957367817735a3ea41a1cff9883502c31e5cb60f3e930c72dcd97f",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>postalveolar": {
+      "offset": 65996044,
+      "length": 328185,
+      "sha256": "92dded3be1c74b3b791485ed3fa14d58b715887b5e2add074c9f295ed7fd5aed",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>postalveolar>vowel-open": {
+      "offset": 66324229,
+      "length": 328232,
+      "sha256": "0ff6b79d451de7c950a3284b3a7bf598d7358e8fdd4e9b4f942220a9a51a9f1b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>sil": {
+      "offset": 66652461,
+      "length": 328089,
+      "sha256": "f23606411b30be7ea86f474a70165fcf490252b60aa59435512d96a37047f260",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>velar": {
+      "offset": 66980550,
+      "length": 327925,
+      "sha256": "594c42f5ac6b2a49548dc37409e6cbbd2e50fbd710e73a6fcf517d5ce4a79d6e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-mid": {
+      "offset": 67308475,
+      "length": 327978,
+      "sha256": "b59916036ef630e57ef9d99a64b102c4d47dee055bf9d3d67aea9b03cd67f2ba",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-mid>alveolar": {
+      "offset": 67636453,
+      "length": 327957,
+      "sha256": "6086272461e2d1912612e6cad92d855ccb6cf20e02d6fe1442153409d4f90c23",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-open": {
+      "offset": 67964410,
+      "length": 328303,
+      "sha256": "d743f868fa5eb22adfb6e7218c71626190391d58989f9538cee997a204d3f44c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-round": {
+      "offset": 68292713,
+      "length": 327737,
+      "sha256": "82f076b7bf57dff3ca47290fd38230dee41bc742a27c1e36878b9d42c5d80470",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-round>alveolar": {
+      "offset": 68620450,
+      "length": 327832,
+      "sha256": "7997d7be6e8b66fb6fcbd036fcf2aa31b7237f5ab9eb8e558af5c0743ed4d193",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-spread": {
+      "offset": 68948282,
+      "length": 328269,
+      "sha256": "ee2df9f7d08ec5777c719f9fa00f54eb50561a9e9aedadac1cb9fa2e981128cf",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-round>vowel-spread>vowel-spread": {
+      "offset": 69276551,
+      "length": 328282,
+      "sha256": "7f6179fa369779f5c46dee196115cff98c32311a05884a77337301d687e3ac16",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>alveolar": {
+      "offset": 69604833,
+      "length": 328416,
+      "sha256": "93fd49461899becdc181f99c37387442c78e696ab4b05e93815d09e2f464c641",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>alveolar>alveolar": {
+      "offset": 69933249,
+      "length": 328472,
+      "sha256": "dc5edfd74e8a72f06ba41604372756f935682ac0301612e6e038af44e4e71dbc",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>alveolar>vowel-mid": {
+      "offset": 70261721,
+      "length": 328474,
+      "sha256": "4807fcfbb93646caf2f3adcdc5e326d5c09d2cc382a56003db181e69da2b09da",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>alveolar>vowel-open": {
+      "offset": 70590195,
+      "length": 328459,
+      "sha256": "b51627fdab4541683b7cb4e07683ba9ee2e003cfdec0baf188e046aaf76c0e6c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>alveolar>vowel-round": {
+      "offset": 70918654,
+      "length": 328486,
+      "sha256": "23e0659d206b67bd4afb31601dec4eb8316391b3c321d796e2cc47e7dc711363",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>alveolar>vowel-spread": {
+      "offset": 71247140,
+      "length": 328523,
+      "sha256": "9ab0c46f64c8e539aab649a7acbc9c9bb03d67d32c9e3575baf6eaea64242e7e",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>closed": {
+      "offset": 71575663,
+      "length": 328282,
+      "sha256": "15c9c0828f4ca8bd9bf66bace05ac5091ad59591933e7e9f3fbf543ab5b80d4c",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>dental": {
+      "offset": 71903945,
+      "length": 328657,
+      "sha256": "abe009785d0cddd530439ec65793b04657035c471f7005a799c9e1ea6477c78b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>glottal": {
+      "offset": 72232602,
+      "length": 328682,
+      "sha256": "b11e4d761b2033d777b34b42e1d8103f296a23298536ba4cbe611a707667a32b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>labiodental": {
+      "offset": 72561284,
+      "length": 328485,
+      "sha256": "249ad028a86ea5470eec6a67267db3c05f9b230a5a7941703588e0170279c56d",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>palatal": {
+      "offset": 72889769,
+      "length": 328495,
+      "sha256": "d5a5eb1f77f35f81e5566d443420f15e42726872cd585dfeee87135cbd42a272",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>postalveolar": {
+      "offset": 73218264,
+      "length": 328494,
+      "sha256": "e839d6b8c3433f1454ce6e8c0235082323a86fbc6242d9f5f3ca2836e691a200",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>postalveolar>vowel-open": {
+      "offset": 73546758,
+      "length": 328561,
+      "sha256": "1b7515b7e8c243e3ec978ff834ad442ced6c53dad4b776190982c76e957d5aab",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>sil": {
+      "offset": 73875319,
+      "length": 328356,
+      "sha256": "61f41106865192737b4856cb503c0603153a3f5b5a24f6363fc76264347d8dac",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>velar": {
+      "offset": 74203675,
+      "length": 328325,
+      "sha256": "ec8659652ba8cfece6baea3f465fcc9a849e9125755aefb2e10264d1e087aeac",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>vowel-mid": {
+      "offset": 74532000,
+      "length": 328407,
+      "sha256": "427f2ef8ab9f048f39a52815843468cadebd727ec665fedd180bde24cf349e5b",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>vowel-mid>alveolar": {
+      "offset": 74860407,
+      "length": 328470,
+      "sha256": "ebe00a1cb1920cc0f545874108af8c39c37b717276c8a147e7e6a11a276cf2de",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>vowel-open": {
+      "offset": 75188877,
+      "length": 328673,
+      "sha256": "3466098d7403969f5af66d79a9c67c6d9dda937bf98e1b1492226b1177d14b98",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>vowel-round": {
+      "offset": 75517550,
+      "length": 328262,
+      "sha256": "1850d89c84c7b1eb720b23b441c3c43b66863419ef181c00af3fc1b67b67eca9",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>vowel-spread": {
+      "offset": 75845812,
+      "length": 328696,
+      "sha256": "a76378255b9aa5b8502e8dfb0af56e1bd09ad9be21c3df16b2aae3c8ccb41bd9",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    },
+    "vowel-spread>vowel-spread>alveolar": {
+      "offset": 76174508,
+      "length": 328663,
+      "sha256": "1c2e8d313b85757a734679b63d02d933e73a65b35710423de7a5d307e8002fd2",
+      "frames": 5,
+      "fps": 25,
+      "codec": "vp09.00.10.08",
+      "lossless": true
+    }
+  }
+}

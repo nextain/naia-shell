@@ -78,6 +78,7 @@ import {
 	saveConfigSecure,
 } from "../config";
 import { deleteSecretKey, getSecretKey } from "../secure-store";
+import { applyNaiaSlotDefaults } from "../slots/model";
 
 const LEGACY_STORE_PATH = "secure-keys.dat";
 const adkStorePath = (root: string) =>
@@ -129,16 +130,22 @@ describe("ADK-backed credential persistence", () => {
 		);
 	});
 
-	it("restores a Naia-only config when the public cache is absent", async () => {
+	it("UT-SM-04 restores a Naia credential without inventing a model before catalog defaults", async () => {
 		const a = mockState.stateFor(adkStorePath("/adk-a"));
 		a.set("naiaKey", "adk-a-key");
 		localStorage.removeItem("naia-config");
 
-		await expect(loadConfigWithSecrets()).resolves.toMatchObject({
-			provider: "nextain",
-			model: "deepseek-v4-flash",
+		const restored = await loadConfigWithSecrets();
+		expect(restored).toMatchObject({
+			provider: "",
+			model: "",
 			naiaKey: "adk-a-key",
 		});
+		const withCatalog = applyNaiaSlotDefaults(restored!, [
+			{ id: "gpt-6.1-terra", label: "Terra", capabilities: ["llm"] },
+		]);
+		expect(withCatalog.llmRoles?.main).toMatchObject({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" });
+		expect(withCatalog.naiaKey).toBe("adk-a-key");
 		expect(localStorage.getItem("naia-remote-key")).toBeNull();
 
 		localStorage.setItem("naia-adk-path", "/adk-b");

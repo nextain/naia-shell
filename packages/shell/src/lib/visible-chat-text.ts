@@ -12,6 +12,8 @@ const TOOL_DUMP_KEYS = [
 	"currentTrack",
 	"hits",
 	"abstained",
+	"query",
+	"sourceUris",
 	"nodes",
 	"empty",
 ] as const;

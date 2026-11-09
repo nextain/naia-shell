@@ -510,6 +510,40 @@ function ensureAudioContext(outputDeviceId?: string): AudioContext {
 	return getSharedAudioContext(outputDeviceId);
 }
 
+/**
+ * Unlock Web Audio and browser speechSynthesis synchronously within a user
+ * gesture handler (e.g. kiosk "들어가기" click) before any async boundary.
+ */
+export function unlockAudioContext(): void {
+	if (typeof window === "undefined") return;
+	try {
+		if (typeof window.AudioContext === "function") {
+			const ctx = getSharedAudioContext();
+			if (ctx.state !== "suspended") {
+				void ctx.resume?.()?.catch?.(() => {});
+			}
+		} else {
+			const WebkitCtor = (
+				window as unknown as { webkitAudioContext?: typeof AudioContext }
+			).webkitAudioContext;
+			if (WebkitCtor) {
+				const ctx = new WebkitCtor();
+				void ctx.resume?.()?.catch?.(() => {});
+			}
+		}
+	} catch {
+		// best-effort audio context creation/resume
+	}
+	if ("speechSynthesis" in window && window.speechSynthesis) {
+		try {
+			window.speechSynthesis.cancel?.();
+			window.speechSynthesis.resume?.();
+		} catch {
+			// best-effort speechSynthesis unlock
+		}
+	}
+}
+
 /** Return the PCM duration encoded by a RIFF/WAVE base64 payload. */
 export function wavDurationSeconds(audioBase64: string): number | null {
 	try {

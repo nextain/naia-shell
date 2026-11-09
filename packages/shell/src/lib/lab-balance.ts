@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isWebMode } from "./web-runtime/web-assets";
 
 export interface CachedLabCredits {
 	value: number;
@@ -82,8 +83,7 @@ export function markNaiaKeyUnauthorized(): void {
 
 export function onNaiaKeyUnauthorized(handler: () => void): () => void {
 	window.addEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
-	return () =>
-		window.removeEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
+	return () => window.removeEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
 }
 
 /** Use native HTTP inside Tauri to avoid WebView CORS/PNA balance failures. */
@@ -92,7 +92,11 @@ export async function fetchLabBalancePayload(
 	naiaKey: string,
 	signal?: AbortSignal,
 ): Promise<unknown> {
-	if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+	if (
+		!isWebMode() &&
+		typeof window !== "undefined" &&
+		"__TAURI_INTERNALS__" in window
+	) {
 		return invoke<unknown>("fetch_naia_balance", {
 			gatewayUrl,
 			naiaKey,

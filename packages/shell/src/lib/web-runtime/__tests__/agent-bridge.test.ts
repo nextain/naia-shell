@@ -1,0 +1,526 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { useChatStore } from "../../../stores/chat";
+import { type WorkerLike, createAgentBridge } from "../agent-bridge";
+import { setWebAssetsModeForTests } from "../web-assets";
+import {
+	completeWebNaiaLogin,
+	logoutWebSession,
+	setWebLoginRequiredForTests,
+} from "../web-auth";
+import { createMemoryWebFs } from "../web-fs";
+import {
+	getWebModelStatus,
+	resetWebModelStatusForTests,
+} from "../web-model-status";
+import {
+	handleWebWorkspaceCommand,
+	resolveWebConversationsDir,
+} from "../web-workspace-commands";
+import { WEB_LLM_MODEL_ID } from "../webllm-model";
+
+class FakeWorker implements WorkerLike {
+	posted: { message: unknown; transfer?: Transferable[] }[] = [];
+	listeners: Record<string, ((ev: unknown) => void)[]> = {};
+
+	postMessage(message: unknown, transfer?: Transferable[]): void {
+		this.posted.push({ message, transfer });
+	}
+
+	addEventListener(type: string, listener: (ev: unknown) => void): void {
+		if (!this.listeners[type]) {
+			this.listeners[type] = [];
+		}
+		this.listeners[type].push(listener);
+	}
+
+	dispatchMessage(data: unknown): void {
+		for (const listener of this.listeners["message"] ?? []) {
+			listener({ data });
+		}
+	}
+
+	dispatchError(error: unknown): void {
+		for (const listener of this.listeners["error"] ?? []) {
+			listener(error);
+		}
+	}
+}
+
+describe("agent-bridge", () => {
+	beforeEach(() => {
+		resetWebModelStatusForTests();
+	});
+
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		setWebLoginRequiredForTests(null);
+		localStorage.clear();
+		sessionStorage.clear();
+	});
+
+	it("creates worker only on start and buffers lines sent before start", async () => {
+		let workerCreationCount = 0;
+		let workerInstance: FakeWorker | null = null;
+		const emittedEvents: { event: string; payload: unknown }[] = [];
+
+		const createWorker = (): WorkerLike => {
+			workerCreationCount++;
+			workerInstance = new FakeWorker();
+			return workerInstance;
+		};
+
+		const emit = (event: string, payload: unknown) => {
+			emittedEvents.push({ event, payload });
+		};
+
+		const bridge = createAgentBridge({ createWorker, emit });
+
+		// 1. sendLine before start: does NOT create worker, buffers line
+		bridge.sendLine("buffered-1");
+		bridge.sendLine("buffered-2");
+		expect(workerCreationCount).toBe(0);
+		expect(workerInstance).toBeNull();
+
+		// 2. start: creates worker exactly once, carries model in connect message
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		expect(workerCreationCount).toBe(1);
+		const capturedWorker = workerInstance!;
+		expect(capturedWorker).not.toBeNull();
+
+		// Calling start again does not create another worker
+		bridge.start({ model: "another-model" });
+		expect(workerCreationCount).toBe(1);
+
+		// Worker connect message checks
+		expect(capturedWorker.posted).toHaveLength(1);
+		expect(capturedWorker.posted[0].message).toEqual({
+			kind: "naia-agent-connect",
+			model: WEB_LLM_MODEL_ID,
+		});
+		const transferred = capturedWorker.posted[0].transfer;
+		expect(transferred).toBeDefined();
+		expect(transferred).toHaveLength(1);
+		const workerPort = transferred![0] as MessagePort;
+
+		// 3. Buffered lines are delivered in order, subsequent sendLine goes directly
+		const receivedLines: string[] = [];
+		workerPort.onmessage = (ev: MessageEvent) => {
+			if (typeof ev.data === "string") {
+				receivedLines.push(ev.data);
+			}
+		};
+		workerPort.start?.();
+
+		bridge.sendLine("immediate-3");
+
+		await new Promise((r) => setTimeout(r, 50));
+		expect(receivedLines).toEqual(["buffered-1", "buffered-2", "immediate-3"]);
+
+		// Response emitting via MessagePort
+		const finishStr = '{"type":"finish"}';
+		workerPort.postMessage(finishStr);
+		await new Promise((r) => setTimeout(r, 50));
+		expect(emittedEvents).toEqual([
+			{ event: "agent_response", payload: finishStr },
+		]);
+
+		workerPort.close();
+	});
+
+	it("updates web-model-status store from control messages", () => {
+		let workerInstance: FakeWorker | null = null;
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const worker = workerInstance!;
+
+		// engine-progress
+		worker.dispatchMessage({
+			kind: "engine-progress",
+			progress: 0.42,
+			text: "fetching weights",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "loading",
+			progress: 0.42,
+		});
+
+		// engine-ready with whitelisted model
+		worker.dispatchMessage({
+			kind: "engine-ready",
+			model: WEB_LLM_MODEL_ID,
+			elapsedMs: 1234,
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "ready",
+			progress: 1,
+			model: WEB_LLM_MODEL_ID,
+		});
+
+		// engine-ready with unknown model does not update store
+		worker.dispatchMessage({
+			kind: "engine-ready",
+			model: "Unknown-Model",
+		});
+		expect(getWebModelStatus().model).toBe(WEB_LLM_MODEL_ID);
+
+		// engine-error with WebGPUNotAvailableError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "WebGPUNotAvailableError",
+			message: "No WebGPU",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "no-webgpu",
+			errorMessage: "No WebGPU",
+		});
+
+		// progress ignored when in error phase
+		worker.dispatchMessage({
+			kind: "engine-progress",
+			progress: 0.99,
+		});
+		expect(getWebModelStatus().phase).toBe("error");
+
+		// engine-error with ShaderF16SupportError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "ShaderF16SupportError",
+			message: "Shader F16 not supported",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "no-shader-f16",
+		});
+
+		// engine-error with DeviceLostError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "DeviceLostError",
+			message: "Device Lost",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "device-lost",
+		});
+
+		// engine-error with WebGPUNotFoundError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "WebGPUNotFoundError",
+			message: "GPU not found",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "no-webgpu",
+		});
+
+		// engine-error with unknown error name
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "SomethingElseError",
+			message: "Failed to compile shader",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "load-failed",
+			errorMessage: "Failed to compile shader",
+		});
+
+		// worker error event sets load-failed
+		worker.dispatchError({ message: "Worker runtime fatal error" });
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "load-failed",
+			errorMessage: "Worker runtime fatal error",
+		});
+	});
+
+	it("persists user and assistant turns from AgentResponseChunk.text when finish arrives", async () => {
+		let workerInstance: FakeWorker | null = null;
+		const fs = createMemoryWebFs();
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+			getFs: () => fs,
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const workerPort = workerInstance!.posted[0].transfer![0] as MessagePort;
+		workerPort.start?.();
+
+		bridge.sendLine(
+			JSON.stringify({
+				type: "chat_request",
+				requestId: "req-1",
+				sessionId: "sess_test_1",
+				messages: [{ role: "user", content: "안녕 나이아" }],
+			}),
+		);
+
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-1",
+				text: "반가",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-1",
+				text: "워요!",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "finish",
+				requestId: "req-1",
+			}),
+		);
+
+		await new Promise((r) => setTimeout(r, 80));
+
+		const saved = await fs.readText("naia-adk/conversations/sess_test_1.jsonl");
+		expect(saved).not.toBeNull();
+		const lines = (saved ?? "").trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(JSON.parse(lines[0])).toMatchObject({
+			role: "user",
+			content: "안녕 나이아",
+		});
+		expect(JSON.parse(lines[1])).toMatchObject({
+			role: "assistant",
+			content: "반가워요!",
+		});
+
+		workerPort.close();
+	});
+
+	it("chains bridge -> appendWebConversationMessages -> list_conversations -> read_conversation with ChatArea localSessionId fallback", async () => {
+		let workerInstance: FakeWorker | null = null;
+		const fs = createMemoryWebFs();
+		useChatStore.getState().setLocalSessionId("chat-1792849265763-abcde");
+
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+			getFs: () => fs,
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const workerPort = workerInstance!.posted[0].transfer![0] as MessagePort;
+		workerPort.start?.();
+
+		// chat_request without explicit sessionId falls back to ChatArea's localSessionId
+		bridge.sendLine(
+			JSON.stringify({
+				type: "chat_request",
+				requestId: "req-chain-1",
+				message: "첫 질문이에요",
+			}),
+		);
+
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-chain-1",
+				text: "첫 대답이에요",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "finish",
+				requestId: "req-chain-1",
+			}),
+		);
+
+		await new Promise((r) => setTimeout(r, 80));
+
+		const listRaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const listed = JSON.parse(listRaw) as {
+			sessions: Array<{ key: string; label: string; messageCount: number }>;
+		};
+		expect(listed.sessions).toHaveLength(1);
+		expect(listed.sessions[0]).toMatchObject({
+			key: "chat-1792849265763-abcde",
+			label: "첫 질문이에요",
+			messageCount: 2,
+		});
+
+		const readRaw = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{
+				adkPath: "opfs://naia-adk",
+				sessionId: listed.sessions[0].key,
+			},
+			fs,
+		)) as string;
+		const lines = readRaw.trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(JSON.parse(lines[0])).toMatchObject({
+			role: "user",
+			content: "첫 질문이에요",
+		});
+		expect(JSON.parse(lines[1])).toMatchObject({
+			role: "assistant",
+			content: "첫 대답이에요",
+		});
+
+		workerPort.close();
+	});
+
+	it("pins the turn's conversation directory at chat_request time so an in-flight turn finishing after A logs out and B logs in saves to A's folder and never pollutes B's folder", async () => {
+		setWebAssetsModeForTests(true);
+		let workerInstance: FakeWorker | null = null;
+		const fs = createMemoryWebFs();
+
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+			getFs: () => fs,
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const workerPort = workerInstance!.posted[0].transfer![0] as MessagePort;
+		workerPort.start?.();
+
+		// 1. User A logs in
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-alpha",
+		);
+
+		// 2. User A sends chat_request
+		bridge.sendLine(
+			JSON.stringify({
+				type: "chat_request",
+				requestId: "req-inflight-a",
+				sessionId: "chat-a-inflight",
+				messages: [{ role: "user", content: "A의 진행 중 비밀 질문" }],
+			}),
+		);
+
+		// 3. Partial response chunk arrives while User A is still logged in
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-inflight-a",
+				text: "A에게 가는 ",
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 30));
+
+		// 4. User A logs out and User B logs in before the response finishes
+		logoutWebSession();
+		await completeWebNaiaLogin("naia_live_key_user_b_67890", "user-beta");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-beta",
+		);
+
+		// 5. Remaining chunk and finish arrive while User B is logged in
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-inflight-a",
+				text: "답변 완료",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "finish",
+				requestId: "req-inflight-a",
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 80));
+
+		// 6. User B's folder and list_conversations must NOT contain User A's conversation
+		const listBRaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const listedB = JSON.parse(listBRaw) as {
+			sessions: Array<{ key: string; label: string }>;
+		};
+		expect(listedB.sessions).toEqual([]);
+		expect(
+			await fs.exists(
+				"naia-adk/conversations/u-user-beta/chat-a-inflight.jsonl",
+			),
+		).toBe(false);
+		expect(
+			await fs.exists("naia-adk/conversations/chat-a-inflight.jsonl"),
+		).toBe(false);
+
+		const readFromB = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "chat-a-inflight" },
+			fs,
+		)) as string;
+		expect(readFromB).toBe("");
+
+		// 7. User A's conversation was saved into User A's pinned folder
+		expect(
+			await fs.exists(
+				"naia-adk/conversations/u-user-alpha/chat-a-inflight.jsonl",
+			),
+		).toBe(true);
+
+		logoutWebSession();
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		const listARaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const listedA = JSON.parse(listARaw) as {
+			sessions: Array<{ key: string; label: string; messageCount: number }>;
+		};
+		expect(listedA.sessions).toHaveLength(1);
+		expect(listedA.sessions[0]).toMatchObject({
+			key: "chat-a-inflight",
+			label: "A의 진행 중 비밀 질문",
+			messageCount: 2,
+		});
+
+		const readFromA = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "chat-a-inflight" },
+			fs,
+		)) as string;
+		const linesA = readFromA.trim().split("\n");
+		expect(linesA).toHaveLength(2);
+		expect(JSON.parse(linesA[0])).toMatchObject({
+			role: "user",
+			content: "A의 진행 중 비밀 질문",
+		});
+		expect(JSON.parse(linesA[1])).toMatchObject({
+			role: "assistant",
+			content: "A에게 가는 답변 완료",
+		});
+
+		workerPort.close();
+	});
+});

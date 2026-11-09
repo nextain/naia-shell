@@ -29,6 +29,17 @@ const MARKER = /\[\[\s*(?:gesture|g)\s*:\s*([^[\]]+?)\s*\]\][ \t]*/gi;
 const MAX_GESTURES = 16;
 const MAX_VALUE_LEN = 64;
 
+function addGuidanceFallback(map: Map<string, string>): Map<string, string> {
+	if (!map.has("guidance")) {
+		const fallback = map.get("greeting") ?? map.get("idea");
+		if (fallback) {
+			map.set("guidance", fallback);
+			map.set("반가운 안내", fallback);
+		}
+	}
+	return map;
+}
+
 /** gesture-kind 애니의 key/label/intent/triggers 를 소문자 인덱스 → 마커 값 해석용. */
 function buildLookup(
 	source: NvaManifest | readonly NvaGestureAction[],
@@ -43,7 +54,7 @@ function buildLookup(
 			add(action.key);
 			add(action.label);
 		}
-		return map;
+		return addGuidanceFallback(map);
 	}
 	const m = source as NvaManifest;
 	for (const [key, a] of Object.entries(m.animations || {})) {
@@ -57,7 +68,7 @@ function buildLookup(
 		add(a.intent);
 		for (const t of a.triggers || []) add(t);
 	}
-	return map;
+	return addGuidanceFallback(map);
 }
 
 /**

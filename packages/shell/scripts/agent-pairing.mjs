@@ -294,7 +294,11 @@ export function ensurePairedAgentCheckout(options = {}) {
 	const sourceEnv = options.env ?? process.env;
 	const explicit = options.explicit ?? sourceEnv.NAIA_E2E_AGENT_ROOT;
 	if (explicit) {
-		return resolvePairedAgent(options);
+		const paired = resolvePairedAgent(options);
+		const memoryDir = resolve(paired.pairedAgent, "..", "naia-memory");
+		const problem = validateMemoryCheckout(memoryDir, REQUIRED_MEMORY_COMMIT, REQUIRED_MEMORY_VERSION, { gitOutput: options.gitOutput });
+		if (problem) throw new Error(`Paired naia-memory ${problem} (explicit checkout): ${memoryDir}`);
+		return paired;
 	}
 
 	let agentRoot = null;

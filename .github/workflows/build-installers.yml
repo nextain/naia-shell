@@ -92,7 +92,7 @@ jobs:
         run: |
           git init ../naia-agent
           git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin bfa2aa956fc356b50f853c03316faf1b773d0f9e
+          git -C ../naia-agent fetch --depth 1 origin "$(node -p 'require("./packages/shell/agent-pairing.json").agentCommit')"
           git -C ../naia-agent checkout --detach FETCH_HEAD
           git init ../naia-kb-compiler
           git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
@@ -100,7 +100,7 @@ jobs:
           git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
           git init ../naia-memory
           git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
-          git -C ../naia-memory fetch --depth 1 origin ab1f8002d31bffacf4779760eda727cc57a658a8
+          git -C ../naia-memory fetch --depth 1 origin "$(node -p 'require("./packages/shell/agent-pairing.json").memoryCommit')"
           git -C ../naia-memory checkout --detach FETCH_HEAD
           git init ../voxcpm2-tensorrt
           git -C ../voxcpm2-tensorrt remote add origin https://github.com/nextain/voxcpm2-tensorrt.git

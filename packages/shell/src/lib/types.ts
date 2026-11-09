@@ -95,6 +95,8 @@ export interface ChatMessage {
 	timestamp: number;
 	cost?: CostEntry;
 	toolCalls?: ToolCall[];
+	evidenceFiles?: string[];
+	localAnswer?: boolean;
 	/**
 	 * #572 — 이 턴은 답을 만들지 못했다. 원시 오류 문자열(`provider error:
 	 * invalid tool_call index`)을 답변 자리에 흘리는 대신, 이 표시를 단 메시지는
@@ -150,7 +152,7 @@ export interface AgentRequest {
 	ttsEngine?: "auto" | "gateway" | "google";
 	enableTools?: boolean;
 	enableThinking?: boolean;
-	thinking?: { level: "off" | "low" | "high" };
+	thinking?: { level: "off" | "low" | "high" | "xhigh" };
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	disabledSkills?: string[];

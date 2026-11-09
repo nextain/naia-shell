@@ -25,7 +25,7 @@ const VRM_FILES = [
 	"03-Sendagaya-Shino-uniform.vrm",
 	"04-Sakurada-Fumiriya.vrm",
 ];
-const NVA_DIRS = ["naia", "naia-anime", "minho", "jina"];
+const NVA_DIRS = ["naia", "minho", "jina"];
 const NVA_VIDEO_BASE64 = readFileSync(
 	path.resolve(process.cwd(), "e2e/fixtures/head-green-100.mp4"),
 ).toString("base64");

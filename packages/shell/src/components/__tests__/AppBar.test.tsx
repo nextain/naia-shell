@@ -516,4 +516,23 @@ describe("AppBar — edit mode (#295)", () => {
 			"🎯",
 		);
 	});
+
+	it("renders BgmPlayer in web mode for YouTube BGM playback", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			const { container } = render(<AppBar />);
+			await act(async () => {});
+			await waitFor(() =>
+				expect(container.querySelector(".bgm-player")).not.toBeNull(),
+			);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("renders BgmPlayer in desktop mode", async () => {
+		const { container } = render(<AppBar />);
+		await act(async () => {});
+		await waitFor(() => expect(container.querySelector(".bgm-player")).not.toBeNull());
+	});
 });

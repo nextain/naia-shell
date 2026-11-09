@@ -49,6 +49,19 @@ export const ttsTextFilter = Object.freeze({
 		const rule = resolveTtsTextRule(locale);
 		const structural = input
 			.replace(/```[\s\S]*?(?:```|$)/g, " ")
+			// 대답 속 근거/출처 줄(예: "근거: ...", "- 출처: ...")과 괄호 속 출처 표기를 발화에서 제외한다.
+			.replace(
+				/(^|\n)[ \t]*(?:[-+*•>]+[ \t]*)?[*_~`[(（]*[ \t]*(?:근거|출처)[ \t]*[*_~`]*[ \t]*[:：][^\n]*/g,
+				"$1",
+			)
+			.replace(
+				/([.!?。]\s+)[*_~`]*\s*(?:근거|출처)\s*[*_~`]*\s*[:：][^\n]*/g,
+				"$1",
+			)
+			.replace(
+				/[(（\[][^()（）\[\]\n]*(?:(?:근거|출처)\s*[:：\-—]|(?:[a-zA-Z0-9_./-]+\/)?[a-zA-Z0-9_-]+\.md\b)[^()（）\[\]\n]*[)）\]]/gi,
+				" ",
+			)
 			.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
 			.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
 			// Preserve newlines and restore a space if stripping this inline tag joins words.
@@ -61,6 +74,11 @@ export const ttsTextFilter = Object.freeze({
 				rule.transformInlineCode(content),
 			)
 			.replace(/(?:https?:\/\/|www\.)[^\s<>()]+/gi, " ")
+			// knowledge/...md 및 *.md 파일 이름은 음성으로 읽지 않는다.
+			.replace(
+				/(?:opfs:\/\/[^\s)`'"\],;:]+\.md|(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_-]+\.md)(?=$|[^a-zA-Z0-9_.-])/gi,
+				" ",
+			)
 			.replace(/(^|\n)\s{0,3}(?:#{1,6}|>|[-+*])\s+/g, "$1");
 		// 숫자 읽기는 %·℃ 같은 기호 단위를 소비하므로 기호 제거보다 먼저 온다.
 		return rule
@@ -86,6 +104,7 @@ export const ttsTextFilter = Object.freeze({
 			.replace(/[*_~]/g, "")
 			// 장식 문자를 걷어낸 뒤 남는 빈 괄호 잔재 (#540).
 			.replace(/[(（[]\s*[)）\]]/g, " ")
+			.replace(/\s+([.,!?。])/g, "$1")
 			.replace(/\s+/g, " ")
 			.trim();
 	},

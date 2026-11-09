@@ -1,7 +1,8 @@
 import { Suspense, lazy } from "react";
 import { appRegistry } from "../../lib/app-registry";
-import type { AppCenterProps } from "../../lib/app-registry";
+import type { AppCenterProps, AppDescriptor } from "../../lib/app-registry";
 import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
+import { isWebMode } from "../../lib/web-runtime/web-assets";
 
 const BrowserCenterArea = lazy(() =>
 	import("./BrowserCenterArea").then((module) => ({
@@ -10,6 +11,7 @@ const BrowserCenterArea = lazy(() =>
 );
 
 function DeferredBrowserCenterArea(props: AppCenterProps) {
+	if (isWebMode()) return null;
 	return (
 		<Suspense fallback={null}>
 			<BrowserCenterArea {...props} />
@@ -17,7 +19,7 @@ function DeferredBrowserCenterArea(props: AppCenterProps) {
 	);
 }
 
-appRegistry.register({
+export const BROWSER_APP_DESCRIPTOR: AppDescriptor = {
 	id: "browser",
 	name: "인터넷",
 	names: { ko: "인터넷", en: "Internet" },
@@ -181,4 +183,16 @@ appRegistry.register({
 			tier: 0,
 		},
 	],
-});
+};
+
+export function syncBrowserAppRegistration(): void {
+	if (isWebMode()) {
+		appRegistry.unregister("browser");
+		return;
+	}
+	if (!appRegistry.get("browser")) {
+		appRegistry.register(BROWSER_APP_DESCRIPTOR);
+	}
+}
+
+syncBrowserAppRegistration();

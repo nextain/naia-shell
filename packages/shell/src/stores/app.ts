@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AppContext } from "../lib/app-registry";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 
 function requestBrowserVisibilitySync() {
 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
@@ -65,8 +67,14 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
 	activeApp: null,
 	setActiveApp: (id) => {
+		if (
+			(isWebMode() && id === "browser") ||
+			(isKioskDemo() && id === "projects")
+		) {
+			return;
+		}
 		const current = get().activeApp;
-		if (current === "browser" && id !== "browser") {
+		if (!isWebMode() && current === "browser" && id !== "browser") {
 			invoke("browser_wv_hide").catch(() => {});
 		}
 		// Clear only the transient active-app slot; persistent contexts (bgm)
@@ -76,7 +84,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			activeAppContext: null,
 			activeAppContextOwnerId: null,
 		});
-		if (id === "browser" && current !== "browser") {
+		if (!isWebMode() && id === "browser" && current !== "browser") {
 			requestBrowserVisibilitySync();
 		}
 	},
@@ -109,7 +117,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 	modalCount: 0,
 	pushModal: () => {
 		const { modalCount } = get();
-		if (modalCount === 0) {
+		if (modalCount === 0 && !isWebMode()) {
 			invoke("browser_wv_hide").catch(() => {});
 		}
 		set((s) => ({ modalCount: s.modalCount + 1 }));
@@ -117,7 +125,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 	popModal: () => {
 		const next = Math.max(0, get().modalCount - 1);
 		set({ modalCount: next });
-		if (next === 0 && get().activeApp === "browser") {
+		if (!isWebMode() && next === 0 && get().activeApp === "browser") {
 			requestBrowserVisibilitySync();
 		}
 	},

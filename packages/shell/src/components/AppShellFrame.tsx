@@ -1,8 +1,13 @@
 import { ResilientVideo } from "./ResilientVideo";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { isMediaSourceUrl } from "../lib/local-media-url";
+import {
+	setStoredNaiaWidth,
+	useEffectiveLayoutOrientation,
+} from "../lib/ui-preferences";
 import { AppMainContent, type AppMainContentProps } from "./AppMainContent";
 import { SplashScreen } from "./SplashScreen";
 
@@ -52,6 +57,9 @@ export function AppShellFrame({
 	onSplashDone,
 	setNaiaWidth,
 }: AppShellFrameProps) {
+	const [failedVideoUrl, setFailedVideoUrl] = useState("");
+	const layoutOrientation = useEffectiveLayoutOrientation();
+	const autumnVideo = backgroundVideoUrl === "/backgrounds/naia-autumn-office-live.mp4";
 	const widthDragRef = useRef<{
 		startX: number;
 		startW: number;
@@ -97,6 +105,7 @@ export function AppShellFrame({
 		widthDragRef.current = null;
 		document.body.classList.remove("resizing-col");
 		if (!drag?.moved) return;
+		setStoredNaiaWidth(drag.currentW);
 		const config = loadConfig();
 		if (config)
 			saveConfig({
@@ -125,16 +134,37 @@ export function AppShellFrame({
 			(backgroundMediaType === "video" ||
 				(!backgroundMediaType &&
 					isMediaFile(backgroundVideoUrl, VIDEO_EXTENSIONS))) ? (
-			<ResilientVideo
-				key={backgroundVideoUrl}
-				className="app-bg-video"
-				src={backgroundVideoUrl}
-				autoPlay
-				loop
-				muted
-				playsInline
-				style={{ zIndex: 1 }}
-			/>
+			failedVideoUrl === backgroundVideoUrl && autumnVideo ? (
+				<img
+					className="app-bg-image"
+					src="/backgrounds/naia-autumn-office.webp"
+					alt=""
+					style={{ zIndex: 1 }}
+				/>
+			) : failedVideoUrl === backgroundVideoUrl ? null : (
+				<ResilientVideo
+					key={backgroundVideoUrl}
+					className="app-bg-video"
+					src={backgroundVideoUrl}
+					autoPlay
+					loop
+					muted
+					playsInline
+					preload="none"
+					poster={
+						autumnVideo ? "/backgrounds/naia-autumn-office.webp" : undefined
+					}
+					onCanPlay={(event) => {
+						if (autumnVideo) {
+							void event.currentTarget
+								.play()
+								.catch(() => setFailedVideoUrl(backgroundVideoUrl));
+						}
+					}}
+					onError={() => setFailedVideoUrl(backgroundVideoUrl)}
+					style={{ zIndex: 1 }}
+				/>
+			)
 		) : backgroundVideoUrl &&
 			(backgroundMediaType === "image" ||
 				(!backgroundMediaType &&
@@ -152,6 +182,8 @@ export function AppShellFrame({
 		<div
 			className="app-root"
 			data-ui-mode={mainContent.uiMode}
+			data-layout-orientation={layoutOrientation}
+			data-kiosk-demo={isKioskDemo() ? "true" : undefined}
 			data-rail-collapsed={
 				mainContent.uiMode === "workspace" && mainContent.railCollapsed
 					? "true"
@@ -169,30 +201,38 @@ export function AppShellFrame({
 		>
 			{/* A MediaSource URL (Linux webm) attaches to one element only; when the
 			    foreground already shows it, the layer under it would fail. */}
-			{backgroundFallback?.type === "video" &&
-			backgroundFallback.url === backgroundVideoUrl &&
-			isMediaSourceUrl(backgroundFallback.url) ? (
-				<div className="app-bg-fallback" aria-hidden="true" />
-			) : backgroundFallback?.type === "video" ? (
-				<ResilientVideo
-					className="app-bg-video"
-					src={backgroundFallback.url}
-					autoPlay
-					loop
-					muted
-					playsInline
-					style={{ zIndex: 0 }}
-				/>
-			) : backgroundFallback ? (
-				<img
-					className="app-bg-image"
-					src={backgroundFallback.url}
-					alt=""
-					style={{ zIndex: 0 }}
-				/>
-			) : (
-				<div className="app-bg-fallback" aria-hidden="true" />
-			)}
+			{(!foreground || backgroundMediaType === "iframe") &&
+				(backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ? (
+					<img
+						className="app-bg-image"
+						src="/backgrounds/naia-autumn-office.webp"
+						alt=""
+						style={{ zIndex: 0 }}
+					/>
+				) : backgroundFallback?.type === "video" &&
+				  backgroundFallback.url === backgroundVideoUrl &&
+				  isMediaSourceUrl(backgroundFallback.url) ? (
+					<div className="app-bg-fallback" aria-hidden="true" />
+				) : backgroundFallback?.type === "video" ? (
+					<ResilientVideo
+						className="app-bg-video"
+						src={backgroundFallback.url}
+						autoPlay
+						loop
+						muted
+						playsInline
+						style={{ zIndex: 0 }}
+					/>
+				) : backgroundFallback ? (
+					<img
+						className="app-bg-image"
+						src={backgroundFallback.url}
+						alt=""
+						style={{ zIndex: 0 }}
+					/>
+				) : (
+					<div className="app-bg-fallback" aria-hidden="true" />
+				))}
 			{foreground}
 			{bgmLayer}
 			{mainContent.showSplash && (

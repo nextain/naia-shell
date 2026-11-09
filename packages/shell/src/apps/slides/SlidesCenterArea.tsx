@@ -10,6 +10,12 @@ import {
 import type { AppCenterProps } from "../../lib/app-registry";
 import { appRegistry } from "../../lib/app-registry";
 import { t } from "../../lib/i18n";
+import { isKioskDemo } from "../../lib/kiosk-demo/flag";
+import {
+	getKioskIrSlide,
+	getKioskIrSlides,
+	registerKioskSlidesController,
+} from "../../lib/kiosk-demo/slides";
 import { Logger } from "../../lib/logger";
 import {
 	EMPTY_SLIDE_PRESENTER_STATE,
@@ -325,6 +331,18 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		if (asset) videoElementsRef.current.get(asset.url)?.pause();
 	}, []);
 
+	const kioskMode = isKioskDemo();
+	const kioskDeckLoadingRef = useRef(false);
+	const kioskAutoStartRef = useRef(false);
+	const autoResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const clearAutoResumeTimer = useCallback(() => {
+		if (autoResumeTimerRef.current) {
+			clearTimeout(autoResumeTimerRef.current);
+			autoResumeTimerRef.current = null;
+		}
+	}, []);
+
 	const runAction = useCallback(
 		(
 			action:
@@ -338,16 +356,20 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		) => {
 			if (scriptEditorOpen) return;
 			if (action !== "resume" && action !== "start") pauseActiveVideo();
+			clearAutoResumeTimer();
 			if (["pause", "stop", "next", "previous", "question"].includes(action)) {
 				cancelSpeech();
 			}
 			dispatch({ type: action });
+			if (kioskMode && action === "stop") {
+				useAppStore.getState().setActiveApp(null);
+			}
 			Logger.info(TAG, "presentation action", {
 				action,
 				page: stateRef.current.page,
 			});
 		},
-		[cancelSpeech, pauseActiveVideo, scriptEditorOpen],
+		[cancelSpeech, clearAutoResumeTimer, kioskMode, pauseActiveVideo, scriptEditorOpen],
 	);
 
 	const gotoPage = useCallback(
@@ -566,13 +588,20 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	useEffect(() => {
 		const element = viewerRef.current;
 		if (!element) return;
-		const update = () =>
+		const update = () => {
+			if (kioskMode && element.clientHeight > 0) {
+				const maxByWidth = element.clientWidth - 12;
+				const maxByHeight = Math.floor((element.clientHeight - 12) * (16 / 9));
+				setViewerWidth(Math.max(280, Math.min(maxByWidth, maxByHeight)));
+				return;
+			}
 			setViewerWidth(Math.max(280, element.clientWidth - 32));
+		};
 		update();
 		const observer = new ResizeObserver(update);
 		observer.observe(element);
 		return () => observer.disconnect();
-	}, []);
+	}, [kioskMode]);
 
 	useEffect(() => {
 		if (window.parent === window) return;
@@ -788,6 +817,88 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			companion: !!companion?.script,
 		});
 	}
+
+	const loadKioskDeck = useCallback(
+		async (autoStart: boolean) => {
+			if (autoStart) {
+				kioskAutoStartRef.current = true;
+			}
+			if (kioskDeckLoadingRef.current) return;
+			kioskDeckLoadingRef.current = true;
+			try {
+				const selection = await openSlidesDocument();
+				if (!selection) return;
+				loadPdf(selection.file, selection);
+				const irSlides = getKioskIrSlides();
+				const texts = irSlides.map(
+					(slide) => `${slide.title} ${slide.bullets.join(" ")}`,
+				);
+				const notes = selection.script
+					? parseSlideSpeakerNotes(selection.script.text)
+					: new Map<number, string>();
+				notesRef.current = notes;
+				pageTextsRef.current = texts;
+				setPageTexts(texts);
+				dispatch({
+					type: "loaded",
+					totalPages: irSlides.length,
+					range: presentationRangeForNotes(notes, irSlides.length),
+				});
+				if (kioskAutoStartRef.current) {
+					kioskAutoStartRef.current = false;
+					dispatch({ type: "goto", page: 1 });
+					dispatch({ type: "start" });
+				}
+			} catch (error) {
+				Logger.warn(TAG, "kiosk deck load failed", { error: String(error) });
+			} finally {
+				kioskDeckLoadingRef.current = false;
+			}
+		},
+		[cancelSpeech],
+	);
+
+	useEffect(() => {
+		if (!kioskMode) return;
+		const unregister = registerKioskSlidesController({
+			isPresenting: () => stateRef.current.mode === "presenting",
+			isAnsweringQuestion: () => stateRef.current.mode === "answering",
+			getCurrentPage: () => stateRef.current.page,
+			performAction: async (action) => {
+				clearAutoResumeTimer();
+				if (action === "start") {
+					if (!selectedFileRef.current || stateRef.current.totalPages === 0) {
+						await loadKioskDeck(true);
+						return;
+					}
+					cancelSpeech();
+					dispatch({ type: "goto", page: 1 });
+					dispatch({ type: "start" });
+					return;
+				}
+				runAction(action);
+			},
+			onTurnSettled: () => {
+				clearAutoResumeTimer();
+				autoResumeTimerRef.current = setTimeout(() => {
+					autoResumeTimerRef.current = null;
+					if (
+						stateRef.current.mode === "answering" &&
+						stateRef.current.resumeAfterAnswer
+					) {
+						runAction("resume");
+					}
+				}, 1200);
+			},
+		});
+		if (!selectedFileRef.current && !kioskDeckLoadingRef.current) {
+			void loadKioskDeck(false);
+		}
+		return () => {
+			clearAutoResumeTimer();
+			unregister();
+		};
+	}, [cancelSpeech, clearAutoResumeTimer, kioskMode, loadKioskDeck, runAction]);
 
 	async function pickPdf() {
 		if (pickerAbortRef.current) return;
@@ -1025,8 +1136,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					viewerWidth={viewerWidth}
 					totalPages={state.totalPages}
 					hidden={activeVideo !== null}
+					slideCard={kioskMode ? getKioskIrSlide(state.page) : null}
 					onReady={(file, totalPages, texts) => {
 						if (selectedFileRef.current !== file) return;
+						if (kioskMode) {
+							return;
+						}
 						dispatch({
 							type: "loaded",
 							totalPages,
@@ -1042,6 +1157,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					}}
 					onError={(file, error) => {
 						if (selectedFileRef.current !== file) return;
+						if (kioskMode && stateRef.current.totalPages > 0) {
+							return;
+						}
 						dispatch({ type: "fail", error: String(error) });
 						Logger.warn(TAG, "PDF load failed", { error: String(error) });
 					}}
@@ -1120,6 +1238,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				fullscreen={fullscreen}
 				recording={recording}
 				editing={scriptEditorOpen}
+				kioskMode={kioskMode}
 				onAction={runAction}
 				onRangeChange={(start, end) => {
 					cancelSpeech();

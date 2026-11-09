@@ -26,6 +26,7 @@ import {
 import { SpeechPlayer } from "./vendor/speech-player.js";
 import { localMediaUrlApi } from "../../local-media-url";
 import { Logger } from "../../logger";
+import { isWebMode } from "../../web-runtime/web-assets";
 
 export interface CanonicalSpeechStageConfig {
 	manifest: NvaManifest;
@@ -91,6 +92,7 @@ export class CanonicalSpeechStage {
 	private readonly player: SpeechPlayerLike;
 	private readonly media: HTMLMediaElement[] = [];
 	private assets: Promise<Map<string, Blob>> | null = null;
+	private assetsLoadedFlag = false;
 	private mode: "aligned" | "browser-timed" | null = null;
 	private generation = 0;
 	/** Player loads are serialized; the vendored media elements are not reloaded concurrently. */
@@ -118,8 +120,8 @@ export class CanonicalSpeechStage {
 		// The Shell owns the sound; this element is never given a source.
 		const audio = hidden(doc.createElement("audio")) as HTMLAudioElement;
 		const options = {
-			// Linux webm clips past ~2 MB only decode through MediaSource.
-			urlApi: localMediaUrlApi,
+			// Linux webm clips past ~2 MB only decode through MediaSource on WebKitGTK.
+			...(isWebMode() ? {} : { urlApi: localMediaUrlApi }),
 			audio,
 			canvas: this.canvas,
 			bodyVideo: video(),
@@ -133,6 +135,11 @@ export class CanonicalSpeechStage {
 	/** True while the player is drawing a plan onto `canvas`. */
 	get speaking(): boolean {
 		return !this.disposed && this.player.state === "speaking";
+	}
+
+	/** True once the canonical speech bundle assets have finished loading. */
+	get assetsLoaded(): boolean {
+		return !this.disposed && this.assetsLoadedFlag;
 	}
 
 	/**
@@ -223,6 +230,15 @@ export class CanonicalSpeechStage {
 		}
 	}
 
+	/** Pre-fetch canonical speech assets (`speech/atlas.bin`, `speech/atlas-index.json`, etc.) in the background after initial greeting. */
+	warmAssets(): Promise<void> {
+		if (this.disposed) return Promise.resolve();
+		return this.loadAssets().then(
+			() => undefined,
+			() => undefined,
+		);
+	}
+
 	stop(): void {
 		this.generation++;
 		this.mode = null;
@@ -248,9 +264,13 @@ export class CanonicalSpeechStage {
 				paths.map(
 					async (path) => [path, await this.config.loadAsset(path)] as const,
 				),
-			).then((entries) => new Map(entries));
+			).then((entries) => {
+				if (!this.disposed) this.assetsLoadedFlag = true;
+				return new Map(entries);
+			});
 			this.assets.catch(() => {
 				this.assets = null;
+				this.assetsLoadedFlag = false;
 			});
 		}
 		return this.assets;

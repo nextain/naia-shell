@@ -53,6 +53,7 @@ import {
 	getBgmRecentTracks,
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
+	searchWebYoutubeCatalog,
 } from "../lib/bgm-skill";
 import { Logger } from "../lib/logger";
 import type { NaiaContextBridge } from "../lib/app-registry";
@@ -76,6 +77,16 @@ interface YtVideo {
 }
 
 async function ytSearch(query: string): Promise<YtVideo[]> {
+	if (import.meta.env.MODE === "web") {
+		return searchWebYoutubeCatalog(query).map((item) => ({
+			id: item.id,
+			title: item.title,
+			thumbnail:
+				item.thumbnail ?? `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`,
+			duration: String(item.duration ?? ""),
+			channel: item.channel ?? "YouTube",
+		}));
+	}
 	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
 		`${base}/yt/search?q=${encodeURIComponent(query)}&max=12`,
@@ -1657,6 +1668,10 @@ export function BgmPlayer({ naia }: Props) {
 						JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
 						"*",
 					);
+					if (import.meta.env.MODE === "web") {
+						setPlaying(false);
+						observePlayback("paused");
+					}
 				} else if (msg.type === "bgm_youtube_resume") {
 					const iframe = document.querySelector(
 						".app-bg-iframe",
@@ -1670,6 +1685,11 @@ export function BgmPlayer({ naia }: Props) {
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
 							"*",
 						);
+						if (import.meta.env.MODE === "web") {
+							setPlaying(true);
+							setVideoLive(true);
+							observePlayback("playing");
+						}
 					}
 				} else if (msg.type === "bgm_youtube_next") {
 					if (!startNextQueuedTrack("ended")) {
@@ -1831,20 +1851,38 @@ export function BgmPlayer({ naia }: Props) {
 				playbackId: pending.playbackId,
 				status: pending.status,
 			});
+			const catalogItem =
+				import.meta.env.MODE === "web"
+					? searchWebYoutubeCatalog(pending.selected.videoId)[0]
+					: undefined;
 			const video: YtVideo = {
 				id: pending.selected.videoId,
-				title: pending.selected.title,
-				thumbnail: "",
-				duration: "",
-				channel: "",
+				title: pending.selected.title || catalogItem?.title || "",
+				thumbnail:
+					catalogItem?.thumbnail ||
+					(import.meta.env.MODE === "web"
+						? `https://i.ytimg.com/vi/${pending.selected.videoId}/hqdefault.jpg`
+						: ""),
+				duration: String(catalogItem?.duration ?? ""),
+				channel: catalogItem?.channel ?? "",
 			};
 			setPlaybackSnapshot(pending);
 			setCurrentYt(video);
 			lastYtRef.current = video;
 			setSource("youtube");
-			setPlaying(false);
-			if (pending.status === "requested" || pending.status === "loading") {
-				beginPlaybackTimeout(pending.playbackId);
+			if (import.meta.env.MODE === "web") {
+				const shouldPlay = pending.status !== "paused";
+				setPlaying(shouldPlay);
+				setVideoLive(shouldPlay);
+				if (pending.status === "requested" || pending.status === "loading") {
+					observePlayback("playing", { playbackId: pending.playbackId });
+				}
+			} else {
+				setPlaying(false);
+				if (pending.status === "requested" || pending.status === "loading") {
+					beginPlaybackTimeout(pending.playbackId);
+				}
+				setVideoLive(pending.status === "playing");
 			}
 			setBgmVideoUrl(
 				youtubeEmbedUrl(pending.selected.videoId, pending.playbackId),
@@ -1957,16 +1995,39 @@ export function BgmPlayer({ naia }: Props) {
 			failedVideoIdsRef.current.delete(video.id);
 		}
 		audioRef.current?.pause();
+		const catalogItem =
+			import.meta.env.MODE === "web"
+				? searchWebYoutubeCatalog(video.id)[0]
+				: undefined;
+		const resolvedVideo: YtVideo = {
+			...video,
+			title: video.title || catalogItem?.title || "",
+			thumbnail:
+				video.thumbnail ||
+				catalogItem?.thumbnail ||
+				(import.meta.env.MODE === "web"
+					? `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`
+					: ""),
+			duration: String(video.duration || catalogItem?.duration || ""),
+			channel: video.channel || catalogItem?.channel || "",
+		};
 		const current = bgmPlayback.current();
 		const snapshot =
 			requestedPlaybackId && current?.playbackId === requestedPlaybackId
 				? current
-				: bgmPlayback.request({ videoId: video.id, title: video.title });
+				: bgmPlayback.request({
+						videoId: resolvedVideo.id,
+						title: resolvedVideo.title,
+					});
 		resetObservedIframeState(snapshot.playbackId);
 		setPlaybackSnapshot(snapshot);
-		beginPlaybackTimeout(snapshot.playbackId);
-		setCurrentYt(video);
-		lastYtRef.current = video;
+		if (import.meta.env.MODE === "web") {
+			observePlayback("playing", { playbackId: snapshot.playbackId });
+		} else {
+			beginPlaybackTimeout(snapshot.playbackId);
+		}
+		setCurrentYt(resolvedVideo);
+		lastYtRef.current = resolvedVideo;
 		setSource("youtube");
 		// Reflect the user's autoplay intent immediately in the controls and in
 		// the checked background surface. Agent truth remains observation-gated.
@@ -1980,7 +2041,7 @@ export function BgmPlayer({ naia }: Props) {
 
 		// The playback id makes the URL and React iframe key unique. Selecting the
 		// same video again must create a fresh player instead of a Zustand no-op.
-		const embedUrl = youtubeEmbedUrl(video.id, snapshot.playbackId);
+		const embedUrl = youtubeEmbedUrl(resolvedVideo.id, snapshot.playbackId);
 		setBgmVideoUrl(embedUrl);
 	}
 
@@ -2011,7 +2072,7 @@ export function BgmPlayer({ naia }: Props) {
 				pendingNullTerminalRef.current = null;
 				observedIframeStateRef.current.requerySentForPending = false;
 				youtubeHandshakeRef.current.stop();
-				if (sendYtCmd("stopVideo")) {
+				if (sendYtCmd("stopVideo") || import.meta.env.MODE === "web") {
 					// iframe 이벤트가 늦거나 누락돼도 버튼이 다시 재생 상태로
 					// 즉시 바뀌도록 사용자 의도를 낙관적으로 반영한다.
 					setPlaying(false);
@@ -2032,9 +2093,12 @@ export function BgmPlayer({ naia }: Props) {
 					// otherwise the handler immediately re-sends stopVideo and the
 					// button can never leave "stopped" again (#614).
 					manuallyStoppedPlaybackRef.current = null;
-					if (sendYtCmd("playVideo")) {
+					if (sendYtCmd("playVideo") || import.meta.env.MODE === "web") {
 						setPlaying(true);
 						setVideoLive(true);
+						if (import.meta.env.MODE === "web") {
+							observePlayback("playing");
+						}
 					}
 				}
 			}
@@ -2703,6 +2767,67 @@ export function BgmPlayer({ naia }: Props) {
 							<span className="bgm-yt-drawer-handle__bar" />
 							<span className="bgm-yt-drawer-handle__arrow">▲</span>
 						</button>
+					</div>,
+					document.body,
+				)}
+			{import.meta.env.MODE === "web" &&
+				playing &&
+				source === "youtube" &&
+				currentYt &&
+				createPortal(
+					<div
+						className="bgm-web-now-playing"
+						data-testid="bgm-youtube-now-playing"
+						role="region"
+						aria-label="YouTube 재생 중"
+					>
+						<div className="bgm-web-now-playing__preview">
+							<img
+								className="bgm-web-now-playing__thumb"
+								src={
+									currentYt.thumbnail ||
+									`https://i.ytimg.com/vi/${currentYt.id}/hqdefault.jpg`
+								}
+								alt=""
+								onError={(e) => {
+									e.currentTarget.style.display = "none";
+								}}
+							/>
+							<span className="bgm-web-now-playing__badge">▶ YOUTUBE</span>
+						</div>
+						<div className="bgm-web-now-playing__meta">
+							<div
+								className="bgm-web-now-playing__title"
+								data-testid="bgm-youtube-now-playing-title"
+								title={currentYt.title}
+							>
+								{currentYt.title}
+							</div>
+							<div className="bgm-web-now-playing__sub">
+								{currentYt.channel || "YouTube BGM"} · 재생 중
+							</div>
+						</div>
+						<div className="bgm-web-now-playing__actions">
+							<button
+								type="button"
+								className="bgm-web-now-playing__btn"
+								onClick={() => setAppExpanded((prev) => !prev)}
+								title={t("bgm.appToggleTitle")}
+								aria-label={t("bgm.appToggleTitle")}
+							>
+								♫
+							</button>
+							<button
+								type="button"
+								className="bgm-web-now-playing__btn bgm-web-now-playing__btn--stop"
+								data-testid="bgm-web-stop-btn"
+								onClick={togglePlay}
+								title={t("bgm.stop")}
+								aria-label={t("bgm.stop")}
+							>
+								■
+							</button>
+						</div>
 					</div>,
 					document.body,
 				)}

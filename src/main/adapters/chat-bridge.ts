@@ -23,7 +23,7 @@ export interface ChatSubmitInput {
   readonly systemPrompt?: string;
   readonly enableTools?: boolean;
   readonly enableThinking?: boolean;
-  readonly thinking?: { readonly level: "off" | "low" | "high" };
+  readonly thinking?: { readonly level: "off" | "low" | "high" | "xhigh" };
   readonly disabledSkills?: readonly string[];
   readonly enabledClis?: readonly string[];
   readonly channel?: ChatRequest["channel"];
@@ -52,7 +52,8 @@ export class ChatBridge {
       ...(input.thinking !== undefined &&
       (input.thinking.level === "off" ||
         input.thinking.level === "low" ||
-        input.thinking.level === "high")
+        input.thinking.level === "high" ||
+        input.thinking.level === "xhigh")
         ? { thinking: input.thinking }
         : {}),
       ...(input.disabledSkills !== undefined ? { disabledSkills: input.disabledSkills } : {}),

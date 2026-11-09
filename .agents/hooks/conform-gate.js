@@ -3,10 +3,10 @@
  * conform-gate — PostToolUse on Edit|Write.
  *
  * TypeScript edits run the fail-closed file-contract oracle immediately.
- * C source/header edits run the DETERMINISTIC contract<->code
+ * After each edit of a registered C source/header or TypeScript module, runs the DETERMINISTIC contract<->code
  * conform check (scripts/conform/check.py, 0 tokens, no LLM) on the region the
- * file belongs to. Inert until scripts/conform/manifest.json has regions.
- *   - drift (1..N-1 edits) → systemMessage: "reconcile before adding more"
+ * file belongs to. Regions are declared in scripts/conform/manifest.json.
+ *   - drift (1..N-1 edits) → block: "reconcile before adding more"
  *   - halt  (>=N edits)    → block + reason: "STOP, you are looping on a drifted base"
  *
  * Purpose: stop an uncommitted agent from flailing for hours on a drifted base
@@ -33,19 +33,21 @@ async function main() {
 	if (tn !== "Edit" && tn !== "Write") process.exit(0);
 	const fp = d.tool_input?.file_path || "";
 	if (!fp) process.exit(0);
-	// TypeScript uses the repository's file-contract oracle. Do not let the
-	// empty C manifest silently disable enforcement for the actual codebase.
+	// TypeScript uses the repository's file-contract oracle, then continues to the
+	// nonempty file-contract manifest (scripts/conform/check.py) for .ts/.md regions.
 	if (/\.tsx?$/.test(fp)) {
 		try {
 			execFileSync(process.execPath, [path.join(__dirname, "../../scripts/check-file-anchors.mjs")], {
-				cwd: path.join(__dirname, "../.."), stdio: "pipe",
+				cwd: path.join(__dirname, "../.."),
+				stdio: "pipe",
+				timeout: 10000,
 			});
 		} catch {
-			process.stdout.write(JSON.stringify({ decision: "block", reason: "[conform] TypeScript file contracts failed; run node scripts/check-file-anchors.mjs and reconcile before continuing." }));
+			process.stdout.write(JSON.stringify({ decision: "block", reason: "TypeScript 파일 계약 앵커 검사 실패: node scripts/check-file-anchors.mjs 실행 후 미계약 파일을 정리하세요." }));
+			process.exit(0);
 		}
-		process.exit(0);
 	}
-	if (!/\.(c|h)$/.test(fp)) process.exit(0);
+	if (!/\.(c|h|ts|md)$/.test(fp)) process.exit(0); // C/TS/MD extractor; widen per language
 
 	let out;
 	try {
@@ -63,7 +65,7 @@ async function main() {
 	if (v.status === "halt") {
 		process.stdout.write(JSON.stringify({ decision: "block", reason: v.message }));
 	} else if (v.status === "drift") {
-		process.stdout.write(JSON.stringify({ systemMessage: v.message }));
+		process.stdout.write(JSON.stringify({ decision: "block", reason: v.message }));
 	}
 	process.exit(0);
 }
