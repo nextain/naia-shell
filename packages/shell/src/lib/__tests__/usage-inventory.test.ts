@@ -45,6 +45,19 @@ it("anchors every fixed native control to an allowlisted name and the planning t
 						),
 					);
 					if (handler) {
+						if (usage?.initializer && ts.isStringLiteral(usage.initializer)) {
+							const control = usageControls[usage.initializer.text];
+							expect(control.trigger).toBe(
+								(
+									{
+										onClick: "click",
+										onChange: "change",
+										onSubmit: "submit",
+										onContextMenu: "contextmenu",
+									} as Record<string, string>
+								)[handler.name.getText(source)],
+							);
+						}
 						const type = attrs.find(
 							(a) => a.name.getText(source) === "type",
 						)?.initializer;
