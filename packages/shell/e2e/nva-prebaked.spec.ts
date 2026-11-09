@@ -110,6 +110,13 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		expect(videoBox?.width).toBeGreaterThan(0);
 		expect(videoBox?.height).toBeGreaterThan(0);
 		await expect(page.locator("[data-video-avatar-status]")).toHaveCount(0);
+		// The control bar lives in the chat header, not over the avatar.
+		await expect(page.locator(".chat-header .ai-control-bar")).toBeVisible();
+		await expect(page.locator(".naia-overlay > .ai-control-bar")).toHaveCount(0);
+		await page.getByRole("button", { name: "Avatar controls" }).click();
+		await expect(
+			page.getByRole("button", { name: "Drag to rotate avatar" }),
+		).toHaveCount(0);
 		const zoomIn = page.getByRole("button", { name: "Zoom in" });
 		const zoomOut = page.getByRole("button", { name: "Zoom out" });
 		const gestureGroup = page.getByRole("group", { name: "Avatar gestures" });
@@ -163,6 +170,28 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 			.toBeGreaterThan(beforeAlt2);
 
 		await page.setViewportSize({ width: 360, height: 800 });
+		await expect(page.getByRole("button", { name: "Captions" })).toHaveCount(0);
+		const musicApp = page.locator(".bgm-icon");
+		await expect(musicApp).toBeVisible();
+		await musicApp.focus();
+		await page.keyboard.press("Enter");
+		await expect(musicApp).toHaveAttribute("aria-expanded", "true");
+		const captions = page.getByRole("checkbox", { name: "Show captions" });
+		await expect(captions).toBeVisible();
+		await expect(
+			page.locator(".bgm-yt-options").getByRole("checkbox", {
+				name: "Show background video",
+			}),
+		).toBeVisible();
+		const captionsBox = await captions.boundingBox();
+		expect(captionsBox?.x).toBeGreaterThanOrEqual(0);
+		expect((captionsBox?.x ?? 0) + (captionsBox?.width ?? 0)).toBeLessThanOrEqual(360);
+		await expect(captions).not.toBeChecked();
+		await captions.focus();
+		await page.keyboard.press("Space");
+		await expect(captions).toBeChecked();
+		await musicApp.click();
+		await expect(page.locator(".bgm-yt-app--hidden")).toHaveAttribute("inert", "");
 		const narrowButtons = await page
 			.locator(".nva-gesture-actions__button")
 			.evaluateAll((buttons) =>
@@ -255,6 +284,7 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		await page.goto("/?holdNvaManifest=1&nvaNoGesture=1");
 		const avatar = page.locator("[data-video-avatar]");
 		await expect(avatar).toHaveAttribute("data-video-avatar-mode", "loading");
+		await page.getByRole("button", { name: "Avatar controls" }).click();
 		await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
 		await expect(page.locator(".nva-gesture-actions")).toHaveCount(0);
 		await expect(page.locator("[data-nva-gesture-key]")).toHaveCount(0);

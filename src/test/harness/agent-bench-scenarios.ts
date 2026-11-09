@@ -52,6 +52,12 @@ const FAMILIES: readonly {
   { prefix: "UC-TOOLS-SURFACE-611", gate: "protocol", requiredEvidence: ["native"] },
   // 서명된 스토어 앱 도구는 모델 도구 경계와 Rust의 설치 영수증 검증을 함께 거친다.
   { prefix: "UC-APPSTORE-DYNAMIC-TOOLS-20261029", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  // 설치 앱 호스트 브리지는 앱 질문·낭독의 mock 계약과 셸의 실제 Tauri 경계를 함께 확인한다.
+  { prefix: "UC-INSTALLED-APP-HOST", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  // 설치 앱 질문의 답변 품질은 실제 모델 응답을 요구한다.
+  { prefix: "UC-025-09", gate: "integration", requiredEvidence: ["native"] },
+  { prefix: "UC-025-11", gate: "integration", requiredEvidence: ["native"] },
+  { prefix: "UC-025-12", gate: "integration", requiredEvidence: ["native"] },
   // 도구 루트 결속(#651)은 실제 Codex app-server 의 cwd·샌드박스로만 확인된다.
   { prefix: "UC-WORKSPACE-BIND-651", gate: "integration", requiredEvidence: ["native"] },
   // 열린 문서·터미널 인지와 제어(#680), 승인 편집(#687)은 실 UI 의 표시·승인과
@@ -161,10 +167,28 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
+  // 자막 표시와 전환이다.
+  "UC-025-01",
+  // 재생 키 조작이다.
+  "UC-025-02",
+  // 대시보드 이름과 화면이다.
+  "UC-025-03",
+  // 브라우저 파일 다운로드다.
+  "UC-025-04",
+  // 라디오 곡 목록과 재생이다.
+  "UC-025-05",
+  // 출시 소개 글 검토다.
+  "UC-025-06",
+  // 슬라이드 설치·화면·음성·녹화 조작이다.
+  "UC-025-07",
+  // 주소 복사와 소개 앱 화면이다.
+  "UC-025-10",
+  // 0.2.4 고침(스토어 창·설치 갱신). 앱 설치 표면이다.
+  "UC-FIX-024-",
 ];
 
 export function ownedByEpic(uc: string): boolean {
-  return !NOT_OWNED_BY_EPIC.some((p) => uc.startsWith(p));
+  return !NOT_OWNED_BY_EPIC.some((p) => p.startsWith("UC-025-") ? uc === p : uc.startsWith(p));
 }
 
 /** 문서에 있는 모든 `### UC-` 표제. 계열 판정 전의 날것이다. */
@@ -186,7 +210,7 @@ export function allHeadings(markdown: string): readonly string[] {
 export function familyOf(uc: string): (typeof FAMILIES)[number] | undefined {
   let best: (typeof FAMILIES)[number] | undefined;
   for (const f of FAMILIES) {
-    if (!uc.startsWith(f.prefix)) continue;
+    if (f.prefix.startsWith("UC-025-") ? uc !== f.prefix : !uc.startsWith(f.prefix)) continue;
     if (best === undefined || f.prefix.length > best.prefix.length) best = f;
   }
   return best;
@@ -221,4 +245,34 @@ export class DocumentBenchScenarioSource implements BenchScenarioSourcePort {
   async list(): Promise<readonly BenchScenario[]> {
     return parseScenarios(await readFile(this.path, "utf8"));
   }
+}
+
+/** 실제 응답을 아직 실행하지 않은 설치 앱 대화 벤치의 재현 가능한 입력과 판정. */
+export const INSTALLED_APP_DIALOGUE_CASES = [
+  {
+    uc: "UC-025-09",
+    name: "공개 카드 순서",
+    context: "공개된 카드: 별, 달, 태양. 미공개 카드: 탑. 공개된 카드 이름만 공개 순서대로 쉼표로 구분해 답하세요.",
+    expected: "별, 달, 태양",
+    criterion: "공개한 세 카드만 순서대로 답하고 미공개 카드를 포함하지 않는다",
+  },
+  {
+    uc: "UC-025-11",
+    name: "캐릭터 카드 역할",
+    context: "카드 이름은 루나, 말투는 정중한 해요체입니다. 이름을 밝히고 인사만 한 문장으로 답하세요. 정확한 형식: 저는 [이름]예요. 안녕하세요.",
+    expected: "저는 루나예요. 안녕하세요.",
+    criterion: "카드 이름과 정중한 해요체를 따른다",
+  },
+  {
+    uc: "UC-025-12",
+    name: "설치 앱 질문 응답",
+    context: "설치 앱 질문: 17 더하기 25는 얼마인가요? 숫자만 답하세요.",
+    expected: "42",
+    criterion: "앱의 질문에 맞는 정답을 돌려준다",
+  },
+] as const;
+
+/** 형식이 고정된 fixture의 답을 판정한다. 모델 호출이나 실 앱 증거를 만들지 않는다. */
+export function judgeInstalledAppDialogue(expected: string, answer: string): boolean {
+  return answer.trim() === expected;
 }

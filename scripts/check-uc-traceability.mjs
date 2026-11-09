@@ -100,8 +100,11 @@ const hasCoverageRow = (uc) => {
 	);
 	return describes.length > 0 || describesInline;
 };
-const byBenchFamily = (uc) => families.some((prefix) => uc.startsWith(prefix));
-const outsideEpic = (uc) => notOwned.some((prefix) => uc.startsWith(prefix));
+// UC-025의 개별 선언만 정확히 일치한다. 나머지 기존 계열은 접두사다.
+const matchesDeclaration = (uc, declaration) =>
+	declaration.startsWith("UC-025-") ? uc === declaration : uc.startsWith(declaration);
+const byBenchFamily = (uc) => families.some((prefix) => matchesDeclaration(uc, prefix));
+const outsideEpic = (uc) => notOwned.some((prefix) => matchesDeclaration(uc, prefix));
 
 /**
  * 에픽 밖이라는 선언과 어디서 검증되는지 적혔다는 것은 다른 질문이다.
@@ -270,7 +273,7 @@ if (added.length) {
 // 것이다. 예전에는 저장소 밖까지 훑어 "있다" 로 판정했다.
 // 31 에서 29 로 줄였다. 코딩 작업자 화면이 없어지면서(#554) 커버리지 표가
 // 가리키던 그 화면의 단위 테스트 둘을 표에서 뺐다.
-const BASELINE_BROKEN_REFS = 32;
+const BASELINE_BROKEN_REFS = 22;
 if (brokenRefs.length > BASELINE_BROKEN_REFS) {
 	console.error(`  ❌ 표가 가리키는데 없는 파일이 늘었다(${brokenRefs.length} > ${BASELINE_BROKEN_REFS}):`);
 	for (const ref of brokenRefs.slice(0, 10)) console.error(`     ${ref}`);

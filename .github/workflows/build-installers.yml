@@ -952,6 +952,31 @@ jobs:
           node packages/shell/scripts/verify-installed-smoke.mjs `
             --binary $binary --resource-dir $resourceDir --timeout-ms 120000
 
+      - name: Verify NSIS update stops only installed processes
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $installer = Get-ChildItem packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $inside = $null
+          $outside = $null
+          try {
+            $nodeArguments = @('-e', '"setInterval(function(){},60000)"')
+            $inside = Start-Process -FilePath (Join-Path $resourceDir "node.exe") -ArgumentList $nodeArguments -PassThru
+            $outside = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $nodeArguments -PassThru
+            Start-Sleep -Seconds 2
+            if ($inside.HasExited -or $outside.HasExited) { throw "Process fixtures did not remain alive" }
+            $update = Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -PassThru
+            if ($update.ExitCode -ne 0) { throw "NSIS update failed: $($update.ExitCode)" }
+            $inside.Refresh()
+            $outside.Refresh()
+            if (-not $inside.HasExited) { throw "Installed process survived update" }
+            if ($outside.HasExited) { throw "Outside process was terminated" }
+          } finally {
+            if ($inside -and -not $inside.HasExited) { Stop-Process -Id $inside.Id -Force }
+            if ($outside -and -not $outside.HasExited) { Stop-Process -Id $outside.Id -Force }
+          }
+
       - name: Prepare and verify Steam portable depot
         id: steam
         if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
