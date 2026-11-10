@@ -478,7 +478,9 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 
 		expect(await prepared?.play(clock)).toBe(true);
 		expect(nextPlay).toHaveBeenCalledWith(clock);
-		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		// The replaced stage is stopped and kept as the spare, not disposed.
+		expect(currentStage.stop).toHaveBeenCalledTimes(1);
+		expect(currentStage.dispose).not.toHaveBeenCalled();
 		renderer.setSpeakingVisual(false);
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		renderer.stop();
@@ -518,7 +520,8 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
 		stagedRenderer.cancelPrefetchedSpeechTiming();
 		expect(await prepared?.play(() => 0)).toBe(false);
-		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
+		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		expect(nextStage.dispose).not.toHaveBeenCalled();
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
 		renderer.stop();

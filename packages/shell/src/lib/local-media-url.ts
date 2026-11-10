@@ -3,8 +3,11 @@
 //   "operation not supported"; 3090 2026-11-06: 1.7 MB plays, 2.8 MB+ fails, same clip
 //   decodes fine from file). asset:// does not play video at all there. Feeding the same
 //   bytes through MediaSource plays to the end and keeps the VP9 alpha.
-//   So on Linux a video/webm Blob gets a MediaSource URL; everything else (and Windows/macOS)
-//   keeps the plain blob: URL. Both kinds are released with URL.revokeObjectURL.
+//   So on Linux a video/webm Blob above MEDIA_SOURCE_MIN_BYTES gets a MediaSource URL;
+//   everything else (and Windows/macOS) keeps the plain blob: URL. Small clips stay on
+//   blob: because every MediaSource attach leaves WebKit MSE pipeline threads behind
+//   (3090 2026-11-10: speech atlas slices, one MediaSource each, grew WebKitWebProcess
+//   to ~18k vqueue:src/webkitmediasrc threads in under an hour). Both kinds are released with URL.revokeObjectURL.
 //   A MediaSource URL serves one media element at a time and cannot be fetch()ed
 //   (isMediaSourceUrl lets a caller that mounts one URL twice skip the second).
 
@@ -16,10 +19,14 @@ function isLinuxWebView(): boolean {
 	);
 }
 
+/** blob: URLs decode up to about 2 MB on WebKitGTK (1.7 MB measured); keep a margin. */
+export const MEDIA_SOURCE_MIN_BYTES = 1_500_000;
+
 /** True when `blob` should go through MediaSource instead of a blob: URL. */
 export function shouldUseMediaSource(blob: Blob): boolean {
 	return (
 		blob.type === "video/webm" &&
+		blob.size > MEDIA_SOURCE_MIN_BYTES &&
 		isLinuxWebView() &&
 		typeof MediaSource !== "undefined"
 	);
