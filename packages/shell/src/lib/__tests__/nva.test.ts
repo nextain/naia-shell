@@ -314,7 +314,7 @@ describe("NVA manifest contract (v0.2)", () => {
 				styleLabel: "기본 화풍",
 				animations: ["greeting", "idea"],
 				clips: ["idle", "talking-ko", "greeting", "idea"],
-				removedFiles: ["idle.stacked.mp4", "motion.webm"],
+				removedFiles: ["motion.webm"],
 			},
 			{
 				dirName: "jina-anime",
@@ -361,6 +361,9 @@ describe("NVA manifest contract (v0.2)", () => {
 			}
 			for (const removed of bundle.removedFiles) {
 				expect(existsSync(path.join(bundleDir, "clips", removed))).toBe(false);
+			}
+			for (const stacked of Object.values(manifest.stacked_alpha?.clips ?? {})) {
+				expect(existsSync(path.join(bundleDir, stacked))).toBe(true);
 			}
 			expect(existsSync(path.join(bundleDir, "speech", "atlas.bin"))).toBe(
 				true,

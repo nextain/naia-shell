@@ -535,10 +535,14 @@ test("S5 kiosk routes Jina speech to gateway voice (ko-KR-Neural2-A), syncs mout
 		"게스트님, 안녕하세요",
 	);
 
-	// Verify initial greeting clip (clips/greeting.webm) was loaded and played
+	// Verify initial greeting clip was loaded and played; with stacked_alpha the
+	// renderer fetches clips/greeting.stacked.mp4 in place of clips/greeting.webm.
 	await expect
 		.poll(
-			() => loadedClipUrls.some((u) => u.endsWith("/nva/jina/clips/greeting.webm")),
+			() =>
+				loadedClipUrls.some((u) =>
+					/\/nva\/jina\/clips\/greeting\.(webm|stacked\.mp4)$/.test(u),
+				),
 			{ timeout: 15_000 },
 		)
 		.toBe(true);

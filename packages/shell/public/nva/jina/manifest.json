@@ -135,5 +135,15 @@
     "validation_report": "speech/validation-report.json",
     "quality_report": "speech/quality-report.json",
     "provenance": "speech/generation-result.json"
+  },
+  "stacked_alpha": {
+    "layout": "color-top-alpha-bottom",
+    "clips": {
+      "clips/greeting.webm": "clips/greeting.stacked.mp4",
+      "clips/guidance.webm": "clips/guidance.stacked.mp4",
+      "clips/idea.webm": "clips/idea.stacked.mp4",
+      "clips/idle.webm": "clips/idle.stacked.mp4",
+      "clips/talking-ko.webm": "clips/talking-ko.stacked.mp4"
+    }
   }
 }
