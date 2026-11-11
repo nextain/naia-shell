@@ -285,21 +285,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
-				style={{ ...VIDEO_STYLE, transform: videoTransform(pan, zoom) }}
+				style={{
+					...VIDEO_STYLE,
+					transform: videoTransform(pan, zoom),
+					visibility: mode === "error" ? "hidden" : undefined,
+				}}
 			/>
-			{mode === "error" && (
-				<img
-					data-video-avatar-fallback
-					src="/avatars/Naia.webp"
-					alt="Naia"
-					style={{
-						...VIDEO_STYLE,
-						position: "absolute",
-						pointerEvents: "none",
-						transform: videoTransform(pan, zoom),
-					}}
-				/>
-			)}
 			{mode !== "prebaked" && (
 				<output data-video-avatar-status={mode} aria-live="polite">
 					{mode === "loading"

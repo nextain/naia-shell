@@ -11,7 +11,7 @@ export function ResilientVideo(props: VideoHTMLAttributes<HTMLVideoElement>) {
 		let disposed = false;
 		const fail = () => {
 			if (disposed) return;
-			Logger.warn("ResilientVideo", "using still image after media failure");
+			Logger.warn("ResilientVideo", "hiding video after media failure");
 			setFailed(true);
 			video.pause();
 			clearTimeout(timer);
@@ -20,11 +20,12 @@ export function ResilientVideo(props: VideoHTMLAttributes<HTMLVideoElement>) {
 		const timer = setTimeout(fail, 8000);
 		video.addEventListener("error", fail);
 		video.addEventListener("playing", ready);
-		if (props.autoPlay) void video.play()?.catch((error) => {
-            // A successful thumbnail capture deliberately pauses the decoder.
-            if (error?.name === "AbortError") ready();
-            else fail();
-        });
+		if (props.autoPlay)
+			void video.play()?.catch((error) => {
+				// A successful thumbnail capture deliberately pauses the decoder.
+				if (error?.name === "AbortError") ready();
+				else fail();
+			});
 		return () => {
 			disposed = true;
 			clearTimeout(timer);
@@ -41,15 +42,6 @@ export function ResilientVideo(props: VideoHTMLAttributes<HTMLVideoElement>) {
 				className={failed ? undefined : props.className}
 				style={{ ...props.style, ...(failed ? { display: "none" } : {}) }}
 			/>
-			{failed && (
-				<img
-					data-media-fallback
-					src={props.poster || "/avatars/Naia.webp"}
-					className={props.className}
-					style={props.style}
-					alt={props["aria-label"] || ""}
-				/>
-			)}
 		</>
 	);
 }

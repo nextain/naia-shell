@@ -1582,3 +1582,15 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 | **FR-BROADCAST-STREAM.5** | 설정 화면에 `방송` 절(플랫폼 선택, 서버 주소, 해상도, 비밀 저장소 기반 방송 키 마스킹 입력)을 두고, `AiControlBar`에 방송 켜기·끄기 단추(방송 중 빨간 점 + 경과 시간, 끊김 상태 표시, 키 미설정 시 비활성)를 제공한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
 | **FR-BROADCAST-STREAM.6** | 방송 종료 시 `<ADK>/data-private/broadcast/log.jsonl` 에 `{start, end, minutes, answers, credits_used, brain: "local"\|"gateway"\|"both", platform, encoder, drops}` JSON 한 줄을 추가한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
 
+## FR-NVA-BROADCAST-HOTFIX — 방송 시험 이미지 제거 (#451 후속)
+
+- 이전 클립의 시작 감시는 interrupt 및 모든 클립 전환 때 취소하고 늦은 play 결과를 무시한다. 현재 클립의 실제 8초 실패 감시는 유지한다.
+- VideoAvatarCanvas와 ResilientVideo는 오류 시 이미지를 표시하지 않는다. 시험 캡처 Naia.webp를 삭제하고 생성 도구도 이 자산을 사용하지 않는다.
+- 시험용 Naia Skin Head/With Hair 프리셋과 선택 시험을 제거하며 정상 네 VRM은 유지한다. 이전 FR-V017.22의 두 프리셋 제공 요구는 이 hotfix로 폐기한다.
+- 상태: Done. P04: 관련 Vitest 35/35 (RED에서 interrupt/전환 두 timeout 재현 후 GREEN), Shell·core·sidecar typecheck, Playwright 온보딩 3/3 및 투명 오류·반응형 2/2. 실제 3090 방송 운영 수용은 수행하지 않았다.
+
+### FR-NVA-BROADCAST-HOTFIX / FR-B2C-026-R15 — browser regression follow-up (#451, #855, P01–P05)
+
+- Keep the Linux large-WebM MediaSource workaround specific to WebKitGTK; Linux Chromium retains its Blob decoder for authored clips with timestamps rejected by MSE.
+- Browser fixtures restore the native workspace pointer, provide WebM bytes for WebM paths, assert transparent media errors, wait for rendered Markdown before layout measurement, and match the selected Slides locale.
+- Done: regression paths are the avatar grid #448, startup latency, character theme 360/1100px, Korean keep-all, Linux media failure 360/1100px, and installed Slides video. Validation evidence is recorded with the fix commit.
