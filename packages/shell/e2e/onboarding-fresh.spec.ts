@@ -415,13 +415,13 @@ for (const width of [360, 1100]) {
 				}),
 			);
 		});
-		const fallback = page.locator("[data-video-avatar-fallback]");
-		await expect(fallback).toBeVisible();
-		expect(
-			await fallback.evaluate(
-				(img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
-			),
-		).toBe(true);
+		// The broadcast hotfix retired the trial still image. A failed decoder
+		// must leave a transparent avatar, an announced error, and usable input.
+		await expect(
+			page.locator('[data-video-avatar-status="error"]'),
+		).toBeVisible();
+		await expect(page.locator("[data-video-avatar-fallback]")).toHaveCount(0);
+		await expect(page.locator("[data-video-avatar-prebaked]")).toBeHidden();
 		const userName = page.locator(".onboarding-app input").first();
 		await userName.fill("Keyboard works");
 		await expect(userName).toHaveValue("Keyboard works");

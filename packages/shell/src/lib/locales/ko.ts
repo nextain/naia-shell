@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "내 PC에서 실행 중인 omni-24g 컨테이너의 ws:// 주소. 로그인 키를 그대로 사용합니다(키 입력 없음). 원격 직결 시 평문 ws는 신뢰 네트워크에서만 — Tailscale·VPN·SSH 터널 등으로 보호하세요(공개망 노출은 사용자 책임).",
 	"settings.apiKey": "API 키",
 	"settings.apiKeyRequired": "API 키를 입력해주세요.",
+	"settings.modelRequired": "모델을 먼저 고르세요.",
 	"settings.language": "언어",
 	"settings.theme": "테마",
 	"settings.appPosition": "앱 위치",

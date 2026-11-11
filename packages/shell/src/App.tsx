@@ -306,6 +306,7 @@ export function App() {
 	const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
 	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
+	const bgmVideoUrl = useAvatarStore((s) => s.bgmVideoUrl);
 	const backgroundFallback = useBackgroundFallback(
 		backgroundVideoUrl,
 		backgroundMediaType,
@@ -1122,6 +1123,7 @@ export function App() {
 				backgroundFallback={backgroundFallback}
 				backgroundMediaType={backgroundMediaType}
 				backgroundVideoUrl={backgroundVideoUrl}
+				bgmVideoUrl={bgmVideoUrl}
 				onSplashDone={onSplashDone}
 				setNaiaWidth={setNaiaWidth}
 				mainContent={{

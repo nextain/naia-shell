@@ -69,6 +69,7 @@ test("UC1: 360px 채팅에서 한글 낱말은 함께 줄바꿈하고 긴 주소
 	await page.addInitScript({ content: CONFIG_SCRIPT });
 	await page.goto("/", { waitUntil: "commit" });
 	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 120_000 });
+	await expect(page.locator(".splash-screen")).toBeHidden();
 
 	const baseline = process.env.KEEPALL_BASELINE === "1";
 	// Keep the viewport at 360px while reproducing the narrow vertical bubble
@@ -90,6 +91,9 @@ test("UC1: 360px 채팅에서 한글 낱말은 함께 줄바꿈하고 긴 주소
 		timeout: 15_000,
 	});
 	await expect(content).toContainText(LONG_ADDRESS);
+	// Suspense can retain hidden text nodes while the Markdown chunk resolves.
+	// Measure the rendered paragraph, after it has replaced the text fallback.
+	await expect(content.locator("p").first()).toBeVisible();
 
 	const shotDir = process.env.KEEPALL_SHOT_DIR;
 	if (shotDir)
@@ -98,35 +102,40 @@ test("UC1: 360px 채팅에서 한글 낱말은 함께 줄바꿈하고 긴 주소
 			fullPage: true,
 		});
 
-	const layout = await content.evaluate((element) => {
-		const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-		let phraseNode: Text | null = null;
-		while (walker.nextNode()) {
-			if (walker.currentNode.textContent?.includes("뿐이야.")) {
-				phraseNode = walker.currentNode as Text;
-				break;
+	await expect(async () => {
+		const layout = await content.evaluate((element) => {
+			const walker = document.createTreeWalker(
+				element.querySelector("p")!,
+				NodeFilter.SHOW_TEXT,
+			);
+			let phraseNode: Text | null = null;
+			while (walker.nextNode()) {
+				if (walker.currentNode.textContent?.includes("뿐이야.")) {
+					phraseNode = walker.currentNode as Text;
+					break;
+				}
 			}
-		}
-		if (!phraseNode)
-			throw new Error("Could not find the Korean phrase text node");
-		const start = phraseNode.textContent!.indexOf("뿐이야.");
-		const range = document.createRange();
-		range.setStart(phraseNode, start);
-		range.setEnd(phraseNode, start + "뿐이야.".length);
-		const rects = Array.from(range.getClientRects());
-		const topValues = rects.map((rect) => Math.round(rect.top));
-		return {
-			wordLineCount: new Set(topValues).size,
-			wordRects: rects.length,
-			clientWidth: (element as HTMLElement).clientWidth,
-			scrollWidth: (element as HTMLElement).scrollWidth,
-			text: element.textContent,
-		};
-	});
+			if (!phraseNode)
+				throw new Error("Could not find the Korean phrase text node");
+			const start = phraseNode.textContent!.indexOf("뿐이야.");
+			const range = document.createRange();
+			range.setStart(phraseNode, start);
+			range.setEnd(phraseNode, start + "뿐이야.".length);
+			const rects = Array.from(range.getClientRects());
+			const topValues = rects.map((rect) => Math.round(rect.top));
+			return {
+				wordLineCount: new Set(topValues).size,
+				wordRects: rects.length,
+				clientWidth: (element as HTMLElement).clientWidth,
+				scrollWidth: (element as HTMLElement).scrollWidth,
+				text: element.textContent,
+			};
+		});
 
-	expect(
-		layout.wordLineCount,
-		`뿐이야. must stay on one line; Range rects=${layout.wordRects}`,
-	).toBe(1);
-	expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+		expect(
+			layout.wordLineCount,
+			`뿐이야. must stay on one line; Range rects=${layout.wordRects}`,
+		).toBe(1);
+		expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+	}).toPass({ timeout: 10_000 });
 });

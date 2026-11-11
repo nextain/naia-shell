@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "PCで実行中のomni-24gコンテナのws://アドレス。ログインキーを再利用します(キー入力不要)。リモートはwss://が必要です。",
 	"settings.apiKey": "APIキー",
 	"settings.apiKeyRequired": "API キーを入力してください。",
+	"settings.modelRequired": "先にモデルを選んでください。",
 	"settings.language": "言語",
 	"settings.theme": "テーマ",
 	"settings.appPosition": "パネル位置",

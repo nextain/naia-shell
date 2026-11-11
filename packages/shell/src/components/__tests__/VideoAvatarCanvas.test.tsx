@@ -91,14 +91,14 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		useCascadeAvatarStore.getState().setRenderer(null);
 	});
 
-	it("falls back to a still after decoder rejection without retrying", async () => {
+	it("stays transparent after decoder rejection without retrying", async () => {
 		vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValue(
 			new Error("appsink not found"),
 		);
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
 			expect(
-				container.querySelector("[data-video-avatar-fallback]"),
+				container.querySelector('[data-video-avatar-mode="error"]'),
 			).toBeTruthy(),
 		);
 		expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
@@ -120,8 +120,10 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 			await vi.advanceTimersByTimeAsync(10_000);
 		});
 		expect(
-			container.querySelector("[data-video-avatar-fallback]"),
+			container.querySelector('[data-video-avatar-mode="error"]'),
 		).toBeTruthy();
+		expect(container.querySelector("img")).toBeNull();
+		expect(container.querySelector("canvas")).toHaveStyle({ visibility: "hidden" });
 		cleanup();
 		vi.useRealTimers();
 	});

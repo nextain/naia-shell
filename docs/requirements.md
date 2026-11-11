@@ -1602,4 +1602,15 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 | **FR-WIN-RTX2070-R2.5** | `read_naia_path_cache`, `write_naia_path_cache`, `init_naia_settings`, `copy_bundled_assets`, `list_naia_assets`, `import_naia_asset`에서 `<ADK>/naia-settings` 아래 4개 자산 하위 폴더(`background`, `vrm-files`, `bgm-musics`, `nva-files`, 단일 계약 파일 `naia-asset-contract.json` 공유)만 윈도우 드라이브 문자·역슬래시·정규화 경로로 런타임 `asset_protocol_scope`에 허용 등록하며(`<ADK>` 루트·`<ADK>/naia-settings` 루트 및 맨 드라이브 루트 `C:\`는 허용 금지), `data-private`·`data-private/.tmp`·`data-private/secure-keys.dat`는 원본 및 정규화(`dunce::canonicalize`) 경로 모두 금지 상태를 유지한다. | UC-WIN-RTX2070-R2-026 | `packages/shell/src/lib/naia-asset-contract.json`, `packages/shell/src-tauri/src/lib.rs`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/lib/__tests__/asset-protocol-scope.test.ts` | Done |
 | **FR-WIN-RTX2070-R2.6** | 단일 자산 계약(`naia-asset-contract.json`)을 Rust(`lib.rs`)와 TS(`adk-store.ts`)가 공유하여, 영상 안에 아바타가 포함된 `naia-autumn-office-live.mp4`는 배경 자산 목록(`list_naia_assets` 및 프런트엔드 배경 목록)에서 제외하고 기존 설정에 해당 파일명이 저장된 경우 배경 전용 자산(`naia-autumn-office-uhd.webp`)으로 정규화해 배경 미리보기와 배경에 배경만 표시한다. | UC-WIN-RTX2070-R2-026 | `packages/shell/src/lib/naia-asset-contract.json`, `packages/shell/src-tauri/src/lib.rs`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx` | Done |
 
+## FR-NVA-BROADCAST-HOTFIX — 방송 시험 이미지 제거 (#451 후속)
 
+- 이전 클립의 시작 감시는 interrupt 및 모든 클립 전환 때 취소하고 늦은 play 결과를 무시한다. 현재 클립의 실제 8초 실패 감시는 유지한다.
+- VideoAvatarCanvas와 ResilientVideo는 오류 시 이미지를 표시하지 않는다. 시험 캡처 Naia.webp를 삭제하고 생성 도구도 이 자산을 사용하지 않는다.
+- 시험용 Naia Skin Head/With Hair 프리셋과 선택 시험을 제거하며 정상 네 VRM은 유지한다. 이전 FR-V017.22의 두 프리셋 제공 요구는 이 hotfix로 폐기한다.
+- 상태: Done. P04: 관련 Vitest 35/35 (RED에서 interrupt/전환 두 timeout 재현 후 GREEN), Shell·core·sidecar typecheck, Playwright 온보딩 3/3 및 투명 오류·반응형 2/2. 실제 3090 방송 운영 수용은 수행하지 않았다.
+
+### FR-NVA-BROADCAST-HOTFIX / FR-B2C-026-R15 — browser regression follow-up (#451, #855, P01–P05)
+
+- Keep the Linux large-WebM MediaSource workaround specific to WebKitGTK; Linux Chromium retains its Blob decoder for authored clips with timestamps rejected by MSE.
+- Browser fixtures restore the native workspace pointer, provide WebM bytes for WebM paths, assert transparent media errors, wait for rendered Markdown before layout measurement, and match the selected Slides locale.
+- Done: regression paths are the avatar grid #448, startup latency, character theme 360/1100px, Korean keep-all, Linux media failure 360/1100px, and installed Slides video. Validation evidence is recorded with the fix commit.
