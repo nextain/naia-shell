@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "ws://-адрес контейнера omni-24g на вашем ПК. Использует ключ входа (без ввода). Удалённый адрес требует wss://.",
 	"settings.apiKey": "API-ключ",
 	"settings.apiKeyRequired": "Пожалуйста, введите ключ API.",
+	"settings.modelRequired": "Сначала выберите модель.",
 	"settings.language": "Язык",
 	"settings.theme": "Тема",
 	"settings.appPosition": "Позиция панели",
