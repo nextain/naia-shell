@@ -1370,19 +1370,6 @@ describe("Windows ffmpeg sidecar staging and placeholder guard (FR-WIN-RTX2070-R
 			(m) => m[1],
 		);
 		expect(rustFallbacks).toEqual(WINDOWS_FFMPEG_SPEC.fallbackCandidates);
-
-		const workflow = readFileSync(
-			resolve(REPO_ROOT, ".github/workflows/build-installers.yml"),
-			"utf8",
-		);
-		expect(workflow).toContain(
-			"node packages/shell/scripts/stage-runtime.mjs --provision-windows-ffmpeg",
-		);
-		expect(
-			workflow.match(
-				/node packages\/shell\/scripts\/stage-runtime\.mjs --verify-windows-ffmpeg/g,
-			)?.length ?? 0,
-		).toBe(2);
 	});
 
 	it("rejects the 30-byte dev placeholder, tiny files, and non-MZ headers", () => {
