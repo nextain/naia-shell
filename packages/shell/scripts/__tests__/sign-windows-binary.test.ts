@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { generateConf } from "../stage-runtime.mjs";
@@ -70,6 +71,20 @@ describe("sign-windows-binary (#725)", () => {
 		expect(script).toContain("PSModulePath");
 	});
 
+	it("sign-windows-binary.ps1 skips the same ffmpeg placeholder that build.rs writes and broadcast.rs ignores", () => {
+		const script = readFileSync(SCRIPT_PATH, "utf8");
+		const buildRs = readFileSync(resolve(SHELL, "src-tauri/build.rs"), "utf8");
+		const broadcastRs = readFileSync(resolve(SHELL, "src-tauri/src/broadcast.rs"), "utf8");
+		const prefix = "#!naia-ffmpeg-dev-placeholder";
+		expect(buildRs).toContain(`b"${prefix}\\n"`);
+		expect(broadcastRs).toContain(`b"${prefix}"`);
+		expect(script).toContain(`$ffmpegPlaceholderPrefix = "${prefix}"`);
+		// The skip must run before Get-AuthenticodeSignature and signing.
+		expect(script.indexOf("Skipping ffmpeg dev placeholder")).toBeLessThan(
+			script.indexOf("Get-AuthenticodeSignature"),
+		);
+	});
+
 	it("neither sign-windows-binary.test.ts nor sign-windows-binary.ps1 contains machine-specific local path", () => {
 		const forbidden = ["alpha", "adk"].join("-");
 		const selfContent = readFileSync(fileURLToPath(import.meta.url), "utf8");
@@ -124,6 +139,36 @@ describe("sign-windows-binary (#725)", () => {
 					},
 				);
 				expect(output).toContain("Skipping known third-party binary");
+			},
+		);
+
+		it.skipIf(!HAS_PWSH)(
+			"sign-windows-binary.ps1 skips the ffmpeg dev placeholder even if NAIA_WINDOWS_SIGN is '1'",
+			() => {
+				const placeholder = join(
+					mkdtempSync(join(tmpdir(), "naia-sign-")),
+					"ffmpeg-x86_64-pc-windows-msvc.exe",
+				);
+				writeFileSync(placeholder, "#!naia-ffmpeg-dev-placeholder\n");
+				const output = execFileSync(
+					"powershell",
+					[
+						"-NoProfile",
+						"-ExecutionPolicy",
+						"Bypass",
+						"-File",
+						SCRIPT_PATH,
+						placeholder,
+					],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							NAIA_WINDOWS_SIGN: "1",
+						},
+					},
+				);
+				expect(output).toContain("Skipping ffmpeg dev placeholder");
 			},
 		);
 
