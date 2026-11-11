@@ -267,6 +267,7 @@ export default {
 	"chat.answerFailed.lead": "لم أتمكن من إكمال الإجابة. هل نحاول مرة أخرى؟",
 	"chat.answerFailed.retry": "إعادة المحاولة",
 	"chat.answerFailed.detailsLabel": "التفاصيل",
+	"chat.dockRight": "اليمين",
 	"chat.error": "خطأ",
 	"chat.wireError.provider": "تحقق من اتصال نموذج الذكاء الاصطناعي.",
 	"chat.wireError.discord": "تحقق من اتصال Discord والأذونات.",

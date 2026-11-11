@@ -267,6 +267,7 @@ export default {
 	"chat.answerFailed.lead": "답을 만들다 실패했어요. 다시 시도할까요?",
 	"chat.answerFailed.retry": "다시 시도",
 	"chat.answerFailed.detailsLabel": "자세한 내용",
+	"chat.dockRight": "오른쪽",
 	"chat.error": "오류",
 	"chat.wireError.provider": "AI 모델 연결을 확인해 주세요.",
 	"chat.wireError.discord": "Discord 연결과 권한을 확인해 주세요.",

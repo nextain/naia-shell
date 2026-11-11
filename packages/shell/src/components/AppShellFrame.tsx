@@ -79,7 +79,10 @@ export function AppShellFrame({
 	const handleNaiaWidthPointerMove = (event: React.PointerEvent) => {
 		const drag = widthDragRef.current;
 		if (!drag) return;
-		const delta = event.clientX - drag.startX;
+		// 대화 열이 오른쪽이면 경계를 왼쪽으로 끌수록 넓어진다.
+		const delta =
+			(event.clientX - drag.startX) *
+			(mainContent.chatSide === "right" ? -1 : 1);
 		if (!drag.moved && Math.abs(delta) > 4) drag.moved = true;
 		if (!drag.moved) return;
 		drag.currentW = Math.max(
@@ -144,6 +147,7 @@ export function AppShellFrame({
 		<div
 			className="app-root"
 			data-ui-mode={mainContent.uiMode}
+			data-chat-side={mainContent.chatSide}
 			data-rail-collapsed={
 				mainContent.uiMode === "workspace" && mainContent.railCollapsed
 					? "true"

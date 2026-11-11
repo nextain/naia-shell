@@ -267,6 +267,7 @@ export default {
 	"chat.answerFailed.lead": "Je n'ai pas pu terminer cette réponse. On réessaie ?",
 	"chat.answerFailed.retry": "Réessayer",
 	"chat.answerFailed.detailsLabel": "Détails",
+	"chat.dockRight": "À droite",
 	"chat.error": "Erreur",
 	"chat.wireError.provider": "Vérifiez la connexion au modèle IA.",
 	"chat.wireError.discord": "Vérifiez la connexion et les autorisations Discord.",

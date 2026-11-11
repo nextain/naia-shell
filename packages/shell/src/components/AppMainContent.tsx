@@ -75,6 +75,7 @@ export interface AppMainContentProps {
 	appTitle: string;
 	avatarProvider: "vrm" | "naia-video-avatar";
 	chatModeOverride: "workspace" | "app";
+	chatSide: "left" | "right";
 	chatDragRef: MutableRefObject<ChatDragState | null>;
 	chatHeight: number;
 	chatVisible: boolean;
@@ -92,6 +93,7 @@ export interface AppMainContentProps {
 	setAppInstallRequest: Dispatch<SetStateAction<AppInstallRequest | null>>;
 	setChatHeight: Dispatch<SetStateAction<number>>;
 	setChatMode: (mode: "workspace" | "app") => void;
+	setChatRight: () => void;
 	setChatVisible: Dispatch<SetStateAction<boolean>>;
 	setShowAppInstall: Dispatch<SetStateAction<boolean>>;
 	setShowUpdatePrompt: Dispatch<SetStateAction<boolean>>;
@@ -115,6 +117,7 @@ export function AppMainContent(props: AppMainContentProps) {
 		appTitle,
 		avatarProvider,
 		chatModeOverride,
+		chatSide,
 		chatDragRef,
 		chatHeight,
 		chatVisible,
@@ -132,6 +135,7 @@ export function AppMainContent(props: AppMainContentProps) {
 		setAppInstallRequest,
 		setChatHeight,
 		setChatMode,
+		setChatRight,
 		setChatVisible,
 		setShowAppInstall,
 		setShowUpdatePrompt,
@@ -285,21 +289,30 @@ export function AppMainContent(props: AppMainContentProps) {
 							>
 								<button
 									type="button"
-									className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
+									className={`naia-chat-mode${uiMode === "app" && chatSide === "left" ? " naia-chat-mode--active" : ""}`}
 									title="왼쪽 소형"
-									aria-pressed={uiMode === "app"}
+									aria-pressed={uiMode === "app" && chatSide === "left"}
 									onClick={() => setChatMode("app")}
 								>
 									▖
 								</button>
 								<button
 									type="button"
-									className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
+									className={`naia-chat-mode${uiMode === "workspace" && chatSide === "left" ? " naia-chat-mode--active" : ""}`}
 									title="왼쪽 채움"
-									aria-pressed={uiMode === "workspace"}
+									aria-pressed={uiMode === "workspace" && chatSide === "left"}
 									onClick={() => setChatMode("workspace")}
 								>
 									▌
+								</button>
+								<button
+									type="button"
+									className={`naia-chat-mode${chatSide === "right" ? " naia-chat-mode--active" : ""}`}
+									title={t("chat.dockRight")}
+									aria-pressed={chatSide === "right"}
+									onClick={setChatRight}
+								>
+									▐
 								</button>
 							</div>
 							<div

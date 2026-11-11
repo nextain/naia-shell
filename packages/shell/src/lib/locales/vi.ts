@@ -267,6 +267,7 @@ export default {
 	"chat.answerFailed.lead": "Tôi chưa tạo được câu trả lời. Thử lại nhé?",
 	"chat.answerFailed.retry": "Thử lại",
 	"chat.answerFailed.detailsLabel": "Chi tiết",
+	"chat.dockRight": "Bên phải",
 	"chat.error": "Lỗi",
 	"chat.wireError.provider": "Hãy kiểm tra kết nối mô hình AI.",
 	"chat.wireError.discord": "Hãy kiểm tra kết nối và quyền Discord.",
