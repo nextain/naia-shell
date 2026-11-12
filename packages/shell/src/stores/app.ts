@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AppContext } from "../lib/app-registry";
+import { usage, usageAppScreen } from "../lib/usage-runtime";
 
 function requestBrowserVisibilitySync() {
 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
@@ -66,6 +67,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 	activeApp: null,
 	setActiveApp: (id) => {
 		const current = get().activeApp;
+		if (current !== id) usage.record("app.screen.view", usageAppScreen(id));
 		if (current === "browser" && id !== "browser") {
 			invoke("browser_wv_hide").catch(() => {});
 		}

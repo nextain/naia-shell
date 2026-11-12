@@ -1177,7 +1177,7 @@ export function App() {
 						zIndex: 99999,
 					}}
 					role="alert"
-					onClick={() => setGlobalToast(null)}
+					data-usage-event="shell.set-global-toast-1.click" onClick={() => setGlobalToast(null)}
 				>
 					{globalToast}
 				</div>

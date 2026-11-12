@@ -530,7 +530,7 @@ export function CharCardApp({
 						className="charcard-app__btn charcard-app__btn--primary"
 						disabled={!storageReady}
 						aria-busy={!storageReady}
-						onClick={triggerFilePicker}
+						data-usage-event="char-card-app.main-merge-1.click" onClick={triggerFilePicker}
 						data-testid="charcard-import-button"
 					>
 						{storageReady
@@ -577,7 +577,7 @@ export function CharCardApp({
 					<button
 						type="button"
 						className="charcard-app__btn charcard-app__btn--danger"
-						onClick={handleStopRoleplay}
+						data-usage-event="char-card-app.main-merge-2.click" onClick={handleStopRoleplay}
 						data-testid="charcard-stop-banner-button"
 					>
 						{msg("charcard.stopRoleplay")}
@@ -607,7 +607,7 @@ export function CharCardApp({
 						className="charcard-app__dropzone"
 						disabled={!storageReady}
 						aria-busy={!storageReady}
-						onClick={triggerFilePicker}
+						data-usage-event="char-card-app.main-merge-3.click" onClick={triggerFilePicker}
 					>
 						<span>
 							{storageReady
@@ -637,7 +637,7 @@ export function CharCardApp({
 										}}
 										type="button"
 										className={`charcard-app__card-row ${isSelected ? "charcard-app__card-row--selected" : ""}`}
-										onClick={() => {
+										data-usage-event="char-card-app.main-merge-4.click" onClick={() => {
 											setErrorCode(null);
 											setSelectedCardId(item.id);
 											setGreetingIndex(0);
@@ -687,7 +687,7 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn charcard-app__btn--primary"
-									onClick={triggerFilePicker}
+									data-usage-event="char-card-app.main-merge-5.click" onClick={triggerFilePicker}
 									data-testid="charcard-error-retry"
 								>
 									{msg("charcard.errorChooseAnother")}
@@ -695,7 +695,7 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn"
-									onClick={() => setErrorCode(null)}
+									data-usage-event="char-card-app.main-merge-6.click" onClick={() => setErrorCode(null)}
 									data-testid="charcard-error-dismiss"
 								>
 									{msg("charcard.errorDismiss")}
@@ -721,7 +721,7 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn charcard-app__btn--primary"
-									onClick={() => void handleRetryStorageAction()}
+									data-usage-event="char-card-app.main-merge-7.click" onClick={() => void handleRetryStorageAction()}
 									data-testid="charcard-storage-retry"
 								>
 									{msg("charcard.storageErrorRetry")}
@@ -729,7 +729,7 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn"
-									onClick={() => setStorageError(null)}
+									data-usage-event="char-card-app.main-merge-8.click" onClick={() => setStorageError(null)}
 									data-testid="charcard-storage-dismiss"
 								>
 									{msg("charcard.storageErrorDismiss")}
@@ -825,7 +825,7 @@ export function CharCardApp({
 										<select
 											id="charcard-greeting-select"
 											value={safeGreetingIndex}
-											onChange={(e) => setGreetingIndex(Number(e.target.value))}
+											data-usage-event="char-card-app.main-merge-9.select" onChange={(e) => setGreetingIndex(Number(e.target.value))}
 											data-testid="charcard-greeting-select"
 										>
 											{greetingsList.map((opt) => (
@@ -845,7 +845,7 @@ export function CharCardApp({
 									<button
 										type="button"
 										className="charcard-app__btn charcard-app__btn--primary"
-										onClick={handleStartRoleplay}
+										data-usage-event="char-card-app.main-merge-10.click" onClick={handleStartRoleplay}
 										data-testid="charcard-start-button"
 									>
 										{isCurrentCardActive
@@ -857,7 +857,7 @@ export function CharCardApp({
 										<button
 											type="button"
 											className="charcard-app__btn charcard-app__btn--danger"
-											onClick={handleStopRoleplay}
+											data-usage-event="char-card-app.main-merge-11.click" onClick={handleStopRoleplay}
 											data-testid="charcard-stop-button"
 										>
 											{msg("charcard.stopRoleplay")}
@@ -869,7 +869,7 @@ export function CharCardApp({
 											ref={deleteTriggerButtonRef}
 											type="button"
 											className="charcard-app__btn charcard-app__btn--secondary"
-											onClick={() => requestDeleteCard(selectedRecord)}
+											data-usage-event="char-card-app.main-merge-12.click" onClick={() => requestDeleteCard(selectedRecord)}
 											data-testid="charcard-delete-button"
 										>
 											{msg("charcard.deleteCard")}
@@ -1019,7 +1019,7 @@ export function CharCardApp({
 								ref={cancelDeleteButtonRef}
 								type="button"
 								className="charcard-app__btn"
-								onClick={cancelDeleteCard}
+								data-usage-event="char-card-app.main-merge-13.click" onClick={cancelDeleteCard}
 								data-testid="charcard-delete-cancel"
 							>
 								{msg("charcard.deleteCancelAction")}
@@ -1027,7 +1027,7 @@ export function CharCardApp({
 							<button
 								type="button"
 								className="charcard-app__btn charcard-app__btn--danger"
-								onClick={() => void executeDeleteCard(pendingDeleteRecord)}
+								data-usage-event="char-card-app.main-merge-14.click" onClick={() => void executeDeleteCard(pendingDeleteRecord)}
 								data-testid="charcard-delete-confirm"
 							>
 								{msg("charcard.deleteConfirmAction")}

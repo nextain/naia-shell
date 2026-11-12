@@ -1,5 +1,10 @@
 <!-- src-sha: 727a1bc8c244f98e -->
 
+## 0.2.6 사용 통계 — 2026-11-04
+
+- 별도 feat/usage-events: 첫 실행 동의, 452개 고정 상세 누름·부록 의미 사건, Azure 단일 opt-in 수집, 설정 즉시 끄기·창 공유·메모리 큐.
+- 설계/검증: docs/progress/usage-events/event-inventory.md, verification.md. 실제 Azure·비용·방침 및 네이티브 서비스 관통은 출시 관문으로 남음. PR까지만, 병합·배포·Azure 자원 생성 없음.
+
 ## 서명 검증 스토어 앱 도구 동적 허용 — 2026-10-29
 
 - P01–P05 완료: 서명된 Store 앱에서 활성 앱이 선언한 `skill_*`만 모델 경계에 동적으로 허용한다. Rust는 설치 당시 서명된 원본 ZIP과 현재 `app.json` 일치를 재검증한다. Shell 내장 도구·타 앱 중복은 기록 후 거부하고, 제거·비활성화 뒤 허용하지 않는다.

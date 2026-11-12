@@ -2389,6 +2389,7 @@ export function BgmPlayer({ naia }: Props) {
 					title={t("bgm.appToggleTitle")}
 					aria-label={t("bgm.appToggleTitle")}
 					aria-expanded={appExpanded}
+					data-usage-event="bgm-player.set-app-expanded-1.click"
 					onClick={() => setAppExpanded((v) => !v)}
 				>
 					♫
@@ -2399,6 +2400,7 @@ export function BgmPlayer({ naia }: Props) {
 				<button
 					type="button"
 					className="bgm-btn"
+					data-usage-event="bgm-player.button-2.click"
 					onClick={playPrev}
 					title={t("bgm.prev")}
 					aria-label={t("bgm.prev")}
@@ -2408,6 +2410,7 @@ export function BgmPlayer({ naia }: Props) {
 				<button
 					type="button"
 					className="bgm-btn bgm-btn--play"
+					data-usage-event="bgm-player.toggle-play-3.click"
 					onClick={togglePlay}
 					title={playing ? t("bgm.stop") : t("bgm.play")}
 					aria-label={playing ? t("bgm.stop") : t("bgm.play")}
@@ -2417,6 +2420,7 @@ export function BgmPlayer({ naia }: Props) {
 				<button
 					type="button"
 					className="bgm-btn"
+					data-usage-event="bgm-player.button-4.click"
 					onClick={playNext}
 					title={t("bgm.next")}
 					aria-label={t("bgm.next")}
@@ -2426,6 +2430,7 @@ export function BgmPlayer({ naia }: Props) {
 				<button
 					type="button"
 					className={`bgm-btn${currentLiked ? " bgm-like--on" : ""}`}
+					data-usage-event="bgm-player.toggle-current-like-5.click"
 					onClick={toggleCurrentLike}
 					disabled={!currentLibraryTrack}
 					title={currentLiked ? t("bgm.favRemove") : t("bgm.favAdd")}
@@ -2436,6 +2441,7 @@ export function BgmPlayer({ naia }: Props) {
 				<button
 					type="button"
 					className="bgm-btn"
+					data-usage-event="bgm-player.button-6.click"
 					onClick={addCurrentToPlaylist}
 					disabled={!currentLibraryTrack}
 					title={t("bgm.addToPlaylist")}
@@ -2450,6 +2456,7 @@ export function BgmPlayer({ naia }: Props) {
 					className={`bgm-track-name bgm-track-toggle${appExpanded ? " bgm-track-name--open" : ""}`}
 					title={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
 					aria-label={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
+					data-usage-event="bgm-player.set-app-expanded-7.click"
 					onClick={() => setAppExpanded((v) => !v)}
 				>
 					{isScrolling ? (
@@ -2501,6 +2508,7 @@ export function BgmPlayer({ naia }: Props) {
 								<button
 									type="button"
 									className={`bgm-app-tab${appTab === "youtube" ? " bgm-app-tab--active" : ""}`}
+									data-usage-event="bgm-player.set-app-tab-8.click"
 									onClick={() => setAppTab("youtube")}
 								>
 									▶ YouTube
@@ -2508,6 +2516,7 @@ export function BgmPlayer({ naia }: Props) {
 								<button
 									type="button"
 									className={`bgm-app-tab${appTab === "local" ? " bgm-app-tab--active" : ""}`}
+									data-usage-event="bgm-player.set-app-tab-9.click"
 									onClick={() => setAppTab("local")}
 								>
 									{t("bgm.tabLocal")}
@@ -2515,6 +2524,7 @@ export function BgmPlayer({ naia }: Props) {
 								<button
 									type="button"
 									className={`bgm-app-tab${appTab === "playlists" ? " bgm-app-tab--active" : ""}`}
+									data-usage-event="bgm-player.set-app-tab-10.click"
 									onClick={() => setAppTab("playlists")}
 								>
 									{t("bgm.tabPlaylists")}
@@ -2523,6 +2533,7 @@ export function BgmPlayer({ naia }: Props) {
 							<button
 								type="button"
 								className="bgm-app-close"
+								data-usage-event="bgm-player.set-app-expanded-11.click"
 								onClick={() => setAppExpanded(false)}
 								title={t("bgm.close")}
 							>
@@ -2543,12 +2554,13 @@ export function BgmPlayer({ naia }: Props) {
 						<div className="bgm-playlist-toolbar">
 							<select
 								value={activePlaylist?.id ?? ""}
+								data-usage-event="bgm-player.select-12.select"
 								onChange={(event) => updateLibrary((state) => ({ ...state, activePlaylistId: event.target.value, currentIndex: -1 }))}
 							>
 								{library.playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}
 							</select>
-							<button type="button" className={`bgm-btn${library.shuffle ? " bgm-control--on" : ""}`} onClick={() => updateLibrary((state) => ({ ...state, shuffle: !state.shuffle }))} title={t("bgm.shuffle")}>⤨</button>
-							<button type="button" className={`bgm-btn${library.repeat !== "off" ? " bgm-control--on" : ""}`} onClick={() => updateLibrary((state) => ({ ...state, repeat: state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off" }))} title={library.repeat === "one" ? t("bgm.repeatOne") : library.repeat === "all" ? t("bgm.repeatAll") : t("bgm.repeatOff")}>{library.repeat === "one" ? "↻1" : "↻"}</button>
+							<button type="button" className={`bgm-btn${library.shuffle ? " bgm-control--on" : ""}`} data-usage-event="bgm-player.button-13.click" onClick={() => updateLibrary((state) => ({ ...state, shuffle: !state.shuffle }))} title={t("bgm.shuffle")}>⤨</button>
+							<button type="button" className={`bgm-btn${library.repeat !== "off" ? " bgm-control--on" : ""}`} data-usage-event="bgm-player.button-14.click" onClick={() => updateLibrary((state) => ({ ...state, repeat: state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off" }))} title={library.repeat === "one" ? t("bgm.repeatOne") : library.repeat === "all" ? t("bgm.repeatAll") : t("bgm.repeatOff")}>{library.repeat === "one" ? "↻1" : "↻"}</button>
 						</div>
 
 						{/* ── YouTube tab ── */}
@@ -2559,6 +2571,7 @@ export function BgmPlayer({ naia }: Props) {
 										<input
 											type="checkbox"
 											checked={showYoutubeBackground}
+											data-usage-event="bgm-player.set-show-youtube-background-15.select"
 											onChange={(event) =>
 												setShowYoutubeBackground(event.target.checked)
 											}
@@ -2572,7 +2585,7 @@ export function BgmPlayer({ naia }: Props) {
 										<input
 											type="checkbox"
 											checked={captionsEnabled}
-											onChange={(event) => {
+											data-usage-event="bgm-player.main-merge-1.select" onChange={(event) => {
 												const next = event.target.checked;
 												captionsRef.current = next;
 												void patchUiPreferences({
@@ -2588,6 +2601,7 @@ export function BgmPlayer({ naia }: Props) {
 									<button
 										type="button"
 										className={`bgm-yt-tab${ytView === "categories" ? " bgm-yt-tab--active" : ""}`}
+										data-usage-event="bgm-player.set-yt-view-16.click"
 										onClick={() => setYtView("categories")}
 									>
 										{t("bgm.tabGenres")}
@@ -2595,6 +2609,7 @@ export function BgmPlayer({ naia }: Props) {
 									<button
 										type="button"
 										className={`bgm-yt-tab${ytView === "search" ? " bgm-yt-tab--active" : ""}`}
+										data-usage-event="bgm-player.set-yt-view-17.click"
 										onClick={() => setYtView("search")}
 									>
 										{t("bgm.tabSearch")}
@@ -2602,6 +2617,7 @@ export function BgmPlayer({ naia }: Props) {
 									<button
 										type="button"
 										className={`bgm-yt-tab${ytView === "likes" ? " bgm-yt-tab--active" : ""}`}
+										data-usage-event="bgm-player.set-yt-view-18.click"
 										onClick={() => setYtView("likes")}
 									>
 										{t("bgm.tabFavorites")}{" "}
@@ -2616,6 +2632,7 @@ export function BgmPlayer({ naia }: Props) {
 												key={cat.id}
 												type="button"
 												className="bgm-yt-cat-btn"
+												data-usage-event="bgm-player.button-19.click"
 												onClick={() => loadCategory(cat.query)}
 											>
 												{t(cat.labelKey)}
@@ -2628,6 +2645,7 @@ export function BgmPlayer({ naia }: Props) {
 									<div className="bgm-yt-list">
 										<form
 											className="bgm-yt-search-row"
+											data-usage-event="bgm-player.form-20.submit"
 											onSubmit={(e) => {
 												e.preventDefault();
 												doSearch(searchQuery);
@@ -2705,7 +2723,7 @@ export function BgmPlayer({ naia }: Props) {
 						{/* ── Playlists tab (YouTube+로컬 믹스) ── */}
 						{appTab === "playlists" && (
 									<div className="bgm-playlists">
-										<form className="bgm-playlist-create" onSubmit={(event) => {
+										<form className="bgm-playlist-create" data-usage-event="bgm-player.set-new-playlist-name-21.submit" onSubmit={(event) => {
 											event.preventDefault();
 											updateLibrary((state) => createPlaylist(state, newPlaylistName));
 											setNewPlaylistName("");
@@ -2732,11 +2750,11 @@ export function BgmPlayer({ naia }: Props) {
 														setDragTrackIndex(index);
 													}}
 												>⠿</span>
-													<button type="button" className="bgm-playlist-track" onClick={() => playLibraryTrack(track, index, activePlaylist.id)}>
+													<button type="button" className="bgm-playlist-track" data-usage-event="bgm-player.button-22.click" onClick={() => playLibraryTrack(track, index, activePlaylist.id)}>
 														<span>{track.source === "youtube" ? "▶" : "♪"}</span>
 														<span>{track.title}</span>
 													</button>
-													<button type="button" className="bgm-yt-fav-btn" title={t("bgm.removeFromPlaylist")} onClick={() => updateLibrary((state) => removeTrackFromPlaylist(state, activePlaylist.id, index))}>×</button>
+													<button type="button" className="bgm-yt-fav-btn" title={t("bgm.removeFromPlaylist")} data-usage-event="bgm-player.remove-track-from-playlist-23.click" onClick={() => updateLibrary((state) => removeTrackFromPlaylist(state, activePlaylist.id, index))}>×</button>
 												</div>
 											))}
 										</div>
@@ -2755,6 +2773,7 @@ export function BgmPlayer({ naia }: Props) {
 										<div
 											key={url}
 											className={`bgm-yt-row bgm-local-row${isActive && playing ? " bgm-yt-row--playing" : ""}`}
+											data-usage-event="bgm-player.div-24.click"
 											onClick={() => playLocalAt(idx)}
 											onKeyDown={(e) => e.key === "Enter" && playLocalAt(idx)}
 											role="button"
@@ -2774,6 +2793,7 @@ export function BgmPlayer({ naia }: Props) {
 												className="bgm-yt-fav-btn"
 												title={t("bgm.addToPlaylist")}
 					aria-label={t("bgm.addToPlaylist")}
+					data-usage-event="bgm-player.stop-propagation-25.click"
 												onClick={(event) => {
 													event.stopPropagation();
 													addToActivePlaylist(localLibraryTrack(localPaths[idx], localNames[idx]));
@@ -2853,6 +2873,7 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav, onAdd }: RowP
 	return (
 		<div
 			className={`bgm-yt-row${playing ? " bgm-yt-row--playing" : ""}`}
+			data-usage-event="bgm-player.on-play-26.click"
 			onClick={onPlay}
 			onKeyDown={(e) => e.key === "Enter" && onPlay()}
 			role="button"
@@ -2885,6 +2906,7 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav, onAdd }: RowP
 				className="bgm-yt-fav-btn"
 				title={t("bgm.addToPlaylist")}
 					aria-label={t("bgm.addToPlaylist")}
+					data-usage-event="bgm-player.stop-propagation-27.click"
 				onClick={(event) => {
 					event.stopPropagation();
 					onAdd();
@@ -2896,6 +2918,7 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav, onAdd }: RowP
 				type="button"
 				className={`bgm-yt-fav-btn${fav ? " bgm-yt-fav-btn--on" : ""}`}
 				title={fav ? t("bgm.favRemove") : t("bgm.favAdd")}
+				data-usage-event="bgm-player.stop-propagation-28.click"
 				onClick={(e) => {
 					e.stopPropagation();
 					onFav();

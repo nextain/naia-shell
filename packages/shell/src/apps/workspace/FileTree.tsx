@@ -186,6 +186,7 @@ function TreeNode({
 					.filter(Boolean)
 					.join(" ")}
 				style={{ paddingLeft: `${indent + 8}px` }}
+				data-usage-event="file-tree.button-1.click"
 				onClick={toggle}
 				onContextMenu={(e) => {
 					e.preventDefault();
@@ -288,6 +289,7 @@ export function FileTree({
 				type="button"
 				className="workspace-tree__external-path"
 				title={openFilePath}
+				data-usage-event="file-tree.on-file-select-2.click"
 				onClick={() => onFileSelect(openFilePath)}
 			>
 				<span className="workspace-tree__external-icon">📄</span>
@@ -418,6 +420,7 @@ export function FileTree({
 			<button
 				type="button"
 				className="workspace-ctx-menu__item"
+				data-usage-event="file-tree.handle-copy-relative-3.click"
 				onClick={handleCopyRelative}
 			>
 				{t("fileTree.copyRelative")}
@@ -425,6 +428,7 @@ export function FileTree({
 			<button
 				type="button"
 				className="workspace-ctx-menu__item"
+				data-usage-event="file-tree.handle-copy-absolute-4.click"
 				onClick={handleCopyAbsolute}
 			>
 				{t("fileTree.copyAbsolute")}
@@ -435,6 +439,7 @@ export function FileTree({
 					<button
 						type="button"
 						className="workspace-ctx-menu__item"
+						data-usage-event="file-tree.handle-send-to-chat-5.click"
 						onClick={handleSendToChat}
 					>
 						{t("fileTree.sendToNaia")}

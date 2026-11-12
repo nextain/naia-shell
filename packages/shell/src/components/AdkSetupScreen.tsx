@@ -403,6 +403,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					<button
 						type="button"
 						className="adk-setup-option-card"
+						data-usage-event="adk-setup-screen.set-mode-1.click"
 						onClick={() => setMode("new")}
 					>
 						<span className="adk-setup-option-icon">✦</span>
@@ -417,6 +418,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					<button
 						type="button"
 						className="adk-setup-option-card"
+						data-usage-event="adk-setup-screen.set-mode-2.click"
 						onClick={() => setMode("load")}
 					>
 						<span className="adk-setup-option-icon">📂</span>
@@ -458,6 +460,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					className="adk-setup-back"
 					disabled={setupStatus !== null}
 					aria-busy={setupStatus !== null}
+					data-usage-event="adk-setup-screen.set-mode-3.click"
 					onClick={() => {
 						setMode("select");
 						setError(null);
@@ -488,6 +491,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							type="button"
 							className="adk-setup-browse-btn"
 							disabled={setupStatus !== null}
+							data-usage-event="adk-setup-screen.set-path-4.click"
 							onClick={async () => {
 								const selected = await open({
 									directory: true,
@@ -505,6 +509,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					<button
 						type="button"
 						className="adk-setup-confirm-btn"
+						data-usage-event="adk-setup-screen.handle-new-start-5.click"
 						onClick={handleNewStart}
 						disabled={setupStatus !== null}
 					>
@@ -524,6 +529,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					type="button"
 					className="adk-setup-back"
 					disabled={setupStatus !== null}
+					data-usage-event="adk-setup-screen.set-mode-6.click"
 					onClick={() => {
 						setMode("new");
 						setError(null);
@@ -558,6 +564,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							<button
 								type="button"
 								className="adk-setup-option-card"
+								data-usage-event="adk-setup-screen.handle-new-use-existing-7.click"
 								onClick={handleNewUseExisting}
 								disabled={setupStatus !== null}
 							>
@@ -573,6 +580,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						<button
 							type="button"
 							className="adk-setup-option-card"
+							data-usage-event="adk-setup-screen.handle-new-recreate-8.click"
 							onClick={handleNewRecreate}
 							disabled={setupStatus !== null}
 						>
@@ -600,6 +608,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					type="button"
 					className="adk-setup-back"
 					disabled={setupStatus !== null}
+					data-usage-event="adk-setup-screen.set-mode-9.click"
 					onClick={() => {
 						setMode("select");
 						setError(null);
@@ -635,6 +644,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							type="button"
 							className="adk-setup-browse-btn"
 							disabled={setupStatus !== null}
+							data-usage-event="adk-setup-screen.handle-browse-10.click"
 							onClick={handleBrowse}
 						>
 							{t("adk.setup.browse")}
@@ -646,6 +656,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					<button
 						type="button"
 						className="adk-setup-confirm-btn"
+						data-usage-event="adk-setup-screen.handle-load-confirm-11.click"
 						onClick={handleLoadConfirm}
 						disabled={setupStatus !== null}
 					>
@@ -662,6 +673,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			<button
 				type="button"
 				className="adk-setup-back"
+				data-usage-event="adk-setup-screen.set-mode-12.click"
 				onClick={() => {
 					setMode("select");
 					setLoginWaiting(false);
@@ -690,6 +702,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					<button
 						type="button"
 						className="adk-setup-browse-btn"
+						data-usage-event="adk-setup-screen.handle-browse-13.click"
 						onClick={handleBrowse}
 					>
 						{t("adk.setup.browse")}
@@ -704,6 +717,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				<button
 					type="button"
 					className="adk-setup-confirm-btn adk-setup-confirm-btn--naia"
+					data-usage-event="adk-setup-screen.handle-naia-login-14.click"
 					onClick={handleNaiaLogin}
 					disabled={loginWaiting}
 				>

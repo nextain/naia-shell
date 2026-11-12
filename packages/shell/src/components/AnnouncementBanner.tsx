@@ -69,6 +69,7 @@ export function AnnouncementBanner({
 					<button
 						type="button"
 						className="announcement-btn announcement-btn--link"
+						data-usage-event="announcement-banner.handle-link-1.click"
 						onClick={handleLink}
 					>
 						{t("announcement.details")}
@@ -77,6 +78,7 @@ export function AnnouncementBanner({
 				<button
 					type="button"
 					className="announcement-btn announcement-btn--dismiss"
+					data-usage-event="announcement-banner.handle-dismiss-2.click"
 					onClick={handleDismiss}
 				>
 					{remaining > 0
@@ -87,6 +89,7 @@ export function AnnouncementBanner({
 					<button
 						type="button"
 						className="announcement-btn announcement-btn--dismiss-all"
+						data-usage-event="announcement-banner.handle-dismiss-all-3.click"
 						onClick={handleDismissAll}
 					>
 						×

@@ -64,6 +64,7 @@ export function BrowserMetaArea({ onNavigate }: BrowserMetaAreaProps) {
 									type="button"
 									className="browser-meta__bookmark-link"
 									title={bookmark.url}
+									data-usage-event="browser-meta-area.on-navigate-1.click"
 									onClick={() => onNavigate(bookmark.url)}
 								>
 									<span className="browser-meta__bookmark-title">
@@ -76,6 +77,7 @@ export function BrowserMetaArea({ onNavigate }: BrowserMetaAreaProps) {
 								<button
 									type="button"
 									className="browser-meta__bookmark-remove"
+									data-usage-event="browser-meta-area.handle-remove-2.click"
 									onClick={() => handleRemove(bookmark.url)}
 									title="Remove"
 								>

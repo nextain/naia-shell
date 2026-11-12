@@ -1459,6 +1459,21 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | **FR-REGRESSION-HOST-BINDING** (#853) | 옛 host 속성은 명시적 이관 오류. 활성 명단은 64자리 소문자 hex hostSha256 바인딩 필수이며 누락·빈 값·불일치 거부. 실제 hostname은 오류에 출력하지 않는다. 검증값 없는 기계는 확인 전 비활성으로 유지한다. 공개 기록의 ranOn.host는 record.machine과 같다. | Done — regression-host-privacy 가상 호스트 계약 14/14 |
 
+## FR-USAGE-EVENTS — 0.2.6 셸 사용 통계 (Done — 구현, 출시 관문 별도)
+
+- 정본 https://ax.nextain.io/d/eae97c 및 docs/progress/usage-events/event-inventory.md. 다운로드 연결 없음, 첫 실행 선택, Application Insights 단일 수신, Steam 동일 이름표.
+- 동의 전 번호 생성·메모리 수집·요청 0. 설정 끄기는 모든 창 수집·예약 전송 중지 및 메모리 삭제. 저장 오류는 닫힌 상태로 처리한다.
+- 설치 난수(ADK/음성 ID와 분리), 불변 event_id, 원자적 지속 순번/발생 시각, 고정 이름·화면·판·플랫폼·채널·필요한 로그인 시도 난수만. 사용자 입력/계정/기기 지문/URL/경로 없음. 허용 목록 밖 이름·화면·추가 칸 거절, 사건 2KB 이하.
+- 통계 연결·BroadcastChannel·Web Locks 중 하나라도 없으면 동의 화면과 설정 선택을 표시하지 않고 수집하지 않는다. 기존 선택은 보존한다.
+- 셸과 독립 Slides 빌드는 같은 셸 패키지 버전을 통계 모듈에 주입한다. 설정 로그인은 자격 저장과 잔액 확인 성공 후 성공 사건을 기록하며 브라우저 열기 실패는 해당 오류에서만 기록한다.
+- 빌드 환경 변수 VITE_APPLICATIONINSIGHTS_CONNECTION_STRING만 사용. 누락/잘못된 값은 보내기 끔. 자동 계측 SDK 없이 최소 EventData HTTP 전송; 쿠키·인증·상관 헤더·referrer 없음.
+- 메모리 큐 50, 초과 oldest 폐기/로컬 계수, 10분 TTL/1회 재시도, 오프라인·종료 폐기. 끄면 AbortController 취소 시도.
+- 첫 관측은 동의 후 ADK 설정보다 먼저, 순번 1. 이후 실행은 launch. 설치 첫 실제 대화 응답은 중복 제거. 로그인 결과와 누름은 구분.
+- 14개 번역 파일에 동의·설정 문구. 한국어·영어 정본, 나머지는 기존 방식 영어 fallback 문구.
+- Azure 자원/실수신·집계·비용·개인정보 및 방침 시행은 출시 전 별도 관문. 이 작업은 PR까지만, 병합·배포 금지.
+
+검증 증거: [사용 통계 검증 기록](progress/usage-events/verification.md). 실수신·비용·개인정보·네이티브 서비스 관통/성능 비교는 출시 승인 관문으로 남기며 구현 시험 완료와 구분한다.
+
 ## 기능 요구사항 (FR) — 0.2.6 방송 바로 송출 (OBS 없이, 2026-11-06)
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |

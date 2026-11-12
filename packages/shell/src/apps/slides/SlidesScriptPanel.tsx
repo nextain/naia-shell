@@ -50,6 +50,7 @@ export function SlidesScriptPanel({
 						data-testid="slides-edit-script"
 						aria-label={t("slides.editScript")}
 						disabled={!totalPages || scriptEditorOpen}
+						data-usage-event="slides-script-panel.on-begin-edit-1.click"
 						onClick={onBeginEdit}
 					>
 						{t("slides.editScript")}
@@ -60,6 +61,7 @@ export function SlidesScriptPanel({
 						data-testid="slides-download-script"
 						aria-label={t("slides.downloadEditedScript")}
 						disabled={!unexportedScript && !draftDirty}
+						data-usage-event="slides-script-panel.on-download-2.click"
 						onClick={onDownload}
 					>
 						{t("slides.downloadEditedScript")}
@@ -71,6 +73,7 @@ export function SlidesScriptPanel({
 					aria-label={t("slides.notesHide")}
 					aria-expanded={true}
 					aria-controls="slides-speaker-notes"
+					data-usage-event="slides-script-panel.on-hide-3.click"
 					onClick={onHide}
 				>
 					×
@@ -94,6 +97,7 @@ export function SlidesScriptPanel({
 							className="slides-app__primary"
 							data-testid="slides-apply-script"
 							aria-label={t("slides.applyScriptEdit")}
+							data-usage-event="slides-script-panel.on-apply-4.click"
 							onClick={onApply}
 						>
 							{t("slides.applyScriptEdit")}
@@ -102,6 +106,7 @@ export function SlidesScriptPanel({
 							type="button"
 							data-testid="slides-cancel-script"
 							aria-label={t("slides.cancelScriptEdit")}
+							data-usage-event="slides-script-panel.on-cancel-5.click"
 							onClick={onCancel}
 						>
 							{t("slides.cancelScriptEdit")}

@@ -235,16 +235,29 @@ export function StudioNvaApplyDialog({
 					}}
 				>
 					{message && loginRequired && (
-						<button type="button" onClick={openLoginSettings}>
+						<button
+							type="button"
+							data-usage-event="studio-nva-apply-dialog.open-login-settings-1.click"
+							onClick={openLoginSettings}
+						>
 							{t("studioNvaApply.openLoginSettings")}
 						</button>
 					)}
 					{message && !loadingPreview && !result && (
-						<button type="button" onClick={() => loadPreview(request)}>
+						<button
+							type="button"
+							data-usage-event="studio-nva-apply-dialog.button-2.click"
+							onClick={() => loadPreview(request)}
+						>
 							{t("studioNvaApply.retryPreview")}
 						</button>
 					)}
-					<button type="button" disabled={applying} onClick={ackAndClose}>
+					<button
+						type="button"
+						disabled={applying}
+						data-usage-event="studio-nva-apply-dialog.button-3.click"
+						onClick={ackAndClose}
+					>
 						{result ? t("studioNvaApply.close") : t("studioNvaApply.cancel")}
 					</button>
 					{!result && (
@@ -252,6 +265,7 @@ export function StudioNvaApplyDialog({
 							type="button"
 							data-testid="studio-nva-apply-confirm"
 							disabled={!preview || loadingPreview || applying}
+							data-usage-event="studio-nva-apply-dialog.button-4.click"
 							onClick={() => void confirmApply()}
 						>
 							{applying

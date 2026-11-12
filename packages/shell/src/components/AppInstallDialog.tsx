@@ -170,9 +170,10 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 	}
 
 	return (
-		<div className="app-install-overlay" onClick={onClose} onKeyDown={() => {}}>
+		<div data-usage-event="app-install-dialog.on-close-1.click" className="app-install-overlay" onClick={onClose} onKeyDown={() => {}}>
 			<div
 				className="app-install-dialog"
+				data-usage-event="app-install-dialog.stop-propagation-2.click"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="app-install-title"
@@ -183,7 +184,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					<span id="app-install-title" className="app-install-title">
 						{request ? "Naia Apps" : "앱 추가"}
 					</span>
-					<button type="button" className="app-install-close" aria-label={t("apps.close")} onClick={onClose}>
+					<button type="button" data-usage-event="app-install-dialog.on-close-3.click" className="app-install-close" aria-label={t("apps.close")} onClick={onClose}>
 						✕
 					</button>
 				</div>
@@ -255,7 +256,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 						<strong>{t("apps.permissionExpansionTitle")}</strong>
 						<ul>{permissionExpansion.map((item) => <li key={item}>{item}</li>)}</ul>
 						<p>{t("apps.permissionExpansionDescription")}</p>
-						<button type="button" className="app-install-confirm-btn" disabled={loading} onClick={() => void handleInstall(true)}>
+						<button type="button" className="app-install-confirm-btn" disabled={loading} data-usage-event="app-install-dialog.handle-install-4.click" onClick={() => void handleInstall(true)}>
 							{t("apps.permissionExpansionConfirm")}
 						</button>
 					</div>
@@ -268,6 +269,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 							<button
 								type="button"
 								className={`app-install-tab${mode === "git" ? " active" : ""}`}
+								data-usage-event="app-install-dialog.set-mode-5.click"
 								onClick={() => setMode("git")}
 							>
 								Git URL
@@ -275,6 +277,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 							<button
 								type="button"
 								className={`app-install-tab${mode === "file" ? " active" : ""}`}
+								data-usage-event="app-install-dialog.set-mode-6.click"
 								onClick={() => setMode("file")}
 							>
 								파일 (Zip · 준비 중)
@@ -284,6 +287,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					<button
 						type="button"
 						className="app-install-cancel-btn"
+						data-usage-event="app-install-dialog.on-close-7.click"
 						onClick={onClose}
 						disabled={loading}
 					>
@@ -292,6 +296,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					<button
 						type="button"
 						className="app-install-confirm-btn"
+						data-usage-event="app-install-dialog.handle-install-8.click"
 						onClick={() => void handleInstall()}
 						disabled={
 							loading || (!request && (mode !== "git" || !gitUrl.trim()))

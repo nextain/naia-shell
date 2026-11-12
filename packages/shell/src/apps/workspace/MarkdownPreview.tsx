@@ -191,6 +191,7 @@ export function MarkdownPreview({
 								aria-label={
 									external ? `${String(children)} (외부 링크)` : undefined
 								}
+								data-usage-event="markdown-preview.open-url-1.click"
 								onClick={(event) => {
 									if (external && href) {
 										event.preventDefault();

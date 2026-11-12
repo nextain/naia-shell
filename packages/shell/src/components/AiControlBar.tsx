@@ -123,6 +123,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 				type="button"
 				className="bgm-ai-toggle ai-control-bar__zoom"
 				aria-label={t("ai.avatarZoomIn")}
+				data-usage-event="ai-control-bar.button-4.click"
 				title={t("ai.avatarZoomIn")}
 				onClick={() => {
 					const camera = getCameraActions();
@@ -137,6 +138,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 				type="button"
 				className="bgm-ai-toggle ai-control-bar__zoom"
 				aria-label={t("ai.avatarZoomOut")}
+				data-usage-event="ai-control-bar.button-5.click"
 				title={t("ai.avatarZoomOut")}
 				onClick={() => {
 					const camera = getCameraActions();
@@ -154,6 +156,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 			<button
 				type="button"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-ai-interference-enabled-1.click"
 				onClick={toggleAiInterferenceEnabled}
 				aria-label={
 					aiInterferenceEnabled
@@ -183,6 +186,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 			<button
 				type="button"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-tts-enabled-2.click"
 				onClick={() => {
 					const enabled = !ttsEnabled;
 					toggleTtsEnabled();
@@ -211,6 +215,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 			<button
 				type="button"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
+				data-usage-event="ai-control-bar.toggle-proactive-3.click"
 				onClick={toggleProactive}
 				aria-pressed={proactive.permitted}
 				aria-label={proactiveTitle}
@@ -256,7 +261,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 						? t("broadcast.keyRequiredHint")
 						: t("broadcast.btnLabel")
 				}
-				onClick={() => {
+				data-usage-event="ai-control-bar.main-merge-1.click" onClick={() => {
 					void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
 						toggleBroadcast().catch(() => {}),
 					);
@@ -289,7 +294,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 				title={t("ai.avatarControls")}
 				aria-expanded={controlsExpanded}
 				aria-controls="avatar-camera-controls"
-				onClick={() =>
+				data-usage-event="ai-control-bar.main-merge-2.click" onClick={() =>
 					void patchUiPreferences({
 						[UI_PREFERENCE_KEYS.avatarControlsExpanded]: !controlsExpanded,
 					})
@@ -376,6 +381,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 						type="button"
 						className="bgm-ai-toggle"
 						aria-label={t("ai.avatarReset")}
+						data-usage-event="ai-control-bar.button-6.click"
 						title={t("ai.avatarReset")}
 						onClick={() => getCameraActions().reset()}
 					>

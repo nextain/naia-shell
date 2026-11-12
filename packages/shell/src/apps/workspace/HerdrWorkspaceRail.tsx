@@ -71,6 +71,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 						<button
 							type="button"
 							className="herdr-workspace__toggle-btn"
+							data-usage-event="herdr-workspace-rail.on-show-herdr-1.click"
 							onClick={props.onShowHerdr}
 							title={t("workspace.herdrBackLabel")}
 						>
@@ -80,6 +81,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 						<button
 							type="button"
 							className="herdr-workspace__toggle-btn"
+							data-usage-event="herdr-workspace-rail.on-show-viewer-2.click"
 							onClick={props.onShowViewer}
 							title={t("workspace.showViewerLabel")}
 						>
@@ -89,6 +91,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 						<button
 							type="button"
 							className="herdr-workspace__toggle-btn"
+							data-usage-event="herdr-workspace-rail.on-show-viewer-3.click"
 							onClick={props.onShowViewer}
 							title={t("workspace.showViewerLabel")}
 						>
@@ -116,6 +119,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 					type="button"
 					role="tab"
 					aria-selected={tab === "spaces"}
+					data-usage-event="herdr-workspace-rail.select-tab-4.click"
 					onClick={() => selectTab("spaces")}
 				>
 					{t("workspace.herdrSpaces")}
@@ -124,6 +128,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 					type="button"
 					role="tab"
 					aria-selected={tab === "agents"}
+					data-usage-event="herdr-workspace-rail.select-tab-5.click"
 					onClick={() => selectTab("agents")}
 				>
 					{t("workspace.herdrAgents")}
@@ -132,6 +137,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 					type="button"
 					role="tab"
 					aria-selected={tab === "context"}
+					data-usage-event="herdr-workspace-rail.select-tab-6.click"
 					onClick={() => selectTab("context")}
 					data-testid="workspace-context-tab"
 				>
@@ -147,6 +153,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 								type="button"
 								key={space.workspace_id}
 								className={space.focused ? "is-focused" : ""}
+								data-usage-event="herdr-workspace-rail.on-focus-workspace-7.click"
 								onClick={() => void props.onFocusWorkspace(space.workspace_id)}
 							>
 								<span>{space.label}</span>
@@ -158,6 +165,7 @@ export function HerdrWorkspaceRail(props: RailProps) {
 								type="button"
 								key={agent.pane_id}
 								className={agent.focused ? "is-focused" : ""}
+								data-usage-event="herdr-workspace-rail.on-focus-agent-8.click"
 								onClick={() => void props.onFocusAgent(agent.pane_id)}
 							>
 								<span>

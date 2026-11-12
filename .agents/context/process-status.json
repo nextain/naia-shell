@@ -18,8 +18,26 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-  "last_updated": "2026-11-09T00:43:28.490389+00:00",
+  "last_updated": "2026-11-09T03:27:03.770011+00:00",
   "current_work": {
+    "usage_events_20261104": {
+      "title": "0.2.6 opt-in anonymous usage events",
+      "branch": "feat/usage-events",
+      "last_updated": "2026-11-09T02:50:39.081075+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-USAGE-EVENTS",
+      "requirements": "docs/requirements.md FR-USAGE-EVENTS",
+      "evidence": "docs/progress/usage-events/event-inventory.md",
+      "status": "implementation_complete_release_gated",
+      "verification": "Usage Vitest 19; focused UI+logic 234 pass/9 skip; browser consent/Steam/two-window/disable/storage recovery/Korean 4 pass; core/Shell/BGM types and Shell bundle budget pass; Rust deep_link 3 and distribution 10 pass. Full Shell 2612 pass/21 skip. Full lint has existing failures (590 vs main 592, no new file/rule errors); existing core failures reproduce on main. See docs/progress/usage-events/verification.md and execution result.md for final full Shell counts. PR #830 review regressions: see verification.md for standalone Slides, settings login, and capability consent tests.",
+      "remaining": "No merge/deploy/Azure resource creation. Actual Azure reception/storage/report, cost/cap/IP/access/privacy/policy gates, native live login paths and 0.2.4 performance comparison remain release gates."
+    },
     "pr835_main_merge_20261109": {"issue": 835, "title": "Merge main b7401e7b into approved broadcast PR #835", "status": "verified", "verification": "Scenario-source and fixture contracts 29 passed; broadcast suite 8 passed; broadcast name filter 6 passed; adjacent Shell tests 192 passed, 1 failed, 8 skipped; identical SettingsTab failure reproduced on unchanged main. Core TypeScript passed. Shell TypeScript rerun passed after reusing existing bgm-sidecar dependencies. Merge message completion evidence also passed. Completion checks passed for all 9 PR commits.", "last_updated": "2026-11-09T00:42:48.931901+00:00"},
     "broadcast_stream_026_20261106": {
       "issue": null,

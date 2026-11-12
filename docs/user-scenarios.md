@@ -2499,6 +2499,26 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-REGRESSION-HOST-BINDING | `src/test/regression-host-privacy.contract.test.ts` | 옛 host 이관 오류, 누락·빈 값·잘못된 hash·불일치 거부, 일치 바인딩만 실행 |
 
+## UC-USAGE-EVENTS — 동의한 셸의 누름·화면 이동 통계
+
+사용자는 첫 실행(기존 설치 포함) ADK 설정 전에 사용 통계 허용/거절을 고르고 설정 일반에서 변경한다. 선택 전에는 통계 번호·사건·대기열·요청이 없다. 거절해도 앱을 계속 사용한다. 끄기는 즉시 모든 창에 반영하고 미전송 사건을 버린다. 도입·설정·대화·기본 앱 제어의 고정 이름표는 [대조표](progress/usage-events/event-inventory.md)를 따른다.
+
+### Usage events Test Coverage Map (P02)
+
+| 시나리오 | 검증 파일 / 그룹 |
+|---|---|
+| UC-USAGE-EVENTS | `packages/shell/src/lib/__tests__/usage-events.test.ts`: 미선택/거절 0건, 허용 후 최초 관측, 끄기·재켜기·창 경합 |
+| 허용 목록·값 검사·본문 2KB·개인 정보 칸 없음, 묶음·실패·포화·만료 | packages/shell/src/lib/__tests__/usage-events.test.ts |
+| 동의 기본/거절/허용/저장 오류·좁은 폭·키보드, 빈 목록/진행은 해당 없음(두 선택 단추), 실제 UI | packages/shell/e2e/usage-events.spec.ts |
+| BroadcastChannel 또는 Web Locks 부재 시 동의·설정 선택 생략 및 저장 없음 | packages/shell/e2e/usage-events.spec.ts |
+| 설정 로그인 성공·잔액 조회 뒤 성공 사건, 브라우저 실패 사건 없음 | packages/shell/src/components/__tests__/SettingsTab.test.tsx |
+| 독립 Slides 실제 빌드의 시작 및 셸 패키지 버전 주입 | packages/shell/e2e/slides-standalone-build.spec.ts |
+| 14개 언어 동일 키·한국어/영어 실제 문구 | packages/shell/src/lib/__tests__/i18n-user-facing.test.ts |
+| 네이티브 분류 | 기존 distribution.rs/배포 시험 재사용, Rust 변경 없음 |
+| DOM 누름 선언과 허용 목록/문서 전수 정합 | packages/shell/src/lib/__tests__/usage-inventory.test.ts |
+
+수신처 미승인 상태에서 Azure 실수신·비용/권한/보고 시험은 완료로 주장하지 않는다.
+
 ## UC-BROADCAST-STREAM-026 — OBS 없이 나이아 쉘에서 바로 방송을 송출한다 (0.2.6)
 
 사용자는 설정의 방송 절에서 플랫폼(유튜브·트위치·치지직·숲), 서버 주소, 해상도(1080p30/720p30), 방송 키를 설정하고 AI 막대(AiControlBar)의 방송 단추로 RTMP(S) 송출을 시작·중지한다. 방송 키는 비밀 저장소에 보관하고 화면과 로그에서는 가린다(`***`). 리눅스(웨이랜드)에서는 포털 ScreenCast 창 하나(`persist_mode=2`, 복원 토큰을 앱 설정에 저장해 허용은 처음 한 번만)로 잡은 PipeWire 화면 노드와, PipeWire 가상 싱크 `naia-broadcast-mix`에 나이아 프로세스 트리(셸·WebKitWebProcess)의 `Stream/Output/Audio` 출력 포트를 스피커 연결을 유지한 채 2초마다 이어 만든 `naia-broadcast-mix.monitor` 소리를 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`)으로 내보내고, 방송이 끝나면 가상 싱크와 연결을 정리한다. 윈도우에서는 `ffmpeg`(`gdigrab` + stdin PCM) 길을 유지하며, 공유 AudioContext `AudioWorklet` 웹 오디오 브리지는 운영체제 오디오 루프백 대체 길로 남긴다. 방송 중 유튜브 반주를 고르면 막지 않고 `"저작권 곡이면 방송이 멈출 수 있어요"` 한 줄 알림만 표시한다.

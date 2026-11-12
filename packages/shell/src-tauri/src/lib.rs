@@ -288,6 +288,8 @@ pub(crate) fn process_deep_link_url(
                 }
                 Some(_) => {
                     log_both("[Naia] Deep link rejected: state mismatch");
+                    // Fixed rejection signal only; never expose callback data to usage telemetry.
+                    let _ = app_handle.emit("naia_auth_rejected", ());
                     return;
                 }
                 None if has_direct_gateway_key => {
@@ -296,6 +298,8 @@ pub(crate) fn process_deep_link_url(
                 }
                 None => {
                     log_both("[Naia] Deep link rejected: missing state parameter");
+                    // Fixed rejection signal only; never expose callback data to usage telemetry.
+                    let _ = app_handle.emit("naia_auth_rejected", ());
                     return;
                 }
             }
@@ -314,6 +318,8 @@ pub(crate) fn process_deep_link_url(
             Some(code_val)
         } else {
             log_both("[Naia] Deep link rejected: code is not a gateway API key");
+            // Fixed rejection signal only; never expose callback data to usage telemetry.
+            let _ = app_handle.emit("naia_auth_rejected", ());
             None
         }
     } else {
@@ -328,6 +334,8 @@ pub(crate) fn process_deep_link_url(
             log_both("[Naia] Naia auth complete ??key received via deep link");
         } else {
             log_both("[Naia] Deep link rejected: invalid key format");
+            // Fixed rejection signal only; never expose callback data to usage telemetry.
+            let _ = app_handle.emit("naia_auth_rejected", ());
         }
     }
     let is_discord_flow = matches!(channel.as_deref(), Some("discord"))
