@@ -50,9 +50,11 @@ export const usage = new UsageEvents({
 	platform: platform(),
 	channel: "unknown",
 	send: async (events, signal) => {
-		if (!connection) return;
+		// Throw instead of returning so flush() counts the batch as lost.
+		if (!connection) throw new Error("Usage delivery unconfigured");
 		const channel = await loadDistributionChannel();
-		if (signal.aborted || usage.choice()?.enabled !== true) return;
+		if (signal.aborted || usage.choice()?.enabled !== true)
+			throw new Error("Usage delivery cancelled");
 		const response = await fetch(connection.url, {
 			method: "POST",
 			body: JSON.stringify(

@@ -12,6 +12,12 @@ export function UsageConsentGate({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		installUsageListeners();
 		if (usage.choice() !== null) void usage.sync().then(() => setReady(true));
+		// A choice made in another window closes this gate too.
+		const onStorage = () => {
+			if (usage.choice() !== null) setReady(true);
+		};
+		window.addEventListener("storage", onStorage);
+		return () => window.removeEventListener("storage", onStorage);
 	}, []);
 	async function choose(enabled: boolean) {
 		if (await usage.choose(enabled)) setReady(true);
