@@ -17,6 +17,7 @@ import {
 	DEFAULT_NVA_MODEL,
 	isLegacyBundledVrmModel,
 } from "../lib/avatar-presets";
+import { selectOnboardingBackground } from "../lib/background-selection";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import {
 	activateNaiaLlm,
@@ -46,11 +47,16 @@ import {
 	primeLabCredits,
 } from "../lib/lab-balance";
 import {
+	keepsProviderWhenLoggedOut,
+	resolveLoggedOutLlm,
+} from "../lib/llm/logged-out-default";
+import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
+import {
 	defaultClipOf,
 	parseNvaManifest,
 	resolveNvaAssetPath,
 } from "../lib/nva";
-import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import {
 	type OnboardingSession,
@@ -63,15 +69,11 @@ import {
 	saveSecretKeyAtPath,
 } from "../lib/secure-store";
 import {
-	keepsProviderWhenLoggedOut,
-	resolveLoggedOutLlm,
-} from "../lib/llm/logged-out-default";
-import { writeConfiguredLlmRole } from "../lib/llm/roles";
-import {
 	NAIA_SLOT_DEFAULTS,
 	applyNaiaSlotDefaults,
 	effectiveMainRole,
 } from "../lib/slots/model";
+import { beginUsageLogin, finishUsageLogin, usage } from "../lib/usage-runtime";
 import { voiceHostProfile } from "../lib/voice/host-profile";
 import {
 	clearLocalVoiceAccessToken,
@@ -348,6 +350,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const STEPS = STEPS_WITHOUT_NAIA;
 
 	const [step, setStep] = useState<Step>("welcome");
+	useEffect(() => {
+		usage.record("intro.screen.view", step);
+	}, [step]);
 	const [agentName, setAgentName] = useState("");
 	const [userName, setUserName] = useState("");
 	const [speechStyle, setSpeechStyle] = useState<"casual" | "formal">("casual");
@@ -387,6 +392,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	// Auth payload from OAuth — held until wizard completes
 	const [naiaAuthPayload, setNaiaAuthPayload] =
 		useState<NaiaAuthPayload | null>(null);
+	const completionRoute = useRef<"manual" | "start">("start");
 	const [completing, setCompleting] = useState(false);
 	const [completionError, setCompletionError] = useState("");
 	// memoryAI step state. A selected ADK credential hydrates these defaults below;
@@ -440,6 +446,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						getSecureStorePath() === expectedPath &&
 						hasKey
 					) {
+						usage.record("login.credentials.restored", "intro");
 						setNaiaLoginDone(true);
 					}
 				})
@@ -843,11 +850,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				);
 				setBackgrounds(bgs);
 				if (bgs.length > 0) {
-					// #447-3: default to naia-dawn-city (matches App DEFAULT_BG_VIDEO).
-					// Fall back to the first available background if not found.
-					const defaultBg =
-						bgs.find((b) => b.path.toLowerCase().includes("dawn-city")) ??
-						bgs[0];
+					const defaultPath = selectOnboardingBackground(paths);
+					const defaultBg = bgs.find((b) => b.path === defaultPath) ?? bgs[0];
 					setSelectedBg(defaultBg.url);
 				}
 			})
@@ -868,6 +872,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 	}, [naiaLoginDone]);
 
+	useEffect(() => () => finishUsageLogin("intro", "cancel"), []);
+
 	// Listen for Naia OAuth callback in provider step.
 	// [] dep — register once. onCompleteRef.current always points to latest prop.
 	useEffect(() => {
@@ -884,6 +890,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					!capturedSecureStorePath
 				) {
 					setNaiaLoginWaiting(false);
+					finishUsageLogin("intro", "validation");
 					setCompletionError("The login callback belongs to a different ADK.");
 					return;
 				}
@@ -932,9 +939,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					}
 				} catch (error) {
 					setNaiaLoginWaiting(false);
+					finishUsageLogin("intro", "storage");
 					setCompletionError(String(error));
 					return;
 				}
+				finishUsageLogin("intro");
 				loginAdkPathRef.current = null;
 				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
 				if (event.payload.naiaUserId) {
@@ -954,6 +963,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}, []);
 
 	function goNext() {
+		usage.record("intro.navigation.click", step, { choice: "next" });
 		if (transitioning.current) return;
 		if (step === "character" && avatarProvider === "vrm" && !selectedVrm) {
 			return;
@@ -988,6 +998,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}
 
 	function goBack() {
+		usage.record("intro.navigation.click", step, { choice: "back" });
 		const prev = STEPS[stepIndex - 1];
 		if (!prev) return;
 		setStep(prev);
@@ -1031,12 +1042,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}
 
 	async function handleNaiaLogin() {
+		beginUsageLogin("intro");
 		loginAdkPathRef.current = getAdkPath();
 		setNaiaLoginWaiting(true);
-		naiaTimerRef.current = setTimeout(
-			() => setNaiaLoginWaiting(false),
-			180_000,
-		);
+		naiaTimerRef.current = setTimeout(() => {
+			finishUsageLogin("intro", "timeout");
+			setNaiaLoginWaiting(false);
+		}, 300_000);
 		try {
 			const lang = getLocale();
 			// Onboarding runs before the browser app is mounted, so
@@ -1064,6 +1076,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				`${getNaiaWebBaseUrl()}/${lang}/login?${params.toString()}`,
 			);
 		} catch {
+			finishUsageLogin("intro", "browser_open");
 			setNaiaLoginWaiting(false);
 		}
 	}
@@ -1274,6 +1287,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					);
 				assertCurrentAdk();
 			}
+			usage.record("intro.finish.saved", completionRoute.current);
 			addMessage({
 				role: "assistant",
 				content: stepChat(
@@ -1302,6 +1316,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	// which owns provider + model + key selection. setActiveApp persists in the app
 	// store, so Settings is focused once the main app mounts after onboarding.
 	function handleGoToSettings() {
+		completionRoute.current = "manual";
 		useAppStore.getState().setActiveApp("settings");
 		void handleComplete();
 	}
@@ -1348,6 +1363,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							<button
 								type="button"
 								className="onboarding-welcome__github-btn"
+								data-usage-event="onboarding-wizard.open-url-1.click"
 								onClick={() =>
 									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
 										openUrl("https://github.com/nextain/naia-shell"),
@@ -1360,6 +1376,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								type="button"
 								className="onboarding-welcome__github-btn"
 								data-testid="onboarding-discord-connect-btn"
+								data-usage-event="onboarding-wizard.open-url-2.click"
 								onClick={() =>
 									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
 										openUrl("https://discord.com/invite/FGYJN7auty"),
@@ -1372,6 +1389,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								<button
 									type="button"
 									className="onboarding-welcome__github-btn"
+									data-usage-event="onboarding-wizard.open-url-3.click"
 									onClick={() =>
 										import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
 											paymentLinksHiddenNow()
@@ -1449,6 +1467,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									key={style}
 									type="button"
 									className={`onboarding-step__option${speechStyle === style ? " onboarding-step__option--selected" : ""}`}
+									data-usage-event="onboarding-wizard.set-speech-style-4.click"
 									onClick={() => setSpeechStyle(style)}
 								>
 									<span className="onboarding-step__option-label">
@@ -1511,6 +1530,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 												}
 												data-testid="onboarding-avatar-card"
 												className={`onboarding-step__avatar-card${avatarProvider === "vrm" && selectedVrm === path ? " onboarding-step__avatar-card--selected" : ""}`}
+												data-usage-event="onboarding-wizard.handle-vrm-select-5.click"
 												onClick={() => handleVrmSelect(path)}
 											>
 												<img
@@ -1544,6 +1564,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 													selectedNva === path
 												}
 												className={`onboarding-step__avatar-card${avatarProvider === "naia-video-avatar" && selectedNva === path ? " onboarding-step__avatar-card--selected" : ""}`}
+												data-usage-event="onboarding-wizard.handle-nva-select-6.click"
 												onClick={() => handleNvaSelect(path)}
 											>
 												<NvaThumbnail path={path} label={label} />
@@ -1577,6 +1598,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									type="button"
 									data-testid="onboarding-bg-card"
 									className={`onboarding-step__bg-card${selectedBg === bg.url ? " onboarding-step__bg-card--selected" : ""}`}
+									data-usage-event="onboarding-wizard.handle-bg-select-7.click"
 									onClick={() => handleBgSelect(bg.url)}
 								>
 									{bg.type === "video" ? (
@@ -1629,6 +1651,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								<button
 									type="button"
 									className="onboarding-step__link onboarding-step__link--muted"
+									data-usage-event="onboarding-wizard.go-next-8.click"
 									onClick={goNext}
 									style={{ marginTop: 16 }}
 								>
@@ -1640,6 +1663,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								<button
 									type="button"
 									className="onboarding-step__naia-btn"
+									data-usage-event="onboarding-wizard.handle-naia-login-9.click"
 									onClick={handleNaiaLogin}
 									disabled={naiaLoginWaiting}
 									style={{ marginTop: 16, width: "100%" }}
@@ -1663,6 +1687,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									<button
 										type="button"
 										className="onboarding-step__link"
+										data-usage-event="onboarding-wizard.handle-go-to-settings-10.click"
 										onClick={handleGoToSettings}
 									>
 										{t("onboard.connect.byoPath")}
@@ -1671,6 +1696,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 										type="button"
 										className="onboarding-step__link onboarding-step__link--muted"
 										data-testid="onboarding-provider-later"
+										data-usage-event="onboarding-wizard.go-next-11.click"
 										onClick={goNext}
 									>
 										{t("onboard.connect.setupLater")}
@@ -1693,6 +1719,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							<button
 								type="button"
 								className={`onboarding-step__option${ttsEnabled ? " onboarding-step__option--selected" : ""}`}
+								data-usage-event="onboarding-wizard.set-tts-enabled-12.click"
 								onClick={() => setTtsEnabled(true)}
 							>
 								<span className="onboarding-step__option-label">
@@ -1702,6 +1729,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							<button
 								type="button"
 								className={`onboarding-step__option${!ttsEnabled ? " onboarding-step__option--selected" : ""}`}
+								data-usage-event="onboarding-wizard.set-tts-enabled-13.click"
 								onClick={() => setTtsEnabled(false)}
 							>
 								<span className="onboarding-step__option-label">
@@ -1714,6 +1742,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								<select
 									className="onboarding-step__input"
 									value={webVoiceURI}
+									data-usage-event="onboarding-wizard.set-web-voice-uri-14.select"
 									onChange={(e) => setWebVoiceURI(e.target.value)}
 								>
 									{webVoices.map((voice) => (
@@ -1725,6 +1754,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								<button
 									type="button"
 									className="onboarding-step__link"
+									data-usage-event="onboarding-wizard.button-15.click"
 									onClick={previewWebVoice}
 									disabled={voicePreviewing}
 								>
@@ -1744,6 +1774,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									type="button"
 									className={`onboarding-step__option${localVoiceEnabled ? " onboarding-step__option--selected" : ""}`}
 									style={{ marginTop: 8 }}
+									data-usage-event="onboarding-wizard.toggle-local-voice-16.click"
 									onClick={toggleLocalVoice}
 									disabled={localVoiceBusy || !naiaLoginDone}
 								>
@@ -1808,6 +1839,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						type="button"
 						className="onboarding-step__back-btn"
 						data-testid="onboarding-back"
+						data-usage-event="onboarding-wizard.go-back-17.click"
 						onClick={goBack}
 					>
 						{t("onboard.back")}
@@ -1819,6 +1851,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						type="button"
 						className="onboarding-step__next-btn"
 						data-testid="onboarding-next"
+						data-usage-event="onboarding-wizard.handle-complete-18.click"
 						onClick={isCompleteStep ? handleComplete : goNext}
 						disabled={
 							(isCompleteStep && completing) ||
@@ -1837,6 +1870,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						type="button"
 						className="onboarding-step__next-btn"
 						data-testid="onboarding-next"
+						data-usage-event="onboarding-wizard.go-next-19.click"
 						onClick={goNext}
 					>
 						{t("onboard.next")}

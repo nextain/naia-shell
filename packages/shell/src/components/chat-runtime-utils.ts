@@ -1,3 +1,4 @@
+import { attachMediaElementToSharedContext } from "../lib/broadcast-audio-bridge";
 import { loadConfig } from "../lib/config";
 import { environmentSession } from "../lib/environment-skill";
 import { getLocale } from "../lib/i18n";
@@ -99,6 +100,7 @@ export function playBase64Audio(base64: string): void {
 	}
 
 	const audio = new Audio(`data:audio/mp3;base64,${base64}`);
+	attachMediaElementToSharedContext(audio, { transient: true });
 	currentAudio = audio;
 	audio.onended = () => {
 		Logger.info("ChatArea", "Audio playback ended");

@@ -244,9 +244,6 @@ export function AppMainContent(props: AppMainContentProps) {
 						</div>
 					)}
 					<div className="naia-overlay">
-						<Suspense fallback={null}>
-							<AiControlBar />
-						</Suspense>
 						<div className="naia-chat-area">
 							<button
 								type="button"
@@ -291,6 +288,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
 									title="왼쪽 소형"
 									aria-pressed={uiMode === "app"}
+									data-usage-event="app-main-content.set-chat-mode-1.click"
 									onClick={() => setChatMode("app")}
 								>
 									▖
@@ -300,6 +298,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
 									title="왼쪽 채움"
 									aria-pressed={uiMode === "workspace"}
+									data-usage-event="app-main-content.set-chat-mode-2.click"
 									onClick={() => setChatMode("workspace")}
 								>
 									▌
@@ -313,7 +312,16 @@ export function AppMainContent(props: AppMainContentProps) {
 										: undefined
 								}
 							>
-								<DeferredChatArea variant={chatVariant} />
+								<DeferredChatArea
+									variant={chatVariant}
+									headerControls={
+										<Suspense fallback={null}>
+											<AiControlBar
+												isNva={avatarProvider === "naia-video-avatar"}
+											/>
+										</Suspense>
+									}
+								/>
 							</div>
 						</div>
 					</div>
@@ -323,6 +331,7 @@ export function AppMainContent(props: AppMainContentProps) {
 				<button
 					type="button"
 					className={`ws-rail-toggle${railCollapsed ? " ws-rail-toggle--collapsed" : ""}`}
+					data-usage-event="app-main-content.toggle-rail-collapsed-3.click"
 					onClick={toggleRailCollapsed}
 					title={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}
 					aria-label={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}

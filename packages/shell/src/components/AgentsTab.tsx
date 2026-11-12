@@ -60,6 +60,7 @@ export function AgentsTab() {
 					<button
 						type="button"
 						className="agents-refresh-btn"
+						data-usage-event="agents-tab.button-1.click"
 						onClick={fetchData}
 					>
 						{t("agents.refresh")}
@@ -93,6 +94,7 @@ export function AgentsTab() {
 									<button
 										type="button"
 										className="session-action-btn delete"
+										data-usage-event="agents-tab.handle-delete-session-2.click"
 										onClick={() => handleDeleteSession(session.key)}
 									>
 										{t("agents.deleteSession")}

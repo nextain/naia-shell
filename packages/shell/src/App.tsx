@@ -40,6 +40,7 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
+import { selectBackground } from "./lib/background-selection";
 import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
@@ -511,18 +512,14 @@ export function App() {
 
 	// Load background from naia-settings/background/. May be a video (.mp4) or a
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
-	// #342 / #447-3: default to the naia-dawn-city still when no saved preference
-	// (this default had regressed back to morning-coffee).
-	const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
+	// Keep saved background paths intact; use the new still for fresh settings.
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
 		void listNaiaAssets("background").then(async (paths) => {
 			if (cancelled || paths.length === 0) return;
 			const config = loadConfig();
-			const saved =
-				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
-			const match = paths.find((p) => p.endsWith(saved));
+			const match = selectBackground(paths, config?.backgroundVideo);
 			if (!match || cancelled) return;
 			const blobUrl = await toLocalBlobUrl(match);
 			if (cancelled) return;
@@ -1182,7 +1179,7 @@ export function App() {
 						zIndex: 99999,
 					}}
 					role="alert"
-					onClick={() => setGlobalToast(null)}
+					data-usage-event="shell.set-global-toast-1.click" onClick={() => setGlobalToast(null)}
 				>
 					{globalToast}
 				</div>

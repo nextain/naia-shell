@@ -218,6 +218,7 @@ const SECRET_CONFIG_KEYS = new Set([
 	"memoryLlmApiKey",
 	"subLlmApiKey",
 	"qdrantApiKey",
+	"broadcastStreamKey",
 ]);
 
 // G-08: UI-only fields — naia-agent doesn't consume these. Stripped to prevent
@@ -270,6 +271,11 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"bgmYoutubeBackgroundVideo",
 	"bgmVolume",
 	"bgmPlaying",
+	// Broadcast streaming UI settings (0.2.6)
+	"broadcastPlatform",
+	"broadcastServerUrl",
+	"broadcastResolution",
+	"broadcastRestoreToken",
 	// Opt-in proactive speech profile (shell configures agent at startup)
 	"proactiveSpeechProfile",
 	"proactiveSpeechPermitted",

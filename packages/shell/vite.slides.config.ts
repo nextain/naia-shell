@@ -1,9 +1,11 @@
-import react from "@vitejs/plugin-react";
 import { existsSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import packageJson from "./package.json";
 
 export default defineConfig({
+	define: { __USAGE_VERSION__: JSON.stringify(packageJson.version) },
 	base: "./",
 	plugins: [
 		react(),

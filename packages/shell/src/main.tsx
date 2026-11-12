@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
+import { UsageConsentGate } from "./components/UsageConsentGate";
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { Logger } from "./lib/logger";
@@ -28,7 +29,9 @@ async function bootstrap() {
 			// biome-ignore lint/style/noNonNullAssertion: root element always exists
 			createRoot(document.getElementById("root")!).render(
 				<StrictMode>
-					<App />
+					<UsageConsentGate>
+						<App />
+					</UsageConsentGate>
 				</StrictMode>,
 			);
 		},

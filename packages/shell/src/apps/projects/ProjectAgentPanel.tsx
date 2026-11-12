@@ -232,6 +232,7 @@ export function ProjectAgentPanel({
 								disabled={
 									unavailable || available === null || availabilityFailed
 								}
+								data-usage-event="project-agent-panel.select-app-1.select"
 								onChange={() => selectApp(appId)}
 							/>
 							<span>{appLabel(appId)}</span>
@@ -260,6 +261,7 @@ export function ProjectAgentPanel({
 					className="projects-app__primary-button"
 					type="button"
 					disabled={isStarting || resetting}
+					data-usage-event="project-agent-panel.handle-start-2.click"
 					onClick={() => void handleStart()}
 				>
 					{isStarting
@@ -274,6 +276,7 @@ export function ProjectAgentPanel({
 					className="projects-app__secondary-button"
 					type="button"
 					disabled={state.status === "stopping" || stopPending}
+					data-usage-event="project-agent-panel.handle-stop-3.click"
 					onClick={() => void handleStop()}
 				>
 					{state.status === "stopping" || stopPending

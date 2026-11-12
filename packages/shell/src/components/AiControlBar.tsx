@@ -2,20 +2,42 @@ import { useEffect, useRef, useState } from "react";
 import { writeNaiaUiConfig } from "../lib/adk-store";
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import {
+	isBroadcastActive,
+	setBroadcastBridgeSnapshot,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
+import {
 	type AppConfig,
 	loadConfig,
 	loadConfigWithSecrets,
 	saveConfig,
 } from "../lib/config";
 import { t } from "../lib/i18n";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../lib/ui-preferences";
 import { useAppStore } from "../stores/app";
+
+function formatElapsedShort(seconds: number): string {
+	const safe = Math.max(0, Math.floor(seconds));
+	const mm = String(Math.floor(safe / 60)).padStart(2, "0");
+	const ss = String(safe % 60).padStart(2, "0");
+	return `${mm}:${ss}`;
+}
 
 /**
  * AiControlBar — fixed overlay on the avatar area (top-left of naia column).
  * Rendered inside `.naia-overlay` so it stays within the avatar column.
  * Contains: AI interference toggle, TTS toggle, avatar joystick / pan / reset.
  */
-export function AiControlBar() {
+export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
+	const controlsExpanded =
+		useUiPreference<boolean>(
+			UI_PREFERENCE_KEYS.avatarControlsExpanded,
+			false,
+		) === true;
 	const {
 		aiInterferenceEnabled,
 		toggleAiInterferenceEnabled,
@@ -31,6 +53,8 @@ export function AiControlBar() {
 		permitted: false,
 		activityActive: false,
 	});
+	const broadcastBridge = useBroadcastBridge();
+	const broadcastActive = isBroadcastActive(broadcastBridge.state);
 
 	useEffect(() => {
 		let disposed = false;
@@ -43,6 +67,9 @@ export function AiControlBar() {
 					profile,
 					permitted: config.proactiveSpeechPermitted === true,
 				}));
+				setBroadcastBridgeSnapshot({
+					hasStreamKey: Boolean(config.broadcastStreamKey?.trim()),
+				});
 			});
 		};
 		const onActivity = (event: Event) => {
@@ -90,12 +117,52 @@ export function AiControlBar() {
 		})();
 	};
 
+	const zoomControls = (
+		<>
+			<button
+				type="button"
+				className="bgm-ai-toggle ai-control-bar__zoom"
+				aria-label={t("ai.avatarZoomIn")}
+				data-usage-event="ai-control-bar.button-4.click"
+				title={t("ai.avatarZoomIn")}
+				onClick={() => {
+					const camera = getCameraActions();
+					camera.zoom(0.1);
+					camera.save();
+				}}
+			>
+				<span className="bgm-ai-toggle__dot" />+
+			</button>
+
+			<button
+				type="button"
+				className="bgm-ai-toggle ai-control-bar__zoom"
+				aria-label={t("ai.avatarZoomOut")}
+				data-usage-event="ai-control-bar.button-5.click"
+				title={t("ai.avatarZoomOut")}
+				onClick={() => {
+					const camera = getCameraActions();
+					camera.zoom(-0.1);
+					camera.save();
+				}}
+			>
+				<span className="bgm-ai-toggle__dot" />−
+			</button>
+		</>
+	);
+
 	return (
 		<div className="ai-control-bar">
 			<button
 				type="button"
-				className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-ai-interference-enabled-1.click"
 				onClick={toggleAiInterferenceEnabled}
+				aria-label={
+					aiInterferenceEnabled
+						? t("ai.interferenceOn")
+						: t("ai.interferenceOff")
+				}
 				aria-pressed={aiInterferenceEnabled}
 				title={
 					aiInterferenceEnabled
@@ -103,13 +170,23 @@ export function AiControlBar() {
 						: t("ai.interferenceOff")
 				}
 			>
-				<span className="bgm-ai-toggle__dot" />
-				AI
+				<svg
+					className="bgm-ai-toggle__icon"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<rect x="5" y="7" width="14" height="12" rx="3" />
+					<path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" />
+					{!aiInterferenceEnabled && (
+						<path data-off-slash="true" d="M3 3l18 18" />
+					)}
+				</svg>
 			</button>
 
 			<button
 				type="button"
-				className={`bgm-ai-toggle${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-tts-enabled-2.click"
 				onClick={() => {
 					const enabled = !ttsEnabled;
 					toggleTtsEnabled();
@@ -121,16 +198,24 @@ export function AiControlBar() {
 						}),
 					);
 				}}
+				aria-label={ttsEnabled ? t("ai.ttsOn") : t("ai.ttsOff")}
 				aria-pressed={ttsEnabled}
 				title={ttsEnabled ? t("ai.ttsOn") : t("ai.ttsOff")}
 			>
-				<span className="bgm-ai-toggle__dot" />
-				TTS
+				<svg
+					className="bgm-ai-toggle__icon"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<path d="M4 9v6h4l5 4V5L8 9H4zm12-1c2 2 2 6 0 8m2-11c4 4 4 10 0 14" />
+					{!ttsEnabled && <path data-off-slash="true" d="M3 3l18 18" />}
+				</svg>
 			</button>
 
 			<button
 				type="button"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
+				data-usage-event="ai-control-bar.toggle-proactive-3.click"
 				onClick={toggleProactive}
 				aria-pressed={proactive.permitted}
 				aria-label={proactiveTitle}
@@ -164,108 +249,146 @@ export function AiControlBar() {
 				</span>
 			</button>
 
+			<button
+				type="button"
+				data-testid="ai-bar-broadcast-btn"
+				data-broadcast-state={broadcastBridge.state}
+				className={`bgm-ai-toggle${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
+				disabled={!broadcastBridge.hasStreamKey && !broadcastActive}
+				aria-pressed={broadcastActive}
+				title={
+					!broadcastBridge.hasStreamKey && !broadcastActive
+						? t("broadcast.keyRequiredHint")
+						: t("broadcast.btnLabel")
+				}
+				data-usage-event="ai-control-bar.main-merge-1.click" onClick={() => {
+					void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
+						toggleBroadcast().catch(() => {}),
+					);
+				}}
+			>
+				<span
+					className="bgm-ai-toggle__dot"
+					style={
+						broadcastBridge.state === "live"
+							? { background: "#ef4444" }
+							: broadcastBridge.state === "disconnected"
+								? { background: "#f59e0b" }
+								: undefined
+					}
+				/>
+				{t("broadcast.btnLabel")}
+				{broadcastBridge.state === "live"
+					? ` ${formatElapsedShort(broadcastBridge.elapsedSeconds)}`
+					: broadcastBridge.state === "disconnected"
+						? ` · ${t("broadcast.disconnectedLabel")}`
+						: ""}
+			</button>
+
 			<div className="ai-control-bar__sep" />
 
 			<button
 				type="button"
-				className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
-				aria-label={t("ai.avatarRotate")}
-				title={t("ai.avatarRotate")}
-				style={{
-					cursor: joystickActive ? "grabbing" : "grab",
-					touchAction: "none",
-				}}
-				onPointerDown={(e) => {
-					e.currentTarget.setPointerCapture(e.pointerId);
-					joystickActiveRef.current = true;
-					setJoystickActive(true);
-				}}
-				onPointerMove={(e) => {
-					if (!joystickActiveRef.current) return;
-					getCameraActions().rotate(e.movementX, e.movementY);
-				}}
-				onPointerUp={(e) => {
-					e.currentTarget.releasePointerCapture(e.pointerId);
-					joystickActiveRef.current = false;
-					setJoystickActive(false);
-					getCameraActions().save();
-				}}
-				onPointerCancel={(e) => {
-					e.currentTarget.releasePointerCapture(e.pointerId);
-					joystickActiveRef.current = false;
-					setJoystickActive(false);
-				}}
-			>
-				<span className="bgm-ai-toggle__dot" />⊕
-			</button>
-
-			<button
-				type="button"
-				className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
-				aria-label={t("ai.avatarPan")}
-				title={t("ai.avatarPan")}
-				style={{ cursor: panActive ? "grabbing" : "grab", touchAction: "none" }}
-				onPointerDown={(e) => {
-					e.currentTarget.setPointerCapture(e.pointerId);
-					panActiveRef.current = true;
-					setPanActive(true);
-				}}
-				onPointerMove={(e) => {
-					if (!panActiveRef.current) return;
-					getCameraActions().pan(e.movementX, e.movementY);
-				}}
-				onPointerUp={(e) => {
-					e.currentTarget.releasePointerCapture(e.pointerId);
-					panActiveRef.current = false;
-					setPanActive(false);
-					getCameraActions().save();
-				}}
-				onPointerCancel={(e) => {
-					e.currentTarget.releasePointerCapture(e.pointerId);
-					panActiveRef.current = false;
-					setPanActive(false);
-				}}
-			>
-				<span className="bgm-ai-toggle__dot" />✥
-			</button>
-
-			<button
-				type="button"
 				className="bgm-ai-toggle"
-				aria-label={t("ai.avatarZoomIn")}
-				title={t("ai.avatarZoomIn")}
-				onClick={() => {
-					const camera = getCameraActions();
-					camera.zoom(0.1);
-					camera.save();
-				}}
+				aria-label={t("ai.avatarControls")}
+				title={t("ai.avatarControls")}
+				aria-expanded={controlsExpanded}
+				aria-controls="avatar-camera-controls"
+				data-usage-event="ai-control-bar.main-merge-2.click" onClick={() =>
+					void patchUiPreferences({
+						[UI_PREFERENCE_KEYS.avatarControlsExpanded]: !controlsExpanded,
+					})
+				}
 			>
-				<span className="bgm-ai-toggle__dot" />+
+				⚙
 			</button>
+			{controlsExpanded && (
+				<div
+					id="avatar-camera-controls"
+					className={`ai-control-bar__camera${isNva ? " ai-control-bar__camera--nva" : ""}`}
+				>
+					{isNva && zoomControls}
 
-			<button
-				type="button"
-				className="bgm-ai-toggle"
-				aria-label={t("ai.avatarZoomOut")}
-				title={t("ai.avatarZoomOut")}
-				onClick={() => {
-					const camera = getCameraActions();
-					camera.zoom(-0.1);
-					camera.save();
-				}}
-			>
-				<span className="bgm-ai-toggle__dot" />−
-			</button>
+					{!isNva && (
+						<button
+							type="button"
+							className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
+							aria-label={t("ai.avatarRotate")}
+							title={t("ai.avatarRotate")}
+							style={{
+								cursor: joystickActive ? "grabbing" : "grab",
+								touchAction: "none",
+							}}
+							onPointerDown={(e) => {
+								e.currentTarget.setPointerCapture(e.pointerId);
+								joystickActiveRef.current = true;
+								setJoystickActive(true);
+							}}
+							onPointerMove={(e) => {
+								if (!joystickActiveRef.current) return;
+								getCameraActions().rotate(e.movementX, e.movementY);
+							}}
+							onPointerUp={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								joystickActiveRef.current = false;
+								setJoystickActive(false);
+								getCameraActions().save();
+							}}
+							onPointerCancel={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								joystickActiveRef.current = false;
+								setJoystickActive(false);
+							}}
+						>
+							<span className="bgm-ai-toggle__dot" />⊕
+						</button>
+					)}
+					<button
+						type="button"
+						className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
+						aria-label={t("ai.avatarPan")}
+						title={t("ai.avatarPan")}
+						style={{
+							cursor: panActive ? "grabbing" : "grab",
+							touchAction: "none",
+						}}
+						onPointerDown={(e) => {
+							e.currentTarget.setPointerCapture(e.pointerId);
+							panActiveRef.current = true;
+							setPanActive(true);
+						}}
+						onPointerMove={(e) => {
+							if (!panActiveRef.current) return;
+							getCameraActions().pan(e.movementX, e.movementY);
+						}}
+						onPointerUp={(e) => {
+							e.currentTarget.releasePointerCapture(e.pointerId);
+							panActiveRef.current = false;
+							setPanActive(false);
+							getCameraActions().save();
+						}}
+						onPointerCancel={(e) => {
+							e.currentTarget.releasePointerCapture(e.pointerId);
+							panActiveRef.current = false;
+							setPanActive(false);
+						}}
+					>
+						<span className="bgm-ai-toggle__dot" />✥
+					</button>
 
-			<button
-				type="button"
-				className="bgm-ai-toggle"
-				aria-label={t("ai.avatarReset")}
-				title={t("ai.avatarReset")}
-				onClick={() => getCameraActions().reset()}
-			>
-				<span className="bgm-ai-toggle__dot" />⌂
-			</button>
+					{!isNva && zoomControls}
+					<button
+						type="button"
+						className="bgm-ai-toggle"
+						aria-label={t("ai.avatarReset")}
+						data-usage-event="ai-control-bar.button-6.click"
+						title={t("ai.avatarReset")}
+						onClick={() => getCameraActions().reset()}
+					>
+						<span className="bgm-ai-toggle__dot" />⌂
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }

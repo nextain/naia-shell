@@ -221,6 +221,7 @@ export function KnowledgeGraphView({
 				<button
 					type="button"
 					className="knowledge-graph-mode"
+					data-usage-event="knowledge-graph-view.set-mode-1.click"
 					onClick={() => setMode((m) => (m === "2d" ? "3d" : "2d"))}
 					style={{
 						fontSize: scaledFontSize(11),
@@ -240,6 +241,7 @@ export function KnowledgeGraphView({
 				width={W}
 				height={H}
 				className="knowledge-graph-canvas"
+				data-usage-event="knowledge-graph-view.handle-canvas-click-2.click"
 				onClick={handleCanvasClick}
 				style={{
 					width: "100%",

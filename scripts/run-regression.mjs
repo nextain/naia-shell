@@ -22,6 +22,7 @@
  * --dry-run 은 무엇을 돌릴지만 보여준다. 환경이 갖춰졌는지 먼저 볼 때 쓴다.
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -195,10 +196,20 @@ if (targets) {
  *
  * 이름이 어긋나면 그 자리에서 막는다. 기록을 남긴 뒤에 알면 늦다.
  */
+function hostSha256() {
+	return createHash("sha256").update(hostname()).digest("hex");
+}
+
 function identityMismatch(profile) {
 	const mismatches = [];
-	if (profile.host && profile.host !== hostname()) {
-		mismatches.push(`호스트명: 명단은 ${profile.host}, 이 기계는 ${hostname()}`);
+	// 옛 필드는 값이 비어 있어도 이관 오류다. 바인딩 누락은 허용하지 않는다.
+	if (Object.hasOwn(profile, "host")) {
+		mismatches.push("이관 오류: 옛 host 필드를 제거하고 hostSha256 바인딩을 등록하라");
+	}
+	if (typeof profile.hostSha256 !== "string" || !/^[0-9a-f]{64}$/.test(profile.hostSha256)) {
+		mismatches.push("바인딩 오류: 유효한 hostSha256 이 필요하다");
+	} else if (profile.hostSha256 !== hostSha256()) {
+		mismatches.push("호스트 바인딩: 이 기계의 sha256 이 명단의 hostSha256 과 다르다");
 	}
 	const osByName = { linux: "linux", windows: "win32", darwin: "darwin" };
 	const expected = osByName[profile.os];
@@ -1029,7 +1040,8 @@ function fingerprint() {
 	return {
 		inventorySha256: digest,
 		commit,
-		host: hostname(),
+		// 기록은 공개된다. 기계 이름(명단의 id)을 적고 실제 호스트명은 남기지 않는다.
+		host: machine ?? "unknown",
 		platform: `${process.platform}-${process.arch}`,
 		node: process.version,
 	};

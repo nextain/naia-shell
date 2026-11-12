@@ -232,6 +232,7 @@ export function SmallLlmSection({
 							data-testid="small-llm-choice-naia"
 							checked={activeChoice === "naia"}
 							disabled={!naiaKeyPresent}
+							data-usage-event="small-llm-section.handle-select-naia-1.select"
 							onChange={handleSelectNaia}
 						/>
 						{t("settings.smallLlmNaia")}
@@ -248,6 +249,7 @@ export function SmallLlmSection({
 							value="ollama"
 							data-testid="small-llm-choice-ollama"
 							checked={activeChoice === "ollama"}
+							data-usage-event="small-llm-section.handle-select-local-2.select"
 							onChange={() => handleSelectLocal("ollama")}
 						/>
 						{t("settings.smallLlmOllama")}
@@ -259,6 +261,7 @@ export function SmallLlmSection({
 							value="vllm"
 							data-testid="small-llm-choice-vllm"
 							checked={activeChoice === "vllm"}
+							data-usage-event="small-llm-section.handle-select-local-3.select"
 							onChange={() => handleSelectLocal("vllm")}
 						/>
 						{t("settings.smallLlmVllm")}
@@ -270,6 +273,7 @@ export function SmallLlmSection({
 							value="threshold"
 							data-testid="small-llm-choice-threshold"
 							checked={activeChoice === "threshold"}
+							data-usage-event="small-llm-section.handle-select-threshold-4.select"
 							onChange={handleSelectThreshold}
 						/>
 						{t("settings.smallLlmThreshold")}
@@ -281,6 +285,7 @@ export function SmallLlmSection({
 							value="off"
 							data-testid="small-llm-choice-off"
 							checked={activeChoice === "off"}
+							data-usage-event="small-llm-section.handle-select-off-5.select"
 							onChange={handleSelectOff}
 						/>
 						{t("settings.smallLlmOff")}
@@ -307,6 +312,7 @@ export function SmallLlmSection({
 								value="less"
 								data-testid="surfacing-level-less"
 								checked={activeLevel === "less"}
+								data-usage-event="small-llm-section.handle-select-level-6.select"
 								onChange={() => handleSelectLevel("less")}
 							/>
 							{t("settings.surfacingLevelLess")}
@@ -318,6 +324,7 @@ export function SmallLlmSection({
 								value="normal"
 								data-testid="surfacing-level-normal"
 								checked={activeLevel === "normal"}
+								data-usage-event="small-llm-section.handle-select-level-7.select"
 								onChange={() => handleSelectLevel("normal")}
 							/>
 							{t("settings.surfacingLevelNormal")}
@@ -329,6 +336,7 @@ export function SmallLlmSection({
 								value="more"
 								data-testid="surfacing-level-more"
 								checked={activeLevel === "more"}
+								data-usage-event="small-llm-section.handle-select-level-8.select"
 								onChange={() => handleSelectLevel("more")}
 							/>
 							{t("settings.surfacingLevelMore")}

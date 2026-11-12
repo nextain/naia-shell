@@ -55,12 +55,14 @@ scripts/builds/uc1-graft-snippet.js
 packages/*/node_modules
 packages/*/dist
 packages/shell/dist-slides/
+packages/shell/dist-charcard/
 packages/shell/src-tauri/target
 # cargo 산출물 디렉터리 변형(target-e2e 등) — 'target' 한 줄로는 걸러지지 않는다
 packages/shell/src-tauri/target-*/
 packages/shell/src-tauri/gen
 # 번들 바이너리 리소스(vosk dll, node.exe 등 ~140MB) — 빌드 시 복사, 추적 제외
 packages/shell/src-tauri/resources/
+packages/shell/src-tauri/binaries/
 # 배포 번들용 agent 스테이징(stage-agent.mjs 가 prod-hoisted deploy) — 빌드 산출물, 추적 제외
 packages/shell/src-tauri/agent/
 # 배포 번들용 BGM sidecar 스테이징(prod-hoisted deploy) — 빌드 산출물, 추적 제외
@@ -105,3 +107,6 @@ packages/shell/C:\\*
 # 다른 기계가 clone 할 때 내용을 못 받고, 짝 해석까지 흔들린다.
 naia-agent-worktrees/
 worktrees/
+
+# Session-contract recovery leases are runtime state and record host names.
+.agents/session-contracts/.recovery/

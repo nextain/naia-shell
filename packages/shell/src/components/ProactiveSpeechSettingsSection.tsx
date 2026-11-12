@@ -40,6 +40,7 @@ export function RadioDjSettingsCard(props: {
 				className="skill-card-header radio-dj-skill-card-header"
 				aria-expanded={expanded}
 				aria-controls={detailId}
+				data-usage-event="proactive-speech-settings-section.toggle-expanded-1.click"
 				onClick={toggleExpanded}
 			>
 				<div className="skill-card-info">
@@ -101,6 +102,7 @@ export function ProactiveSpeechSettingsSection(props: {
 				<select
 					data-testid="proactive-speech-profile"
 					value={draft.profile}
+					data-usage-event="proactive-speech-settings-section.select-2.select"
 					onChange={(event) =>
 						update({
 							profile: event.target.value as ProactiveSpeechSettings["profile"],
@@ -161,6 +163,7 @@ export function ProactiveSpeechSettingsSection(props: {
 							data-testid="proactive-bgm-autoplay"
 							type="checkbox"
 							checked={draft.bgmAutoPlay === true}
+							data-usage-event="proactive-speech-settings-section.input-3.select"
 							onChange={(event) => update({ bgmAutoPlay: event.target.checked })}
 						/>
 						{t("settings.proactiveBgm")}
@@ -170,6 +173,7 @@ export function ProactiveSpeechSettingsSection(props: {
 							data-testid="proactive-weather-consent"
 							type="checkbox"
 							checked={draft.weatherConsented === true}
+							data-usage-event="proactive-speech-settings-section.input-4.select"
 							onChange={(event) =>
 								update({
 									weatherConsented: event.target.checked,
@@ -221,6 +225,7 @@ export function ProactiveSpeechSettingsSection(props: {
 			<button
 				type="button"
 				data-testid="proactive-settings-save"
+				data-usage-event="proactive-speech-settings-section.set-save-failed-5.click"
 				onClick={async () => {
 					setSaveFailed(false);
 					let normalized = normalizeProactiveSpeechSettings(draft);

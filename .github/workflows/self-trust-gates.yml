@@ -70,7 +70,8 @@ jobs:
   # 봤고, vitest 계약·통합·tsc·로깅·assembly·file-anchor·wire probe 는 로컬 hook/cron 에만 있어 fork/웹
   # PR 의 코드·계약·타입·계층 드리프트가 자동검출 0 이었다(structure-soundness-review B0). 여기서 닫는다.
   code-gates:
-    runs-on: ubuntu-latest
+    # ubuntu-latest 가 26.04 로 바뀌어 Playwright 1.60 이 chromium 을 못 깐다(2026-11-01). 지원판에 고정.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

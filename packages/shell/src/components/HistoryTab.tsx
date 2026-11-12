@@ -98,7 +98,7 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 		return (
 			<div className="history-tab-error">
 				<span>{t("history.agentUnreachable")}</span>
-				<button type="button" className="history-retry-btn" onClick={() => void loadSessions()}>
+				<button type="button" className="history-retry-btn" data-usage-event="history-tab.button-1.click" onClick={() => void loadSessions()}>
 					{t("common.retry")}
 				</button>
 			</div>
@@ -121,6 +121,7 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 							<button
 								type="button"
 								className="history-item-main"
+								data-usage-event="history-tab.handle-load-session-2.click"
 								onClick={() => handleLoadSession(s.key)}
 							>
 								<span className="history-item-title">
@@ -139,6 +140,7 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 							<button
 								type="button"
 								className="history-delete-btn"
+								data-usage-event="history-tab.handle-delete-session-3.click"
 								onClick={() => handleDeleteSession(s.key)}
 								title={t("history.delete")}
 							>

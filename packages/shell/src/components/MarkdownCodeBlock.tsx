@@ -46,6 +46,7 @@ function CopyCodeButton({ code }: { code: string }) {
 	return (
 		<button
 			type="button"
+			data-usage-event="markdown-code-block.set-copied-1.click"
 			onClick={() => {
 				void navigator.clipboard.writeText(code).then(() => {
 					setCopied(true);
@@ -97,6 +98,7 @@ export function MermaidBlock({ code }: { code: string }) {
 					<CopyCodeButton code={code} />
 					<button
 						type="button"
+						data-usage-event="markdown-code-block.set-error-2.click"
 						onClick={() => {
 							setError(null);
 							setAttempt((count) => count + 1);
@@ -138,7 +140,11 @@ export function MarkdownCodeBlock({
 			<div className="chat-code-actions">
 				<CopyCodeButton code={code} />
 				{onOpenWorkspace ? (
-					<button type="button" onClick={() => onOpenWorkspace(code, language)}>
+					<button
+						type="button"
+						data-usage-event="markdown-code-block.on-open-workspace-3.click"
+						onClick={() => onOpenWorkspace(code, language)}
+					>
 						워크스페이스에서 열기
 					</button>
 				) : null}

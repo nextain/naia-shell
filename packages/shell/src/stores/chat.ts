@@ -44,6 +44,7 @@ interface ChatState {
 	messages: ChatMessage[];
 	isStreaming: boolean;
 	streamingContent: string;
+	streamingAppName?: string;
 	/** A tool event occurred; separate the next visible text round once. */
 	streamingToolBoundaryPending: boolean;
 	streamingThinking: string;
@@ -61,7 +62,7 @@ interface ChatState {
 	setMessages: (messages: ChatMessage[]) => void;
 	addMessage: (
 		msg: Pick<ChatMessage, "role" | "content"> &
-			Partial<Pick<ChatMessage, "cost" | "failure">>,
+			Partial<Pick<ChatMessage, "cost" | "failure" | "appName">>,
 	) => void;
 	recordVoiceCostSummary: (
 		targetLocalSessionId: string,
@@ -70,7 +71,7 @@ interface ChatState {
 	) => void;
 	deleteSessionOverlay: (key: string) => void;
 	updateLastMessage: (role: ChatMessage["role"], content: string) => void;
-	startStreaming: () => void;
+	startStreaming: (appName?: string) => void;
 	appendStreamChunk: (text: string) => void;
 	markStreamingToolBoundary: () => void;
 	appendThinkingChunk: (text: string) => void;
@@ -174,7 +175,7 @@ export function toSendHistory(
 	return messages
 		.filter((m, i) => {
 			if (m.role !== "user" && m.role !== "assistant") return false;
-			if (m.failure || failedTurnRows.has(i)) return false;
+			if (m.failure || m.appName || failedTurnRows.has(i)) return false;
 			return m.content.trim() !== "";
 		})
 		.map((m) => ({ role: m.role, content: m.content }));
@@ -306,8 +307,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			};
 		}),
 
-	startStreaming: () =>
+	startStreaming: (appName) =>
 		set({
+			streamingAppName: appName,
 			isStreaming: true,
 			streamingContent: "",
 			streamingToolBoundaryPending: false,
@@ -381,6 +383,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		const {
 			isStreaming,
 			streamingContent,
+			streamingAppName,
 			streamingThinking,
 			streamingToolCalls,
 			pendingApproval,
@@ -395,6 +398,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set((s) => ({
 			isStreaming: false,
 			streamingContent: "",
+			streamingAppName: undefined,
 			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
@@ -405,6 +409,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 					id: generateId(),
 					role: "assistant" as const,
 					content: streamingContent,
+					appName: streamingAppName,
 					thinking: streamingThinking || undefined,
 					timestamp: Date.now(),
 					toolCalls,

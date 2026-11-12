@@ -74,6 +74,7 @@ export function KnowledgeGraphOverlay({
 		<div
 			className="knowledge-graph-overlay-backdrop"
 			data-testid="knowledge-graph-overlay"
+			data-usage-event="knowledge-graph-overlay.on-close-1.click"
 			onClick={onClose}
 			style={{
 				position: "fixed",
@@ -89,6 +90,7 @@ export function KnowledgeGraphOverlay({
 			{/* biome-ignore lint/a11y/useKeyWithClickEvents: 오버레이 본체는 backdrop 클릭 전파만 차단(Esc 로 닫기 제공) */}
 			<div
 				className="knowledge-graph-overlay-app"
+				data-usage-event="knowledge-graph-overlay.stop-propagation-2.click"
 				onClick={(e) => e.stopPropagation()}
 				style={{
 					width: "92vw",
@@ -124,6 +126,7 @@ export function KnowledgeGraphOverlay({
 						type="button"
 						className="knowledge-graph-overlay-close"
 						data-testid="knowledge-graph-close"
+						data-usage-event="knowledge-graph-overlay.on-close-3.click"
 						onClick={onClose}
 						style={{
 							fontSize: scaledFontSize(13),
@@ -194,6 +197,7 @@ export function KnowledgeGraphOverlay({
 												type="button"
 												className="knowledge-graph-source"
 												data-testid="knowledge-graph-source"
+												data-usage-event="knowledge-graph-overlay.open-source-4.click"
 												onClick={() => openSource(uri)}
 												title={uri}
 												style={{
