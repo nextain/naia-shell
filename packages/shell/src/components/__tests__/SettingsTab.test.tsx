@@ -2255,6 +2255,131 @@ describe("SettingsTab", () => {
 	});
 });
 
+// ── UC-UI-FONT-SCALE-20261105: 글자 크기 ─────────────────────────────────────
+
+describe("SettingsTab — UI font scale (UC-UI-FONT-SCALE-20261105)", () => {
+	afterEach(async () => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+		document.documentElement.style.removeProperty("--ui-font-scale");
+		delete document.documentElement.dataset.uiFontScale;
+		await setLocale("en");
+	});
+
+	function fontScaleRadios() {
+		const group = screen.getByRole("radiogroup", { name: "Font size" });
+		return Array.from(
+			group.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+		);
+	}
+
+	it("defaults to Normal when nothing is stored", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const radios = fontScaleRadios();
+		expect(radios.map((radio) => radio.textContent)).toEqual([
+			"Small",
+			"Normal",
+			"Large",
+			"Extra large",
+		]);
+		const checked = radios.filter(
+			(radio) => radio.getAttribute("aria-checked") === "true",
+		);
+		expect(checked.map((radio) => radio.textContent)).toEqual(["Normal"]);
+		// roving tabindex: only the selected option is in the tab order
+		expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, 0, -1, -1]);
+	});
+
+	it("shows the persisted choice and treats an unknown value as Normal", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", uiFontScale: "large" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		expect(screen.getByTestId("ui-font-scale-large")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		cleanup();
+
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", uiFontScale: "gigantic" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		expect(screen.getByTestId("ui-font-scale-normal")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+	});
+
+	it("applies immediately and saves without the Save button", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(screen.getByTestId("ui-font-scale-xlarge"));
+
+		const root = document.documentElement;
+		expect(root.style.getPropertyValue("--ui-font-scale")).toBe("1.5");
+		expect(root.dataset.uiFontScale).toBe("xlarge");
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.uiFontScale).toBe("xlarge");
+		// other settings survive the immediate save
+		expect(saved.model).toBe("gemini-2.5-flash");
+		expect(screen.getByTestId("ui-font-scale-xlarge")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+	});
+
+	it("moves the selection with arrow keys and Home/End", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "gemini" }));
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const normal = screen.getByTestId("ui-font-scale-normal");
+		normal.focus();
+		fireEvent.keyDown(normal, { key: "ArrowLeft" });
+		const small = screen.getByTestId("ui-font-scale-small");
+		expect(small).toHaveAttribute("aria-checked", "true");
+		expect(document.activeElement).toBe(small);
+		expect(
+			document.documentElement.style.getPropertyValue("--ui-font-scale"),
+		).toBe("0.9");
+
+		fireEvent.keyDown(small, { key: "End" });
+		expect(screen.getByTestId("ui-font-scale-xlarge")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		fireEvent.keyDown(screen.getByTestId("ui-font-scale-xlarge"), {
+			key: "ArrowRight",
+		});
+		// wraps around
+		expect(screen.getByTestId("ui-font-scale-small")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") || "{}").uiFontScale,
+		).toBe("small");
+	});
+});
+
 // ── #298: SettingsTab Memory tab ─────────────────────────────────────────────
 
 describe("SettingsTab — memory tab (#298)", () => {

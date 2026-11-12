@@ -8,6 +8,7 @@ import {
 	type KnowledgeGraph,
 	type KnowledgeGraphNode,
 } from "../lib/knowledge-result";
+import { scaledFontSize } from "../lib/ui-font-scale";
 
 interface Sim {
 	id: string;
@@ -211,7 +212,7 @@ export function KnowledgeGraphView({
 			>
 				<span
 					className="knowledge-graph-meta"
-					style={{ fontSize: 11, color: "var(--cream-dim, #aab)", letterSpacing: "0.02em" }}
+					style={{ fontSize: scaledFontSize(11), color: "var(--cream-dim, #aab)", letterSpacing: "0.02em" }}
 				>
 					● 노드 {graph.nodes.length} · 관계 {graph.edges.length} · 군집{" "}
 					{graph.communityCount}
@@ -223,7 +224,7 @@ export function KnowledgeGraphView({
 					data-usage-event="knowledge-graph-view.set-mode-1.click"
 					onClick={() => setMode((m) => (m === "2d" ? "3d" : "2d"))}
 					style={{
-						fontSize: 11,
+						fontSize: scaledFontSize(11),
 						padding: "3px 10px",
 						borderRadius: 999,
 						border: "1px solid rgba(120,150,200,0.35)",

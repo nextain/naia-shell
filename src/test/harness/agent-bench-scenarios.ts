@@ -192,6 +192,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-025-10",
   // 0.2.4 고침(스토어 창·설치 갱신). 앱 설치 표면이다.
   "UC-FIX-024-",
+  // 앱 전체 글자 크기 설정(2026-11-05). 화면 표현 설정이다.
+  "UC-UI-FONT-SCALE-20261105",
 ];
 
 export function ownedByEpic(uc: string): boolean {

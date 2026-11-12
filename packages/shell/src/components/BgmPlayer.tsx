@@ -54,7 +54,9 @@ import {
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
 } from "../lib/bgm-skill";
+import { computeBgmAppPosition } from "../lib/bgm-app-position";
 import { Logger } from "../lib/logger";
+import { UI_FONT_SCALE_EVENT } from "../lib/ui-font-scale";
 import type { NaiaContextBridge } from "../lib/app-registry";
 import {
 	UI_PREFERENCE_KEYS,
@@ -1779,20 +1781,36 @@ export function BgmPlayer({ naia }: Props) {
 
 	// ── App anchor position ─────────────────────────────────────────────────
 	// appPos is always calculated so the portal stays in DOM for CSS animation.
+	// FR-UI-FONT-SCALE.3: 가로·세로 모두 창 안으로 가두고, 창 크기나 글자 배율이
+	// 바뀌면(음악 막대 폭·높이가 달라진다) 다시 잰다.
 	useEffect(() => {
-		if (!playerRef.current) {
-			setAppPos(null);
-			return;
-		}
-		const rect = playerRef.current.getBoundingClientRect();
-		// CSS .bgm-yt-app 의 width(380px)와 반드시 같은 값 — 어긋나면 우측 정렬 계산이 밀린다.
-		const APP_W = Math.min(380, window.innerWidth - 16);
-		// Right-align app to player's right edge, clamp so it doesn't overflow screen
-		const safeLeft = Math.max(
-			8,
-			Math.min(rect.right - APP_W, window.innerWidth - APP_W - 8),
-		);
-		setAppPos({ top: rect.bottom + 4, left: safeLeft });
+		const measure = () => {
+			if (!playerRef.current) {
+				setAppPos(null);
+				return;
+			}
+			const rect = playerRef.current.getBoundingClientRect();
+			const next = computeBgmAppPosition(rect, {
+				width: window.innerWidth,
+				height: window.innerHeight,
+			});
+			Logger.debug("BgmPlayer", "app panel position", {
+				anchorRight: rect.right,
+				anchorBottom: rect.bottom,
+				viewportWidth: window.innerWidth,
+				viewportHeight: window.innerHeight,
+				top: next.top,
+				left: next.left,
+			});
+			setAppPos({ top: next.top, left: next.left });
+		};
+		measure();
+		window.addEventListener("resize", measure);
+		window.addEventListener(UI_FONT_SCALE_EVENT, measure);
+		return () => {
+			window.removeEventListener("resize", measure);
+			window.removeEventListener(UI_FONT_SCALE_EVENT, measure);
+		};
 	}, [appExpanded, ytAppHeight]);
 
 	// ── BGM state persistence ─────────────────────────────────────────────────

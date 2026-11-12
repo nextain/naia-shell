@@ -338,6 +338,7 @@
 | `settings-tab.open-url-114.click` | settings-tab | a / open-url / onClick | packages/shell/src/components/SettingsTab.tsx:7748 |
 | `settings-tab.handle-check-update-115.click` | settings-tab | button / handle-check-update / onClick | packages/shell/src/components/SettingsTab.tsx:7815 |
 | `settings-tab.handle-install-116.click` | settings-tab | button / handle-install / onClick | packages/shell/src/components/SettingsTab.tsx:7830 |
+| `settings-tab.handle-ui-font-scale-change-117.click` | settings-tab | button / handle-ui-font-scale-change / onClick | packages/shell/src/components/SettingsTab.tsx:4318 |
 | `skills-tab.button-1.click` | skills-tab | button / button / onClick | packages/shell/src/components/SkillsTab.tsx:127 |
 | `skills-tab.stop-propagation-2.click` | skills-tab | label / stop-propagation / onClick | packages/shell/src/components/SkillsTab.tsx:170 |
 | `skills-tab.handle-toggle-cli-3.select` | skills-tab | input / handle-toggle-cli / onChange | packages/shell/src/components/SkillsTab.tsx:174 |

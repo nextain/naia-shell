@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { scaledFontSize } from "../lib/ui-font-scale";
 
 declare const __BUILD_ID__: string;
 
@@ -148,7 +149,7 @@ export function SplashScreen({
 					position: "absolute",
 					bottom: 8,
 					right: 12,
-					fontSize: 10,
+					fontSize: scaledFontSize(10),
 					color: "rgba(34,211,238,0.35)",
 					fontFamily: "monospace",
 					pointerEvents: "none",

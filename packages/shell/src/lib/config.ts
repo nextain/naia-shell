@@ -18,6 +18,7 @@ import {
 } from "./secure-store";
 import { NAIA_SLOT_DEFAULTS } from "./slots/model";
 import type { ProviderId } from "./types";
+import type { UiFontScaleId } from "./ui-font-scale";
 import {
 	NAIA_INSTANCE_URLS,
 	naiaLaunchMode,
@@ -281,6 +282,8 @@ export interface AppConfig {
 	memoryLlmCredentialRef?: string;
 	locale?: Locale;
 	theme?: ThemeId;
+	/** 앱 전체 글자 크기(UC-UI-FONT-SCALE-20261105). UI 전용 — ui-config.json 에 저장, agent 미소비. */
+	uiFontScale?: UiFontScaleId;
 	backgroundImage?: string;
 	vrmModel?: string;
 	avatarProvider?: "vrm" | "naia-video-avatar";

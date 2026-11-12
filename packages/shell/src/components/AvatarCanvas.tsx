@@ -21,6 +21,7 @@ import { normalizeTauriAssetUrl } from "../lib/asset-url";
 import { avatarEmptyNotice } from "../lib/avatar-notice";
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
+import { scaledFontSize } from "../lib/ui-font-scale";
 import {
 	UI_PREFERENCE_KEYS,
 	getUiPreference,
@@ -747,7 +748,7 @@ export function AvatarCanvas() {
 						justifyContent: "center",
 						padding: "0 32px",
 						textAlign: "center",
-						fontSize: 13,
+						fontSize: scaledFontSize(13),
 						lineHeight: 1.6,
 						color: "rgba(255,255,255,0.55)",
 						// 이 안내가 클릭을 먹으면 그 뒤의 화면을 못 쓴다. 브라우저 앱의
@@ -764,7 +765,7 @@ export function AvatarCanvas() {
 					position: "absolute",
 					bottom: 4,
 					left: 4,
-					fontSize: 9,
+					fontSize: scaledFontSize(9),
 					fontFamily: "monospace",
 					color: "rgba(255,255,255,0.5)",
 					whiteSpace: "pre",

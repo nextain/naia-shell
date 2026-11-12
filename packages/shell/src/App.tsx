@@ -78,6 +78,7 @@ import {
 	shouldShowStartupUpdatePrompt,
 } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
+import { applyUiFontScale } from "./lib/ui-font-scale";
 import {
 	UI_PREFERENCE_KEYS,
 	hydrateUiPreferences,
@@ -100,6 +101,7 @@ function applyPersistedPresentationConfig(
 	setWidth: (width: number) => void,
 ): void {
 	applyTheme(config?.theme ?? "midnight");
+	applyUiFontScale(config?.uiFontScale);
 	if (config?.deletedApps?.length) {
 		for (const id of config.deletedApps) appRegistry.unregister(id);
 	}

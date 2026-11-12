@@ -2684,3 +2684,25 @@ P04 증거: Shell Vitest 전체 2,558 통과 / 0 실패 / 21 제외, 관련 집�
 검수 1차 P01/P02: 앱의 중복 요청은 즉시 오류를 받고 기존 요청은 정산된다. 앱 질문에는 이전 대화가 전달되지 않고 앱 이름이 채팅에 표시된다. 권한이 알려진 스토어 상품은 설치 전 사람이 읽는 권한 목록을 표시하며 정보가 없으면 목록을 생략한다. 기본·빈 권한 목록·설치 진행·성공·오류 및 재시도·좁은 폭을 설치 Playwright와 컴포넌트 시험으로 확인하고, iframe 권한 거부·중복 ID·기록 격리·악성 썸네일은 Vitest, 매니페스트 썸네일은 Rust 및 native IPC로 확인한다.
 
 검수 1차 P04: 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과(권한 목록·오류 복구·진행·성공·360px 및 포커스), 실제 Tauri 매니페스트 IPC 1 통과, Rust 썸네일 필터와 매니페스트 왕복 각 1 통과. 좁은 폭 스크린샷에서 정보 위계와 목록 간격을 확인했다. 실 모델 계정·음성 장치는 모의했다. 복원 원본에는 앱 표시가 없어 복원 뒤 앱 턴이 후속 기록에 들어갈 수 있다.
+
+## UC-UI-FONT-SCALE-20261105 — 설정에서 앱 전체 글자 크기를 바꾼다
+
+사용자(방송 진행자·발표자·눈이 불편한 사용자)는 설정 › 일반 탭의 **글자 크기**에서 작게/보통/크게/아주 크게 중 하나를 고른다. 고른 즉시 채팅·메뉴·설정·자막·방송/아바타 화면 오버레이 글자가 함께 커지거나 작아지고, 앱을 다시 켜도 같은 크기로 시작한다. 글자만 커지며 창 배치·아바타 캔버스 크기는 그대로다. 이유: 라이브 방송과 투자자용 화면 캡처에서 글자가 작아 읽기 어렵다는 제품 요청(2026-11-04 실기 관찰 포함).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 저장값이 없으면 `보통`(배율 1.0)이 선택되어 있고 화면은 이전과 같다. |
+| 빈 목록 | 해당 없음 — 선택지는 항상 네 개다. 저장값이 알 수 없는 값이면 `보통`으로 보인다. |
+| 진행 | 선택 단추를 누르거나 방향키로 옮기면 저장 단추 없이 즉시 적용된다. |
+| 성공 | `<html>`의 `--ui-font-scale`이 0.9/1.0/1.25/1.5로 바뀌고 `naia-config`·`ui-config.json`에 `uiFontScale`이 남아 다음 실행 시작 화면에도 적용된다. |
+| 오류 | 저장이 늦거나 실패해도 현재 창의 글자 크기는 바뀐 채 유지된다(설정 저장 경로는 테마와 같다). 알 수 없는 저장값은 `보통`으로 되돌린다. |
+| 좁은 폭 | `아주 크게`에서도 상단 앱 막대의 앱 단추(🖥️🌐📁)는 음악 막대에 가려지지 않고(음악 막대가 줄어든다), 설정 탭 줄(프로파일…일반)은 잘리지 않고 줄바꿈한다. BGM 앱 패널(`.bgm-yt-app`)은 어느 배율·창 폭에서도 화면 안에 열린다. |
+
+Test Coverage Map (P02)
+
+| UC | 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright |
+|---|---|---|---|
+| UC-UI-FONT-SCALE-20261105 | 기본값·알 수 없는 값 정규화, 배율 표, `--ui-font-scale` 적용, 스타일시트 글자 크기 배율 계약 | `packages/shell/src/lib/__tests__/ui-font-scale.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 아주 크게 시작·변경 즉시 적용 |
+| UC-UI-FONT-SCALE-20261105 | 설정 › 일반 라디오 그룹·키보드 이동·즉시 저장(`naia-config`) | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — UI font scale (UC-UI-FONT-SCALE-20261105) | `packages/shell/e2e/ui-font-scale.spec.ts` — 작게 선택 후 저장값·CSS 변수 |
+| UC-UI-FONT-SCALE-20261105 | `ui-config.json` 왕복·agent config 제외 | `packages/shell/src/lib/__tests__/adk-store.test.ts` — writes ALL UI settings | — |
+| UC-UI-FONT-SCALE-20261105 | BGM 앱 패널 위치가 화면 안(가장 큰 배율·좁은 창), 상단 막대·설정 탭 줄 겹침 없음 | `packages/shell/src/lib/__tests__/bgm-app-position.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 1280/1920 폭 아주 크게 배치 |

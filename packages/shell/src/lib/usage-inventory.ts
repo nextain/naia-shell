@@ -302,6 +302,7 @@ const controlNames = [
 	"settings-tab.open-url-114.click",
 	"settings-tab.handle-check-update-115.click",
 	"settings-tab.handle-install-116.click",
+	"settings-tab.handle-ui-font-scale-change-117.click",
 	"skills-tab.button-1.click",
 	"skills-tab.stop-propagation-2.click",
 	"skills-tab.handle-toggle-cli-3.select",
