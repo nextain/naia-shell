@@ -1457,6 +1457,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
 
+| **FR-REGRESSION-HOST-BINDING** (#853) | 옛 host 속성은 명시적 이관 오류. 활성 명단은 64자리 소문자 hex hostSha256 바인딩 필수이며 누락·빈 값·불일치 거부. 실제 hostname은 오류에 출력하지 않는다. 검증값 없는 기계는 확인 전 비활성으로 유지한다. 공개 기록의 ranOn.host는 record.machine과 같다. | Done — regression-host-privacy 가상 호스트 계약 14/14 |
 
 ## FR-USAGE-EVENTS — 0.2.6 셸 사용 통계 (Done — 구현, 출시 관문 별도)
 

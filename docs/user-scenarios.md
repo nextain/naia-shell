@@ -2488,6 +2488,16 @@ Test Coverage Map (P02)
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
 
+### UC-REGRESSION-HOST-BINDING (#853)
+회귀 실행자는 옛 host 필드의 이관 오류, 활성 기계의 누락·빈 값·잘못된 hash, 가상 호스트 불일치를 기록 작성 전에 거부한다. 일치하는 바인딩만 실행할 수 있다.
+
+P02: `src/test/regression-host-privacy.contract.test.ts` — 가상 hostname/platform으로 legacy(정상 hash 동반 포함), 누락, 빈 값, malformed, 불일치, 일치 및 OS 불일치 동작 검증. 공개 기록의 `ranOn.host === machine` 확인. UI/Rust 변경 없음.
+
+Test Coverage Map (P02)
+
+| UC | 시험 파일 | 확인하는 것 |
+|---|---|---|
+| UC-REGRESSION-HOST-BINDING | `src/test/regression-host-privacy.contract.test.ts` | 옛 host 이관 오류, 누락·빈 값·잘못된 hash·불일치 거부, 일치 바인딩만 실행 |
 
 ## UC-USAGE-EVENTS — 동의한 셸의 누름·화면 이동 통계
 

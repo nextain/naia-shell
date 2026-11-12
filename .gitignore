@@ -107,3 +107,6 @@ packages/shell/C:\\*
 # 다른 기계가 clone 할 때 내용을 못 받고, 짝 해석까지 흔들린다.
 naia-agent-worktrees/
 worktrees/
+
+# Session-contract recovery leases are runtime state and record host names.
+.agents/session-contracts/.recovery/
