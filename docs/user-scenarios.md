@@ -2488,6 +2488,17 @@ Test Coverage Map (P02)
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
 
+### UC-REGRESSION-HOST-BINDING (#853)
+회귀 실행자는 옛 host 필드의 이관 오류, 활성 기계의 누락·빈 값·잘못된 hash, 가상 호스트 불일치를 기록 작성 전에 거부한다. 일치하는 바인딩만 실행할 수 있다.
+
+P02: `src/test/regression-host-privacy.contract.test.ts` — 가상 hostname/platform으로 legacy(정상 hash 동반 포함), 누락, 빈 값, malformed, 불일치, 일치 및 OS 불일치 동작 검증. 공개 기록의 `ranOn.host === machine` 확인. UI/Rust 변경 없음.
+
+Test Coverage Map (P02)
+
+| UC | 시험 파일 | 확인하는 것 |
+|---|---|---|
+| UC-REGRESSION-HOST-BINDING | `src/test/regression-host-privacy.contract.test.ts` | 옛 host 이관 오류, 누락·빈 값·잘못된 hash·불일치 거부, 일치 바인딩만 실행 |
+
 ## UC-BROADCAST-STREAM-026 — OBS 없이 나이아 쉘에서 바로 방송을 송출한다 (0.2.6)
 
 사용자는 설정의 방송 절에서 플랫폼(유튜브·트위치·치지직·숲), 서버 주소, 해상도(1080p30/720p30), 방송 키를 설정하고 AI 막대(AiControlBar)의 방송 단추로 RTMP(S) 송출을 시작·중지한다. 방송 키는 비밀 저장소에 보관하고 화면과 로그에서는 가린다(`***`). 리눅스(웨이랜드)에서는 포털 ScreenCast 창 하나(`persist_mode=2`, 복원 토큰을 앱 설정에 저장해 허용은 처음 한 번만)로 잡은 PipeWire 화면 노드와, PipeWire 가상 싱크 `naia-broadcast-mix`에 나이아 프로세스 트리(셸·WebKitWebProcess)의 `Stream/Output/Audio` 출력 포트를 스피커 연결을 유지한 채 2초마다 이어 만든 `naia-broadcast-mix.monitor` 소리를 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`)으로 내보내고, 방송이 끝나면 가상 싱크와 연결을 정리한다. 윈도우에서는 `ffmpeg`(`gdigrab` + stdin PCM) 길을 유지하며, 공유 AudioContext `AudioWorklet` 웹 오디오 브리지는 운영체제 오디오 루프백 대체 길로 남긴다. 방송 중 유튜브 반주를 고르면 막지 않고 `"저작권 곡이면 방송이 멈출 수 있어요"` 한 줄 알림만 표시한다.

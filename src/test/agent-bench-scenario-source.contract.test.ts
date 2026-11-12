@@ -110,6 +110,13 @@ describe("에픽의 UC 가 하네스에서 조용히 사라지지 않는다", ()
     expect(owned.filter((uc) => !parsed.has(uc))).toEqual([]);
   });
 
+  it("회귀 기계 바인딩 UC 는 문서에 있고 에픽 밖으로 등록되어 있다 (#853)", () => {
+    // 문서에 UC 를 더하고 NOT_OWNED_BY_EPIC 등록을 빠뜨리면 위 고아 검사가 깨진다(#853 rev2).
+    expect(allHeadings(markdown)).toContain("UC-REGRESSION-HOST-BINDING");
+    expect(ownedByEpic("UC-REGRESSION-HOST-BINDING")).toBe(false);
+    expect(parseScenarios(markdown).map((s) => s.uc)).not.toContain("UC-REGRESSION-HOST-BINDING");
+  });
+
   it("에픽 밖 UC 는 시나리오에 섞이지 않는다", () => {
     const parsed = parseScenarios(markdown).map((s) => s.uc);
     expect(parsed.filter((uc) => !ownedByEpic(uc))).toEqual([]);
