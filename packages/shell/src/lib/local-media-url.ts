@@ -3,7 +3,7 @@
 //   "operation not supported"; 3090 2026-11-06: 1.7 MB plays, 2.8 MB+ fails, same clip
 //   decodes fine from file). asset:// does not play video at all there. Feeding the same
 //   bytes through MediaSource plays to the end and keeps the VP9 alpha.
-//   So on Linux a video/webm Blob gets a MediaSource URL; everything else (and Windows/macOS)
+//   So on Linux WebKitGTK a video/webm Blob gets a MediaSource URL; Chromium and other platforms
 //   keeps the plain blob: URL. Both kinds are released with URL.revokeObjectURL.
 //   A MediaSource URL serves one media element at a time and cannot be fetch()ed
 //   (isMediaSourceUrl lets a caller that mounts one URL twice skip the second).
@@ -11,8 +11,14 @@
 import { Logger } from "./logger";
 
 function isLinuxWebView(): boolean {
+	if (typeof navigator === "undefined") return false;
+	const ua = navigator.userAgent;
+	// The large-Blob decoder workaround is for WebKitGTK. Chromium's native
+	// Blob decoder also accepts WebM files that its stricter MSE demuxer rejects.
 	return (
-		typeof navigator !== "undefined" && navigator.userAgent.includes("Linux")
+		ua.includes("Linux") &&
+		ua.includes("AppleWebKit/") &&
+		!/Chrom(?:e|ium)\//.test(ua)
 	);
 }
 

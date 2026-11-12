@@ -408,6 +408,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-PROJECT-APP-SINGLE-OPEN-756-S2 | `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`: 1·2단 후보 탐색과 밑줄·심볼릭 링크 제외, 저장된 naia-adk 경로 우선 조회·복구, 프로젝트 단일 열기·전환·취소 복귀, 프로젝트별 마지막 탭 저장·복원 및 행·YAML 크기 상한 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts`: 저장된 경로 카탈로그 스캔, 단일 프로젝트 전환·취소 복귀·셸 재시작 복원, 단일 앱 막대 항목 유지, 메타데이터 오류·잘림 안내 및 키보드·좁은 화면 확인 |
 | UC-PROJECT-APP-LOCAL-756-S3 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`, `packages/shell/src-tauri/src/project_catalog_runtime.rs`, `packages/shell/src-tauri/src/project_agent_pty.rs`, `packages/shell/src-tauri/src/project_agent_pty/lifecycle.rs`, `packages/shell/src-tauri/src/project_agent_pty/commands.rs`, `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_webview.rs`, `packages/shell/src-tauri/src/herdr/pty.rs`, `packages/shell/src/apps/__tests__/browser-center-area.test.tsx`: checkout 경로 경계 검증, 네 고정 에이전트(`claude`·`codex`·`muse`·`opencode`) PATH 탐색·고정 argv·PTY 프로젝트별 격리·중단·종료 정리, `dashboard_url`·`issues_url` 주소 검증과 프로젝트 전용 WebView 동일 출처 분리 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e/91-workspace-app.spec.ts`, `packages/shell/e2e/197-browser-login.spec.ts`: 단계 3 checkout 복구 안내, 에이전트 라디오 선택·설치 안내, 프로젝트 전환(A→B→A)·중단, 대시보드·이슈 주소 상태와 프로젝트 WebView IPC 경계 및 기존 Workspace·Browser 회귀 확인 |
 | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs`: 플랫폼별 키프레임(`-g 60`/`-g 30`)·비트레이트(`6M`/`8M`)·해상도·인코더(`h264_nvenc`/`libx264`) 인자 생성, 방송 키 `***` 마스킹, 곁프로그램(`binaries/ffmpeg-<triple>` → `NAIA_FFMPEG_PATH` → `PATH`) 탐색 순서, 리눅스 화면 캡처 자리 오류(`미구현 — 실측 대기`), `log.jsonl` 한 줄 기록; `packages/shell/src/lib/__tests__/broadcast.test.ts`: 48kHz 스테레오 PCM 프레임 묶기, 플랫폼 프리셋·키 마스킹, 방송 중 유튜브 반주 차단 안내, 응답 수·크레딧 차이·두뇌(`local`\|`gateway`\|`both`) 기록 계산 | 윈도우(4060)·리눅스 웨이랜드(3090) 실기 송출·녹화 확인은 별도 실측 단계 |
+| UC-NVA-BROADCAST-HOTFIX | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: interrupt·루프 전환 뒤 이전 play 의 늦은 reject 를 오류로 올리지 않고 현재 클립의 실제 timeout 만 오류로 본다. `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`·`ResilientVideo.test.tsx`: 디코더 거절·무응답 때 시험 VRM 캡처 없이 투명 상태와 상태 안내 | `packages/shell/e2e/broadcast-transparent-fallback.spec.ts`: 빈 미디어·로딩·성공·오류·재마운트 복구를 360/1100px 에서 투명 DOM·상태 안내로 확인. 자세한 표는 아래 UC-NVA-BROADCAST-HOTFIX 절 |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
@@ -2418,7 +2419,6 @@ Test Coverage Map (P02)
 
 
 
-
 ## UC-NVA-CAMERA-GESTURE-1022 — NVA 화면·동작과 로컬 음성 선택
 
 사용자는 NVA 아바타를 확대·축소하고 이동한 뒤 화면 배치를 저장하거나 초기화한다. NVA 묶음이 제공하는 gesture는 버튼으로 실행하거나 AI 응답의 `[[gesture:key]]` 표기로 실행할 수 있다. gesture 클립은 한 번 무음 재생한 뒤 대기로 돌아가며, Shell 음성이 재생 중이면 gesture 요청은 무시한다. 대기 영상은 발화나 동작이 끝난 뒤 마지막 재생 위치에서 이어진다. gesture가 없는 묶음에는 버튼과 AI 동작 안내를 제공하지 않는다. 사용자가 로컬 음성 엔진 실행 중 TTS 제공자를 Edge로 바꿨다가 다시 local을 선택하면 선택과 저장 설정 모두 local로 돌아간다.
@@ -2669,3 +2669,30 @@ Test Coverage Map (P02)
 | 플랫폼별 키프레임·비트레이트 프리셋, 방송 키 `***` 마스킹, 사이드카 경로 해석, 48kHz 스테레오 PCM 묶음, 방송 종료 `log.jsonl` 기록, 방송 중 유튜브 반주 허용 + 저작권 한 줄 알림 | `packages/shell/src-tauri/src/broadcast.rs` — `platform_presets_match_keyframe_and_bitrate_table`, `stream_key_is_always_redacted_with_asterisks`, `resolve_ffmpeg_path_prefers_sidecar_then_env_then_path`, `append_broadcast_log_writes_single_jsonl_record`, `pack_f32_stereo_to_s16le_interleaves_and_clamps_samples`; `packages/shell/src/lib/__tests__/broadcast.test.ts` | Vitest 및 3090 `cargo test --lib broadcast` |
 | 리눅스 PipeWire 가상 싱크(`naia-broadcast-mix`)·프로세스 트리 오디오 노드 탐색·링크·해제, 포털 ScreenCast(`persist_mode=2`, `restore_token`) 및 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`) 구성 | `packages/shell/src-tauri/src/broadcast.rs` — `linux_gstreamer_pipeline_args_and_redaction`, `pipewire_process_tree_audio_port_matching`, `portal_screencast_restore_token_roundtrip` | 3090 `pw-play` 시험음 + `naia-broadcast-mix.monitor` 5초 녹음 실측; 포털 창 선택은 사람 허용 1회 필요 |
 
+## UC-NVA-BROADCAST-HOTFIX — 방송 화면 시험 자산 제거 (#451 후속)
+
+P01: 방송 중 클립 전환·interrupt 이후 이전 재생 시작 타이머가 오류를 만들지 않는다. 실제 로딩 실패에도 시험 VRM 캡처를 표시하지 않고 투명하게 유지하며 기존 상태 안내를 제공한다. 시험용 VRM 프리셋 두 개를 제거한다.
+
+P02 Test Coverage Map:
+
+| 상태/시나리오 | P04 검증 |
+|---|---|
+| interrupt/루프 전환, 이전 play의 늦은 reject, 현재 클립의 실제 timeout | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts` |
+| 기본·진행·성공, 디코더 거절·무응답 오류 및 이미지 없는 투명 상태 | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/src/components/__tests__/ResilientVideo.test.tsx` |
+| 정상 네 VRM 프리셋과 카드 | `packages/shell/src/lib/__tests__/avatar-presets.test.ts`, `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts` |
+| 빈 미디어·로딩·성공·오류·재마운트 복구, 360/1100px, 상태 안내·키보드 입력·투명 DOM | `packages/shell/e2e/broadcast-transparent-fallback.spec.ts` |
+
+Rust 변경 없음. 실제 3090 방송 운영 수용과 브라우저 IPC fixture 검증은 구분한다.
+
+P04/P05: 관련 Vitest 35/35, 최종 renderer 22/22, Shell typecheck 통과. Playwright 정상 카드·레이아웃 3/3 및 투명 오류 360/1100px 2/2 통과. 오류 상태는 기존 polite status로 안내하며 이미지와 canvas는 보이지 않고 키보드 입력은 유지된다. 재마운트 시 로딩 상태로 복구한다. 스크린샷·DOM·폭 검토에서 정보 위계와 가로 넘침 이상 없음. 신규 입력/제어 및 Rust 변경 없음. 전체 Shell 실행의 비관련 실패는 결과 보고서에 별도 기록한다.
+
+### UC-NVA-BROADCAST-HOTFIX browser regression verification (#451, #855)
+
+P01–P03: preserve authored greeting playback in Linux Chromium while retaining the WebKitGTK MediaSource workaround; a media failure remains transparent with keyboard input usable. Use deterministic avatar crop assets and native workspace boot fixtures. Korean layout is measured after Markdown paints; Slides video labels follow the fixture locale.
+
+| Scenario | P02/P04 verification |
+|---|---|
+| Desktop/narrow avatar crop; native workspace startup | `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts`, `packages/shell/e2e/900-startup-latency.spec.ts` |
+| Authored greeting playback 360/1100px and decoder routing | `packages/shell/e2e/character-theme.spec.ts`, `packages/shell/src/lib/__tests__/local-media-url.test.ts` |
+| Korean text/long URL; failed media with keyboard input 360/1100px | `packages/shell/e2e/chat-korean-keepall.spec.ts`, `packages/shell/e2e/onboarding-fresh.spec.ts` |
+| Installed video narration, pause/resume, narrow layout and locale | `packages/shell/e2e/slides-sidecar.spec.ts` |

@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "Địa chỉ ws:// của container omni-24g chạy trên PC của bạn. Dùng lại khóa đăng nhập (không cần nhập). Từ xa phải dùng wss://.",
 	"settings.apiKey": "Khóa API",
 	"settings.apiKeyRequired": "Vui lòng nhập khóa API.",
+	"settings.modelRequired": "Hãy chọn mô hình trước.",
 	"settings.language": "Ngôn ngữ",
 	"settings.theme": "chủ đề",
 	"settings.appPosition": "Vị trí bảng",

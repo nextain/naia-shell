@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "आपके PC पर चल रहे omni-24g कंटेनर का ws:// पता। लॉगिन कुंजी का पुन: उपयोग (कोई इनपुट नहीं)। रिमोट के लिए wss:// आवश्यक।",
 	"settings.apiKey": "एपीआई कुंजी",
 	"settings.apiKeyRequired": "कृपया एक एपीआई कुंजी दर्ज करें.",
+	"settings.modelRequired": "पहले एक मॉडल चुनें।",
 	"settings.language": "भाषा",
 	"settings.theme": "थीम",
 	"settings.appPosition": "पैनल स्थिति",

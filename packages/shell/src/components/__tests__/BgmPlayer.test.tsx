@@ -68,7 +68,7 @@ async function enqueueTrack(videoId: string, title: string) {
  * real background-rendering component does from useAvatarStore. The YouTube
  * message handler derives eventPlaybackId from this iframe's own `src`. */
 function attachIframeForCurrentPlayback(): HTMLIFrameElement {
-	const src = useAvatarStore.getState().backgroundVideoUrl;
+	const src = useAvatarStore.getState().bgmVideoUrl;
 	const iframe = document.createElement("iframe");
 	iframe.className = "app-bg-iframe";
 	iframe.src = src;
@@ -1915,10 +1915,11 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			),
 		);
 		await startTrack("first", "YouTube One");
-		expect(useAvatarStore.getState().backgroundMediaType).toBe("iframe");
-		expect(useAvatarStore.getState().backgroundVideoUrl).toMatch(
+		expect(useAvatarStore.getState().bgmVideoUrl).toMatch(
 			/^https:\/\/www\.youtube-nocookie\.com\/embed\/first\?/,
 		);
+		// The YouTube embed is not the background any more.
+		expect(useAvatarStore.getState().backgroundMediaType).toBe("");
 		expect(container.querySelector("audio")?.hasAttribute("src")).toBe(false);
 		bgmCommandHandler()({
 			payload: JSON.stringify({ type: "bgm_youtube_next" }),
@@ -1937,6 +1938,24 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		);
 		expect(container.querySelector("audio")?.getAttribute("src")).toBe(
 			"blob:local-two",
+		);
+		expect(useAvatarStore.getState().bgmVideoUrl).toBe("");
+	});
+
+	it("keeps the YouTube player when the user changes the background mid-song", async () => {
+		const { container } = render(<BgmPlayer />);
+		await waitFor(() =>
+			expect(container.querySelector(".bgm-player")).toBeInTheDocument(),
+		);
+		await startTrack("first", "YouTube One");
+		const embed = useAvatarStore.getState().bgmVideoUrl;
+		expect(embed).toMatch(/\/embed\/first\?/);
+		useAvatarStore.getState().setBackgroundMediaType("image");
+		useAvatarStore.getState().setBackgroundVideoUrl("blob:new-background");
+		await Promise.resolve();
+		expect(useAvatarStore.getState().bgmVideoUrl).toBe(embed);
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+			"blob:new-background",
 		);
 	});
 
@@ -2014,5 +2033,103 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			vi.advanceTimersByTime(1_000);
 		});
 		expect(postedEvents().filter((m) => m.event === "listening")).toHaveLength(0);
+	});
+});
+
+describe("BgmPlayer local folder playlist loop", () => {
+	beforeEach(() => {
+		bgmPlayback.reset();
+		resetBgmLibraryCache();
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]);
+		vi.mocked(toLocalBlobUrl).mockImplementation(async (path) => `blob:${path}`);
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		vi.mocked(listNaiaAssets).mockResolvedValue([]);
+		vi.mocked(toLocalBlobUrl).mockResolvedValue("blob:mock");
+		listeners.clear();
+		bgmPlayback.reset();
+		resetBgmLibraryCache();
+		useAvatarStore.setState(useAvatarStore.getInitialState());
+		localStorage.clear();
+	});
+	async function setup(exclude: string[] = []) {
+		localStorage.setItem("naia-config", JSON.stringify({ locale: "en", bgmSource: "local", bgmLocalLoopExclude: exclude }));
+		const { container } = render(<BgmPlayer />);
+		const audio = container.querySelector("audio")!;
+		await waitFor(() => expect(audio.src).toBe("blob:/music/a.mp3"));
+		await act(async () => { fireEvent.click(container.querySelector(".bgm-btn--play")!); });
+		expect(useAvatarStore.getState().bgmPlaying).toBe("local");
+		return { audio, container };
+	}
+	async function end(audio: HTMLAudioElement, expected: string) {
+		await act(async () => { fireEvent.ended(audio); });
+		expect(audio.src).toBe(`blob:/music/${expected}.mp3`);
+	}
+	it.each(["queue", "playlist"])("advances the library %s before the local folder on track end", async (mode) => {
+		const first = { id: "local:/music/a.mp3", source: "local", path: "/music/a.mp3", title: "First" };
+		const next = { id: "youtube:next", source: "youtube", youtubeId: "next", title: "Queued Next" };
+		localStorage.setItem("naia-config", JSON.stringify({
+			locale: "en", bgmSource: "local",
+			bgmLibrary: { schemaVersion: 1, likes: [],
+				playlists: [{ id: "mix", name: "Mix", createdAt: 1, updatedAt: 1, tracks: mode === "playlist" ? [first, next] : [first] }],
+				activePlaylistId: "mix", currentIndex: 0, shuffle: false, repeat: "off",
+				queue: mode === "queue" ? [next] : [], history: [] },
+		}));
+		const { container } = render(<BgmPlayer />);
+		const audio = container.querySelector("audio")!;
+		await waitFor(() => expect(audio.src).toBe("blob:/music/a.mp3"));
+		await act(async () => { fireEvent.click(container.querySelector(".bgm-btn--play")!); });
+		await act(async () => { fireEvent.ended(audio); });
+		await waitFor(() => expect(useAvatarStore.getState().bgmVideoUrl).toMatch(/\/embed\/next\?/));
+		expect(bgmPlayback.current()?.selected.title).toBe("Queued Next");
+		expect(audio.src).not.toBe("blob:/music/b.mp3");
+	});
+	it("advances every local track and wraps last to first twice with no library playlist", async () => {
+		const { audio } = await setup();
+		expect(audio.loop).toBe(false);
+		for (const track of ["b", "c", "a", "b", "c", "a"]) await end(audio, track);
+	});
+	it("does not advance after manual stop or before playback starts", async () => {
+		const { audio, container } = await setup();
+		fireEvent.click(container.querySelector(".bgm-btn--play")!);
+		expect(useAvatarStore.getState().bgmPlaying).toBe("");
+		const calls = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+		await end(audio, "a");
+		expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(calls);
+	});
+	it("keeps native single track looping even when excluded", async () => {
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/a.mp3"]);
+		const { audio } = await setup(["a.mp3"]);
+		expect(audio.loop).toBe(true);
+	});
+	it("skips excluded file names including at wraparound", async () => {
+		const { audio } = await setup(["b.mp3", "a.mp3"]);
+		await end(audio, "c");
+		await end(audio, "c");
+	});
+	it("wraps a manually selected last track back to first", async () => {
+		const { audio } = await setup();
+		fireEvent.click(screen.getByText(/Local/, { selector: ".bgm-app-tab" }));
+		await act(async () => { fireEvent.click(screen.getByTitle("c")); });
+		expect(audio.src).toBe("blob:/music/c.mp3");
+		await end(audio, "a");
+	});
+	it("allows manual playback of an excluded track then resumes eligible tracks", async () => {
+		const { audio } = await setup(["b.mp3"]);
+		fireEvent.click(screen.getByText(/Local/, { selector: ".bgm-app-tab" }));
+		await act(async () => { fireEvent.click(screen.getByTitle("b")); });
+		expect(audio.src).toBe("blob:/music/b.mp3");
+		await end(audio, "c");
+		await end(audio, "a");
+	});
+	it("ignores exclusions when every file is excluded", async () => {
+		const { audio } = await setup(["a.mp3", "b.mp3", "c.mp3"]);
+		await end(audio, "b");
+		await end(audio, "c");
+		await end(audio, "a");
 	});
 });

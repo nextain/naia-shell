@@ -71,7 +71,71 @@ function videoForUrl(url: string): HTMLVideoElement {
 }
 
 describe("PrebakedAvatarRenderer", () => {
-	it("records decoder state without source paths and retains the still fallback", async () => {
+	it.each(["interrupt", "switch"])(
+		"cancels the previous loop watchdog on %s",
+		async (action) => {
+			vi.useFakeTimers();
+			const failure = vi.fn();
+			let rejectOld!: (reason: Error) => void;
+			const video = makeVideo();
+			vi.mocked(video.play).mockImplementationOnce(
+				() =>
+					new Promise<void>((_, reject) => {
+						rejectOld = reject;
+					}),
+			);
+			vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+			document.body.appendChild(video);
+			const manifest = baseManifest();
+			manifest.animations.alternate = {
+				clip: "clips/alternate.webm",
+				loop: true,
+				can_talk: false,
+			};
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+				onPlaybackFailure: failure,
+			});
+			renderer.start(video, document.createElement("canvas"));
+			await vi.advanceTimersByTimeAsync(0);
+			if (action === "interrupt") renderer.interrupt();
+			else renderer.setIdleOverride("alternate");
+			await vi.advanceTimersByTimeAsync(8001);
+			expect(failure).not.toHaveBeenCalled();
+			rejectOld(new Error("superseded playback"));
+			await vi.advanceTimersByTimeAsync(0);
+			expect(failure).not.toHaveBeenCalled();
+			renderer.stop();
+			video.remove();
+			vi.useRealTimers();
+			vi.restoreAllMocks();
+		},
+	);
+
+	it("still reports the current loop's real startup timeout", async () => {
+		vi.useFakeTimers();
+		const failure = vi.fn();
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (p) => `blob:${p}`,
+			onPlaybackFailure: failure,
+		});
+		const video = makeVideo();
+		vi.mocked(video.play).mockImplementation(() => new Promise(() => {}));
+		renderer.start(video, document.createElement("canvas"));
+		await vi.advanceTimersByTimeAsync(8001);
+		expect(failure).toHaveBeenCalledExactlyOnceWith(
+			"NVA playback start timeout",
+		);
+		renderer.stop();
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it("records decoder state without source paths and reports failure", async () => {
 		const warn = vi.spyOn(Logger, "warn");
 		const failure = vi.fn();
 		const renderer = new PrebakedAvatarRenderer({
