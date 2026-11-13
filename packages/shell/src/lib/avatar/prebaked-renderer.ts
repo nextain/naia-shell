@@ -122,6 +122,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	/** Owner of the current prefetch; a superseded prefetch must not cancel a newer one on a reused stage. */
 	private prefetchTicket: object | null = null;
 	/**
+	 * True once the current prefetch finished loading. Only then is its stage
+	 * idle: a stage still preparing has a load running in its serial prepare
+	 * queue that stop() does not end, so it is disposed, never reused.
+	 */
+	private prefetchPrepared = false;
+	/**
 	 * A stopped stage kept for the next prefetch. A new stage builds a new
 	 * SpeechPlayer that verifies and loads the whole bundle again; a reused
 	 * one takes the player's same-bundle path, so standby prepare stays short.
@@ -326,6 +332,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		if (!stage) return null;
 		const ticket = {};
 		this.prefetchTicket = ticket;
+		this.prefetchPrepared = false;
 		this.prefetchedSpeechStage = stage;
 		this.speechKeyColor = this.keyColorFor(
 			this.config.manifest.animations.talking?.clip ?? "",
@@ -336,6 +343,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			if (this.prefetchTicket === ticket) this.cancelPrefetchedSpeechTiming();
 			return null;
 		}
+		this.prefetchPrepared = true;
 		let used = false;
 		return {
 			play: async (clock) => {
@@ -346,6 +354,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.speechStage = stage;
 				this.prefetchedSpeechStage = null;
 				this.prefetchTicket = null;
+				this.prefetchPrepared = false;
 				if (previous) this.retireSpeechStage(previous, host);
 				return ready.play(clock);
 			},
@@ -354,9 +363,14 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	cancelPrefetchedSpeechTiming(): void {
 		const stage = this.prefetchedSpeechStage;
+		const prepared = this.prefetchPrepared;
 		this.prefetchedSpeechStage = null;
 		this.prefetchTicket = null;
-		if (stage && this.mountedVideo) this.retireSpeechStage(stage, this.mountedVideo);
+		this.prefetchPrepared = false;
+		// A stage still preparing may sit on a load that never settles; reusing it
+		// would queue the next prepare behind that load forever.
+		if (stage && prepared && this.mountedVideo)
+			this.retireSpeechStage(stage, this.mountedVideo);
 		else stage?.dispose();
 	}
 

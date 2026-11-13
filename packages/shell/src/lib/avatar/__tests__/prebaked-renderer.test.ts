@@ -848,20 +848,66 @@ describe("PrebakedAvatarRenderer speech stage reuse", () => {
 		expect(FakeStage.made.every((stage) => stage.disposed)).toBe(true);
 	});
 
-	it("does not dispose a standby stage that is still preparing when the next sentence supersedes it", async () => {
+	it("disposes a standby stage that is still preparing when the next sentence supersedes it", async () => {
 		const renderer = startRenderer();
 		const first = renderer.prefetchSpeechTiming(plan);
 		const standby = FakeStage.made[1];
 		const second = renderer.prefetchSpeechTiming(plan);
-		expect(standby.disposed).toBe(false);
-		expect(FakeStage.made).toHaveLength(2);
+		expect(standby.disposed).toBe(true);
+		expect(FakeStage.made).toHaveLength(3);
 		standby.superseded();
 		expect(await first).toBeNull();
-		standby.ready();
+		FakeStage.made[2].ready();
 		const prepared = await second;
 		expect(prepared).not.toBeNull();
 		expect(await prepared?.play(() => 0)).toBe(true);
-		expect(standby.disposed).toBe(false);
+		renderer.stop();
+	});
+
+	it("does not queue the next prefetch behind a load that never settles", async () => {
+		// The real stage runs prepare() through a serial queue, and stop() does not
+		// end a running load: a body video that fires neither loadeddata nor error
+		// holds the queue. Model that: each prepare waits for the one before it.
+		class QueuedStage extends FakeStage {
+			private queue: Promise<unknown> = Promise.resolve();
+			override prepare(): Promise<Prepared | null> {
+				const turn = this.queue.then(() => super.prepare());
+				this.queue = turn;
+				return turn;
+			}
+		}
+		FakeStage.made = [];
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `/nva/jina/${path}`,
+			createSpeechStage: () => new QueuedStage() as never,
+		});
+		renderer.start(makeVideo(), document.createElement("canvas"));
+		const [active] = FakeStage.made;
+		const warm = renderer.prefetchSpeechTiming(plan);
+		await Promise.resolve();
+		FakeStage.made[1].ready();
+		await (await warm)?.play(() => 0);
+
+		// The spare (the old active stage) starts a load that never settles.
+		void renderer.prefetchSpeechTiming(plan);
+		expect(FakeStage.made).toHaveLength(2);
+		await Promise.resolve();
+		expect(active.pending).toHaveLength(1);
+
+		// The next sentence must not wait behind it.
+		const next = renderer.prefetchSpeechTiming(plan);
+		expect(active.disposed).toBe(true);
+		const fresh = FakeStage.made[2];
+		expect(fresh).toBeDefined();
+		await Promise.resolve();
+		fresh.ready();
+		const prepared = await next;
+		expect(prepared).not.toBeNull();
+		expect(await prepared?.play(() => 0)).toBe(true);
 		renderer.stop();
 	});
 });
