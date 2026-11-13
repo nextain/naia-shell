@@ -150,6 +150,28 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 		expect(mobileSheetDragHeight(350, 500, 800)).toBe(728);
 	});
 
+	it("lifts the default chat height cap once the chat toggle is dragged", () => {
+		setWebAssetsModeForTests(true);
+		const setChatHeight = vi.fn();
+		const proto = HTMLElement.prototype as unknown as { setPointerCapture?: unknown };
+		const original = proto.setPointerCapture;
+		proto.setPointerCapture = vi.fn();
+		try {
+			const { container } = render(
+				<AppMainContent {...baseProps({ naiaVisible: true, chatVisible: true, setChatHeight })} />,
+			);
+			const wrapper = container.querySelector(".naia-chat-wrapper");
+			expect(wrapper?.getAttribute("data-chat-user-sized")).toBeNull();
+			const toggle = container.querySelector(".naia-chat-toggle") as HTMLElement;
+			fireEvent.pointerDown(toggle, { clientY: 500, pointerId: 1 });
+			fireEvent.pointerMove(toggle, { clientY: 400, pointerId: 1 });
+			expect(setChatHeight).toHaveBeenLastCalledWith(380);
+			expect(wrapper?.getAttribute("data-chat-user-sized")).toBe("true");
+		} finally {
+			proto.setPointerCapture = original;
+		}
+	});
+
 	it("shows only the speech action for the current state", () => {
 		setWebAssetsModeForTests(true);
 		useAppStore.setState({ ttsEnabled: false });

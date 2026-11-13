@@ -13,6 +13,7 @@ import { getCameraActions } from "../lib/avatar/camera-actions";
 import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
+	getStoredChatHeightRatio,
 	setStoredChatHeightRatio,
 	syncLayoutOrientationAttribute,
 	useEffectiveLayoutOrientation,
@@ -81,10 +82,14 @@ interface ChatDragState {
 }
 
 function mobileZoom(): number {
- return Number.parseFloat(document.documentElement.style.zoom) || 1;
+	return Number.parseFloat(document.documentElement.style.zoom) || 1;
 }
 
-export function mobileSheetDragHeight(startHeight: number, delta: number, viewportHeight: number): number {
+export function mobileSheetDragHeight(
+	startHeight: number,
+	delta: number,
+	viewportHeight: number,
+): number {
 	return Math.max(136, Math.min(viewportHeight * 0.91, startHeight + delta));
 }
 
@@ -180,7 +185,9 @@ export function AppMainContent(props: AppMainContentProps) {
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
 	const webMode = isWebMode();
 	const hasMessages = useChatStore((state) => state.messages.length > 0);
-	const [mobileSheet, setMobileSheet] = useState<"collapsed" | "half" | "expanded">(hasMessages ? "half" : "collapsed");
+	const [mobileSheet, setMobileSheet] = useState<
+		"collapsed" | "half" | "expanded"
+	>(hasMessages ? "half" : "collapsed");
 	const previousHasMessages = useRef(hasMessages);
 	useEffect(() => {
 		if (hasMessages !== previousHasMessages.current) {
@@ -192,20 +199,33 @@ export function AppMainContent(props: AppMainContentProps) {
 	const layoutOrientation = useEffectiveLayoutOrientation();
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
+	const kioskDemo = isKioskDemo();
 	const [avatarRotateActive, setAvatarRotateActive] = useState(false);
 	const avatarRotateRef = useRef(false);
 	const [avatarPanActive, setAvatarPanActive] = useState(false);
 	const avatarPanRef = useRef({ active: false, moved: false });
 	const mobileStart = useRef<{ y: number; height: number } | null>(null);
+	// 사람이 대화창 높이를 끌어 정했으면 시연판 기본 높이 상한(40vh)을 풀어 준다.
+	const [chatUserSized, setChatUserSized] = useState(
+		() => getStoredChatHeightRatio() !== null,
+	);
 	const setActiveApp = useAppStore((state) => state.setActiveApp);
 	useEffect(() => {
 		if (!webMode || !window.visualViewport) return;
 		const viewport = window.visualViewport;
-		const update = () => document.documentElement.style.setProperty("--mobile-viewport-bottom", `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) / mobileZoom()}px`);
+		const update = () =>
+			document.documentElement.style.setProperty(
+				"--mobile-viewport-bottom",
+				`${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) / mobileZoom()}px`,
+			);
 		viewport.addEventListener("resize", update);
 		viewport.addEventListener("scroll", update);
 		update();
-		return () => { viewport.removeEventListener("resize", update); viewport.removeEventListener("scroll", update); document.documentElement.style.removeProperty("--mobile-viewport-bottom"); };
+		return () => {
+			viewport.removeEventListener("resize", update);
+			viewport.removeEventListener("scroll", update);
+			document.documentElement.style.removeProperty("--mobile-viewport-bottom");
+		};
 	}, [webMode]);
 	syncWebModeRootAttribute();
 	syncLayoutOrientationAttribute(layoutOrientation);
@@ -285,33 +305,121 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			{naiaVisible && (
 				<>
-					{webMode && (activeApp === "workspace" || activeApp === "settings" || activeApp === "land.naia.slides") && <button type="button" className="web-mobile-workspace-close" aria-label="Close" onClick={() => setActiveApp(null)}>✕</button>}
-					{webMode && !showOnboarding && <div className="web-mobile-menu">
-						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
-						{mobileMenu && <div className="web-mobile-menu-list">
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
+					{webMode &&
+						(activeApp === "workspace" ||
+							activeApp === "settings" ||
+							activeApp === "land.naia.slides") && (
+							<button
+								type="button"
+								className="web-mobile-workspace-close"
+								aria-label="Close"
+								onClick={() => setActiveApp(null)}
+							>
+								✕
+							</button>
+						)}
+					{webMode && !showOnboarding && (
+						<div className="web-mobile-menu">
+							<button
+								type="button"
+								className="web-mobile-menu-trigger"
+								aria-label="Menu"
+								aria-expanded={mobileMenu}
+								onClick={() => setMobileMenu(!mobileMenu)}
+							>
+								☰
+							</button>
+							{mobileMenu && (
+								<div className="web-mobile-menu-list">
+									<button
+										type="button"
+										onClick={() => {
+											document
+												.querySelector<HTMLButtonElement>(
+													".ai-control-bar button",
+												)
+												?.click();
+											setMobileMenu(false);
+										}}
+									>
+										AI
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											document
+												.querySelector<HTMLButtonElement>(
+													".ai-control-bar button:nth-child(2)",
+												)
+												?.click();
+											setMobileMenu(false);
+										}}
+									>
+										{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}
+									</button>
 
-							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => (
-								<button
-									type="button"
-									key={key}
-									onClick={() => {
-										const camera = getCameraActions();
-										camera.zoom(key === "ai.avatarZoomIn" ? 0.1 : -0.1);
-										camera.save();
-										setMobileMenu(false);
-									}}
-								>
-									{t(key)}
-								</button>
-							))}
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
-							<button type="button" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
-							{isKioskDemo() && <button type="button" data-app-id="land.naia.slides" onClick={() => { setActiveApp("land.naia.slides"); setMobileMenu(false); }}>▣ {t("slides.title")}</button>}
-							<button type="button" onClick={() => { setActiveApp("settings"); setMobileMenu(false); }}>⚙ {t("settings.title")}</button>
-						</div>}
-					</div>}
+									{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map(
+										(key) => (
+											<button
+												type="button"
+												key={key}
+												onClick={() => {
+													const camera = getCameraActions();
+													camera.zoom(key === "ai.avatarZoomIn" ? 0.1 : -0.1);
+													camera.save();
+													setMobileMenu(false);
+												}}
+											>
+												{t(key)}
+											</button>
+										),
+									)}
+									<button
+										type="button"
+										onClick={() => {
+											document
+												.querySelector<HTMLButtonElement>(".new-chat-btn")
+												?.click();
+											setMobileMenu(false);
+											setActiveApp(null);
+										}}
+									>
+										{t("chat.newConversation")}
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											setActiveApp("workspace");
+											setMobileMenu(false);
+										}}
+									>
+										📁 {t("appbar.workspace")}
+									</button>
+									{isKioskDemo() && (
+										<button
+											type="button"
+											data-app-id="land.naia.slides"
+											onClick={() => {
+												setActiveApp("land.naia.slides");
+												setMobileMenu(false);
+											}}
+										>
+											▣ {t("slides.title")}
+										</button>
+									)}
+									<button
+										type="button"
+										onClick={() => {
+											setActiveApp("settings");
+											setMobileMenu(false);
+										}}
+									>
+										⚙ {t("settings.title")}
+									</button>
+								</div>
+							)}
+						</div>
+					)}
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
 						<div className="avatar-canvas-layer">
 							<Suspense fallback={null}>
@@ -327,15 +435,77 @@ export function AppMainContent(props: AppMainContentProps) {
 					)}
 					<div className="naia-overlay">
 						<div className="naia-chat-area" data-mobile-sheet={mobileSheet}>
-							<button type="button" className="web-mobile-sheet-handle" aria-label="Resize conversation" onPointerDown={(event) => { mobileStart.current = { y: event.clientY, height: (event.currentTarget.parentElement?.getBoundingClientRect().height ?? 136) / mobileZoom() }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { const start = mobileStart.current; if (!start || Math.abs(start.y - event.clientY) / mobileZoom() < 4) return; document.documentElement.style.setProperty("--mobile-sheet-drag-height", `${mobileSheetDragHeight(start.height, (start.y - event.clientY) / mobileZoom(), window.innerHeight / mobileZoom())}px`); }} onPointerCancel={() => { mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }} onPointerUp={(event) => { const delta = ((mobileStart.current?.y ?? event.clientY) - event.clientY) / mobileZoom(); setMobileSheet((state) => delta > 30 ? (state === "collapsed" ? "half" : "expanded") : delta < -30 ? (state === "expanded" ? "half" : "collapsed") : state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half"); mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }}><span /></button>
+							<button
+								type="button"
+								className="web-mobile-sheet-handle"
+								aria-label="Resize conversation"
+								onPointerDown={(event) => {
+									mobileStart.current = {
+										y: event.clientY,
+										height:
+											(event.currentTarget.parentElement?.getBoundingClientRect()
+												.height ?? 136) / mobileZoom(),
+									};
+									event.currentTarget.setPointerCapture(event.pointerId);
+								}}
+								onPointerMove={(event) => {
+									const start = mobileStart.current;
+									if (
+										!start ||
+										Math.abs(start.y - event.clientY) / mobileZoom() < 4
+									)
+										return;
+									document.documentElement.style.setProperty(
+										"--mobile-sheet-drag-height",
+										`${mobileSheetDragHeight(start.height, (start.y - event.clientY) / mobileZoom(), window.innerHeight / mobileZoom())}px`,
+									);
+								}}
+								onPointerCancel={() => {
+									mobileStart.current = null;
+									document.documentElement.style.removeProperty(
+										"--mobile-sheet-drag-height",
+									);
+								}}
+								onPointerUp={(event) => {
+									const delta =
+										((mobileStart.current?.y ?? event.clientY) -
+											event.clientY) /
+										mobileZoom();
+									setMobileSheet((state) =>
+										delta > 30
+											? state === "collapsed"
+												? "half"
+												: "expanded"
+											: delta < -30
+												? state === "expanded"
+													? "half"
+													: "collapsed"
+												: state === "half"
+													? "expanded"
+													: state === "expanded"
+														? "collapsed"
+														: "half",
+									);
+									mobileStart.current = null;
+									document.documentElement.style.removeProperty(
+										"--mobile-sheet-drag-height",
+									);
+								}}
+							>
+								<span />
+							</button>
 							<button
 								type="button"
 								className="naia-chat-toggle"
 								aria-label={chatVisible ? "대화창 닫기" : "대화창 열기"}
 								onPointerDown={(event) => {
+									// 화면에 보이는 높이에서 시작한다(상한 때문에 chatHeight 보다 작을 수 있음).
+									const shown = event.currentTarget.parentElement
+										?.querySelector<HTMLElement>(".naia-chat-wrapper")
+										?.getBoundingClientRect().height;
 									chatDragRef.current = {
 										startY: event.clientY,
-										startH: chatHeight,
+										startH: shown && shown > 0 ? shown : chatHeight,
 										moved: false,
 									};
 									(event.currentTarget as HTMLElement).setPointerCapture(
@@ -350,10 +520,15 @@ export function AppMainContent(props: AppMainContentProps) {
 									if (drag.moved) {
 										const maxH = Math.max(
 											240,
-											(typeof window !== "undefined" ? window.innerHeight : 800) -
-												88,
+											(typeof window !== "undefined"
+												? window.innerHeight
+												: 800) - 88,
 										);
-										const nextH = Math.max(120, Math.min(maxH, drag.startH + delta));
+										const nextH = Math.max(
+											120,
+											Math.min(maxH, drag.startH + delta),
+										);
+										setChatUserSized(true);
 										setChatHeight(nextH);
 									}
 								}}
@@ -379,6 +554,12 @@ export function AppMainContent(props: AppMainContentProps) {
 								role="group"
 								aria-label="아바타 및 대화창 조절"
 							>
+								{/* 시연판: AI참견·말하기·능동발화를 아바타 마크 옆, 대화창 위에 둔다(대표님 11/13 "버튼 4개로 해줘"). */}
+								{kioskDemo && (
+									<Suspense fallback={null}>
+										<AiControlBar showCameraControls={false} />
+									</Suspense>
+								)}
 								{avatarCornerOpen && (
 									<div
 										className="naia-avatar-corner-panel"
@@ -548,6 +729,7 @@ export function AppMainContent(props: AppMainContentProps) {
 							</div>
 							<div
 								className={`naia-chat-wrapper${chatVisible ? "" : " naia-chat-wrapper--hidden"}`}
+								data-chat-user-sized={chatUserSized ? "true" : undefined}
 								style={
 									chatVisible && chatVariant !== "rail"
 										? { height: chatHeight }
@@ -557,9 +739,11 @@ export function AppMainContent(props: AppMainContentProps) {
 								<DeferredChatArea
 									variant={chatVariant}
 									headerControls={
-										<Suspense fallback={null}>
-											<AiControlBar showCameraControls={false} />
-										</Suspense>
+										kioskDemo ? undefined : (
+											<Suspense fallback={null}>
+												<AiControlBar showCameraControls={false} />
+											</Suspense>
+										)
 									}
 								/>
 							</div>

@@ -135,39 +135,39 @@ export function AiControlBar({
 
 	return (
 		<div className="ai-control-bar">
-			{!kioskDemo && (
-				<button
-					type="button"
-					data-testid="ai-bar-interference-btn"
-					data-control-state={aiInterferenceEnabled ? "on" : "off"}
-					className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : " bgm-ai-toggle--off"}`}
-					onClick={toggleAiInterferenceEnabled}
-					aria-pressed={aiInterferenceEnabled}
-					aria-label={aiLabel}
-					title={aiLabel}
-				>
-					<span className="bgm-ai-toggle__dot" />
-					{aiInterferenceEnabled ? (
-						<svg
-							className="bgm-ai-toggle__icon"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
-							<circle cx="19" cy="5" r="1.2" />
-						</svg>
-					) : (
-						<svg
-							className="bgm-ai-toggle__icon"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
-							<line x1="4" y1="4" x2="20" y2="20" />
-						</svg>
-					)}
-				</button>
-			)}
+			{/* 시연판도 AI참견·능동발화를 보인다(대표님 11/13 "버튼 4개로 해줘"). */}
+			<button
+				type="button"
+				data-testid="ai-bar-interference-btn"
+				data-control-state={aiInterferenceEnabled ? "on" : "off"}
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : " bgm-ai-toggle--off"}`}
+				onClick={toggleAiInterferenceEnabled}
+				aria-pressed={aiInterferenceEnabled}
+				aria-label={aiLabel}
+				title={aiLabel}
+			>
+				<span className="bgm-ai-toggle__dot" />
+				{aiInterferenceEnabled ? (
+					<svg
+						className="bgm-ai-toggle__icon"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+					>
+						<rect x="5" y="7" width="14" height="12" rx="3" />
+						<path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" />
+					</svg>
+				) : (
+					<svg
+						className="bgm-ai-toggle__icon"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+					>
+						<rect x="5" y="7" width="14" height="12" rx="3" />
+						<path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" />
+						<path data-off-slash="true" d="M3 3l18 18" />
+					</svg>
+				)}
+			</button>
 
 			<button
 				type="button"
@@ -263,44 +263,42 @@ export function AiControlBar({
 				)}
 			</button>
 
-			{!kioskDemo && (
-				<button
-					type="button"
-					data-testid="ai-bar-proactive-btn"
-					className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
-					onClick={toggleProactive}
-					aria-pressed={proactive.permitted}
-					aria-label={proactiveTitle}
-					aria-describedby="proactive-control-tooltip"
-					title={proactiveTitle}
-					data-proactive-state={
-						proactiveBlocked
-							? "blocked"
-							: proactiveActive
-								? "active"
-								: proactive.permitted
-									? "ready"
-									: "off"
-					}
+			<button
+				type="button"
+				data-testid="ai-bar-proactive-btn"
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
+				onClick={toggleProactive}
+				aria-pressed={proactive.permitted}
+				aria-label={proactiveTitle}
+				aria-describedby="proactive-control-tooltip"
+				title={proactiveTitle}
+				data-proactive-state={
+					proactiveBlocked
+						? "blocked"
+						: proactiveActive
+							? "active"
+							: proactive.permitted
+								? "ready"
+								: "off"
+				}
+			>
+				<span className="bgm-ai-toggle__dot" />
+				<svg
+					className="bgm-ai-toggle__icon"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
 				>
-					<span className="bgm-ai-toggle__dot" />
-					<svg
-						className="bgm-ai-toggle__icon"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12M7.76 16.24l-2.12 2.12" />
-						<circle cx="12" cy="12" r="3.25" />
-					</svg>
-					<span
-						id="proactive-control-tooltip"
-						className="ai-control-tooltip"
-						role="tooltip"
-					>
-						{proactiveTitle}
-					</span>
-				</button>
-			)}
+					<path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12M7.76 16.24l-2.12 2.12" />
+					<circle cx="12" cy="12" r="3.25" />
+				</svg>
+				<span
+					id="proactive-control-tooltip"
+					className="ai-control-tooltip"
+					role="tooltip"
+				>
+					{proactiveTitle}
+				</span>
+			</button>
 
 			{!kioskDemo && (
 				<button

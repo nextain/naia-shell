@@ -223,15 +223,16 @@ describe("AiControlBar proactive cost control", () => {
 		expect(ttsBtn).toHaveAttribute("data-control-state", "off");
 	});
 
-	it("FR-WEB-KIOSK-FIX7B.7 hides Broadcast and AI interference buttons in kiosk demo mode while keeping TTS and layout orientation toggle visible", async () => {
+	it("FR-WEB-KIOSK-FIX7B.7 hides Broadcast in kiosk demo mode while keeping AI interference, proactive, TTS and layout orientation toggle visible", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		try {
 			mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
 			render(<AiControlBar />);
 
-			expect(screen.queryByTestId("ai-bar-interference-btn")).toBeNull();
-			expect(screen.queryByTestId("ai-bar-proactive-btn")).toBeNull();
+			// 대표님 11/13 "버튼 4개로 해줘": AI참견·능동발화는 시연판에도 보인다.
+			expect(screen.getByTestId("ai-bar-interference-btn")).toBeInTheDocument();
+			expect(screen.getByTestId("ai-bar-proactive-btn")).toBeInTheDocument();
 			expect(screen.queryByTestId("ai-bar-broadcast-btn")).toBeNull();
 			expect(screen.getByTestId("ai-bar-tts-btn")).toBeInTheDocument();
 			expect(screen.getByTestId("layout-orientation-toggle")).toBeInTheDocument();

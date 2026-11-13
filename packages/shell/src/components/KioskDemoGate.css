@@ -152,8 +152,14 @@
 	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
 		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden) {
 		min-height: 200px;
-		max-height: calc(var(--naia-vh, 1dvh) * 40);
+		max-height: calc(calc(var(--naia-vh, 1dvh) * 100) - 88px);
 		border-radius: 16px;
+	}
+
+	/* 기본 높이만 40vh 로 막아 아바타를 가리지 않는다. 사람이 끌어 정한 높이는 그대로 둔다. */
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
+		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden):not([data-chat-user-sized="true"]) {
+		max-height: calc(var(--naia-vh, 1dvh) * 40);
 	}
 
 	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app {
