@@ -8,14 +8,18 @@ Fixes:
      (with >= 2,192 output token headroom below 8,192).
    - Automatic sliding window reset + compact `[이전 코너 요약]` header when accumulated
      turns exceed `MAX_HISTORY_TURNS = 3` or `MAX_INPUT_TOKENS = 6000`.
-2. 97-second inter-corner wait loop elimination:
-   - `wait_for_next_cue()` caps any inter-corner wait to `MAX_CORNER_IDLE_SEC = 15.0`s
-     (and `0.0`s immediately after any fallback recovery) so the broadcast never stalls
-     in a 97-second dead-air loop between corners.
+2. Cue timing:
+   - Every cue waits for its own clock time (`wait_for_next_cue(target)`, no idle cap by
+     default), so 10:00·20:00·28:00 go out at 10:00·20:00·28:00, not early. The 97-second
+     gap of show 1 was a late turn, not the wait; BGM keeps playing during any wait.
+   - Songs are cut at the next cue (`play_song_until`), and the closing encore loops until
+     exactly 30:00 even when the file is shorter.
    - `send_chat()` enforces a strict turn timeout (`TURN_TIMEOUT_SEC = 18`), detects
      LLM 400 / `"답을 만들다 실패했어요"` immediately, attempts 1 compact retry or speaks a
-     corner-specific fallback line (`FALLBACK_UTTERANCES`), and advances immediately
-     to the next corner cue.
+     corner-specific fallback line (`FALLBACK_UTTERANCES`).
+3. Fallback lines are heard, not only shown: a pre-rendered audio file per line
+   (`RADIO_FALLBACK_AUDIO_DIR/<FALLBACK_AUDIO_FILES>`) is played into the song sink, and
+   the text is shown as a caption even when the app shows no error node.
 """
 import json
 import math
@@ -54,9 +58,10 @@ MAX_SINGLE_PROMPT_TOKENS = 650
 MAX_SUMMARY_TOKENS = 180
 MAX_HISTORY_TURNS = 3
 
-# Corner transition & timeout constants (prevents 97s dead-air wait loop)
-MAX_CORNER_IDLE_SEC = 15.0
+# Corner transition & timeout constants
+MAX_CORNER_IDLE_SEC = None  # no cap: cues wait for their own clock time
 TURN_TIMEOUT_SEC = 18
+SHOW_END_SEC = 1800
 
 CJK_HANGUL_RE = re.compile(r"[\uAC00-\uD7A3\u3131-\u318E\u1100-\u11FF\u4E00-\u9FFF\u3040-\u30FF]")
 
@@ -81,6 +86,23 @@ FALLBACK_UTTERANCES = {
     "질문지": "확실하게 기억나지 않는 내용은 추측하지 않고 솔직하게 말씀드릴게요. 다음 이야기로 이어가 볼게요.",
     "클로징": "첫 시험 방송에 함께해 주셔서 고맙습니다. 나이아 라디오였습니다. 투자 및 승인 넥스테인·루크, PD 알파, 작가 지나, 방송 진행 나이아, 기술 지원 민호.",
     "default": "잠시 호흡을 가다듬고 다음 코너로 바로 이어갈게요. 편안하게 함께해 주세요.",
+}
+
+# Pre-rendered audio (show voice) for each fallback line, in RADIO_FALLBACK_AUDIO_DIR.
+FALLBACK_AUDIO_DIR = os.environ.get("RADIO_FALLBACK_AUDIO_DIR") or (
+    os.path.join(BASE_DIR, "fallback-audio") if BASE_DIR else ""
+)
+FALLBACK_AUDIO_FILES = {
+    "오프닝": "fallback-opening.wav",
+    "코너 ① 오늘의 질문": "fallback-corner1-question.wav",
+    "날씨·안부": "fallback-greeting.wav",
+    "선곡 ①": "fallback-song1.wav",
+    "코너 ② 사연": "fallback-corner2-story.wav",
+    "선곡 ②": "fallback-song2.wav",
+    "코너 ③ 청취자 채팅": "fallback-corner3-chat.wav",
+    "질문지": "fallback-quiz.wav",
+    "클로징": "fallback-closing.wav",
+    "default": "fallback-default.wav",
 }
 
 START_TS = int(os.environ.get("RADIO_START_TS") or time.time())
@@ -271,10 +293,14 @@ def preflight(which_fn=shutil.which, exists_fn=os.path.isfile):
         path = os.path.join(BGM_DIR, name)
         if not exists_fn(path):
             missing.append(f"song not found: {path}")
+    for name in FALLBACK_AUDIO_FILES.values():
+        path = os.path.join(FALLBACK_AUDIO_DIR, name)
+        if not exists_fn(path):
+            missing.append(f"fallback audio not found: {path}")
     return missing
 
 
-def play_song_file(mp3_path, label, max_duration_sec=None, runner_fn=subprocess.run):
+def play_song_file(mp3_path, label, max_duration_sec=None, runner_fn=subprocess.run, loop=False):
     """Play one song through PulseAudio. Returns True only when ffmpeg exits 0."""
     log(f"Starting song playback: {label} ({mp3_path})")
     set_bgm_volume(0.02)
@@ -285,6 +311,8 @@ def play_song_file(mp3_path, label, max_duration_sec=None, runner_fn=subprocess.
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re"]
     if max_duration_sec:
         cmd += ["-t", str(max_duration_sec)]
+    if loop:
+        cmd += ["-stream_loop", "-1"]
     cmd += ["-i", mp3_path, "-af", "volume=0.65", "-f", "pulse", "naia-radio-song"]
     try:
         res = runner_fn(cmd, env=env, check=False, capture_output=True, text=True)
@@ -298,6 +326,15 @@ def play_song_file(mp3_path, label, max_duration_sec=None, runner_fn=subprocess.
         return False
     log(f"Finished song playback: {label} (duration={dur:.1f}s)")
     return True
+
+
+def play_song_until(mp3_path, label, end_elapsed_sec, loop=False, min_sec=5):
+    """Play a song but stop at end_elapsed_sec (show clock) so the next cue is not pushed late."""
+    rem = int(end_elapsed_sec - (time.time() - START_TS))
+    if rem < min_sec:
+        log(f"Skipping song {label}: only {rem}s left before cue at {end_elapsed_sec}s")
+        return False
+    return play_song_file(mp3_path, label, max_duration_sec=rem, loop=loop)
 
 
 def classify_error_reason(raw_out: str, prompt_text: str = "", timed_out: bool = False) -> str:
@@ -367,10 +404,16 @@ def get_fallback_utterance(situation: str) -> str:
     return FALLBACK_UTTERANCES.get(situation, FALLBACK_UTTERANCES["default"])
 
 
-def speak_fallback_utterance(situation: str, fallback_text: str, eval_fn=wk_eval) -> str:
+def fallback_audio_path(situation: str) -> str:
+    name = FALLBACK_AUDIO_FILES.get(situation, FALLBACK_AUDIO_FILES["default"])
+    return os.path.join(FALLBACK_AUDIO_DIR, name)
+
+
+def speak_fallback_utterance(situation: str, fallback_text: str, eval_fn=wk_eval, play_fn=None) -> str:
     """
-    Immediately display/speak a fallback line when LLM 400 or timeout occurs,
-    preventing silent dead air during corner transitions.
+    Speak a fallback line when LLM 400 or timeout occurs: show it on screen (replacing the
+    error banner, or as a caption when there is none) and play its pre-rendered audio.
+    Returns "spoken" or "caption_only" (audio failed; logged as FAILED).
     """
     log(f"FALLBACK [{situation}]: {fallback_text}")
     escaped = json.dumps(fallback_text, ensure_ascii=False)
@@ -379,11 +422,27 @@ def speak_fallback_utterance(situation: str, fallback_text: str, eval_fn=wk_eval
       const errNode = nodes.find(el => el.innerText && el.innerText.includes("답을 만들다 실패했어요"));
       if (errNode) {{
         errNode.innerText = {escaped};
+        return "replaced_error_node";
       }}
-      return "fallback_applied";
+      let cap = document.getElementById("naia-radio-fallback-caption");
+      if (!cap) {{
+        cap = document.createElement("div");
+        cap.id = "naia-radio-fallback-caption";
+        cap.style.cssText = "position:fixed;left:5%;right:5%;bottom:12%;z-index:2147483647;padding:12px 18px;border-radius:12px;background:rgba(0,0,0,.72);color:#fff;font-size:22px;line-height:1.4;text-align:center";
+        document.body.appendChild(cap);
+      }}
+      cap.innerText = {escaped};
+      clearTimeout(window.__naiaRadioCaptionTimer);
+      window.__naiaRadioCaptionTimer = setTimeout(() => cap.remove(), 20000);
+      return "caption_added";
     }})()"""
-    eval_fn(js)
-    return fallback_text
+    shown = eval_fn(js)
+    play = play_fn or play_song_file
+    audio = fallback_audio_path(situation)
+    ok = play(audio, f"fallback voice [{situation}]")
+    result = "spoken" if ok else "caption_only"
+    log(f"FALLBACK [{situation}] screen={shown} audio={result}")
+    return result
 
 
 def send_chat(
@@ -396,6 +455,7 @@ def send_chat(
     runner_fn=subprocess.run,
     eval_fn=wk_eval,
     retry_on_error=True,
+    play_fn=None,
 ):
     hw = history_window or HISTORY_WINDOW
     bounded_prompt, effective_new_chat, est_input_tokens = hw.prepare_turn(
@@ -470,9 +530,10 @@ def send_chat(
 
     if failed:
         fallback_line = get_fallback_utterance(situation)
-        speak_fallback_utterance(situation, fallback_line, eval_fn=eval_fn)
+        fallback_result = speak_fallback_utterance(situation, fallback_line, eval_fn=eval_fn, play_fn=play_fn)
         raw_out = f"[FALLBACK] {fallback_line}"
         used_fallback = True
+        error_reason = f"{error_reason}->FALLBACK_{fallback_result.upper()}"
 
     tts_info = collect_tts_telemetry(eval_fn=eval_fn, wait_until_done_sec=0.0 if used_fallback else 8.0)
     turn_end_iso = datetime.now().astimezone().isoformat(timespec="milliseconds")
@@ -523,28 +584,33 @@ def wait_for_next_cue(
     max_idle_sec: float = MAX_CORNER_IDLE_SEC,
     force_immediate: bool = False,
     start_ts: float = None,
-    now_fn=time.time,
-    sleep_fn=time.sleep,
+    now_fn=None,
+    sleep_fn=None,
 ) -> float:
     """
-    Bounded inter-corner wait that NEVER enters a 97-second dead-air loop:
-    - If `force_immediate` or `HISTORY_WINDOW.last_turn_failed` is True, transitions in 0.0s.
-    - Caps any positive wait `rem` at `max_idle_sec` (default 15.0s) and advances immediately
-      to the next corner cue once the cap is reached.
+    Wait until the show clock reaches `target_elapsed_sec`, so a cue never goes out early.
+    - A fallback turn does not skip the wait (that made the next cue early); only
+      `force_immediate` does.
+    - `max_idle_sec` (default None = no cap) is kept for callers that want a bounded wait.
+    - If the clock is already past the target, logs how late the cue is and returns 0.0.
     Returns total seconds slept.
     """
-    if force_immediate or HISTORY_WINDOW.last_turn_failed:
-        log(f"Immediate corner transition to target={target_elapsed_sec}s (skipping idle wait after recovery)")
+    now_fn = now_fn or time.time
+    sleep_fn = sleep_fn or time.sleep
+    if force_immediate:
+        log(f"Immediate corner transition to target={target_elapsed_sec}s (forced)")
         return 0.0
 
     ref_start = START_TS if start_ts is None else start_ts
     now_elapsed = now_fn() - ref_start
     rem = target_elapsed_sec - now_elapsed
     if rem <= 0:
+        if rem < -5:
+            log(f"Cue at target={target_elapsed_sec}s is {-rem:.1f}s late")
         return 0.0
 
-    effective_wait = min(float(rem), float(max_idle_sec))
-    if rem > max_idle_sec:
+    effective_wait = float(rem) if max_idle_sec is None else min(float(rem), float(max_idle_sec))
+    if max_idle_sec is not None and rem > max_idle_sec:
         log(
             f"Capping inter-corner wait from {rem:.1f}s -> {effective_wait:.1f}s "
             f"(target={target_elapsed_sec}s) to prevent dead-air wait loop"
@@ -582,7 +648,7 @@ def check_health(tag):
 def run_broadcast():
     global START_TS
     START_TS = int(os.environ.get("RADIO_START_TS") or time.time())
-    log("=== Runsheet runner v3 (Show 2: 6000-token sliding window guard + <=15s corner transition cap) started ===")
+    log("=== Runsheet runner v3 (Show 2: 6000-token sliding window guard + clock-timed cues) started ===")
     set_bgm_volume(0.35)
     check_health("show2-start")
 
@@ -594,9 +660,9 @@ def run_broadcast():
         wait_sec=18,
         new_chat=True,
     )
-    wait_for_next_cue(30)
 
     # Cue 2: 02:00 코너 ① 오늘의 질문 (연속 멀티턴 검증: new_chat=False)
+    wait_for_next_cue(120)
     send_chat(
         "코너 ① 오늘의 질문",
         "02:00 오늘의 질문 토크",
@@ -604,9 +670,9 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(60)
 
     # Cue 3: 03:30 날씨·안부 및 청취자 답글 (연속 멀티턴 3턴째: new_chat=False)
+    wait_for_next_cue(210)
     send_chat(
         "날씨·안부",
         "03:30 청취자 안부 답글",
@@ -615,9 +681,9 @@ def run_broadcast():
         new_chat=False,
     )
     check_health("after-03:30")
-    wait_for_next_cue(90)
 
     # Cue 4: 05:00 선곡 ① 한국어 곡 소개 및 재생 (자동 슬라이딩 윈도우 동작 검증)
+    wait_for_next_cue(300)
     send_chat(
         "선곡 ①",
         "05:00 첫 곡 소개",
@@ -625,21 +691,23 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    play_song_file(
+    play_song_until(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
         "M1 불을 꺼도 돼요 (한국어, 2:38)",
+        480,
     )
+    wait_for_next_cue(480)
     send_chat(
         "선곡 ①",
-        "07:45 첫 곡 끝난 뒤 여운",
-        "[라디오 큐 07:45 선곡 ① 마무리] 방금 나간 첫 곡 「불을 꺼도 돼요」가 끝났어. 한두 문장으로 짧게 곡의 여운을 전하고 다음 사연 코너로 이어 줘.",
+        "08:00 첫 곡 끝난 뒤 여운",
+        "[라디오 큐 08:00 선곡 ① 마무리] 방금 나간 첫 곡 「불을 꺼도 돼요」가 끝났어. 한두 문장으로 짧게 곡의 여운을 전하고 다음 사연 코너로 이어 줘.",
         wait_sec=18,
         new_chat=False,
     )
     check_health("after-M1")
-    wait_for_next_cue(300)
 
     # Cue 5: 10:00 코너 ② 사연 낭독 및 후속 공감
+    wait_for_next_cue(600)
     send_chat(
         "코너 ② 사연",
         "10:00 시험 사연 낭독 및 공감",
@@ -647,8 +715,8 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(340)
 
+    wait_for_next_cue(720)
     send_chat(
         "코너 ② 사연",
         "12:00 사연 후속 공감 대화 1",
@@ -656,8 +724,8 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(380)
 
+    wait_for_next_cue(840)
     send_chat(
         "코너 ② 사연",
         "14:00 사연 후속 공감 대화 2",
@@ -666,9 +734,9 @@ def run_broadcast():
         new_chat=False,
     )
     check_health("after-corner2")
-    wait_for_next_cue(420)
 
     # Cue 6: 16:00 선곡 ② 영어 곡 소개 및 재생
+    wait_for_next_cue(960)
     send_chat(
         "선곡 ②",
         "16:00 영어 곡 소개",
@@ -676,10 +744,12 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    play_song_file(
+    play_song_until(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
         "M2 It's Okay to Turn Off the Light (영어, 3:02)",
+        1170,
     )
+    wait_for_next_cue(1170)
     send_chat(
         "선곡 ②",
         "19:30 영어 곡 끝난 뒤 소감",
@@ -688,9 +758,9 @@ def run_broadcast():
         new_chat=False,
     )
     check_health("after-M2")
-    wait_for_next_cue(650)
 
-    # Cue 7: 20:00 코너 ③ 청취자 채팅 (1차 때 97초 대기 루프가 발생했던 구간 — 이제 <=15초 상한으로 즉시 전환!)
+    # Cue 7: 20:00 코너 ③ 청취자 채팅
+    wait_for_next_cue(1200)
     send_chat(
         "코너 ③ 청취자 채팅",
         "20:00 시험 채팅 1",
@@ -698,9 +768,8 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    # 1차 방송에서 97초 대기가 발생했던 지점: wait_for_next_cue가 최대 15초로 캡핑!
-    wait_for_next_cue(1320)
 
+    wait_for_next_cue(1320)
     send_chat(
         "코너 ③ 청취자 채팅",
         "22:00 시험 채팅 2",
@@ -708,8 +777,8 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1360)
 
+    wait_for_next_cue(1380)
     send_chat(
         "코너 ③ 청취자 채팅",
         "23:00 시험 채팅 3",
@@ -720,59 +789,61 @@ def run_broadcast():
     check_health("after-corner3")
 
     # 감성 충전 인터루드 트랙 (무음 대기 대신 음악 송출로 방송 밀도 유지)
-    play_song_file(
+    play_song_until(
         f"{BGM_DIR}/Afternoon Whispers.mp3",
         "M3 Afternoon Whispers (로파이 인터루드)",
+        1440,
     )
+    wait_for_next_cue(1440)
     send_chat(
         "코너 ③ 청취자 채팅",
-        "인터루드 마무리",
+        "24:00 인터루드 마무리",
         "[라디오 진행] 방금 함께 들은 「Afternoon Whispers」 연주곡이 끝났어. 한 줄로 짧게 분위기 정리하고 질문 코너로 넘어가자.",
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1440)
 
-    # Cue 8: 24:00 기억·말투 질문지 Q1~Q5 (멀티턴 연속 입력으로 8192 문맥 가드 완벽 검증)
+    # Cue 8: 24:30 기억·말투 질문지 Q1~Q5, 30초 간격 (멀티턴 연속 입력으로 8192 문맥 가드 검증)
+    wait_for_next_cue(1470)
     send_chat(
         "질문지",
-        "Q1",
-        "[라디오 큐 24:00 기억·말투 질문지 Q1] 이제 질문 다섯 개를 순서대로 하나씩 받을게. 실제 기억이 없거나 확실하지 않으면 그렇게 말하고, 추측으로 채우지 마. 첫 번째 질문(Q1): 지난 방송에서 어떤 곡 틀었어?",
+        "24:30 Q1",
+        "[라디오 큐 24:30 기억·말투 질문지 Q1] 이제 질문 다섯 개를 순서대로 하나씩 받을게. 실제 기억이 없거나 확실하지 않으면 그렇게 말하고, 추측으로 채우지 마. 첫 번째 질문(Q1): 지난 방송에서 어떤 곡 틀었어?",
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1485)
 
+    wait_for_next_cue(1500)
     send_chat(
         "질문지",
-        "Q2",
+        "25:00 Q2",
         "[기억·말투 질문지 Q2] 실제 기억이 없거나 확실하지 않으면 모른다고 말하고 추측하지 마. 두 번째 질문(Q2): 내가 어떤 노래 좋아한다고 했지?",
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1530)
 
+    wait_for_next_cue(1530)
     send_chat(
         "질문지",
-        "Q3",
+        "25:30 Q3",
         "[기억·말투 질문지 Q3] 실제 기억이 없거나 확실하지 않으면 모른다고 말하고 추측하지 마. 세 번째 질문(Q3): 지난번에 내가 고쳐 달라고 한 거 기억나?",
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1575)
 
+    wait_for_next_cue(1560)
     send_chat(
         "질문지",
-        "Q4",
+        "26:00 Q4",
         "[기억·말투 질문지 Q4] 네 번째 질문(Q4): 오늘 방송 어땠어? 한 줄로 말해 줘.",
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1620)
 
+    wait_for_next_cue(1590)
     send_chat(
         "질문지",
-        "Q5",
+        "26:30 Q5",
         "[기억·말투 질문지 Q5] 다섯 번째 질문(Q5): 다음 방송에 뭐 틀고 싶어?",
         wait_sec=18,
         new_chat=False,
@@ -780,20 +851,22 @@ def run_broadcast():
     check_health("after-Q1-Q5")
 
     # 클로징 전 앙코르 곡 & 브릿지 토크 (30분 풀 런타임 중 무음 구간 0건 유지)
-    play_song_file(
+    play_song_until(
         f"{BGM_DIR}/Shattered Reflection.mp3",
         "M4 Shattered Reflection (클로징 전 감성 선곡)",
+        1650,
     )
+    wait_for_next_cue(1650)
     send_chat(
         "클로징",
-        "26:30 클로징 전 곡 소감",
+        "27:30 클로징 전 곡 소감",
         "[라디오 진행] 방금 들은 「Shattered Reflection」과 함께 오늘 시험 방송도 어느덧 마무리할 시간이 다가왔어. 아쉬운 마음을 담아 한두 문장으로 다정하게 이야기해 줘.",
         wait_sec=18,
         new_chat=False,
     )
-    wait_for_next_cue(1680)
 
     # Cue 9: 28:00 클로징 및 크레딧
+    wait_for_next_cue(1680)
     send_chat(
         "클로징",
         "28:00 클로징 및 크레딧",
@@ -803,14 +876,15 @@ def run_broadcast():
     )
     check_health("after-closing")
 
-    # 30:00 (1800s) 녹화 종료까지 앙코르 BGM 송출로 무음 방지
-    rem_to_1800 = max(0, int(1795 - (time.time() - START_TS)))
-    if rem_to_1800 > 15:
-        play_song_file(
-            f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
-            "Closing Encore 불을 꺼도 돼요 (아웃트로 BGM)",
-            max_duration_sec=rem_to_1800,
-        )
+    # 30:00 (1800s) 녹화 종료까지 앙코르 송출. 곡이 짧아도 반복해 30:00 에 끝난다.
+    play_song_until(
+        f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
+        "Closing Encore 불을 꺼도 돼요 (아웃트로 BGM)",
+        SHOW_END_SEC,
+        loop=True,
+        min_sec=1,
+    )
+    wait_for_next_cue(SHOW_END_SEC)
     log("=== All 30-min Show 2 runsheet cues completed cleanly! ===")
 
 
