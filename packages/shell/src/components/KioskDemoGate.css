@@ -293,3 +293,11 @@
 		font-size: 12.5px;
 	}
 }
+
+/* 모바일 메뉴의 슬라이드 앱 아이콘(앱 꾸러미 icon.svg). */
+.naia-mobile-menu__icon {
+	width: 1.1em;
+	height: 1.1em;
+	vertical-align: -0.2em;
+	border-radius: 0.25em;
+}

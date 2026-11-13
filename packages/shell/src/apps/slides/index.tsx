@@ -3,6 +3,7 @@ import { isKioskDemo } from "../../lib/kiosk-demo/flag";
 import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 import { useAppStore } from "../../stores/app";
 import { SlidesCenterArea } from "./SlidesCenterArea";
+import slidesIconSvg from "./package-public/icon.svg?raw";
 
 /** Store-package metadata. The app is registered only after signed installation. */
 export const NAIA_SLIDES_DESCRIPTOR: Omit<AppDescriptor, "center"> = {
@@ -10,6 +11,8 @@ export const NAIA_SLIDES_DESCRIPTOR: Omit<AppDescriptor, "center"> = {
 	name: "슬라이드",
 	names: { ko: "슬라이드", en: "Slides" },
 	icon: "▣",
+	// 앱 꾸러미와 같은 아이콘(대표님 11/13 "슬라이드는 이걸로").
+	iconSvg: slidesIconSvg,
 	tools: [
 		{
 			name: "skill_slide_presenter",
@@ -57,4 +60,3 @@ export function syncKioskSlidesAppRegistration(): void {
 }
 
 syncKioskSlidesAppRegistration();
-

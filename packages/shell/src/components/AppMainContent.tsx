@@ -5,6 +5,7 @@ import type {
 	SetStateAction,
 } from "react";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import slidesIconSvg from "../apps/slides/package-public/icon.svg?raw";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
@@ -404,7 +405,12 @@ export function AppMainContent(props: AppMainContentProps) {
 												setMobileMenu(false);
 											}}
 										>
-											▣ {t("slides.title")}
+											<img
+												className="naia-mobile-menu__icon"
+												alt=""
+												src={`data:image/svg+xml,${encodeURIComponent(slidesIconSvg)}`}
+											/>{" "}
+											{t("slides.title")}
 										</button>
 									)}
 									<button
