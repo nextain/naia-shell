@@ -150,6 +150,57 @@ class TestRadioRunsheetFixes(unittest.TestCase):
         self.assertEqual(info["tts_dur_sec"], 12.5)
         self.assertEqual(info["utterance_count"], 3)
 
+    def test_6_preflight_lists_every_missing_dependency(self):
+        saved = (runner.BASE_DIR, runner.WK_SCRIPT, runner.SEND_SCRIPT, runner.BGM_DIR)
+        try:
+            runner.BASE_DIR = "/radio"
+            runner.WK_SCRIPT = "/radio/wk.mjs"
+            runner.SEND_SCRIPT = "/radio/jun-send-nz.sh"
+            runner.BGM_DIR = "/radio/bgm"
+            present = {"/radio/wk.mjs", "/radio/bgm/Afternoon Whispers.mp3"}
+            missing = runner.preflight(
+                which_fn=lambda name: None if name == "ffmpeg" else "/usr/bin/" + name,
+                exists_fn=lambda path: path in present,
+            )
+        finally:
+            runner.BASE_DIR, runner.WK_SCRIPT, runner.SEND_SCRIPT, runner.BGM_DIR = saved
+
+        joined = "\n".join(missing)
+        self.assertIn("ffmpeg not found", joined)
+        self.assertIn("/radio/jun-send-nz.sh", joined)
+        self.assertNotIn("/radio/wk.mjs", joined)
+        self.assertNotIn("Afternoon Whispers", joined)
+        self.assertEqual(sum(1 for m in missing if m.startswith("song not found")), 3)
+
+        saved_base = runner.BASE_DIR
+        try:
+            runner.BASE_DIR = ""
+            self.assertIn("RADIO_BASE_DIR is not set", runner.preflight(lambda n: "/x", lambda p: True))
+        finally:
+            runner.BASE_DIR = saved_base
+
+    def test_7_ffmpeg_failure_is_not_logged_as_finished(self):
+        logs = []
+        saved_log, saved_wk = runner.log, runner.wk_eval
+        runner.log = logs.append
+        runner.wk_eval = lambda js: "0.35"
+        try:
+            failed = runner.play_song_file(
+                "/missing.mp3", "song",
+                runner_fn=lambda *a, **k: SimpleNamespace(returncode=1, stderr="No such file"),
+            )
+            ok = runner.play_song_file(
+                "/ok.mp3", "song",
+                runner_fn=lambda *a, **k: SimpleNamespace(returncode=0, stderr=""),
+            )
+        finally:
+            runner.log, runner.wk_eval = saved_log, saved_wk
+
+        self.assertFalse(failed)
+        self.assertTrue(ok)
+        self.assertTrue(any(l.startswith("FAILED song playback") and "rc=1" in l for l in logs))
+        self.assertEqual(sum(1 for l in logs if l.startswith("Finished song playback")), 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
