@@ -3057,7 +3057,7 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
    - 지나 카드를 지나 NVA 테마(`nvaModel: "jina"`, 목소리 설정값 그대로, 배경)와 묶어 다른 카드를 적용했다가 지나 카드로 돌아오면 지나 테마로 돌아온다.
    - **웹 시연판 지나 테마 배경**: 웹 시연판(`isKioskDemo()`)의 지나 테마 기본 배경(`KIOSK_JINA_THEME.backgroundVideo`)은 웹 번들 자산인 사무실 배경(`"naia-autumn-office-live.mp4"`, `WEB_DEFAULT_BACKGROUND`)을 쓰며, 웹 모드에서 테마나 설정이 가리키는 배경 파일이 `WEB_BACKGROUND_ASSETS`에 없을 때는 빈 화면이 되지 않도록 콘솔 경고(`Logger.warn`) 한 줄을 남기고 기본 배경(`WEB_DEFAULT_BACKGROUND`)으로 돌아간다(데스크톱 앱 동작은 그대로 유지).
    - 페르소나 탭에서 적용된 카드의 칸(이름, 소개 `description`, 성격, 상황, 첫 인사 + `alternate_greetings` 고르기, 예시 대화, 로어북 항목 목록, 카드 쪽 지시 `system_prompt`·`post_history_instructions`, 만든 사람·메모·꼬리표)을 모두 보이고 고칠 수 있게 하며, 고친 칸은 `"카드에서 바꿈"` 표시를 붙이고 `"카드 원래대로"` 단추로 되돌린다. 고친 값은 실제 대화 시스템 프롬프트에 들어가며, 카드가 도구 권한·모델·안전 규칙을 못 바꾸는 계약은 그대로 지킨다.
-7. **웹 시연판 방송·AI 참견 단추 숨김(`FR-WEB-KIOSK-FIX7B.7`)**: 웹 시연판 빌드(`VITE_NAIA_KIOSK_DEMO=1`)에서 방송, AI 참견(및 능동발화) 기능 단추를 숨기고 캐릭터 카드 불러오기는 그대로 둔다.
+7. **웹 시연판 방송 단추 숨김, 대화창 위 네 단추(`FR-WEB-KIOSK-FIX7B.7`)**: 웹 시연판 빌드(`VITE_NAIA_KIOSK_DEMO=1`)에서 방송 기능 단추를 숨기고 캐릭터 카드 불러오기는 그대로 둔다. 14판(2026-11-13)부터 AI 참견·능동발화 단추는 다시 보이고, 대화창 위에는 AI 참견·말하기·능동발화·아바타 마크 네 단추만 보인다(방향 토글은 숨김).
 8. **목소리 BC250 직결 흔적 지우기(`FR-WEB-KIOSK-FIX7B.8`)**: `packages/shell/src/lib/config-seed.ts`의 `KIOSK_DEMO_TTS_HOST`와 `vllmTtsHost: KIOSK_DEMO_TTS_HOST` 시드를 지운다(`synthNextain` 게이트웨이 `/v1/audio/speech` 경로와 8초 브라우저 대체 경로 모두 이 값을 쓰지 않음을 확인). `KIOSK_DEMO_TTS_VOICE`는 바꾸지 않는다.
 
 ### Test Coverage Map — UC-WEB-KIOSK-FIX7B
