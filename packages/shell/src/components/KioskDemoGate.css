@@ -24,6 +24,19 @@
 	font-size: 18px;
 	margin: 10px 0;
 }
+.kiosk-entry__passcode {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 20px;
+}
+.kiosk-entry__passcode h1,
+.kiosk-entry__passcode p {
+	margin: 0;
+}
+.kiosk-entry__passcode .kiosk-entry__actions {
+	margin-top: 4px;
+}
 .kiosk-entry__passcode input {
 	width: 8em;
 	min-height: 56px;

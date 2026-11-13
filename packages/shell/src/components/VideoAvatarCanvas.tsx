@@ -15,6 +15,7 @@ import {
 	useBroadcastBridge,
 } from "../lib/broadcast-audio-bridge";
 import { getLocale, t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	UI_PREFERENCE_KEYS,
 	patchUiPreferences,
@@ -356,7 +357,8 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				: (relativePath) =>
 						readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath)),
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
-			idleGestureIntervalMs: 18_000,
+			// 시연에서는 기다리는 동안 몸짓을 틀지 않는다(대표님 11/13 "대기중에 지나가 모션이 나오는데 이거 빼줘").
+			idleGestureIntervalMs: isKioskDemo() ? 0 : 18_000,
 			onPlaybackFailure: (reason) => {
 				setError(reason);
 				setMode("error");

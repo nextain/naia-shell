@@ -903,9 +903,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					const applyDirectZoom = !offscreen && Math.abs(this.zoom - 1) > 1e-4;
 					if (applyDirectZoom) {
 						ctx.save?.();
-						ctx.translate?.(canvas.width / 2, canvas.height / 2);
+						// 위 가장자리를 기준으로 키운다: 가운데 기준이면 확대할 때 머리가 캔버스 위로 잘린다(11/13).
+						ctx.translate?.(canvas.width / 2, 0);
 						ctx.scale?.(this.zoom, this.zoom);
-						ctx.translate?.(-canvas.width / 2, -canvas.height / 2);
+						ctx.translate?.(-canvas.width / 2, 0);
 					}
 
 					let drew = false;
@@ -1005,9 +1006,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 						const applyMotionZoom = Math.abs(this.zoom - 1) > 1e-4;
 						if (applyMotionZoom) {
 							ctx.save?.();
-							ctx.translate?.(canvas.width / 2, canvas.height / 2);
+							// 위 가장자리를 기준으로 키운다: 가운데 기준이면 확대할 때 머리가 캔버스 위로 잘린다(11/13).
+							ctx.translate?.(canvas.width / 2, 0);
 							ctx.scale?.(this.zoom, this.zoom);
-							ctx.translate?.(-canvas.width / 2, -canvas.height / 2);
+							ctx.translate?.(-canvas.width / 2, 0);
 						}
 						drawWithMotion(
 							ctx,

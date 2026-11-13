@@ -757,6 +757,43 @@ describe("PrebakedAvatarRenderer", () => {
 			renderer.stop();
 		});
 
+		it("zooms from the top edge so the head stays inside the canvas", async () => {
+			const manifest = { ...baseManifest(), motion: false };
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+			});
+			const video = makeVideo();
+			Object.defineProperty(video, "readyState", { value: 4, configurable: true });
+			Object.defineProperty(video, "videoWidth", { value: 100, configurable: true });
+			Object.defineProperty(video, "videoHeight", { value: 100, configurable: true });
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				scale: vi.fn(),
+				rotate: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 100;
+			canvas.height = 100;
+			vi.spyOn(canvas, "getContext").mockReturnValue(mockCtx as any);
+
+			renderer.setZoom(2);
+			renderer.start(video, canvas);
+			rafCallbacks[0]?.(100);
+
+			expect(mockCtx.scale).toHaveBeenCalledWith(2, 2);
+			expect(mockCtx.translate.mock.calls).toEqual([
+				[50, 0],
+				[-50, 0],
+			]);
+			renderer.stop();
+		});
+
 		it("uses offscreen canvas and applies motion when motion is enabled (default)", async () => {
 			const manifest = baseManifest();
 			const renderer = new PrebakedAvatarRenderer({
