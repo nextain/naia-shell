@@ -321,3 +321,9 @@
 	top: -32px;
 	left: 8px;
 }
+
+/* 웹은 화면 방향을 따르므로 대화창 위 버튼 줄에서도 방향 토글을 숨긴다(버튼 넷, 대표님 11/13).
+   휴대폰 버튼 줄 규칙이 web-mode.css 의 숨김보다 구체적이어서 여기서 다시 막는다. */
+[data-naia-web="true"] .naia-chat-modes [data-testid="layout-orientation-toggle"] {
+	display: none !important;
+}
