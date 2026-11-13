@@ -8,6 +8,19 @@ export default defineConfig({
 	plugins: [
 		react(),
 		{
+			// slides.ts 가 가져오는 비공개 장 가상 모듈(vite.config.ts 의 kioskPrivateSlidesPlugin).
+			// 묶음 Slides 앱은 시연판 웹 빌드가 아니므로 빈 목록을 준다.
+			name: "naia-slides-no-private-slides",
+			resolveId(id: string) {
+				if (id === "virtual:kiosk-private-slides") return `\0${id}`;
+			},
+			load(id: string) {
+				if (id === "\0virtual:kiosk-private-slides") {
+					return "export default { slides: [] };";
+				}
+			},
+		},
+		{
 			// The packaged Slides app loads inside a Tauri asset-protocol iframe
 			// (convertFileSrc → http://asset.localhost/…). Vite tags its module
 			// script/stylesheet with `crossorigin`, which forces a CORS-mode fetch
