@@ -119,7 +119,7 @@
 	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
 		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden) {
 		min-height: 200px;
-		max-height: calc(calc(var(--naia-vh, 1dvh) * 100) - 88px);
+		max-height: calc(var(--naia-vh, 1dvh) * 40);
 		border-radius: 16px;
 	}
 
