@@ -21,17 +21,29 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 
-BASE_DIR = "/var/home/luke/naia-test/radio-026"
-OUT_DIR = f"{BASE_DIR}/rtmp/recordings"
-SHOW_TAG = os.environ.get("RADIO_SHOW_TAG", "show2-20261109")
+# Machine paths come from the environment (see runsheet.example.env); no personal defaults.
+BASE_DIR = os.environ.get("RADIO_BASE_DIR") or ""
+OUT_DIR = os.environ.get("RADIO_OUT_DIR") or (os.path.join(BASE_DIR, "rtmp", "recordings") if BASE_DIR else "")
+SHOW_TAG = os.environ.get("RADIO_SHOW_TAG") or "show2-20261109"
 RUNSHEET_LOG = f"{OUT_DIR}/radio-{SHOW_TAG}-runsheet.log"
 TRAINING_JSONL = f"{OUT_DIR}/training-{SHOW_TAG}.jsonl"
-NODE = "/home/linuxbrew/.linuxbrew/bin/node"
-BGM_DIR = f"{BASE_DIR}/home/naia-adk/naia-settings/bgm-musics"
+NODE = os.environ.get("RADIO_NODE") or "node"
+WK_SCRIPT = os.environ.get("RADIO_WK_SCRIPT") or os.path.join(BASE_DIR, "wk.mjs")
+SEND_SCRIPT = os.environ.get("RADIO_SEND_SCRIPT") or os.path.join(BASE_DIR, "jun-send-nz.sh")
+BGM_DIR = os.environ.get("RADIO_BGM_DIR") or os.path.join(BASE_DIR, "home", "naia-adk", "naia-settings", "bgm-musics")
+PULSE_UID = os.environ.get("RADIO_PULSE_UID") or str(os.getuid())
+SONG_FILES = (
+    "naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
+    "naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+    "Afternoon Whispers.mp3",
+    "Shattered Reflection.mp3",
+)
 
 # Token budget constants for vLLM max_model_len=8192
 MAX_MODEL_LEN = 8192
@@ -71,7 +83,7 @@ FALLBACK_UTTERANCES = {
     "default": "잠시 호흡을 가다듬고 다음 코너로 바로 이어갈게요. 편안하게 함께해 주세요.",
 }
 
-START_TS = int(os.environ.get("RADIO_START_TS", str(int(time.time()))))
+START_TS = int(os.environ.get("RADIO_START_TS") or time.time())
 
 
 def estimate_tokens(text: str) -> int:
@@ -203,6 +215,8 @@ def log(msg):
     mm, ss = divmod(max(0, elapsed), 60)
     line = f"[{now_str}] [+{mm:02d}:{ss:02d}] {msg}"
     print(line, flush=True)
+    if not OUT_DIR:
+        return
     try:
         os.makedirs(OUT_DIR, exist_ok=True)
         with open(RUNSHEET_LOG, "a", encoding="utf-8") as f:
@@ -214,8 +228,8 @@ def log(msg):
 def wk_eval(js_code):
     try:
         res = subprocess.run(
-            [NODE, f"{BASE_DIR}/wk.mjs", js_code],
-            cwd=BASE_DIR,
+            [NODE, WK_SCRIPT, js_code],
+            cwd=os.path.dirname(WK_SCRIPT) or None,
             capture_output=True,
             text=True,
             timeout=10,
@@ -239,21 +253,51 @@ def set_bgm_volume(vol):
     log(f"BGM volume set to {vol} (actual={out})")
 
 
-def play_song_file(mp3_path, label, max_duration_sec=None):
+def preflight(which_fn=shutil.which, exists_fn=os.path.isfile):
+    """Return a list of missing dependencies (empty when the runner can start)."""
+    missing = []
+    if not BASE_DIR:
+        missing.append("RADIO_BASE_DIR is not set")
+    if not which_fn(NODE):
+        missing.append(f"node executable not found: {NODE}")
+    if not which_fn("ffmpeg"):
+        missing.append("ffmpeg not found on PATH")
+    for path in (WK_SCRIPT, SEND_SCRIPT):
+        if not exists_fn(path):
+            missing.append(f"file not found: {path}")
+    if exists_fn(SEND_SCRIPT) and not os.access(SEND_SCRIPT, os.X_OK):
+        missing.append(f"not executable: {SEND_SCRIPT}")
+    for name in SONG_FILES:
+        path = os.path.join(BGM_DIR, name)
+        if not exists_fn(path):
+            missing.append(f"song not found: {path}")
+    return missing
+
+
+def play_song_file(mp3_path, label, max_duration_sec=None, runner_fn=subprocess.run):
+    """Play one song through PulseAudio. Returns True only when ffmpeg exits 0."""
     log(f"Starting song playback: {label} ({mp3_path})")
     set_bgm_volume(0.02)
     env = os.environ.copy()
-    env["XDG_RUNTIME_DIR"] = "/run/user/1000"
-    env["PULSE_SERVER"] = "unix:/run/user/1000/pulse/native"
+    env["XDG_RUNTIME_DIR"] = f"/run/user/{PULSE_UID}"
+    env["PULSE_SERVER"] = f"unix:/run/user/{PULSE_UID}/pulse/native"
     t0 = time.time()
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re"]
     if max_duration_sec:
         cmd += ["-t", str(max_duration_sec)]
     cmd += ["-i", mp3_path, "-af", "volume=0.65", "-f", "pulse", "naia-radio-song"]
-    subprocess.run(cmd, env=env, check=False)
+    try:
+        res = runner_fn(cmd, env=env, check=False, capture_output=True, text=True)
+        rc, err = res.returncode, (res.stderr or "").strip()
+    except OSError as e:
+        rc, err = -1, str(e)
     dur = time.time() - t0
-    log(f"Finished song playback: {label} (duration={dur:.1f}s)")
     set_bgm_volume(0.35)
+    if rc != 0:
+        log(f"FAILED song playback: {label} (rc={rc}, duration={dur:.1f}s, error={err[:200]})")
+        return False
+    log(f"Finished song playback: {label} (duration={dur:.1f}s)")
+    return True
 
 
 def classify_error_reason(raw_out: str, prompt_text: str = "", timed_out: bool = False) -> str:
@@ -367,7 +411,7 @@ def send_chat(
     reset_tts_telemetry(eval_fn=eval_fn)
     env = os.environ.copy()
     env["WAIT"] = str(effective_wait)
-    cmd = [f"{BASE_DIR}/jun-send-nz.sh", bounded_prompt]
+    cmd = [SEND_SCRIPT, bounded_prompt]
     if effective_new_chat:
         cmd.append("new")
 
@@ -537,7 +581,7 @@ def check_health(tag):
 
 def run_broadcast():
     global START_TS
-    START_TS = int(os.environ.get("RADIO_START_TS", str(int(time.time()))))
+    START_TS = int(os.environ.get("RADIO_START_TS") or time.time())
     log("=== Runsheet runner v3 (Show 2: 6000-token sliding window guard + <=15s corner transition cap) started ===")
     set_bgm_volume(0.35)
     check_health("show2-start")
@@ -771,4 +815,9 @@ def run_broadcast():
 
 
 if __name__ == "__main__":
+    missing = preflight()
+    if missing:
+        for item in missing:
+            print(f"preflight: {item}", file=sys.stderr)
+        sys.exit(2)
     run_broadcast()
