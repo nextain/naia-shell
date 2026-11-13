@@ -301,3 +301,23 @@
 	vertical-align: -0.2em;
 	border-radius: 0.25em;
 }
+
+/* 지나 목소리 바쁨·대체 알림: 대화창 위 버튼 줄 왼쪽. */
+.kiosk-voice-notice {
+	position: absolute;
+	top: -8px;
+	left: 4px;
+	z-index: 6;
+	max-width: calc(100% - 200px);
+	padding: 4px 10px;
+	border-radius: 999px;
+	background: rgba(20, 16, 40, 0.82);
+	color: #fff;
+	font-size: 12px;
+	line-height: 1.4;
+	pointer-events: none;
+}
+[data-naia-web="true"]:not([data-layout-orientation="landscape"]) .kiosk-voice-notice {
+	top: -32px;
+	left: 8px;
+}

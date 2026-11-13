@@ -51,6 +51,7 @@ import { PcmStreamSource, wavDurationSeconds } from "../voice/audio-queue";
 import { isWebMode } from "../web-runtime/web-assets";
 import { estimateTtsCost } from "./cost";
 import { getTtsProviderMeta } from "./index";
+import { runKioskVoiceSlot } from "./kiosk-voice-gate";
 import type { LocalVoiceScheduler } from "./local-voice-scheduler";
 import { synthesizeTts } from "./synthesize";
 import { ttsTextFilter } from "./text-filter";
@@ -949,7 +950,9 @@ export function createSentenceTtsPipeline(
 				const { audioBase64, costUsd } =
 					latestProvider === "naia-local-voice" && localScheduler
 						? await localScheduler.schedule(synthesize)
-						: await synthesize();
+						: isKioskDemo() && latestProvider === "nextain"
+							? await runKioskVoiceSlot(synthesize, controller.signal)
+							: await synthesize();
 				if (!isCurrent()) return null;
 				const elapsedMs = Math.max(
 					0,
@@ -1581,7 +1584,9 @@ export function createSentenceTtsPipeline(
 		const synthPromise =
 			ttsProviderForCost === "naia-local-voice" && localVoiceScheduler
 				? localVoiceScheduler.schedule(() => synthesize())
-				: synthesize();
+				: isKioskDemo() && ttsProviderForCost === "nextain"
+					? runKioskVoiceSlot(() => synthesize(), abort.signal)
+					: synthesize();
 		synthPromise
 			.then(({ audioBase64, costUsd }) => {
 				abortControllers.delete(reqId);

@@ -32,6 +32,7 @@ import { DeferredAdkSetupScreen } from "./DeferredAdkSetupScreen";
 import { DeferredChatArea } from "./DeferredChatArea";
 import { DeferredOnboardingWizard } from "./DeferredOnboardingWizard";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { KioskVoiceNotice } from "./KioskVoiceNotice";
 import { TitleBar } from "./TitleBar";
 
 const AiControlBar = lazy(() =>
@@ -733,6 +734,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									</svg>
 								</button>
 							</div>
+							{kioskDemo && <KioskVoiceNotice />}
 							<div
 								className={`naia-chat-wrapper${chatVisible ? "" : " naia-chat-wrapper--hidden"}`}
 								data-chat-user-sized={chatUserSized ? "true" : undefined}

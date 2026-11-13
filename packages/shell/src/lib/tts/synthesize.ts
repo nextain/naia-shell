@@ -35,6 +35,7 @@ import {
 } from "../voice/local-runtime";
 import { applyLocalRefAudio } from "../voice/ref-audio-api";
 import { resolveEdgeVoice } from "./edge-tts";
+import { emitKioskVoiceState } from "./kiosk-voice-gate";
 
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
 // webview can't do the MS WebSocket handshake (it can't set the required
@@ -284,7 +285,10 @@ function kioskRetryDelayMs(retryAfter: string | null): number {
 	return Number.isFinite(seconds) ? Math.min(seconds, 2) * 1_000 : 1_000;
 }
 
-function waitForKioskRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+function waitForKioskRetry(
+	delayMs: number,
+	signal?: AbortSignal,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) {
 			reject(new DOMException("Aborted", "AbortError"));
@@ -329,8 +333,10 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			if (
 				!(err instanceof NextainSpeechError) ||
 				(err.status !== 503 && err.status !== 429)
-			) throw err;
+			)
+				throw err;
 			const delayMs = kioskRetryDelayMs(err.retryAfter);
+			emitKioskVoiceState("busy");
 			Logger.info("tts", "kiosk voice busy; retrying jina once", {
 				status: err.status,
 				delayMs,
@@ -339,6 +345,7 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			result = await requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_VOICE);
 		}
 		await assertDecodableAudio(result.audioBase64);
+		emitKioskVoiceState("ok");
 		return result;
 	} catch (err) {
 		if (opts.signal?.aborted || isAbortError(err)) throw err;
@@ -347,6 +354,7 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			fallback: KIOSK_DEMO_TTS_FALLBACK_VOICE,
 			error: err instanceof Error ? err.message : String(err),
 		});
+		emitKioskVoiceState("fallback");
 		return requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_FALLBACK_VOICE);
 	}
 }
@@ -729,7 +737,11 @@ async function synthNaiaLocalVoice(
 			const retryDelays = starting
 				? LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS
 				: LOCAL_VOICE_BUSY_RETRY_DELAYS_MS;
-			if (isKioskDemo() || (!busy && !starting) || retry >= retryDelays.length) {
+			if (
+				isKioskDemo() ||
+				(!busy && !starting) ||
+				retry >= retryDelays.length
+			) {
 				return { response, detail };
 			}
 			const delayMs = starting
