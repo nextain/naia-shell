@@ -25,6 +25,10 @@ function transpileAvatarModule(filePath: string): string {
 }
 
 test.beforeEach(async ({ page }) => {
+	// 비밀번호 화면은 단위 시험(KioskDemoGate.test.tsx)에서 본다. 여기서는 이미 통과한 브라우저로 시작한다.
+	await page.addInitScript(() => {
+		localStorage.setItem("naia-kiosk-passcode-passed", "1");
+	});
 	await page.route(
 		/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::|\/|$))/,
 		(route) => route.abort(),
@@ -779,13 +783,10 @@ test("S6 kiosk opens public IR slides on request, advances after narration, paus
 		let releaseSlide2 = false;
 
 		const isSlide1Sentence = (text: string) =>
-			text.includes("넥스테인 공개 발표를 시작할게요") ||
-			text.includes("첫 장은 넥스테인의 출발과 비전이에요") ||
-			text.includes("다음 세대 엔터테인먼트와 AI를 결합해");
+			text.includes("설치 없이 웹에서 바로 만나실 수 있어요");
 
 		const isSlide2Sentence = (text: string) =>
-			text.includes("두 번째 장은 브랜드와 모델 이름 체계예요") ||
-			text.includes("나이아는 흐르는 물처럼");
+			text.includes("믿고 맡기기가 망설여지죠");
 
 		const isQuestionSentence = (text: string) =>
 			text.includes("이어 가기를 누르시면 발표를 계속 들으실 수 있어요");
@@ -913,12 +914,18 @@ test("S6 kiosk opens public IR slides on request, advances after narration, paus
 	await expect(slidesApp).toBeVisible();
 	const cardOverlay = slidesApp.getByTestId("slides-card-overlay");
 	await expect(cardOverlay).toBeVisible();
-	await expect(slidesApp.getByTestId("slides-card-title")).toHaveText(
-		"넥스테인(Nextain)과 나이아의 출발",
+	await expect(slidesApp.getByTestId("slides-card-image")).toHaveAttribute(
+		"alt",
+		"넥스테인 · 나와 우리 조직이 소유하고 함께 일하는 AI",
 	);
-	await expect(slidesApp.locator(".slides-app__card-badge")).toHaveText(
-		"IR 01 / 09",
-	);
+	await expect(cardOverlay).toHaveAttribute("data-slide-page", "1");
+	await expect
+		.poll(() =>
+			slidesApp
+				.getByTestId("slides-card-image")
+				.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+		)
+		.toBeGreaterThan(0);
 	await expect(slidesApp).toHaveAttribute("data-state", "presenting");
 
 	// Verify 4 kiosk transport buttons are visible
@@ -961,8 +968,8 @@ test("S6 kiosk opens public IR slides on request, advances after narration, paus
 				page.evaluate(() => {
 					const s = (window as unknown as { __s6Spoken: string[] }).__s6Spoken;
 					return (
-						s.some((t) => t.includes("넥스테인 공개 발표를 시작할게요")) &&
-						s.some((t) => t.includes("비주얼 AI 동반자 나이아를 만들고 있어요"))
+						s.some((t) => t.includes("넥스테인 소개를 시작할게요")) &&
+						s.some((t) => t.includes("나이아를 만들고 있어요"))
 					);
 				}),
 			{ timeout: 15_000 },
@@ -979,12 +986,12 @@ test("S6 kiosk opens public IR slides on request, advances after narration, paus
 		(window as unknown as { __s6ReleaseSlide1: () => void }).__s6ReleaseSlide1();
 	});
 
-	await expect(slidesApp.locator(".slides-app__card-badge")).toHaveText(
-		"IR 02 / 09",
-		{ timeout: 15_000 },
-	);
-	await expect(slidesApp.getByTestId("slides-card-title")).toHaveText(
-		"브랜드 체계: 나이아와 별자리 모델 이름",
+	await expect(cardOverlay).toHaveAttribute("data-slide-page", "2", {
+		timeout: 15_000,
+	});
+	await expect(slidesApp.getByTestId("slides-card-image")).toHaveAttribute(
+		"alt",
+		"문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다",
 	);
 	await expect(slidesApp).toHaveAttribute("data-state", "presenting");
 	await expect
@@ -992,7 +999,7 @@ test("S6 kiosk opens public IR slides on request, advances after narration, paus
 			() =>
 				page.evaluate(() =>
 					(window as unknown as { __s6Spoken: string[] }).__s6Spoken.some((t) =>
-						t.includes("두 번째 장은 브랜드와 모델 이름 체계예요"),
+						t.includes("서비스를 바꿀 때마다 기억이 끊기고"),
 					),
 				),
 			{ timeout: 15_000 },

@@ -1,4 +1,4 @@
-import { cpSync, realpathSync } from "node:fs";
+import { cpSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,7 @@ const workerPath = path.resolve(__dirname, "web-worker/create-agent-worker.ts");
 function desktopPublicAssetsPlugin(): Plugin {
 	let outputDirectory = "";
 	const publicDirectory = path.resolve(__dirname, "public");
-	const webOnly = new Set(["nva", "backgrounds"]);
+	const webOnly = new Set(["nva", "backgrounds", "kiosk-slides"]);
 	return {
 		name: "desktop-public-assets",
 		apply: "build",
@@ -29,6 +29,25 @@ function desktopPublicAssetsPlugin(): Plugin {
 			cpSync(publicDirectory, outputDirectory, {
 				recursive: true,
 				filter: (source) => !webOnly.has(path.relative(publicDirectory, source).split(path.sep)[0]),
+			});
+		},
+	};
+}
+
+// 회사 소개 슬라이드 그림은 비밀번호를 거치는 시연판에서만 내보낸다. 일반 웹판 산출물에서는 지운다.
+function kioskSlidesAssetsPlugin(): Plugin {
+	let outputDirectory = "";
+	return {
+		name: "kiosk-slides-assets",
+		apply: "build",
+		configResolved(config) {
+			outputDirectory = path.resolve(config.root, config.build.outDir);
+		},
+		closeBundle() {
+			if (process.env.VITE_NAIA_KIOSK_DEMO === "1") return;
+			rmSync(path.join(outputDirectory, "kiosk-slides"), {
+				recursive: true,
+				force: true,
 			});
 		},
 	};
@@ -172,7 +191,7 @@ export default defineConfig(async ({ mode, command }) => {
 			react(),
 			...(command === "build" && !isWeb ? [desktopPublicAssetsPlugin()] : []),
 			virtualAgentWorkerPlugin(mode),
-			...(isWeb ? [webCspPlugin(), webAdkPlugin()] : []),
+			...(isWeb ? [webCspPlugin(), webAdkPlugin(), kioskSlidesAssetsPlugin()] : []),
 		],
 		build: {
 			// Bundle-budget verification uses this graph to prove that large optional

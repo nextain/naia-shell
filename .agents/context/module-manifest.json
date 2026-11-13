@@ -941,6 +941,13 @@
         "UC-WEB-KIOSK-S6"
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-slides-s6.md"
+    },
+    "packages/shell/src/lib/kiosk-demo/passcode.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-PW"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-passcode.md"
     }
   },
   "scan_dirs": [

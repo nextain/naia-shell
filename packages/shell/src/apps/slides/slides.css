@@ -519,77 +519,28 @@
 
 .slides-app__card-overlay {
 	position: absolute;
-	inset: 4px;
-	container-type: inline-size;
+	inset: 0;
 	display: flex;
-	flex-direction: column;
+	align-items: center;
 	justify-content: center;
-	gap: clamp(14px, 2.8cqi, 22px);
-	padding: clamp(22px, 4.2cqi, 36px) clamp(26px, 5cqi, 44px);
-	border: 1px solid rgba(96, 165, 250, 0.36);
-	border-radius: 14px;
-	background: linear-gradient(
-		155deg,
-		#0b1222 0%,
-		#111c34 60%,
-		#0e172c 100%
-	);
-	box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
-	color: #f8fafc;
+	margin: 0;
+	border-radius: 10px;
+	background: #0b1222;
 	pointer-events: none;
 	overflow: hidden;
 	box-sizing: border-box;
 }
 
+.slides-app__card-image {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	display: block;
+}
+
 .app-root[data-kiosk-demo="true"] .slides-app__page > .react-pdf__Document {
 	opacity: 0;
 	pointer-events: none;
-}
-
-.slides-app__card-meta {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	font-size: clamp(12px, 2cqi, 15px);
-}
-
-.slides-app__card-badge {
-	display: inline-flex;
-	align-items: center;
-	padding: 5px 12px;
-	border-radius: 999px;
-	background: rgba(59, 130, 246, 0.22);
-	border: 1px solid rgba(96, 165, 250, 0.42);
-	color: #93c5fd;
-	font-weight: 700;
-	letter-spacing: 0.03em;
-}
-
-.slides-app__card-subtitle {
-	color: #94a3b8;
-	font-weight: 600;
-}
-
-.slides-app__card-title {
-	margin: 0;
-	color: #ffffff;
-	font-size: clamp(22px, 3.8cqi, 30px);
-	font-weight: 800;
-	line-height: 1.3;
-	word-break: keep-all;
-}
-
-.slides-app__card-bullets {
-	margin: 0;
-	padding-left: 24px;
-	display: flex;
-	flex-direction: column;
-	gap: clamp(8px, 1.6cqi, 14px);
-	color: #e2e8f0;
-	font-size: clamp(14px, 2.35cqi, 18px);
-	line-height: 1.54;
-	word-break: keep-all;
 }
 
 .slides-app__controls--kiosk {

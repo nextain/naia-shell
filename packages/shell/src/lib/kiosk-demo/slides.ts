@@ -3,22 +3,19 @@ import { useChatStore } from "../../stores/chat";
 import { webAdkOpfsPath } from "../web-runtime/web-adk-path";
 import type { WebFs } from "../web-runtime/web-fs";
 import { isKioskDemo } from "./flag";
-import rawIrPublicDeck from "./slides/ir-public.json";
+import rawIrDeck from "./slides/ir-deck.json";
 
 export interface KioskIrSlide {
 	page: number;
-	id: string;
-	source: string;
-	subtitle: string;
+	/** `public/kiosk-slides/` 안 그림 파일 이름. 짐작하기 어렵게 무작위 16진 글자로 짓는다. */
+	image: string;
 	title: string;
-	bullets: string[];
 	script: string;
 }
 
 export interface KioskIrDeck {
 	deckId: string;
 	title: string;
-	version: string;
 	slides: KioskIrSlide[];
 }
 
@@ -45,15 +42,18 @@ export interface KioskSlidesController {
 
 export const KIOSK_IR_SLIDES_PDF_PATH =
 	"opfs://naia-adk/slides/nextain-ir-public.pdf";
-export const KIOSK_IR_SLIDES_PDF_NAME = "넥스테인 공개 IR 발표.pdf";
+export const KIOSK_IR_SLIDES_PDF_NAME = "넥스테인 회사 소개.pdf";
 export const KIOSK_IR_SLIDES_SCRIPT_PATH =
 	"opfs://naia-adk/slides/nextain-ir-public.md";
-export const KIOSK_IR_SLIDES_SCRIPT_NAME = "넥스테인 공개 IR 발표.md";
+export const KIOSK_IR_SLIDES_SCRIPT_NAME = "넥스테인 회사 소개.md";
+/** 발표 중 질문 답의 근거 칩에 쓰는 탐색기 경로(낭독 대본). */
+export const KIOSK_IR_SLIDES_EVIDENCE_FILE = "slides/nextain-ir-public.md";
+export const KIOSK_IR_SLIDE_IMAGE_DIR = "/kiosk-slides";
+const KIOSK_IR_SLIDE_IMAGE_NAME = /^[0-9a-f]{16}\.jpg$/;
 
+// 시연 첫 화면에 비밀번호를 둔 뒤(2026-11-13)로 회사 소개 자료의 매출·가입·투자 숫자는 덱에 싣는다.
+// 덱 원고에 없는 지분·가치 평가·계약 조건과 개인 정보, 내부 경로는 계속 막는다.
 export const FORBIDDEN_IR_SLIDE_WORDS = [
-	"매출",
-	"투자",
-	"억",
 	"밸류",
 	"계약금",
 	"계약 금액",
@@ -66,7 +66,6 @@ export const FORBIDDEN_IR_SLIDE_WORDS = [
 ] as const;
 
 const FORBIDDEN_IR_SLIDE_PATTERNS: readonly RegExp[] = [
-	/\d[\d,.]*\s*(?:원|달러|불|만원|천만원|억원|조원|usd|krw)\b/i,
 	/\x2fhome\x2f|min\x68o|nextain\x2dadk/i,
 ];
 
@@ -75,7 +74,7 @@ let pendingAction: KioskSlidesControlAction | null = null;
 let cachedPdfBytes: number[] | null = null;
 
 export function assertPublicIrSlides(
-	deck: KioskIrDeck = rawIrPublicDeck as KioskIrDeck,
+	deck: KioskIrDeck = rawIrDeck as KioskIrDeck,
 ): void {
 	if (!deck || !Array.isArray(deck.slides)) {
 		throw new Error("invalid_ir_deck:missing_slides");
@@ -94,27 +93,13 @@ export function assertPublicIrSlides(
 		if (!slide.title || !slide.title.trim()) {
 			throw new Error(`invalid_ir_deck:empty_title_page_${expectedPage}`);
 		}
-		if (
-			!Array.isArray(slide.bullets) ||
-			slide.bullets.length === 0 ||
-			slide.bullets.length > 3
-		) {
-			throw new Error(`invalid_ir_deck:bullets_count_page_${expectedPage}`);
-		}
-		for (const bullet of slide.bullets) {
-			if (!bullet || !bullet.trim() || bullet.includes("\n")) {
-				throw new Error(`invalid_ir_deck:invalid_bullet_page_${expectedPage}`);
-			}
+		if (!KIOSK_IR_SLIDE_IMAGE_NAME.test(slide.image ?? "")) {
+			throw new Error(`invalid_ir_deck:image_name_page_${expectedPage}`);
 		}
 		if (!slide.script || !slide.script.trim()) {
 			throw new Error(`invalid_ir_deck:empty_script_page_${expectedPage}`);
 		}
-		const combinedText = [
-			slide.subtitle ?? "",
-			slide.title,
-			...slide.bullets,
-			slide.script,
-		].join(" ");
+		const combinedText = [slide.title, slide.script].join(" ");
 		for (const word of FORBIDDEN_IR_SLIDE_WORDS) {
 			if (combinedText.includes(word)) {
 				throw new Error(
@@ -133,18 +118,21 @@ export function assertPublicIrSlides(
 }
 
 export function getKioskIrSlides(): KioskIrSlide[] {
-	const deck = rawIrPublicDeck as KioskIrDeck;
+	const deck = rawIrDeck as KioskIrDeck;
 	assertPublicIrSlides(deck);
-	return deck.slides.map((slide) => ({
-		...slide,
-		bullets: [...slide.bullets],
-	}));
+	return deck.slides.map((slide) => ({ ...slide }));
 }
 
 export function getKioskIrSlide(page: number): KioskIrSlide | null {
 	if (!Number.isFinite(page) || page < 1) return null;
 	const slides = getKioskIrSlides();
 	return slides.find((item) => item.page === Math.trunc(page)) ?? null;
+}
+
+export function kioskIrSlideImageUrl(
+	slide: Pick<KioskIrSlide, "image">,
+): string {
+	return `${KIOSK_IR_SLIDE_IMAGE_DIR}/${slide.image}`;
 }
 
 export function buildKioskIrScriptMarkdown(
@@ -176,7 +164,7 @@ function escapePdfAscii(value: string): string {
 export function buildKioskIrPdfBytes(
 	slides: readonly KioskIrSlide[] = getKioskIrSlides(),
 ): number[] {
-	if (cachedPdfBytes && slides.length === rawIrPublicDeck.slides.length) {
+	if (cachedPdfBytes && slides.length === rawIrDeck.slides.length) {
 		return [...cachedPdfBytes];
 	}
 	const pageCount = Math.max(1, slides.length);
@@ -186,15 +174,14 @@ export function buildKioskIrPdfBytes(
 
 	const kids: string[] = [];
 	for (let index = 0; index < pageCount; index += 1) {
-		const slide = slides[index];
 		const pageObjId = 3 + index * 2;
 		const contentObjId = pageObjId + 1;
 		kids.push(`${pageObjId} 0 R`);
 
 		const badgeText = escapePdfAscii(
-			`NEXTAIN PUBLIC IR  |  SLIDE ${String(index + 1).padStart(2, "0")} / ${String(pageCount).padStart(2, "0")}`,
+			`NEXTAIN  |  SLIDE ${String(index + 1).padStart(2, "0")} / ${String(pageCount).padStart(2, "0")}`,
 		);
-		const subText = escapePdfAscii(slide?.subtitle ?? `Slide ${index + 1}`);
+		const subText = escapePdfAscii(`Slide ${index + 1}`);
 		const stream = [
 			"q",
 			"0.055 0.075 0.135 rg",
@@ -250,7 +237,7 @@ export function buildKioskIrPdfBytes(
 	pdf += `trailer\n<< /Size ${fontObjId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
 
 	const bytes = Array.from(new TextEncoder().encode(pdf));
-	if (slides.length === rawIrPublicDeck.slides.length) {
+	if (slides.length === rawIrDeck.slides.length) {
 		cachedPdfBytes = bytes;
 	}
 	return [...bytes];
@@ -440,18 +427,16 @@ export const buildKioskSlideQuestionPrompt = (
 	slide: KioskIrSlide,
 	question?: string,
 ): string => {
-	const bullets = slide.bullets.map((b) => `- ${b}`).join("\n");
 	const lines = [
-		`[현재 발표 중인 슬라이드: ${slide.page}장 — ${slide.title}${slide.subtitle ? ` (${slide.subtitle})` : ""}]`,
-		`장 원고 파일: knowledge/${slide.source}`,
-		`장 본문 요점:\n${bullets}`,
+		`[현재 발표 중인 슬라이드: ${slide.page}장 — ${slide.title}]`,
+		`발표 대본 파일: ${KIOSK_IR_SLIDES_EVIDENCE_FILE}`,
 		`장 발표문:\n${slide.script}`,
 		`규칙:`,
-		`1. 발표 중간 질문에는 반드시 지금 보고 있는 ${slide.page}장('${slide.title}')의 장 본문 요점과 장 발표문에 적힌 내용만으로 답하세요.`,
-		`2. 다른 슬라이드 장이나 다른 지식 카드(marketing.md, growth.md 등)를 검색하거나 끌어오지 말고, 이 장에 없는 고유명사·별자리 이름·수치를 절대 지어내지 마세요.`,
-		`3. 질문한 항목(예: 핵심 지표, 수치, 통계, 실적, 가격 등)이 이 장의 본문·발표문에 없으면 "이 장에는 지표가 없어요"(또는 "이 장에는 핵심 지표가 없어요"·"이 장에는 가격 내용이 없어요")라고 먼저 분명하게 말한 뒤, 지금 ${slide.page}장에 실제로 적힌 핵심 내용만 짧게 안내하세요.`,
-		`4. 질문한 항목(예: 이 장에 나오는 용어 설명, 방금 장 요약 등)이 이 장의 본문·발표문에 있으면 이 장에 적힌 내용만 사용해 정확히 답하세요.`,
-		`5. 근거 파일은 오직 knowledge/${slide.source} 하나만 사용하세요.`,
+		`1. 발표 중간 질문에는 반드시 지금 보고 있는 ${slide.page}장('${slide.title}')의 제목과 장 발표문에 적힌 내용만으로 답하세요.`,
+		`2. 다른 슬라이드 장이나 다른 지식 카드(marketing.md, growth.md 등)를 검색하거나 끌어오지 말고, 이 장에 없는 고유명사·수치를 절대 지어내지 마세요.`,
+		`3. 질문한 항목(예: 핵심 지표, 수치, 통계, 실적, 가격 등)이 이 장의 제목·발표문에 없으면 "이 장에는 그 내용이 없어요"라고 먼저 분명하게 말한 뒤, 지금 ${slide.page}장에 실제로 적힌 핵심 내용만 짧게 안내하세요.`,
+		`4. 질문한 항목(예: 이 장에 나오는 용어 설명, 방금 장 요약 등)이 이 장의 제목·발표문에 있으면 이 장에 적힌 내용만 사용해 정확히 답하세요.`,
+		`5. 근거 파일은 오직 ${KIOSK_IR_SLIDES_EVIDENCE_FILE} 하나만 사용하세요.`,
 	];
 	if (question?.trim()) {
 		lines.push(`사용자 질문: ${question.trim()}`);
@@ -463,15 +448,13 @@ export const buildKioskSlideReferencePrompt = (
 	slide: KioskIrSlide,
 	question?: string,
 ): string => {
-	const bullets = slide.bullets.map((b) => `- ${b}`).join("\n");
 	const lines = [
-		`[현재 열려 있는 슬라이드 참고: ${slide.page}장 — ${slide.title}${slide.subtitle ? ` (${slide.subtitle})` : ""}]`,
-		`장 원고 파일: knowledge/${slide.source}`,
-		`장 본문 요점:\n${bullets}`,
+		`[현재 열려 있는 슬라이드 참고: ${slide.page}장 — ${slide.title}]`,
+		`발표 대본 파일: ${KIOSK_IR_SLIDES_EVIDENCE_FILE}`,
 		`장 발표문:\n${slide.script}`,
 		`참고 안내:`,
 		`1. 현재 슬라이드 발표는 진행 중이 아니라 멈춤·대기 또는 완료 상태입니다.`,
-		`2. 지금 열려 있는 ${slide.page}장('${slide.title}')에 대한 질문이면 위 장 본문 요점과 발표문(knowledge/${slide.source})을 참고해 답하세요.`,
+		`2. 지금 열려 있는 ${slide.page}장('${slide.title}')에 대한 질문이면 위 발표문(${KIOSK_IR_SLIDES_EVIDENCE_FILE})을 참고해 답하세요.`,
 		`3. 다른 슬라이드 장이나 회사·제품·기억·성장 등 다른 주제에 대한 질문이면 이 장에만 가두지 말고 skill_knowledge_search 또는 skill_knowledge_ask로 공개 지식 카드를 검색해 답하세요.`,
 	];
 	if (question?.trim()) {

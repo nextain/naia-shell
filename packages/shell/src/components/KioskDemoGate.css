@@ -24,6 +24,26 @@
 	font-size: 18px;
 	margin: 10px 0;
 }
+.kiosk-entry__passcode input {
+	width: 8em;
+	min-height: 56px;
+	padding: 8px 12px;
+	border: 1px solid #bcd0ff;
+	border-radius: 12px;
+	background: #1a2133;
+	color: #f5f7fb;
+	font-size: 28px;
+	letter-spacing: 0.4em;
+	text-align: center;
+	box-sizing: border-box;
+}
+.kiosk-entry__passcode input:focus-visible {
+	outline: 3px solid white;
+	outline-offset: 4px;
+}
+.kiosk-entry__passcode input[aria-invalid="true"] {
+	border-color: #ff9a9a;
+}
 .kiosk-entry__actions {
 	display: flex;
 	flex-wrap: wrap;

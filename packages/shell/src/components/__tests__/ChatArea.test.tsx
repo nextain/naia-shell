@@ -4393,17 +4393,14 @@ describe("ChatArea", () => {
 					| Record<string, unknown>
 					| undefined;
 				expect(slideData?.page).toBe(2);
-				expect(slideData?.source).toBe("brand.md");
-				expect(slideData?.bullets).toEqual(slide2.bullets);
+				expect(slideData?.source).toBe("slides/nextain-ir-public.md");
+				expect(slideData).not.toHaveProperty("bullets");
 				expect(slideData?.script).toBe(slide2.script);
-				expect(String(slideData?.instructions)).toContain(
-					"별자리 코드명: 루나(달)·테라(지구)·솔(태양)·스텔라(별)·노바(신성)",
-				);
 				expect(String(slideData?.instructions)).toContain(
 					slide2.script,
 				);
 				expect(String(slideData?.instructions)).toContain(
-					"근거 파일은 오직 knowledge/brand.md 하나만 사용하세요.",
+					"근거 파일은 오직 slides/nextain-ir-public.md 하나만 사용하세요.",
 				);
 
 				await act(async () => {
@@ -4423,10 +4420,10 @@ describe("ChatArea", () => {
 				);
 			}
 
-			// Verify evidence chips under slide question replies contain ONLY knowledge/brand.md
+			// Verify evidence chips under slide question replies contain ONLY the read-aloud script
 			const evidenceBlocks = screen.getAllByTestId("chat-kiosk-evidence");
 			const lastEvidence = evidenceBlocks.at(-1)!;
-			expect(lastEvidence).toHaveTextContent("knowledge/brand.md");
+			expect(lastEvidence).toHaveTextContent("slides/nextain-ir-public.md");
 			expect(lastEvidence).not.toHaveTextContent("AGENTS.md");
 			expect(lastEvidence).not.toHaveTextContent("marketing.md");
 			expect(lastEvidence).not.toHaveTextContent("growth.md");
@@ -4528,7 +4525,7 @@ describe("ChatArea", () => {
 				"knowledge/company.md",
 			);
 
-			// 2. Open slides on slide 3 (naia.md) while presenting/answering and ask a mid-presentation question
+			// 2. Open slides on slide 3 while presenting/answering and ask a mid-presentation question
 			slideMode = "answering";
 			slidePage = 3;
 			unregisterSlides = registerKioskSlidesController({
@@ -4570,16 +4567,17 @@ describe("ChatArea", () => {
 				expect(screen.getAllByTestId("chat-kiosk-evidence")).toHaveLength(2),
 			);
 
-			// Navigate slides to slide 5 (adk.md) -> neither turn 1 (company.md) nor turn 2 (naia.md) may change to adk.md
+			// Navigate slides to slide 5 -> turn 1 keeps company.md and turn 2 keeps the read-aloud script
 			slidePage = 5;
 			const evidencesAfterSlide5 = screen.getAllByTestId("chat-kiosk-evidence");
 			expect(evidencesAfterSlide5[0]).toHaveTextContent("knowledge/company.md");
 			expect(evidencesAfterSlide5[0]).not.toHaveTextContent(
-				"knowledge/naia.md",
+				"slides/nextain-ir-public.md",
 			);
-			expect(evidencesAfterSlide5[0]).not.toHaveTextContent("knowledge/adk.md");
-			expect(evidencesAfterSlide5[1]).toHaveTextContent("knowledge/naia.md");
-			expect(evidencesAfterSlide5[1]).not.toHaveTextContent("knowledge/adk.md");
+			expect(evidencesAfterSlide5[1]).toHaveTextContent(
+				"slides/nextain-ir-public.md",
+			);
+			expect(evidencesAfterSlide5[1]).not.toHaveTextContent("knowledge/");
 
 			// 3. P2-2: Presentation finishes on slide 9 (completed) while slides window stays open -> asking "기억의 주인은 누구인가요?" keeps slide 9 as reference but enables knowledge search
 			slideMode = "completed";
@@ -4611,7 +4609,7 @@ describe("ChatArea", () => {
 				| Record<string, unknown>
 				| undefined;
 			expect(slideData3?.page).toBe(9);
-			expect(slideData3?.source).toBe("future.md");
+			expect(slideData3?.source).toBe("slides/nextain-ir-public.md");
 			expect(slideData3?.restrictToSlide).toBe(false);
 			expect(String(slideData3?.instructions)).toContain(
 				"skill_knowledge_search",
@@ -4658,7 +4656,9 @@ describe("ChatArea", () => {
 			);
 			const finalEvidences = screen.getAllByTestId("chat-kiosk-evidence");
 			expect(finalEvidences[0]).toHaveTextContent("knowledge/company.md");
-			expect(finalEvidences[1]).toHaveTextContent("knowledge/naia.md");
+			expect(finalEvidences[1]).toHaveTextContent(
+				"slides/nextain-ir-public.md",
+			);
 			expect(finalEvidences[2]).toHaveTextContent("knowledge/memory.md");
 			expect(finalEvidences[2]).not.toHaveTextContent("knowledge/future.md");
 		} finally {

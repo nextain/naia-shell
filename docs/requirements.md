@@ -1722,13 +1722,26 @@ P04 ADK·로컬 모델(#824, 2026-11-07): 집중 Vitest 10파일 통과 및 전�
 
 | ID | 요구사항 | 상태 |
 |---|---|---|
-| FR-WEB-KIOSK-S6.1 | 실제 IR PDF나 재무 문서를 사용하지 않고 공개 지식 원고(`company`, `difference`, `adk`, `agents`, `brand`, `naia`, `growth`, `future` 등)에서 8~10장(9장) 공개용 발표 자료(`packages/shell/src/lib/kiosk-demo/slides/ir-public.json`)를 구성한다. 각 장은 제목, 3줄 이내 짧은 요점, 지나가 읽을 설명 대본을 포함하며 민감 숫자·낱말(매출, 투자, 억, 밸류, 계약금, 계약 금액, 개인 정보 등)을 일절 포함하지 않는다. | Done |
+| FR-WEB-KIOSK-S6.1 | (2026-11-13 개정: 첫 화면 비밀번호 `FR-WEB-KIOSK-PW.1~5` 도입에 따라 바꿈) 발표 자료는 회사 소개 자료에서 고른 그림 9장 덱(`packages/shell/src/lib/kiosk-demo/slides/ir-deck.json`)이다. 각 장은 그림 1장(`packages/shell/public/kiosk-slides/<무작위 16진 16자리>.jpg`), 제목, 지나가 읽을 설명 대본을 포함하고, 화면에는 그림을 비율을 지켜 꽉 차게 띄운다. 비밀번호를 거친 방문자만 보므로 대본과 그림에 매출·가입 수·투자 금액을 싣는다. 재료 폴더의 원래 그림 이름과 원본 자료의 쪽 번호·파일 이름은 덱과 공개 경로에 남기지 않는다. 덱 원고에 없는 낱말(밸류, 계약금, 계약 금액, 영업이익, 순이익, 지분, 기업가치, 개인 정보)과 내부 경로는 `FORBIDDEN_IR_SLIDE_WORDS`로 계속 막는다. 그림은 시연판 웹 빌드에만 싣고 일반 웹판·데스크톱 산출물에서는 뺀다(`vite.config.ts`). | Done |
 | FR-WEB-KIOSK-S6.2 | `isKioskDemo()`일 때 사용자가 `"IR 발표해 줘"` 등 발표 시작 의도를 말하면 슬라이드 앱(`land.naia.slides`)이 열리고 1장부터 표시하며, 지나가 기존 시연판 TTS 경로로 각 장 대본을 읽고 발화가 끝나면 다음 장으로 자동 이동한다. `멈춤`·`이어 가기`·`다음`·`이전`·`끝내기` 단추를 제공하고, 발표 도중 사용자가 질문하면 발표를 멈추고(`answering`) 답한 뒤 1.2초 후 이어 가며, 그 1.2초 재개 대기 중에 새 질문이 들어오면 자동 재개 타이머를 취소하고 새 질문에 먼저 답한다. | Done |
 | FR-WEB-KIOSK-S6.3 | 웹 명령표(`command-table.ts`, `router.ts`)에서 시연판에 필요한 슬라이드 명령(`slides_open_document`, `slides_open_pdf`, `slides_cancel_open`)만 `isKioskDemo()`일 때 웹 구현으로 열고, `isKioskDemo() === false`인 일반 웹판과 데스크톱 판 동작은 변경하지 않는다. | Done |
-| FR-WEB-KIOSK-S6.4 | `1280x800` 키오스크 화면에서 슬라이드 앱이 대화 칸 오른쪽 작업 공간 전체에 열려 왼쪽 대화 칸과 그 위 지나 아바타를 옮기거나 가리지 않으며, 슬라이드 카드(16:9 비율 유지)와 제목·요점·대본·단추 글자가 비례해 커지고 잘리지 않게 표시된다. | Done |
-| NFR-WEB-KIOSK-S6.1 | 발표 자료 민감 낱말(매출, 투자, 억, 밸류, 계약금 등) 부재 단위 시험, Vitest 전체, 일반 OFF / 키오스크 ON `build:web`, Playwright `e2e/kiosk-demo.spec.ts` 발표 흐름 시험 및 `1280x800` 캡처로 검증한다. | Done |
+| FR-WEB-KIOSK-S6.4 | `1280x800` 키오스크 화면에서 슬라이드 앱이 대화 칸 오른쪽 작업 공간 전체에 열려 왼쪽 대화 칸과 그 위 지나 아바타를 옮기거나 가리지 않으며, 슬라이드 카드(16:9 비율 유지)의 그림과 대본·단추 글자가 비례해 커지고 잘리지 않게 표시된다. | Done |
+| NFR-WEB-KIOSK-S6.1 | 발표 자료 9장 구조(그림·제목·대본), 그림 파일 실재·무작위 이름, 막는 낱말(밸류, 계약금, 지분 등) 부재 단위 시험, Vitest 전체, 일반 OFF / 키오스크 ON `build:web`, Playwright `e2e/kiosk-demo.spec.ts` 발표 흐름 시험 및 캡처로 검증한다. | Done |
 
 P04 S6(#824, 2026-11-07): 공개 지식 원고 기반 9장 발표 자료(`packages/shell/src/lib/kiosk-demo/slides/ir-public.json`) 민감 낱말·숫자 부재 시험 포함 `slides.test.ts` 6/6 통과, `knowledge.test.ts` 29/29, `command-table.test.ts` 16/16, `router.test.ts` 14/14, `slides-center-area.test.tsx` 12/12, `ChatArea.test.tsx` 82/82 통과. 일반 OFF 및 키오스크 ON(`VITE_NAIA_KIOSK_DEMO=1 VITE_NAIA_KIOSK_DEMO_KEY=naia_test_kiosk_fixture_123456`) `build:web` 통과. Playwright `e2e/kiosk-demo.spec.ts` S6 발표 흐름 시험 통과 및 `1280x800` 캡처에서 왼쪽 대화 칸(및 위 지나 아바타)·오른쪽 작업 공간 전체 슬라이드 배치 및 글자 비잘림 시각 검토 완료.
+
+13판(2026-11-13): 글머리표 9장 덱(`ir-public.json`)을 지우고 그림 9장 덱(`ir-deck.json`)으로 바꿨다. 근거 칩과 장 질문 근거는 낭독 대본 `slides/nextain-ir-public.md` 하나다.
+
+## 웹 키오스크 PW — 시연 첫 화면 숫자 4자리 비밀번호 (2026-11-13)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-PW.1 | `isKioskDemo()`일 때 첫 화면(`KioskDemoGate.tsx`)은 '들어가기'보다 먼저 숫자 4자리 비밀번호 입력을 보인다. 입력 칸은 휴대폰 숫자 자판이 뜨게 `inputmode="numeric"`로 두고 4자리를 넘겨 받지 않는다. | Done |
+| FR-WEB-KIOSK-PW.2 | 비밀번호 숫자는 코드·시험·문서에 두지 않는다. 입력값의 sha256(`crypto.subtle.digest`)을 `packages/shell/src/lib/kiosk-demo/passcode.ts`의 `KIOSK_PASSCODE_SHA256`과 대조한다. | Done |
+| FR-WEB-KIOSK-PW.3 | 맞히면 `localStorage`의 `naia-kiosk-passcode-passed`에 통과 여부(`"1"`)만 남기고, 그 브라우저에서는 다시 묻지 않는다. 비밀번호나 해시는 저장하지 않는다. '처음으로' 초기화와 방문 만료 정리는 이 표시를 지우지 않는다. | Done |
+| FR-WEB-KIOSK-PW.4 | 틀리면 입력 칸을 비우고 `"비밀번호가 맞지 않아요. 다시 입력해 주세요."`를 보인 뒤 다시 입력받는다. 통과 전에는 '들어가기'와 대화 화면을 보이지 않는다. | Done |
+| FR-WEB-KIOSK-PW.5 | 일반 웹판(`isKioskDemo() === false`)과 데스크톱 셸에는 비밀번호 화면을 적용하지 않는다. | Done |
+| NFR-WEB-KIOSK-PW.1 | 정적 사이트이므로 비밀번호는 화면에서만 막는다(자산 주소를 직접 아는 요청까지 막지는 못함). 그래서 슬라이드 그림 파일 이름은 무작위 글자로 짓는다(`FR-WEB-KIOSK-S6.1`). 시험은 대조 함수에 흉내 해시를 넣어 틀린 값 차단·맞는 값 통과·다시 열 때 묻지 않음을 확인한다(`passcode.test.ts`, `KioskDemoGate.test.tsx`). | Done |
 
 ## 키오스크 시연판 스튜디오 정본 지나·나이아 NVA 교체 및 발음 입 모양·지나 목소리 연결 (2026-11-07)
 

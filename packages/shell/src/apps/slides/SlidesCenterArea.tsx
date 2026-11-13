@@ -830,9 +830,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				if (!selection) return;
 				loadPdf(selection.file, selection);
 				const irSlides = getKioskIrSlides();
-				const texts = irSlides.map(
-					(slide) => `${slide.title} ${slide.bullets.join(" ")}`,
-				);
+				const texts = irSlides.map((slide) => slide.title);
 				const notes = selection.script
 					? parseSlideSpeakerNotes(selection.script.text)
 					: new Map<number, string>();
