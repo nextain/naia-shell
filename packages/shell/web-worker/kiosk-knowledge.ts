@@ -2,7 +2,10 @@
 import { makeKnowledgeSkillsExecutor } from "@naia-agent/adapters/knowledge-skill.js";
 import type { ToolExecutorPort } from "@naia-agent/ports/uc1.js";
 import { createOpfsWebFs } from "../src/lib/web-runtime/web-fs";
-import { readKioskKnowledgeService } from "../src/lib/kiosk-demo/knowledge";
+import {
+	KIOSK_SOURCE,
+	readKioskKnowledgeService,
+} from "../src/lib/kiosk-demo/knowledge";
 import type { ActiveSlideRequestContext } from "./adk-snapshot-fs";
 
 function buildActiveSlideHit(slide: ActiveSlideRequestContext) {
@@ -11,7 +14,7 @@ function buildActiveSlideHit(slide: ActiveSlideRequestContext) {
 		title: slide.title,
 		snippet,
 		score: 1,
-		sourceUris: [`opfs://naia-adk/kiosk-demo/knowledge/${slide.source}`],
+		sourceUris: [`${KIOSK_SOURCE}/${slide.source}`],
 	};
 }
 

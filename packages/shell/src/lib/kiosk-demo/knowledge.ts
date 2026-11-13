@@ -16,8 +16,24 @@ import { MemoryStoreAdapter } from "./kb-compiler/adapters/store/memory";
 import type { Kb } from "./kb-compiler/domain/types";
 import kbRaw from "./knowledge/kb.json?raw";
 
-export const KIOSK_SCOPE = "kiosk-demo";
-export const KIOSK_SOURCE = "opfs://naia-adk/kiosk-demo/knowledge";
+export const KIOSK_SCOPE = "nextain-public";
+/** 번들 원고 사본. 점으로 시작하는 폴더라 탐색기에는 보이지 않는다(보이는 사본은 naia-adk/knowledge). */
+const KIOSK_SOURCE_DIR = ".bundle/knowledge";
+export const KIOSK_SOURCE = `opfs://naia-adk/${KIOSK_SOURCE_DIR}`;
+/** 12판까지 쓰던 이름. 이미 방문한 브라우저의 OPFS 를 옮길 때만 쓴다. */
+const LEGACY_SCOPE = "kiosk-demo";
+const LEGACY_DIR = "kiosk-demo";
+const LEGACY_SOURCE = `opfs://naia-adk/${LEGACY_DIR}/knowledge`;
+/** 12판 knowledge/web.md 에서 바뀐 문장(옛 글 → 새 글). 방문자가 고친 다른 부분은 건드리지 않는다. */
+const LEGACY_MANUSCRIPT_TEXT: Record<string, readonly [string, string][]> = {
+	"web.md": [
+		["이번 IR 키오스크는 웹판에서", "이번 IR 시연은 웹판에서"],
+		[
+			"시연 화면의 기능은 이 키오스크 범위와 연결된 것부터 안내합니다.",
+			"시연 화면의 기능은 이번 시연 범위에 든 것부터 안내합니다.",
+		],
+	],
+};
 export const KIOSK_ADK_KNOWLEDGE_DIR = "opfs://naia-adk/knowledge";
 
 export const KIOSK_AGENTS_MD = `# AGENTS.md — ADK 하네스 지침
@@ -175,6 +191,66 @@ export async function kioskKnowledgeService(raw: string = kbRaw) {
 	return KnowledgeService.create(parseKioskKb(raw), new Bm25RetrievalAdapter());
 }
 
+/**
+ * 12판까지 방문한 브라우저의 OPFS 를 새 이름으로 옮긴다. 옮길 것이 없으면 아무것도 쓰지 않으므로
+ * 사실상 한 번만 돈다. 어느 단계가 실패해도 시연은 떠야 하므로 던지지 않는다.
+ */
+export async function migrateLegacyKioskKnowledge(fs: WebFs): Promise<void> {
+	const step = async (name: string, run: () => Promise<void>) => {
+		try {
+			await run();
+		} catch (error) {
+			Logger.warn("KioskKnowledge", "legacy migration step failed", {
+				name,
+				error: String(error),
+			});
+		}
+	};
+	await step("config", async () => {
+		const raw = await fs.readText(configPath);
+		if (!raw) return;
+		const config = parseKnowledgeConfig(raw);
+		const scope = config.scope === LEGACY_SCOPE ? KIOSK_SCOPE : config.scope;
+		const sources = config.sources.map((source) =>
+			source.path === LEGACY_SOURCE
+				? { ...source, path: KIOSK_SOURCE }
+				: source,
+		);
+		const moved =
+			scope !== config.scope ||
+			sources.some((source, index) => source !== config.sources[index]);
+		if (moved) {
+			await fs.writeBytes(
+				configPath,
+				serializeKnowledgeConfig({ ...config, scope, sources }),
+			);
+		}
+		// 옛 출처 경로가 적힌 카드는 번들 KB 로 바꾼다. 카드는 번들 원고에서만 만들어지므로 잃는 것이 없다.
+		const kb = await fs.readText(kbPath(safeScope(scope)));
+		if (kb?.includes(`${LEGACY_SOURCE}/`))
+			await fs.writeBytes(kbPath(scope), kbRaw);
+	});
+	await step("manuscripts", async () => {
+		for (const [fileName, pairs] of Object.entries(LEGACY_MANUSCRIPT_TEXT)) {
+			const path = webAdkOpfsPath(`knowledge/${fileName}`);
+			const text = await fs.readText(path);
+			if (!text) continue;
+			let next = text;
+			for (const [before, after] of pairs)
+				next = next.split(before).join(after);
+			if (next !== text) await fs.writeBytes(path, next);
+		}
+	});
+	await step("remove", async () => {
+		for (const dir of [
+			webAdkOpfsPath(LEGACY_DIR),
+			webAdkOpfsPath(`naia-settings/knowledge/${LEGACY_SCOPE}`),
+		]) {
+			if (await fs.exists(dir)) await fs.removeDir?.(dir);
+		}
+	});
+}
+
 /** Idempotent per WebFs; failures remain retryable. OFF does not touch storage. */
 const seeding = new WeakMap<WebFs, Promise<void>>();
 export async function seedKioskKnowledge(fs: WebFs): Promise<void> {
@@ -184,9 +260,10 @@ export async function seedKioskKnowledge(fs: WebFs): Promise<void> {
 		pending = (async () => {
 			Logger.debug("KioskKnowledge", "seed public KB", { scope: KIOSK_SCOPE });
 			parseKioskKb(kbRaw);
+			await migrateLegacyKioskKnowledge(fs);
 			for (const [path, text] of Object.entries(manuscripts)) {
 				const sourcePath = webAdkOpfsPath(
-					`kiosk-demo/knowledge/${path.split("/").pop()!}`,
+					`${KIOSK_SOURCE_DIR}/${path.split("/").pop()!}`,
 				);
 				if (!(await fs.readText(sourcePath)))
 					await fs.writeBytes(sourcePath, text);

@@ -19,6 +19,7 @@ import {
 	KIOSK_SCOPE,
 	KIOSK_SOURCE,
 	parseKioskKb,
+	readKioskKnowledgeService,
 	seedKioskAdkWorkspace,
 	seedKioskKnowledge,
 } from "./knowledge";
@@ -244,6 +245,83 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 				fs,
 			),
 		).rejects.toThrow();
+	});
+	it("moves a browser seeded before r13 to the new names once and still boots when removal fails", async () => {
+		on();
+		const oldSource = "opfs://naia-adk/kiosk-demo/knowledge";
+		const oldKbPath = "naia-adk/naia-settings/knowledge/kiosk-demo/kb.json";
+		const bundledKb = readFileSync("src/lib/kiosk-demo/knowledge/kb.json", "utf8");
+		const bundledWeb = readFileSync("src/lib/kiosk-demo/knowledge/web.md", "utf8");
+		const oldWeb = bundledWeb
+			.replace("이번 IR 시연은 웹판에서", "이번 IR 키오스크는 웹판에서")
+			.replace("이번 시연 범위에 든 것부터", "이 키오스크 범위와 연결된 것부터");
+		expect(oldWeb).not.toBe(bundledWeb);
+		const seedOld = async (fs: ReturnType<typeof createMemoryWebFs>) => {
+			await fs.writeBytes("naia-adk/kiosk-demo/knowledge/web.md", oldWeb);
+			await fs.writeBytes("naia-adk/kiosk-demo/knowledge/naia.md", "# 옛 원고");
+			await fs.writeBytes(
+				oldKbPath,
+				bundledKb.split(`${KIOSK_SOURCE}/`).join(`${oldSource}/`),
+			);
+			await fs.writeBytes(
+				"naia-adk/naia-settings/knowledge.json",
+				JSON.stringify({
+					version: 1,
+					scope: "kiosk-demo",
+					sources: [{ path: oldSource, label: "넥스테인·나이아 공개 지식" }],
+				}),
+			);
+			await fs.writeBytes(
+				"naia-adk/knowledge/web.md",
+				`${oldWeb}\n방문객이 덧붙인 줄\n`,
+			);
+		};
+
+		const fs = createMemoryWebFs();
+		await seedOld(fs);
+		await seedKioskKnowledge(fs);
+		const snapshot = fs.snapshot();
+		expect(
+			Object.keys(snapshot).filter((path) => path.includes("kiosk-demo")),
+		).toEqual([]);
+		expect(JSON.stringify(snapshot)).not.toContain("키오스크");
+		expect(
+			JSON.parse(String(await fs.readText("naia-adk/naia-settings/knowledge.json"))),
+		).toEqual({
+			version: 1,
+			scope: KIOSK_SCOPE,
+			sources: [{ path: KIOSK_SOURCE, label: "넥스테인·나이아 공개 지식" }],
+		});
+		expect(await fs.readText(kbPath(KIOSK_SCOPE))).toBe(bundledKb);
+		expect(await fs.readText("naia-adk/knowledge/web.md")).toBe(
+			`${bundledWeb}\n방문객이 덧붙인 줄\n`,
+		);
+		expect(await fs.readText("naia-adk/.bundle/knowledge/web.md")).toBe(
+			bundledWeb,
+		);
+		const service = await readKioskKnowledgeService(fs);
+		const hits = (await service?.search("웹판 설치", 3)) ?? [];
+		expect(hits.some((hit) => hit.sourceUris.includes(`${KIOSK_SOURCE}/web.md`))).toBe(true);
+		await handleKioskKnowledgeCommand("compile_knowledge", {}, fs);
+
+		// 이미 옮긴 브라우저에서는 다시 쓰지 않는다.
+		const again = createMemoryWebFs();
+		for (const [path, value] of Object.entries(fs.snapshot()))
+			if (value !== "<dir>") await again.writeBytes(path, value);
+		const write = vi.spyOn(again, "writeBytes");
+		await seedKioskKnowledge(again);
+		expect(write).not.toHaveBeenCalled();
+
+		// 옛 폴더를 지우지 못해도 시연은 뜬다.
+		const stuck = createMemoryWebFs();
+		await seedOld(stuck);
+		vi.spyOn(stuck, "removeDir").mockRejectedValue(new Error("locked"));
+		await seedKioskKnowledge(stuck);
+		expect(
+			JSON.parse(String(await stuck.readText("naia-adk/naia-settings/knowledge.json")))
+				.scope,
+		).toBe(KIOSK_SCOPE);
+		expect(await readKioskKnowledgeService(stuck)).not.toBeNull();
 	});
 	it("propagates storage errors and retries failed seeding", async () => {
 		on();

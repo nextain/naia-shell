@@ -83,7 +83,7 @@ test("kiosk knowledge uses real browser OPFS and desktop-compatible search", asy
 			),
 		};
 	});
-	expect(result.config.scope).toBe("kiosk-demo");
+	expect(result.config.scope).toBe("nextain-public");
 	expect(result.cards).toBe(21);
 	expect(result.compiled).toBe(true);
 	expect(result.hit).toBe(true);
@@ -92,7 +92,7 @@ test("kiosk knowledge uses real browser OPFS and desktop-compatible search", asy
 		// @ts-expect-error Vite source module.
 		const { routeCommand } = await import("/src/lib/web-runtime/router.ts");
 		return JSON.parse(
-			await routeCommand("read_naia_knowledge_kb", { scope: "kiosk-demo" }),
+			await routeCommand("read_naia_knowledge_kb", { scope: "nextain-public" }),
 		).kb.cards.length;
 	});
 	expect(count).toBe(21);
@@ -110,7 +110,7 @@ test("ordinary web keeps knowledge blocked without seeding a KB", async ({ page 
 			try { await routeCommand(command); return false; }
 			catch (error) { if (String(error) !== `Error: desktop_only:${command}`) return false; }
 		}
-		return await getWebFs().readText("naia-adk/naia-settings/knowledge/kiosk-demo/kb.json") === null;
+		return await getWebFs().readText("naia-adk/naia-settings/knowledge/nextain-public/kb.json") === null;
 	});
 	expect(isolated).toBe(true);
 });

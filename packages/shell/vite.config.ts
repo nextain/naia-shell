@@ -45,7 +45,7 @@ function webAdkPlugin(): Plugin {
 			// FR-WEB-KIOSK-R3.6: 시연 판에서는 .agents, .users, AGENTS.md, CLAUDE.md, GEMINI.md,
 			// agents-rules-detail.json 등 내부 규칙·운영 설정 키 설명 파일을 번들에서 완전히 제외한다.
 			bundle.files = [];
-			bundle.dirs = ["kiosk-demo/knowledge", "conversations"];
+			bundle.dirs = ["knowledge", "conversations"];
 		}
 		commit = bundle.commit;
 		bundleJson = JSON.stringify(bundle);

@@ -21,7 +21,8 @@ pnpm test src/lib/kiosk-demo/knowledge.test.ts
 
 웹 빌드: `VITE_NAIA_KIOSK_DEMO=1`과 `--mode web`을 함께 사용한다.
 기존 웹 빌드와 동일하게 `NAIA_WEB_AGENT_DIR`(browser-agent 브랜치), `NAIA_WEB_ADK_REPO`가 필요하다.
-부팅 ADK 준비 뒤 OPFS `naia-adk/naia-settings/knowledge.json` 및 `knowledge/kiosk-demo/kb.json`을 초기화한다.
+부팅 ADK 준비 뒤 OPFS `naia-adk/naia-settings/knowledge.json` 및 `knowledge/nextain-public/kb.json`을 초기화한다(번들 원고 사본은 숨김 폴더 `naia-adk/.bundle/knowledge`).
+12판까지의 OPFS(`naia-adk/kiosk-demo`, 스코프 `kiosk-demo`)는 시작할 때 새 이름으로 옮기고 옛 폴더를 지운다.
 이미 있는 설정과 KB는 보존한다. compile 명령은 번들 원고만 재컴파일한다; 임의 파일 접근이나 모델 호출이 없다.
 scope는 안전한 한 경로 세그먼트만 받는다. 설정에서 번들 외 소스를 지정하면 실패한다.
 

@@ -4,7 +4,6 @@ import {
 	Suspense,
 	lazy,
 	useEffect,
-	useMemo,
 	useRef,
 	useState,
 	useSyncExternalStore,
@@ -13,10 +12,10 @@ import { t } from "../../lib/i18n";
 import { isKioskDemo } from "../../lib/kiosk-demo/flag";
 import { getStoredLayoutOrientation } from "../../lib/ui-preferences";
 import {
-	listKioskKnowledgeManuscripts,
 	seedKioskAdkWorkspace,
 	seedKioskKnowledge,
 } from "../../lib/kiosk-demo/knowledge";
+import { seedKioskSlidesWorkspace } from "../../lib/kiosk-demo/slides";
 import { WEB_ADK_PATH } from "../../lib/web-runtime/web-adk-path";
 import { getWebFs } from "../../lib/web-runtime/web-fs";
 import { getWebWorkspaceFile } from "../../lib/web-runtime/web-workspace-files";
@@ -57,15 +56,8 @@ export function openWebWorkspaceFile(rawPath: string): void {
 	}
 }
 
-const KIOSK_ROOT_ORDER = [
-	"AGENTS.md",
-	"persona",
-	"memory",
-	"knowledge",
-	"rules",
-	"conversations",
-	"kiosk-demo",
-] as const;
+const KIOSK_ROOT_ORDER = ["memory", "knowledge", "slides"] as const;
+const KIOSK_DEFAULT_FILE = `${WEB_ADK_PATH}/memory/guest-memory.md`;
 
 const KIOSK_ALLOWED_ROOT_ENTRIES = new Set<string>(KIOSK_ROOT_ORDER);
 
@@ -258,35 +250,26 @@ export default function WebWorkspace() {
 	const status = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
 	const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
 	const [error, setError] = useState(false);
-	const [activeTab, setActiveTab] = useState<"offline" | "knowledge">(
-		"offline",
-	);
 	const [showPath, setShowPath] = useState(false);
 	const [explorerOpen, setExplorerOpen] = useState(
 		() => !isMobileWorkspaceViewport(),
 	);
-	const kioskDemo = isKioskDemo();
 	const [file, setFile] = useState(() => {
 		if (pendingOpenFilePath) {
 			const next = pendingOpenFilePath;
 			pendingOpenFilePath = null;
 			return next;
 		}
-		return isKioskDemo() ? `${WEB_ADK_PATH}/AGENTS.md` : "";
+		return isKioskDemo() ? KIOSK_DEFAULT_FILE : "";
 	});
 	const [treeWidth, setTreeWidth] = useState(() => (isKioskDemo() ? 236 : 180));
 	const workspaceRef = useRef<HTMLDivElement>(null);
-	const kioskManuscripts = useMemo(
-		() => (kioskDemo ? listKioskKnowledgeManuscripts() : []),
-		[kioskDemo],
-	);
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		const onOpenFile = (event: Event) => {
 			const detail = (event as CustomEvent<{ path?: string }>).detail;
 			if (detail?.path) {
 				pendingOpenFilePath = null;
-				setActiveTab("offline");
 				setFile(detail.path);
 			}
 		};
@@ -317,6 +300,7 @@ export default function WebWorkspace() {
 					const fs = getWebFs();
 					await seedKioskKnowledge(fs).catch(() => {});
 					await seedKioskAdkWorkspace(fs).catch(() => {});
+					await seedKioskSlidesWorkspace(fs).catch(() => {});
 				}
 				return navigator.storage.getDirectory();
 			})
@@ -401,63 +385,23 @@ export default function WebWorkspace() {
 						<button
 							type="button"
 							data-testid="web-workspace-tab-offline"
-							aria-pressed={activeTab === "offline"}
-							onClick={() => setActiveTab("offline")}
+							aria-pressed
 						>
 							{t("webExplorer.offline")}
 						</button>
-						{kioskDemo && (
-							<button
-								type="button"
-								data-testid="web-workspace-tab-knowledge"
-								aria-pressed={activeTab === "knowledge"}
-								onClick={() => {
-									setActiveTab("knowledge");
-									if (
-										(!file || file === `${WEB_ADK_PATH}/AGENTS.md`) &&
-										kioskManuscripts[0]
-									) {
-										setFile(kioskManuscripts[0].uri);
-									}
-								}}
-							>
-								{t("settings.tabKnowledge")}
-							</button>
-						)}
 					</div>
-					{activeTab === "knowledge" && kioskDemo ? (
-						<ul
-							className="web-workspace-list"
-							data-testid="web-workspace-knowledge-list"
-						>
-							{kioskManuscripts.map((item) => (
-								<li key={item.name}>
-									<button
-										type="button"
-										aria-pressed={file === item.uri}
-										onClick={() => setFile(item.uri)}
-									>
-										📄 {item.title} ({item.name})
-									</button>
-								</li>
-							))}
-						</ul>
-					) : (
-						<>
-							{showPath && (
-								<code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>
-							)}
-							{error && <p role="alert">{t("webExplorer.readFailed")}</p>}
-							{root && (
-								<Directory
-									key={status.phase}
-									dir={root}
-									path={WEB_ADK_PATH}
-									onOpen={setFile}
-									activeFile={file}
-								/>
-							)}
-						</>
+					{showPath && (
+						<code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>
+					)}
+					{error && <p role="alert">{t("webExplorer.readFailed")}</p>}
+					{root && (
+						<Directory
+							key={status.phase}
+							dir={root}
+							path={WEB_ADK_PATH}
+							onOpen={setFile}
+							activeFile={file}
+						/>
 					)}
 				</aside>
 			)}

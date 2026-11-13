@@ -26,6 +26,7 @@ import {
 	type SlidePresenterSpeechRequest,
 } from "../slide-presenter-events";
 import { resetWarnedCommands, routeCommand } from "../web-runtime/router";
+import { createMemoryWebFs } from "../web-runtime/web-fs";
 import { useAppStore } from "../../stores/app";
 import { useChatStore } from "../../stores/chat";
 import * as kioskFlag from "./flag";
@@ -45,6 +46,7 @@ import {
 	isKioskSlideQuestionTurnActive,
 	notifyKioskSlidesTurnSettled,
 	registerKioskSlidesController,
+	seedKioskSlidesWorkspace,
 } from "./slides";
 import rawIrPublicDeck from "./slides/ir-public.json";
 
@@ -463,5 +465,24 @@ describe("kiosk-demo S6 public IR slides", () => {
 		expect(screen.getByTestId("slides-card-title")).toHaveTextContent(
 			"브랜드 체계: 나이아와 별자리 모델 이름",
 		);
+	});
+
+	it("seeds the read-aloud script into the explorer's slides folder without the old folder name or 키오스크", async () => {
+		const flag = vi.spyOn(kioskFlag, "isKioskDemo").mockReturnValue(true);
+		const fs = createMemoryWebFs();
+		await seedKioskSlidesWorkspace(fs);
+		expect(Object.keys(fs.snapshot()).sort()).toEqual([
+			"naia-adk",
+			"naia-adk/slides",
+			"naia-adk/slides/nextain-ir-public.md",
+		]);
+		const script = await fs.readText("naia-adk/slides/nextain-ir-public.md");
+		expect(script).toContain("## 9. 앞으로의 확장");
+		expect(script).not.toContain("키오스크");
+		expect(JSON.stringify(rawIrPublicDeck)).not.toContain("키오스크");
+		const write = vi.spyOn(fs, "writeBytes");
+		await seedKioskSlidesWorkspace(fs);
+		expect(write).not.toHaveBeenCalled();
+		flag.mockRestore();
 	});
 });

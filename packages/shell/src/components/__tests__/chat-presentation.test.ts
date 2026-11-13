@@ -92,7 +92,7 @@ describe("resolveKioskEvidenceFiles", () => {
 							args: { question: "나이아?" },
 							status: "success",
 							output:
-								"opfs://naia-adk/kiosk-demo/knowledge/naia.md AGENTS.md guest-memory.md",
+								"opfs://naia-adk/.bundle/knowledge/naia.md AGENTS.md guest-memory.md",
 						},
 						{
 							toolCallId: "t2",

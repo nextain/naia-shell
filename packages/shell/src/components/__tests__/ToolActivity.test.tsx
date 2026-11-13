@@ -178,7 +178,7 @@ describe("ToolActivity", () => {
 					{
 						id: "card-naia-1",
 						title: "나이아 서비스 소개",
-						sourceUris: ["opfs://naia-adk/kiosk-demo/knowledge/naia.md"],
+						sourceUris: ["opfs://naia-adk/.bundle/knowledge/naia.md"],
 					},
 				],
 			}),
@@ -222,7 +222,7 @@ describe("ToolActivity", () => {
 				hits: [
 					{
 						id: "card-company-1",
-						sourceUris: ["opfs://naia-adk/kiosk-demo/knowledge/company.md"],
+						sourceUris: ["opfs://naia-adk/.bundle/knowledge/company.md"],
 					},
 				],
 			}),

@@ -4032,7 +4032,7 @@ describe("ChatArea", () => {
 									sources: [
 										{
 											sourceUris: [
-												"opfs://naia-adk/kiosk-demo/knowledge/naia.md",
+												"opfs://naia-adk/.bundle/knowledge/naia.md",
 											],
 										},
 									],
@@ -4371,7 +4371,7 @@ describe("ChatArea", () => {
 							{
 								id: "company-1",
 								sourceUris: [
-									"opfs://naia-adk/kiosk-demo/knowledge/company.md",
+									"opfs://naia-adk/.bundle/knowledge/company.md",
 								],
 							},
 						],
@@ -4503,7 +4503,7 @@ describe("ChatArea", () => {
 							{
 								id: "memory-1",
 								sourceUris: [
-									"opfs://naia-adk/kiosk-demo/knowledge/memory.md",
+									"opfs://naia-adk/.bundle/knowledge/memory.md",
 								],
 							},
 						],

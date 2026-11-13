@@ -608,7 +608,7 @@ test("S5 kiosk routes Jina speech to gateway voice (naia-voice:tpl-jina), syncs 
 		.toBeGreaterThanOrEqual(1);
 });
 
-test("ADK explorer shows AGENTS.md at top & auto-opens once after entry, shows evidence line under replies, and exposes local PC answer toggle with 8GB notice", async ({
+test("ADK explorer shows memory·knowledge·slides only & auto-opens once after entry, shows evidence line under replies, and exposes local PC answer toggle with 8GB notice", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 1280, height: 800 });
@@ -661,22 +661,22 @@ test("ADK explorer shows AGENTS.md at top & auto-opens once after entry, shows e
 	await expect(page.getByText(/게스트님, 안녕하세요/).first()).toBeVisible();
 	await expect(page.locator(".splash-screen")).toHaveCount(0);
 
-	// 1. Explorer opens once after entry with AGENTS.md at top of tree and open in viewer
+	// 1. Explorer opens once after entry with only memory·knowledge·slides in the tree and the guest memory open in viewer
 	const viewer = page.getByTestId("web-workspace-viewer");
 	await expect(viewer).toBeVisible();
 	await expect(viewer.locator(".web-workspace-viewer-bar code")).toHaveText(
-		"AGENTS.md",
+		"guest-memory.md",
 	);
-	await expect(viewer).toContainText("AGENTS.md — 지나 (Jina) ADK 하네스 지침");
+	await expect(viewer).toContainText("게스트 기억 (Guest Memory)");
 
 	const rootTreeItems = page.locator(
 		".web-workspace-tree > .web-workspace-list > li",
 	);
-	await expect(rootTreeItems.first()).toContainText("AGENTS.md");
-	await expect(page.locator(".web-workspace-tree")).toContainText("persona");
-	await expect(page.locator(".web-workspace-tree")).toContainText("memory");
-	await expect(page.locator(".web-workspace-tree")).toContainText("knowledge");
-	await expect(page.locator(".web-workspace-tree")).toContainText("rules");
+	await expect(rootTreeItems).toHaveCount(3);
+	await expect(rootTreeItems.nth(0)).toContainText("memory");
+	await expect(rootTreeItems.nth(1)).toContainText("knowledge");
+	await expect(rootTreeItems.nth(2)).toContainText("slides");
+	await expect(page.getByTestId("web-workspace-tab-knowledge")).toHaveCount(0);
 
 	// Wait for avatar canvas to paint non-empty frame
 	await expect

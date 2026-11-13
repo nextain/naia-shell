@@ -1,5 +1,7 @@
 import { useAppStore } from "../../stores/app";
 import { useChatStore } from "../../stores/chat";
+import { webAdkOpfsPath } from "../web-runtime/web-adk-path";
+import type { WebFs } from "../web-runtime/web-fs";
 import { isKioskDemo } from "./flag";
 import rawIrPublicDeck from "./slides/ir-public.json";
 
@@ -42,10 +44,10 @@ export interface KioskSlidesController {
 }
 
 export const KIOSK_IR_SLIDES_PDF_PATH =
-	"opfs://naia-adk/kiosk-demo/slides/nextain-ir-public.pdf";
+	"opfs://naia-adk/slides/nextain-ir-public.pdf";
 export const KIOSK_IR_SLIDES_PDF_NAME = "넥스테인 공개 IR 발표.pdf";
 export const KIOSK_IR_SLIDES_SCRIPT_PATH =
-	"opfs://naia-adk/kiosk-demo/slides/nextain-ir-public.md";
+	"opfs://naia-adk/slides/nextain-ir-public.md";
 export const KIOSK_IR_SLIDES_SCRIPT_NAME = "넥스테인 공개 IR 발표.md";
 
 export const FORBIDDEN_IR_SLIDE_WORDS = [
@@ -153,6 +155,14 @@ export function buildKioskIrScriptMarkdown(
 			(slide) => `## ${slide.page}. ${slide.title}\n\n${slide.script.trim()}`,
 		)
 		.join("\n\n");
+}
+
+/** 탐색기의 slides 폴더에 낭독 대본을 둔다. 번들 대본이 바뀌면 새 글로 덮어쓴다. */
+export async function seedKioskSlidesWorkspace(fs: WebFs): Promise<void> {
+	if (!isKioskDemo()) return;
+	const path = webAdkOpfsPath(KIOSK_IR_SLIDES_SCRIPT_PATH);
+	const text = `# ${KIOSK_IR_SLIDES_SCRIPT_NAME.replace(/\.md$/, "")}\n\n${buildKioskIrScriptMarkdown()}\n`;
+	if ((await fs.readText(path)) !== text) await fs.writeBytes(path, text);
 }
 
 function escapePdfAscii(value: string): string {

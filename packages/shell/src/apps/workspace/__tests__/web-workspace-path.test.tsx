@@ -48,20 +48,18 @@ describe("web workspace path", () => {
 			"GEMINI.md",
 			"README.md",
 			"agents-rules-detail.json",
+			"AGENTS.md",
+			"persona",
+			"rules",
+			"conversations",
+			"kiosk-demo",
+			".bundle",
 		]) {
 			expect(isVisibleWebWorkspaceEntry(hidden, "opfs://naia-adk", true)).toBe(
 				false,
 			);
 		}
-		for (const allowedRoot of [
-			"AGENTS.md",
-			"persona",
-			"memory",
-			"knowledge",
-			"rules",
-			"conversations",
-			"kiosk-demo",
-		]) {
+		for (const allowedRoot of ["memory", "knowledge", "slides"]) {
 			expect(
 				isVisibleWebWorkspaceEntry(allowedRoot, "opfs://naia-adk", true),
 			).toBe(true);
@@ -69,23 +67,20 @@ describe("web workspace path", () => {
 		expect(
 			sortWebWorkspaceEntries(
 				[
-					{ name: "rules", kind: "directory" },
+					{ name: "slides", kind: "directory" },
 					{ name: "knowledge", kind: "directory" },
-					{ name: "AGENTS.md", kind: "file" },
 					{ name: "memory", kind: "directory" },
-					{ name: "persona", kind: "directory" },
 				],
 				"opfs://naia-adk",
 				true,
 			).map((e) => e.name),
-		).toEqual(["AGENTS.md", "persona", "memory", "knowledge", "rules"]);
+		).toEqual(["memory", "knowledge", "slides"]);
 		expect(
-			isVisibleWebWorkspaceEntry(
-				"naia.md",
-				"opfs://naia-adk/kiosk-demo/knowledge",
-				true,
-			),
+			isVisibleWebWorkspaceEntry("naia.md", "opfs://naia-adk/knowledge", true),
 		).toBe(true);
+		await expect(
+			getWebWorkspaceFile("opfs://naia-adk/.bundle/knowledge/naia.md"),
+		).rejects.toThrow("web_workspace_invalid_path");
 
 		await expect(
 			getWebWorkspaceFile("opfs://naia-adk/.agents/context/agents-rules-detail.json"),
@@ -100,26 +95,17 @@ describe("web workspace path", () => {
 		).toHaveTextContent("브라우저 안 오프라인 공간");
 		expect(screen.queryByText(/온라인/)).toBeNull();
 
-		// AGENTS.md is open by default in the viewer when WebWorkspace mounts in kiosk mode
-		const viewerBefore = screen.getByTestId("web-workspace-viewer");
-		expect(
-			viewerBefore.querySelector(".web-workspace-viewer-bar code")?.textContent,
-		).toBe("AGENTS.md");
+		// 지식은 knowledge 폴더 하나로만 보인다: 탐색기에 따로 둔 "지식" 탭은 없다.
+		expect(screen.queryByTestId("web-workspace-tab-knowledge")).toBeNull();
+		expect(screen.queryByTestId("web-workspace-knowledge-list")).toBeNull();
 
-		const knowledgeTab = screen.getByTestId("web-workspace-tab-knowledge");
-		expect(knowledgeTab).toHaveTextContent("지식");
-		fireEvent.click(knowledgeTab);
-		expect(
-			screen.getByTestId("web-workspace-knowledge-list").querySelectorAll("li")
-				.length,
-		).toBe(21);
+		// the guest memory is open by default in the viewer when WebWorkspace mounts in kiosk mode
 		expect(screen.getByTestId("web-workspace-resizer")).toBeInTheDocument();
 		const viewer = screen.getByTestId("web-workspace-viewer");
-		expect(viewer).toBeInTheDocument();
 		const barCode = viewer.querySelector(".web-workspace-viewer-bar code");
-		expect(barCode?.textContent).toBe("adk.md");
+		expect(barCode?.textContent).toBe("guest-memory.md");
 		expect(barCode?.getAttribute("title")).toBe(
-			"opfs://naia-adk/kiosk-demo/knowledge/adk.md",
+			"opfs://naia-adk/memory/guest-memory.md",
 		);
 	});
 

@@ -7,6 +7,8 @@ export interface WebFs {
 	listEntries?(path: string): Promise<string[]>;
 	/** 파일 삭제. 이미 없으면 무시. */
 	removeFile?(path: string): Promise<void>;
+	/** 디렉토리를 안의 것까지 삭제. 이미 없으면 무시. */
+	removeDir?(path: string): Promise<void>;
 }
 
 export function validateAndSplitPath(path: string): string[] {
@@ -63,7 +65,7 @@ export interface WebFsDirectoryHandle {
 		name: string,
 		options?: { create?: boolean },
 	): Promise<WebFsFileHandle>;
-	removeEntry(name: string): Promise<void>;
+	removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
 	keys?(): AsyncIterable<string>;
 	entries?(): AsyncIterable<[string, unknown]>;
 	[Symbol.asyncIterator]?(): AsyncIterableIterator<[string, unknown]>;
@@ -295,6 +297,24 @@ export function createOpfsWebFs(
 				throw e;
 			}
 		},
+
+		async removeDir(path: string): Promise<void> {
+			const segs = validateAndSplitPath(path);
+			try {
+				let currentDir = await getRoot();
+				for (let i = 0; i < segs.length - 1; i++) {
+					currentDir = await currentDir.getDirectoryHandle(segs[i], {
+						create: false,
+					});
+				}
+				await currentDir.removeEntry(segs[segs.length - 1], {
+					recursive: true,
+				});
+			} catch (e) {
+				if (isNotFoundError(e)) return;
+				throw e;
+			}
+		},
 	};
 }
 
@@ -361,6 +381,16 @@ export function createMemoryWebFs(): WebFs & {
 			const segs = validateAndSplitPath(path);
 			const norm = segs.join("/");
 			files.delete(norm);
+		},
+
+		async removeDir(path: string): Promise<void> {
+			const norm = validateAndSplitPath(path).join("/");
+			const inside = (item: string) =>
+				item === norm || item.startsWith(`${norm}/`);
+			for (const filePath of [...files.keys()])
+				if (inside(filePath)) files.delete(filePath);
+			for (const dirPath of [...dirs])
+				if (inside(dirPath)) dirs.delete(dirPath);
 		},
 
 		snapshot(): Record<string, string | "<dir>"> {
