@@ -1,4 +1,11 @@
-<!-- src-sha: b925adbe31b3af80 -->
+<!-- src-sha: 441f280a16a1abc3 -->
+
+## S2 키오스크 웹 기억 — 2026-11-05
+
+- P01–P05 완료: 키오스크 깃발에서만 OPFS MemoryPort를 데스크톱 agent 처리기에 연결하고 네 기억 명령을 연다. 새로고침 뒤 게스트님·앞 사용자 발화를 회상한다.
+- S3 API: `packages/shell/src/lib/kiosk-demo/memory.ts`의 `resetKioskMemory()`. 기억만 초기화하므로 새 방문자는 진행 중인 응답 취소·대화 UI 초기화 및 Worker 폐기(페이지 재로딩 권장)도 수행한다.
+- 검증: 키오스크 Vitest 7/7(실 agent handler 포함), 웹 런타임/worker 219 통과, 타입 검사(core/Shell/BGM/worker), 키오스크 Vite build, 계약/앵커/assembly 및 부정 시험 통과.
+- 전체 Shell은 3,035 통과/9 실패/24 제외. 변경 전 HEAD에서도 동일한 agent-pairing 8건·SettingsTab logout 1건 실패를 재현했다. 루트 구조 기존 `tmp/`·`tsconfig.build.json` 위반은 보존했다.
 
 ## 0.2.6 B2C 초기 slice — 2026-11-03
 

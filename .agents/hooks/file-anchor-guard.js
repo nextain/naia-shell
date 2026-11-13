@@ -30,8 +30,9 @@ async function main() {
 
 	const root = process.env.M3_PROJECT_ROOT || process.cwd();
 	const rel = isAbsolute(fp) ? relative(root, fp) : normalize(fp);
-	// 범위: 이 repo 의 src/main/*.ts 만 (.d.ts·테스트·외부 제외).
-	if (!rel.startsWith("src/main/") || !rel.endsWith(".ts") || rel.endsWith(".d.ts")) process.exit(0);
+	// 범위: core + kiosk-demo + browser Worker (.d.ts·테스트·외부 제외).
+	const scoped = rel.startsWith("src/main/") || rel.startsWith("packages/shell/src/lib/kiosk-demo/") || rel.startsWith("packages/shell/web-worker/");
+	if (!scoped || !rel.endsWith(".ts") || rel.endsWith(".d.ts") || rel.endsWith(".test.ts")) process.exit(0);
 
 	// enforcement level (structure-guard 와 동일 소스).
 	let level = "block";

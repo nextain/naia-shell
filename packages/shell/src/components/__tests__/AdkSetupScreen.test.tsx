@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 	saveConfigSecure: vi.fn(),
 	setAdkPath: vi.fn(),
 	writeNaiaConfigAtPath: vi.fn(),
+	fetchGatewayModelCatalog: vi.fn(),
+	applyNaiaSlotDefaults: vi.fn((config: unknown, _models?: unknown) => config),
 	listeners: new Map<string, (event: any) => void>(),
 }));
 
@@ -48,7 +50,9 @@ vi.mock("../../lib/adk-store", () => ({
 	setAdkPath: mocks.setAdkPath,
 	writeNaiaConfigAtPath: mocks.writeNaiaConfigAtPath,
 }));
-vi.mock("../../lib/config", () => ({
+vi.mock("../../lib/config", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/config")>()),
+	LAB_GATEWAY_URL: "https://test.invalid",
 	NAIA_WEB_BASE_URL: "https://www.naia.land",
 	saveConfigSecure: mocks.saveConfigSecure,
 }));
@@ -56,9 +60,14 @@ vi.mock("../../lib/i18n", () => ({
 	getLocale: () => "ko",
 	t: (key: string) => key,
 }));
-vi.mock("../../lib/slots/model", () => ({
-	NAIA_SLOT_DEFAULTS: { main: { model: "gemini-test" } },
-	applyNaiaSlotDefaults: (config: unknown) => config,
+vi.mock("../../lib/slots/model", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../lib/slots/model")>();
+	mocks.applyNaiaSlotDefaults.mockImplementation(actual.applyNaiaSlotDefaults as typeof mocks.applyNaiaSlotDefaults);
+	return { ...actual, applyNaiaSlotDefaults: mocks.applyNaiaSlotDefaults };
+});
+vi.mock("../../lib/llm/registry", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/llm/registry")>()),
+	fetchGatewayModelCatalog: mocks.fetchGatewayModelCatalog,
 }));
 
 import { AdkSetupScreen } from "../AdkSetupScreen";
@@ -93,6 +102,8 @@ describe("AdkSetupScreen operation locking", () => {
 		mocks.saveConfigSecure.mockReset().mockResolvedValue(undefined);
 		mocks.setAdkPath.mockReset().mockResolvedValue(undefined);
 		mocks.writeNaiaConfigAtPath.mockReset().mockResolvedValue(undefined);
+		mocks.fetchGatewayModelCatalog.mockReset().mockResolvedValue(null);
+		mocks.applyNaiaSlotDefaults.mockClear();
 		mocks.listeners.clear();
 		localStorage.clear();
 	});
@@ -241,7 +252,7 @@ describe("AdkSetupScreen operation locking", () => {
 		expect(mocks.readNaiaConfig).toHaveBeenCalledWith(selectedPath);
 	});
 
-	it("persists auth into the selected ADK and ignores the old local cache", async () => {
+	it("IT-SM-14 persists auth into the selected ADK and ignores the old local cache", async () => {
 		mocks.invoke.mockImplementation((command: string) => {
 			if (command === "workspace_detect_adk_root") return Promise.resolve("");
 			return Promise.resolve(undefined);
@@ -299,6 +310,7 @@ describe("AdkSetupScreen operation locking", () => {
 		expect(mocks.readNaiaConfig).toHaveBeenCalledWith(
 			"C:\\Users\\Public\\naia-adk",
 		);
+		expect(mocks.applyNaiaSlotDefaults).toHaveBeenCalledWith(expect.objectContaining({ provider: "ollama", model: "selected-model" }), []);
 		expect(mocks.setAdkPath.mock.invocationCallOrder[0]).toBeLessThan(
 			mocks.saveConfigSecure.mock.invocationCallOrder[0],
 		);
@@ -317,6 +329,61 @@ describe("AdkSetupScreen operation locking", () => {
 		);
 		await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
 		window.removeEventListener("naia_auth_ready", authReady);
+	});
+
+	it("IT-SM-14 passes selected workspace legacy memory and catalog to defaults", async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		mocks.readNaiaConfig.mockResolvedValue({ provider: "nextain", model: "existing", memoryLlmProvider: "ollama", memoryLlmModel: "old", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "ref" });
+		mocks.fetchGatewayModelCatalog.mockResolvedValue([
+			{ provider: "azure", id: "gpt-5.6-luna", price: { input: 1, output: 1 } },
+		]);
+		render(<AdkSetupScreen onComplete={vi.fn()} />);
+		await waitFor(() => expect(mocks.listeners.get("naia_auth_complete")).toBeDefined());
+		await act(async () => {
+			mocks.listeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key" } });
+			await Promise.resolve();
+		});
+		await waitFor(() => expect(mocks.applyNaiaSlotDefaults).toHaveBeenCalled());
+		expect(mocks.applyNaiaSlotDefaults).toHaveBeenCalledWith(
+			expect.objectContaining({ model: "existing", memoryLlmProvider: "ollama", memoryLlmModel: "old" }),
+			[{ id: "gpt-5.6-luna", label: "gpt-5.6-luna", capabilities: ["llm"] }],
+		);
+		await waitFor(() => expect(mocks.saveConfigSecure).toHaveBeenCalled());
+		const saved = mocks.saveConfigSecure.mock.calls[0][0] as import("../../lib/config").AppConfig;
+		const { readConfiguredLlmRoles } = await import("../../lib/llm/roles");
+		expect(readConfiguredLlmRoles(saved).sub).toEqual({ inherit: "memory" });
+		expect(saved.memoryLlmModel).toBe("old");
+		expect(saved.memoryLlmCredentialRef).toBe("ref");
+	});
+
+	it("IT-SM-14 fills a blank workspace from the catalog with the real default function", async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		mocks.readNaiaConfig.mockResolvedValue(null);
+		mocks.fetchGatewayModelCatalog.mockResolvedValue([
+			{ provider: "azure", id: "gpt-6.1-terra", price: { input: 1, output: 1 } },
+			{ provider: "azure", id: "gpt-5.6-luna", price: { input: 1, output: 1 } },
+		]);
+		render(<AdkSetupScreen onComplete={vi.fn()} />);
+		await waitFor(() => expect(mocks.listeners.get("naia_auth_complete")).toBeDefined());
+		await act(async () => { mocks.listeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key" } }); await Promise.resolve(); });
+		await waitFor(() => expect(mocks.saveConfigSecure).toHaveBeenCalled());
+		const saved = mocks.saveConfigSecure.mock.calls[0][0] as import("../../lib/config").AppConfig;
+		expect(saved.llmRoles?.main).toMatchObject({ model: "gpt-6.1-terra", thinkingLevel: "xhigh" });
+		expect(saved.llmRoles?.sub).toMatchObject({ model: "gpt-5.6-luna", thinkingLevel: "low" });
+	});
+
+	it("IT-SM-14 preserves explicitly selected sub and memory across login", async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		mocks.readNaiaConfig.mockResolvedValue({ provider: "nextain", model: "chosen-main", llmRoles: { sub: { provider: "ollama", model: "chosen-sub" } }, memoryLlmProvider: "vllm", memoryLlmModel: "chosen-memory" });
+		mocks.fetchGatewayModelCatalog.mockResolvedValue([{ provider: "azure", id: "gpt-5.6-luna", price: { input: 1, output: 1 } }]);
+		render(<AdkSetupScreen onComplete={vi.fn()} />);
+		await waitFor(() => expect(mocks.listeners.get("naia_auth_complete")).toBeDefined());
+		await act(async () => { mocks.listeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key" } }); await Promise.resolve(); });
+		await waitFor(() => expect(mocks.saveConfigSecure).toHaveBeenCalled());
+		const saved = mocks.saveConfigSecure.mock.calls[0][0] as import("../../lib/config").AppConfig;
+		expect(saved.model).toBe("chosen-main");
+		expect(saved.llmRoles?.sub).toMatchObject({ provider: "ollama", model: "chosen-sub" });
+		expect(saved.memoryLlmModel).toBe("chosen-memory");
 	});
 
 	it("does not complete setup when selected ADK public persistence fails", async () => {

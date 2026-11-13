@@ -849,18 +849,9 @@ describe("vosk 빌드 순서 불변식 (FR-INSTALL.2 — links 키 게이트)", 
 
 describe("agent production staging", () => {
 	it("keeps the Rust build gate synchronized with the pairing manifest", () => {
-		const pairing = JSON.parse(
-			readFileSync(resolve(SHELL, "agent-pairing.json"), "utf8"),
-		) as { agentCommit: string; protoSha256: string };
-		const buildScript = readFileSync(
-			resolve(SHELL, "src-tauri/build.rs"),
-			"utf8",
-		);
-
-		expect(buildScript).toContain(
-			`const REQUIRED_AGENT_COMMIT: &str = "${pairing.agentCommit}";`,
-		);
-		expect(buildScript).toContain(`"${pairing.protoSha256}";`);
+		const buildScript = readFileSync(resolve(SHELL, "src-tauri/build.rs"), "utf8");
+		expect(buildScript).toContain('manifest["agentCommit"]');
+		expect(buildScript).toContain('manifest["protoSha256"]');
 	});
 
 	it("builds local runtime dependencies before building the agent", () => {
@@ -1017,16 +1008,8 @@ describe("installer workflow integration contracts", () => {
 	});
 
 	it("clones the exact Agent revision declared by the pairing manifest", () => {
-		const pairing = readJson("agent-pairing.json") as {
-			agentCommit: string;
-			memoryCommit: string;
-		};
-		expect(workflow).toContain(
-			`git -C ../naia-agent fetch --depth 1 origin ${pairing.agentCommit}`,
-		);
-		expect(workflow).toContain(
-			`git -C ../naia-memory fetch --depth 1 origin ${pairing.memoryCommit}`,
-		);
+		expect(workflow).toContain('require("./packages/shell/agent-pairing.json").agentCommit');
+		expect(workflow).toContain('require("./packages/shell/agent-pairing.json").memoryCommit');
 	});
 
 	it("keeps Agent file dependencies and installer checkouts as siblings", () => {

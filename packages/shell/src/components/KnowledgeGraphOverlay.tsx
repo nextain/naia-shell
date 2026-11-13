@@ -90,8 +90,8 @@ export function KnowledgeGraphOverlay({
 				className="knowledge-graph-overlay-app"
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					width: "92vw",
-					height: "88vh",
+					width: "calc(var(--naia-vw, 1vw) * 92)",
+					height: "calc(var(--naia-vh, 1vh) * 88)",
 					maxWidth: 1500,
 					maxHeight: 1000,
 					background: "linear-gradient(180deg, #11161f, #0b0f16)",

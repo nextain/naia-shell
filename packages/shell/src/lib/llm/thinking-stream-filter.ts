@@ -38,7 +38,8 @@ export class ThinkingStreamFilter {
 				const candidateLower = candidate.toLowerCase();
 				if (
 					this.bracketCandidate ||
-					BRACKET_OPEN_TAG.startsWith(candidateLower) ||
+					(candidate.length > 0 &&
+						BRACKET_OPEN_TAG.startsWith(candidateLower)) ||
 					candidateLower.startsWith(BRACKET_OPEN_TAG)
 				) {
 					this.bracketCandidate = true;

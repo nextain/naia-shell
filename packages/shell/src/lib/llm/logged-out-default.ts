@@ -3,9 +3,8 @@
 // 셸이 지원하는 LLM 경로는 나이아 계정·CLI·로컬 셋뿐이다. 로그인이 없을 때
 // 타사 키 제공자(gemini)나 키 없는 나이아 계정(nextain)을 기본값으로 쓰면
 // 첫 대화가 지원하지 않는 곳으로 나가거나 실패한다. 그래서 로그인하지 않은
-// 상태의 기본값은 로컬 Ollama 이거나, 없으면 제공자가 빈 "LLM 없음"이다.
+// 상태의 기본값은 제공자가 빈 "LLM 없음"이다. 로컬은 직접 선택한다.
 
-import { DEFAULT_LOCAL_LLM_MODEL, DEFAULT_OLLAMA_HOST } from "../config";
 import { fetchOllamaModels, getLlmProvider } from "./registry";
 
 export type LoggedOutLlm =
@@ -25,44 +24,22 @@ export function keepsProviderWhenLoggedOut(provider: string | undefined): boolea
 	return Boolean(meta && !meta.disabled && !meta.requiresApiKey && !meta.requiresNaiaKey);
 }
 
-/** Ollama 확인 결과에서 기본 LLM 을 고른다. 부수효과 없는 순수 함수. */
-export function chooseLoggedOutLlm(probe: {
+/** 이전 probe 호출자와 호환하되 로컬 모델을 자동 선택하지 않는다. */
+export function chooseLoggedOutLlm(_probe: {
 	connected: boolean;
 	modelIds: readonly string[];
 }): LoggedOutLlm {
-	if (!probe.connected || probe.modelIds.length === 0) return NO_LLM;
-	const model = probe.modelIds.includes(DEFAULT_LOCAL_LLM_MODEL)
-		? DEFAULT_LOCAL_LLM_MODEL
-		: probe.modelIds[0];
-	return { provider: "ollama", model };
+	return NO_LLM;
 }
 
-/** Ollama 확인을 기다리는 최대 시간. 응답 없는 원격 호스트가 로그아웃을 붙잡지 않게 한다. */
+/** 기존 호출자와의 인터페이스 호환용 상수. */
 export const OLLAMA_PROBE_TIMEOUT_MS = 2500;
 
-/** Ollama 에 물어 로그인하지 않은 상태의 기본 LLM 을 정한다. */
+/** 로그인하지 않은 상태에서 기본 모델은 비워 둔다. */
 export async function resolveLoggedOutLlm(
-	ollamaHost: string | undefined,
-	probe: typeof fetchOllamaModels = fetchOllamaModels,
-	timeoutMs: number = OLLAMA_PROBE_TIMEOUT_MS,
+	_ollamaHost: string | undefined,
+	_probe: typeof fetchOllamaModels = fetchOllamaModels,
+	_timeoutMs: number = OLLAMA_PROBE_TIMEOUT_MS,
 ): Promise<LoggedOutLlm> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const timedOut = new Promise<null>((resolve) => {
-		timer = setTimeout(() => resolve(null), timeoutMs);
-	});
-	try {
-		const result = await Promise.race([
-			probe(ollamaHost || DEFAULT_OLLAMA_HOST),
-			timedOut,
-		]);
-		if (!result) return NO_LLM;
-		return chooseLoggedOutLlm({
-			connected: result.connected,
-			modelIds: result.models.map((model) => model.id),
-		});
-	} catch {
-		return NO_LLM;
-	} finally {
-		clearTimeout(timer);
-	}
+	return NO_LLM;
 }

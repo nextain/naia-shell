@@ -811,6 +811,12 @@ When a development task is delegated, Shell hands the saved workspace configurat
 
 ## UC-NAIA-MODEL-ORDER — Compare only usable Naia models
 
+### UC-RECOMMENDED-MODELS-ICON-WEB-PATH
+
+사용자는 계정에서 쓸 수 있는 모델을 추천·가격·성능 순서로 비교한다. 새 계정의 메인 기본값은 Terra 6.1이 제공되면 가장 높은 생각 수준(`xhigh`)으로 고르고, 없으면 다음으로 이용 가능한 추천 서버 모델을 고른다. 로컬 Qwen 모델은 직접 선택하며 요청된 PC 메모리 안내를 보인다. 비용을 줄이는 추천에는 표시를 붙인다. 앱에는 투명한 점 세 개 모양을 쓴다. 웹에서 파일 트리를 열면 작업 공간 경로가 보이며 데스크톱 동작도 유지한다.
+
+시험 범위: 단위 시험은 세 가지 순서, 기본값, 표시와 웹·데스크톱 경로 동작을 다룬다. 웹 시험은 설정·모델 선택·파일 트리와 좁은 화면·자료 부재를 확인한다. 아이콘 미리보기는 앱과 알림 영역 크기를 다룬다. 기본값 시험의 갱신은 [요구별 시험 계획](requirements.md#요구별-시험-계획--메인-모델과-작은-모델)을 따른다.
+
 A signed-in Naia user opens the AI model picker. The picker contains only
 currently usable routes; models marked `comingSoon` or otherwise unavailable
 are not offered. The default view is price order and there is no separate
@@ -830,6 +836,7 @@ reorders the same native WebView picker without changing the selected model.
 | weighted price is the default | registry weighted-score and stable-sort tests | Settings component and Playwright option-order assertions |
 | unavailable routes are absent | registry metadata/filter contract | Settings component and Playwright absence assertions |
 | performance order is evidence-based | dated recommendation-order contract | Settings sort-change assertion |
+| UC-RECOMMENDED-MODELS-ICON-WEB-PATH | 추천·가격·성능 순서, 메인 기본값과 비용 절감 표시: `registry.test.ts` | 설정 화면 순서·표시 `SettingsTab.test.tsx`, 웹 파일 트리 작업 공간 경로 `web-file-tree-path.test.tsx`, `web-workspace-path.test.tsx` |
 
 ## UC-RADIO-DJ-DURABLE — Radio DJ changes music truthfully and keeps one settings owner (#414)
 
@@ -2201,6 +2208,8 @@ Test Coverage Map (P02)
 
 사용자는 설정의 기억(Memory) 탭에서 작은 LLM(small LLM) 설정을 확인하고 선택할 수 있다. 기본값은 Naia 계정의 `gpt-5.4-nano`이며, 음성 엔진을 쓰지 않아 GPU 여유가 있을 때 로컬 Ollama 또는 vLLM을 선택하거나, 떠오름 기능을 끌 수 있다. 상태 안내 줄은 켜짐(Naia 계정 과금 / 로컬 / 자체 호스트), 작은 LLM 없음, 상속된 과금 제공자로 인한 자동 끔, Naia 게이트웨이 미준비(pending gateway) 상태를 명확히 설명한다. 사용자의 명시적 선택이나 Naia 로그인 없이는 어떠한 과금도 발생하지 않는다. 에이전트는 백그라운드에서 다음 답변 턴을 위해 관련 기억과 지식을 떠올리고 사실을 추출한다. 로그인하지 않은 상태의 로컬 폴백 설계는 #693에서 다루며, 음성/GPU 자동 전환은 후속 과제다.
 
+이 절의 nano 기본값은 기존 동작이다. 0.2.5의 목표와 기존 선택 보존은 [기존 기억 설정과의 관계](requirements.md#기존-기억-설정과의-관계)를 따른다.
+
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본 | Naia 로그인 시 작은 LLM 기본값으로 Naia `gpt-5.4-nano`가 설정되며 상태 안내에 켜짐과 과금 계정이 명시된다. |
@@ -2465,6 +2474,321 @@ Test Coverage Map (P02)
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
 
+## UC-SM-01 — 메인 모델과 작은 모델을 고르고 다시 쓰기
+
+사용자는 설정에서 대화에 쓸 메인 모델과 보조 작업에 쓸 작은 모델을 각각 확인하고 고른다. 아래는 이번 판 목표를 제품 책임자가 후보판에서 직접 확인할 순서다. 구현 2회차 수정 전 첫 나이아 계정 기본값은 메인 `deepseek-v4-flash`·작은 `gemini-3.1-flash-lite`였다. 목표 후보판에서는 제공 목록에 Terra 6.1이 있으면 가장 높은 생각 수준(`xhigh`)으로 고르고 없으면 다음으로 이용 가능한 추천 서버 모델을 고른다. 조사된 목록에서는 다음이 `solar-pro4`다([현재 동작과 목표](requirements.md#현재-동작과-이번-판-목표)). 각 시험의 기기·후보판·실제 결과를 기록하고 준비되지 않은 조건은 미실시로 남긴다. 품질 확인(QC)은 사람이 아래 행동과 기대 결과를 직접 대조하는 시험이다. 요구와 자동 시험의 연결은 [요구사항](requirements.md#기능-요구사항-fr--메인-모델과-작은-모델-025)에 둔다.
+
+| 번호 | 시작 조건과 행동 | 기대 결과와 실패 판정 |
+|---|---|---|
+| **QC-SM-01** | `gpt-5.6-luna`가 모델 목록에 있는 나이아 계정과 기존 설정이 없는 새 작업 공간을 준비하고 첫 설정을 마친다. 데스크톱 설정을 열어 모델 목록이 나타날 때 메인 모델과 작은 모델을 확인한다. | 메인 칸은 제공 목록에 Terra가 있으면 Terra 6.1, 없으면 다음 추천 서버 모델을 보이고 작은 칸은 목표 후보판에서 `gpt-5.6-luna`를 보인다. 낮은 생각 수준(`low`) 적용은 자동 시험으로 확인한다. Terra의 `xhigh` 적용은 자동 시험으로 확인한다. 목록 부재·조회 실패 시 옛 기억 모델 우선과 그 설정도 없을 때의 메인 상속은 자동 시험으로 확인한다. 임의의 로컬 모델이 기본 선택되거나 두 칸이 사라지면 실패다. |
+| **QC-SM-02** | 데스크톱에서 작은 모델의 추천·가격·성능 순서를 살펴보고 다른 모델을 고른다. 저장한 뒤 설정과 앱을 닫았다 다시 연다. | 고른 모델이 복원되고 메인 모델은 그대로다. 선택이 사라지거나 다른 값으로 바뀌면 실패다. |
+| **QC-SM-03** | `gpt-5.6-luna`가 모델 목록에 있는 나이아 계정과 기존 설정이 없는 새 웹 작업 공간을 준비해 첫 설정을 마치고 설정을 열어 목록이 나타나면 두 칸을 확인하고 작은 모델을 고르고 저장한다. 웹을 닫았다 같은 브라우저에서 다시 열어 설정을 확인한다. | 처음 메인은 제공 목록에 Terra가 있으면 Terra 6.1, 없으면 다음 추천 서버 모델이고 작은 모델은 목표 후보판에서 `gpt-5.6-luna`를 보인다. 낮은 생각 수준(`low`) 적용은 자동 시험으로 확인한다. Terra의 `xhigh` 적용은 자동 시험으로 확인한다. 다시 열면 저장한 작은 모델이 보인다. 선택이 사라지면 실패다. |
+| **QC-SM-04** | 작은 모델을 데스크톱에서 로컬 Qwen 4B로 직접 고르고 저장한 뒤 다시 연다. 웹의 작은 모델 목록도 확인한다. | 데스크톱에서 선택이 복원되고 8GB 이상 PC 안내가 보인다. 웹의 새 선택 목록에는 로컬 Qwen이 없다. 로컬이 자동 선택되거나 웹에서 새로 고를 수 있으면 실패다. |
+| **QC-SM-05** | 옛 설정에 메인·보조 모델과 별도로 고른 기억 모델이 있는 사용자로 갱신 후 설정을 연다. 기억 떠오름의 꺼짐 또는 점수 문턱 선택도 다시 확인한다. | 이전 메인·보조·기억 모델과 떠오름 선택이 유지된다. 서로 바뀌거나 지워지면 실패다. |
+| **QC-SM-08** | 옛 작업 공간에 메인과 기억 모델은 있고 보조 모델 설정은 없는 사용자를 준비한다. 갱신 후 `gpt-5.6-luna`가 있는 모델 목록이 나타날 때까지 설정을 열어 작은 모델과 기억 모델을 확인하고 저장 후 다시 연다. 작은 모델을 다른 값으로 고르고 저장한 뒤 앱을 다시 열어 두 값을 확인한다. | 목록이 나타난 뒤에도 작은 모델은 옛 기억 모델을 이어받고 기억 모델도 그대로 복원된다. 따로 고른 뒤에는 작은 모델만 새 값으로 바뀌며 기억 모델은 기존 값으로 남는다. Luna나 메인으로 조용히 바뀌거나 기억 선택이 사라지면 실패다. |
+| **QC-SM-07** | 폰 폭 약 390픽셀에서 키보드를 연결하고 일반 진입 경로로 웹을 열어 설정에 들어간다. 탭 키로 메인 모델 선택기에 초점을 옮겨 목록을 열고 다른 값을 고른다. 다시 탭으로 작은 모델 선택기에 가서 목록을 열고 다른 값을 고른다. 저장한 뒤 설정과 웹을 닫았다 같은 브라우저에서 다시 열어 두 값을 확인한다. | 두 칸이 위아래로 놓이고 글자·선택지와 초점 표시가 잘 보인다. 키보드로 두 선택기에 들어가 각각 값을 바꾸고 저장할 수 있으며 다시 열어도 두 선택이 유지된다. 초점이 갇히거나 조작이 가려지거나 값이 사라지면 실패다. |
+
+작은 모델 실패 뒤 메인 재시도와 로컬 실패 복구는 직접 재현할 수 있는 준비·관찰 수단이 확정되지 않아 사실 추출과 압축 각각 자동 시험 `IT-SM-06`·`IT-SM-07`로 확인한다. 두 시험에서 호출 횟수·승인·기록과 복구 결과를 검증한다.
+
+### Test Coverage Map (P02) — UC-SM-01
+
+단위 시험·통합 시험·종단 시험과 직접 확인 번호, 준비·경로·통과 기준·상태는 [요구별 시험 계획](requirements.md#요구별-시험-계획--메인-모델과-작은-모델)을 따른다. `UT-SM-SHELL-THINK-01`은 데스크톱 Rust의 네 생각 수준과 미지정·알 수 없는 값 및 legacy boolean 전달을 검증한다. `IT-SM-SHELL-PAIR-01`은 에이전트·기억 커밋과 정규화 proto SHA 일치 및 불일치 거절을 검증한다. 실제 브라우저 OPFS와 폰 정상 진입 시험은 작성 전이다. 에이전트·기억의 추출·압축 격리 시험과 셸 페어 시험은 각각 별도다. 위 QC는 자동 시험 결과로 대신하지 않는다.
+
+| 시나리오 | 확인하는 것 | 시험 파일 | 상태 |
+|---|---|---|---|
+| UC-SM-01 | 메인·작은 모델 기본값(Terra `xhigh`, Luna `low`), 옛 기억 모델 상속, 저장 뒤 복원, 웹 로컬 모델 제외 | `small-model.test.ts`, `smallmodel-persistence.test.ts`, `smallmodel-import.integration.test.tsx`, `SettingsTab.test.tsx` | 부분 검증 |
+
+## UC-TRANSFER-01 — 이관 묶음 왕복과 검증
+
+사용자는 웹에서 사용하던 사용자 파일과 기억을 동일한 이관 묶음으로 앱에 옮기고 다시 읽는다. 묶음의 파일별 해시와 기억·대화 수를 확인하며, 잘못된 묶음은 대상 파일을 쓰기 전에 거절한다.
+
+웹에서 설정 → 기억 내보내기를 누르면 이관 기능을 불러오고 ZIP을 내려받는다. 앱 저장 연결과 가져오기 화면은 후속 회차에 제공한다.
+
+| 시험 | 조건과 기대 결과 | 시험 파일 | 상태 |
+|---|---|---|---|
+| UC-TRANSFER-01 | 이관 묶음 왕복의 해시·목록·기억·대화 수 일치와 잘못된 묶음 거절 | `archive.test.ts`, `policy.test.ts`, `manifest.test.ts`, `entry.test.ts` | 부분 검증 |
+| UC-WEB-025-I18N-824 | 웹 화면 문구가 로케일 키·`t()`로 14개 언어에 나오고, 로케일 밖 ko/en 분기가 없음 | `packages/shell/src/lib/__tests__/i18n-web-strings.test.ts`, `packages/shell/src/lib/__tests__/i18n-user-facing.test.ts` | 검증 |
+| UT-TRANSFER-01 | 정상 자료를 묶고 풀어 모든 파일의 해시와 목록·기억·대화 수가 같다. 웹과 앱 대역이 같은 자료를 읽는다. | `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-02 | 경로 거슬러 오르기·절대 경로·중복·심볼릭 링크를 각각 거절한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-03 | 과도한 압축률, 파일 수·파일별·전체 크기 상한 초과를 각각 거절한다. | `manifest.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-04 | 변조된 해시와 목록에 없는 파일 또는 빠진 파일을 거절한다. | `manifest.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-05 | 비밀 경로와 설정 안 비밀 필드가 든 가져오기를 거절하고 내보내기 설정에서는 필드를 재귀 제거해 개수만 요약한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-06 | 기억 store의 facts 배열과 필수 필드를 검사하고 store가 없으면 웹 장기 기억 없음으로 표시한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-07 | 이름 규칙과 명시 허용 목록으로 중첩 설정의 비밀을 제거하며 같은 필드가 든 ZIP은 쓰기 없이 거절한다. | `policy.test.ts`, `archive.test.ts` | 검증 |
+| UT-TRANSFER-08 | 일반 파일은 조각 처리로 생성·2회 검증을 실행하고 중간 오류에서는 임시 자리를 버린다. 해석 파일은 별도 한도 안에서 전체 해석한다. | `archive.test.ts` | 검증 |
+| UT-TRANSFER-09 | AgentFact 필수 필드 누락과 타입 오류는 쓰기 없이 거절한다. | `policy.test.ts`, `archive.test.ts` | 검증 |
+| UT-TRANSFER-10 | 브라우저 내보내기 어댑터가 작업 공간 파일로 ZIP을 만들고 설정 비밀을 지우며, ZIP 생성이 실패하면 임시 ZIP을 버린다. | `entry.test.ts` | 검증 |
+| UT-TRANSFER-11 | 해석 파일의 64 MiB 경계와 중앙 목록 한도를 생성·가져오기에서 검사하고 거절 시 쓰지 않는다. | `archive.test.ts` | 검증 |
+| UT-TRANSFER-12 | 설정 화면은 클릭 전 이관 진입점을 불러오지 않는다. | `SettingsTab.test.tsx` | 검증 |
+| UT-TRANSFER-13 | 다운로드 후 예약 정리, 다음 내보내기 전 잔여 파일 정리와 실패 즉시 정리를 확인한다. | `entry.test.ts` | 검증 |
+| UT-TRANSFER-14 | 대용량 일반 파일 생성·가져오기와 한도 가까운 기억 파일 왕복의 메모리를 측정한다. | `archive.test.ts` (`UT-TRANSFER-14 large archive memory measurements`) | 검증 |
+
+## UC-WEB-025-I18N-824 — 웹 화면의 언어 일관성
+
+사용자는 선택한 언어로 웹 파일 탐색기, 알림 설정, 로그인·계정 상태, 음성 지원 안내, 저장소 상태와 배경 이름을 읽는다. PR #824에서 추가한 문구는 공통 `t()`와 14개 로케일을 거치며, 한국어 외 새 문구는 영어를 사용한다. PR 이전 문구와 미번역 baseline은 유지한다.
+
+| 상태 | 검증 매핑 |
+|---|---|
+| 기본 | `i18n-web-strings.test.ts`, `AppBar.test.tsx`: 모든 로케일의 키와 설정 닫기 이름 |
+| 빈 목록 | `web-file-tree-path.test.tsx`, Playwright 실 `WebWorkspace`: 빈 OPFS 탐색기 |
+| 진행 | `WebPushSettings.test.tsx`, Playwright: 권한 요청 중 버튼 비활성 |
+| 성공 | `WebPushSettings.test.tsx`, `web-storage-persist.test.ts`: 구독·저장소 상태와 수치 보간 |
+| 오류 | `WebPushSettings.test.tsx`, Playwright: 미지원·권한 거부 후 재시도 가능 |
+| 좁은 폭 | Playwright 실 컴포넌트와 CSS, 360px: 주요 버튼·상태·구독 정보의 가로 넘침 검사 |
+
+P04 증거는 `codex-runs/824-i18n/result.md`와 같은 디렉터리의 `tmp/`에 기록한다. Rust·IPC 계약 변경은 없다.
+
+## UC-KIOSK-KNOWLEDGE-S1 (2026-11-05)
+
+IR 방문자는 시연 깃발을 켠 웹판에서 넥스테인·나이아·성장·철학·가능성을 묻는다.
+공개용 원고를 로컬 컴파일한 KB를 OPFS에 미리 넣고 데스크톱과 같은 knowledge search/ask 도구로 답변 근거를 제공한다.
+숫자는 기준일과 함께 설명하고 계획은 계획으로 구분한다. 비공개 재무·고객·개인 정보는 번들에 포함하지 않는다.
+
+P02 Test Coverage Map: `kiosk-demo/knowledge.test.ts` — 20문항 관련 카드 검색, 원고/KB 민감 패턴 검사,
+컴파일 재현, 정상·빈 검색·오류·영속 config·다른 scope·깃발 OFF 무쓰기/명령 차단.
+`e2e/kiosk-knowledge.spec.ts` — 실제 브라우저 OPFS 시드·명령·재읽기.
+UI 컴포넌트/CSS/Rust 변경 없음; 화면 상태·좁은 폭 검토는 기존 UI 계약을 보존한다.
+
+S1 기존 Worker 앵커 보충: 브라우저 Worker의 읽기 전용 도구·OPFS 스냅샷·대화 relay·로컬/계정 provider 경로는 시연 OFF에서 보존한다.
+검증: 기존 web-runtime/web-worker 단위 시험과 S1 실제 Worker skill-list probe. 새 지식 실행기만 깃발 ON에서 추가한다.
+
+S1 P04 결과: 관련 Vitest 52/52, Kiosk+Worker 72/72, Chromium ON/OFF OPFS 격리 시험 각각 통과.
+기존 화면의 입력·문구·레이아웃·ARIA를 바꾸지 않는 내부 지식 backend 변경으로 검토했다.
+빈 결과/근거 없음·저장 실패/재시도·동시 시드·컴파일 성공은 단위 시험으로 확인했다.
+전체 Shell suite는 별도 실패가 남아 있으며 음성·실 공급자 대화·운영 배포는 S5/S7 통합 검증 범위다.
+
+## UC-KIOSK-MEMORY-S2 (2026-11-05)
+
+키오스크 투자자는 기본 기억 저장으로 앞 대화와 호칭 게스트님을 새로고침 후에도 회상한다. 일반 웹판은 기존 동작을 유지한다. S3 첫 화면은 `packages/shell/src/lib/kiosk-demo/memory.ts`의 `resetKioskMemory()`를 기다린 뒤 새 대화를 시작한다. 진행 중인 응답은 먼저 취소하고 대화 UI/session도 새로 시작해야 하며, 초기화 뒤 페이지 재로딩으로 이전 Worker와 프롬프트를 폐기하는 방식을 권장한다. 이 함수는 기억만 지우고 로그인·지식·설정은 보존한다. 초기화는 기존 기억·회상을 지우고 게스트 호칭만 남긴다.
+
+Test Coverage Map (P02): `packages/shell/src/lib/kiosk-demo/memory.test.ts` — OPFS 재접속 후 게스트·앞 사용자 발화 회상, 실제 agent handler 턴 전 recall/턴 후 save, 깃발 off의 네 명령 차단·저장 없음, 백업 암호화/복원/잘못된 암호·손상 실패 원자성, 삭제·초기화·진행 중 저장 fencing, 동시 저장. UI/Rust/컴포넌트/CSS 변경 없음: 시각·좁은 폭/키보드 상태는 기존 UI 계약 유지이며 이 작업의 검증 대상은 저장 포트다.
+
+S2 public function contract (conform gate):
+```ts
+export function createKioskMemory
+export function handleKioskMemoryCommand
+export function resetKioskMemory
+```
+
+## UC-WEB-KIOSK-S3 — 지나 시연 입장 (2026-11-05)
+
+투자자·손님은 시연 웹 주소에서 로그인/온보딩 없이 지나와 대화를 시작한다.
+`isKioskDemo()`일 때만 빌드 환경의 시연 전용 계정을 브라우저에 넣는다.
+열쇠가 없거나 유효하지 않으면 기존 로그인 여부와 무관하게 ‘시연 열쇠 없음’으로 멈춘다.
+입장 전에는 대화/발화하지 않는다. ‘들어가기’를 누르면 게스트님 인사와 대화 화면을 연다.
+첫 화면·대화 화면의 ‘처음으로’는 응답을 취소하고 S2 기억 초기화를 기다린 다음 새 대화와 페이지 재로딩으로 입장 화면에 복귀한다. 실패하면 오류를 표시하고 재시도를 허용한다.
+P02 통합: kiosk-demo.spec.ts에서 입장·인사·지식 도구 호출·새로고침 후 기억·처음으로 초기화와 360px 주요 행동을 검증한다. 준비/빈 목록/오류 상태는 S3 기존 시험을 유지한다.
+
+### Test Coverage Map — S3
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 지나/게스트/님/존댓말/친절한 안내, 로그인·온보딩 생략, 입장 전 무발화 | kiosk-demo.test.ts, KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
+| 빈 목록 | 새 브라우저 ADK 설치·기본값 영속 후 입장 가능 | kiosk-demo.test.ts, kiosk-demo.spec.ts |
+| 진행 | 준비 중 상태 안내, 중복 입장 방지 | KioskDemoGate.test.tsx |
+| 성공 | 클릭 한 번 뒤 인사 1회·기존 TTS 파이프라인·대화 진입 | KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
+| 오류 | 누락/잘못된 열쇠는 차단, 저장 실패는 안전한 안내·재시도 | kiosk-demo.test.ts, KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
+| 좁은 폭 | 360px에서 버튼·제목·안내 순서, 키보드 포커스·ARIA | kiosk-demo.spec.ts |
+| 깃발 꺼짐 | 일반 웹판 페르소나·로그인·온보딩·부팅 경로 보존 | kiosk-demo.test.ts, KioskDemoGate.test.tsx |
+
+웹 전용 변경이며 Rust/Tauri 배선 변경은 없다. 실 계정/BC250 발화는 S5/S7 운영 수용에서 검증한다.
+
+
+P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입장·인사 → 회사 질문 → 실제 지식 도구 호출과 카드 결과 → 재로딩 후 시스템 프롬프트의 게스트/앞 질문 회상 → 처음으로 → 새 방문자의 앞 질문 미회상을 검증한다. `entry.test.ts`는 취소/저장 완료 대기와 실패 시 세션·페이지 보존, KioskDemoGate/ChatArea 시험은 중복 초기화 차단과 안전한 오류/재시도를 검증한다. 로컬 preview와 캡처 3장의 시각 검토를 수행했다. ‘처음으로’ 초기화 시 OPFS 기억(`kiosk-store.json`)뿐 아니라 OPFS 대화 기록 파일(`conversations-guest/chat-*.jsonl`)까지 함께 삭제해 이전 방문자 대화가 남지 않게 한다. 단, 시연 전용 계정 열쇠(`naia-remote-key`)는 다음 방문자도 같은 키오스크 시연 계정을 써야 하므로 보존한다. 앞 방문자가 ‘처음으로’를 누르지 않고 자리를 떠난 경우에는 무응답 자동 초기화 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 대화 화면에서 자동 초기화하거나 다음 ‘들어가기’ 때 방문 기록(OPFS 기억·대화 JSONL)을 먼저 비우고 새 방문으로 시작하며, 유효 방문 시간 안의 새로고침(F5) 뒤 재입장에서는 OPFS 대화 기록과 기억(사용자 발화 및 지나 답변 에피소드)을 복원한다.
+
+## UC-WEB-KIOSK-S4 — 지나 실사 아바타 구멍 제거·키오스크 아바타 전환·대화 창 확장 (2026-11-05)
+
+투자자·손님이 키오스크 시연판(`isKioskDemo() === true`)의 대화 화면에 들어가면 기본 나이아 대신 **실사 지나 아바타**(`avatarProvider: "naia-video-avatar"`, `nvaModel: "jina"`)가 표시된다.
+지나 번들 클립(`packages/shell/public/nva/jina/clips/idle.webm`, `talking-ko.webm` 및 대응 `.stacked.mp4`)은 원본(`jina-idle.webm` 8초, `jina-talking-ko.mp4` 21초)을 `nextain/naia-anyllm` `7ff576ce`(`9842d242` 구멍 막기·배경색 거름 포함) `studio_nva_matting.py`로 CPU 후처리해 팔과 몸 사이·다리 사이 배경 구멍 0(`nva_matting_hole_measure.py` 측정 `bad_clips: 0`, `hole_frames: 0`)을 만족한다.
+또한 시연판 대화 화면에서는 대화 창(`.naia-overlay` / `.naia-chat-area` / `.naia-chat-wrapper` / `.chat-messages`)을 넓히고 높여 긴 답변이 위로 잘리지 않고 스크롤로 끝까지 읽히며, 아바타도 대화 창에 가려지지 않고 함께 보인다.
+시연 깃발이 꺼지면(`isKioskDemo() === false`) 일반 웹판의 기본 아바타와 레이아웃은 그대로 유지된다.
+
+### Test Coverage Map — S4
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | `isKioskDemo()` ON 시 `avatarProvider: "naia-video-avatar"`, `nvaModel: "jina"` 기본값 및 넓어진 대화 창 배치 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 빈 목록 | 초기 워크스페이스/빈 설정에서도 키오스크 준비 후 지나 아바타(`jina`)와 인사 표시 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 진행 | 아바타 매니페스트·클립 로딩 및 대화 스트리밍 중 레이아웃 안정 유지 | `kiosk-demo.spec.ts` |
+| 성공 | 구멍 측정 `nva_matting_hole_measure.py` 구멍 0, 대화 화면에서 실사 지나 표시 + 긴 답변이 위로 잘리지 않고 스크롤 가능 (`s4-entry.png`, `s4-chat.png`) | `nva_matting_hole_measure.py`, `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | 열쇠 누락/준비 실패 시 기존 S3 안전 차단·재시도 유지 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 360px 모바일 폭에서 기존 모바일 시트 레이아웃·버튼 가로 넘침 없음 유지 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo()` OFF 시 일반 웹판 기본 아바타(`naia` / VRM) 및 기본 레이아웃 무변경 | `kiosk-demo.test.ts` |
+
+## UC-WEB-KIOSK-S5 — 지나 목소리를 나이아 게이트웨이로 연결 및 8초 브라우저 폴백 (2026-11-05, 2026-11-08 갱신)
+
+시연판(`isKioskDemo()`)에서 지나의 인사와 대화 응답은 브라우저 기본 음성 대신 나이아 게이트웨이 음성 합성(`/v1/audio/speech`, `ttsProvider: "nextain"`, `ttsVoice: KIOSK_DEMO_TTS_VOICE`)으로 합성해 재생하고(`KIOSK_DEMO_TTS_HOST` BC250 직결 시드는 쓰지 않음), 재생 시작·종료에 맞춰 아바타 입 움직임(`setSpeaking`·`setSpeakingVisual`)을 동기화한다. 일반 웹판(`!isKioskDemo()`)은 기존처럼 `browser` TTS로 유지된다.
+- ‘들어가기’ 클릭 처리 안에서 동적 불러오기 뒤로 미루지 않고 즉시 `AudioContext.resume()`와 `speechSynthesis` 잠금 해제를 수행한다.
+- 게이트웨이 음성 합성이 응답하지 않거나 실패하면(시간 초과 8초) 화면이 멈추지 않고 즉시 브라우저 기본 음성(`speechSynthesis`)으로 폴백해 발화와 입 움직임을 이어간다.
+
+### Test Coverage Map — S5
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | `isKioskDemo()`일 때 `buildKioskDemoConfigSeed()`가 BC250 직결 `vllmTtsHost` 없이 `ttsProvider="nextain"`, `ttsVoice=KIOSK_DEMO_TTS_VOICE`를 시드하고 `loadConfig()`·`ChatArea`가 이를 보존 | `kiosk-demo.test.ts`, `config-seed.test.ts`, `ChatArea.test.tsx` |
+| 빈 목록 | 기존 음성 설정이 없을 때 게이트웨이 TTS 기본값이 채워지고, 사용자가 고른 `browser` 전환은 보존 | `kiosk-demo.test.ts` |
+| 진행 | ‘들어가기’ 클릭 사용자 제스처 스택 안에서 즉시 `AudioContext.resume()`·`speechSynthesis` 잠금 해제 후 게이트웨이 `/v1/audio/speech` 합성 요청 진행 | `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
+| 성공 | 음성 응답 수신 시 오디오 재생과 함께 `setSpeaking(true)`/`setSpeakingVisual(true)` 입 움직임 동기화 및 종료 시 해제 | `synthesize.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | 무응답(8초 시간 초과) 또는 HTTP 오류 시 경고 말풍선 주입 없이 브라우저 음성(`speechSynthesis`)으로 폴백하고 화면이 멈추지 않음 | `synthesize.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 1280x800 키오스크 화면 및 360px 폭에서 대화·발화 중 UI 레이아웃과 조작성 유지 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo()`가 거짓인 일반 웹판은 `ttsProvider="browser"` 고정 및 기존 90초 로컬 음성 타임아웃·오류 처리 유지 | `kiosk-demo.test.ts`, `synthesize.test.ts`, `sentence-pipeline.test.ts` |
+
+## UC-WEB-KIOSK-FIX — 키오스크 시연판 적대 검수 수정 (2026-11-05)
+
+시연판(`isKioskDemo() === true`)의 적대 검수 지적 사항(1·3·4·5·6·7·8·10·11·12·13번, S5 소관 2·9번 제외)을 해결한다:
+1. **WebLLM 비노출(1번)**: 시연판 깃발 ON일 때 WebLLM 공급자를 등록하지 않고 설정 목록·자동 설치·웹 워커 로컬 공급자 연결에서도 숨긴다. 일반 웹판(OFF)은 기존처럼 WebLLM이 등록·표시된다.
+2. **게이트웨이 열쇠·크레딧 사전 확인(3번)**: 첫 화면에서 시연 전용 열쇠로 게이트웨이 잔액(`GET /v1/profile/balance`)을 한 번 확인해 열쇠가 틀리거나 크레딧이 0 이하면 소개 본문과 흐린 `"들어가기"` 단추를 숨기고 큰 제목 `"지금은 시연을 잠시 쉬고 있어요"`·이유 `"오늘 준비한 시연 사용량을 다 썼어요."`·다음 행동 `"부스 직원에게 말씀해 주세요."` 안내를 띄워 입장을 막는다.
+3. **지식 원고 출처 분리·`safety:"block"`·기대 답 검증·민감 수치 정규식 확장(4·5·6번)**: 번들에 포함되는 `knowledge/*.md` 20개에서 사내 경로·이름이 적힌 `### 근거 파일` 절을 번들 밖 문서(`docs/progress/web-ir-kiosk-824/knowledge-sources.md`)로 옮기고, `compile()`에 `safety: "block"`을 넘겨 안전 경고를 버리지 않으며, `kb.json`과 빌드 산출물(`dist`)에 `/home/`·`minho`·`nextain-adk`가 없음을 검증한다. `eval-questions.json` 20문항의 `expectedPoints`를 `service.ask()` 및 `verify()`로 대조하고 한글 금액·지분 %·밸류에이션·투자금·순이익을 민감 수치 검사 정규식으로 차단한다.
+4. **‘처음으로’ OPFS 대화 기록 삭제·무응답 방문자 격리·지나 답변 기억 저장(7·8번)**: ‘처음으로’ 초기화 시 OPFS 기억과 함께 `conversations-guest/chat-*.jsonl` 대화 파일까지 삭제하되 다음 방문자도 써야 하는 시연 열쇠(`naia-remote-key`)는 유지한다. 앞 방문자가 ‘처음으로’를 누르지 않고 떠나 무응답 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 자동 초기화하거나 다음 ‘들어가기’ 때 방문을 초기화해 새 방문으로 시작하고, 활성 방문 중 새로고침(F5) 시에는 인사 메시지가 기존 OPFS 대화 복원을 가리지 않도록 복원한다. `memory.ts`의 `save(userText, assistantText)`는 지나 답변도 assistant 에피소드로 저장한다(사용자 사실 승격은 하지 않음).
+5. **지나 실사 클립 닫힌 배경 영역 투명화 및 대화 화면 크레딧/토큰 줄 숨김(12·13번)**: `studio_nva_matting.py` 후처리에서 닫힌 투명 영역 픽셀이 원본 단색 배경색과 가까우면 구멍으로 메우지 않고 투명으로 유지해 다리 사이·왼팔과 몸 사이의 남색 잔상을 제거한다(`nva_matting_hole_measure.py` 몸 안 구멍 0건 + 닫힌 영역 불투명 배경 픽셀 프레임 0건). 또한 시연판 깃발 ON일 때 대화 답변 아래 `"약 0 크레딧 · 0 토큰"` 사용량 줄을 숨긴다(일반 웹판 OFF에서는 그대로 표시).
+6. **게이트웨이 생각 세기 값(FR-WEB-KIOSK-FIX.8)**: 방문자가 질문하면 `gpt-5.6-luna` 요청이 `reasoning_effort:"high"` 로 가서 운영 게이트웨이가 200 으로 답한다. `xhigh` 는 422 로 답이 오지 않던 결함(2026-11-06 실제 빌드 ET).
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 시연판 ON에서 WebLLM 미등록·미표시, 대화 사용량 줄 숨김, 지나 클립 닫힌 배경 투명·몸 구멍 0 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts`, `nva_matting_hole_measure.py` |
+| 빈 목록 | 초기 OPFS에서 입장·지식 시드·대화 시작 정상 동작 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 진행 | 게이트웨이 열쇠·크레딧 확인 중 준비 상태 표시 및 중복 입장 방지 | `KioskDemoGate.test.tsx` |
+| 성공 | 게이트웨이 크레딧 유효 시 입장 허용, 20문항 `expectedPoints` `ask()`/`verify()` 통과, 활성 방문 중 새로고침 후 대화·지나 답변 기억 복원, ‘처음으로’ 및 무응답 만료 시 OPFS 대화 JSONL·기억 완전 삭제(`naia-remote-key` 유지) | `knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
+| 게이트웨이 값 | luna·terra 요청이 `reasoning_effort: high` 로 나감(운영 게이트웨이 허용 값) | `openai-compat-provider.test.ts` |
+| 기본 모델 빠짐 | 키오스크 시연 주 모델은 저장값이 없거나 게이트웨이 기본이 바뀌어도 `gpt-5.6-luna` 로 고정하고, 게이트웨이 목록에 `gpt-5.6-luna` 가 없을 때만 살아 있는 대체 모델(`deepseek-v4-pro`→`deepseek-v4-flash` 등)로 내림, 목록을 못 받으면 `gpt-5.6-luna` 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx` |
+| 나이아 서비스 소개 질의 | `"나이아는 어떤 서비스인가요?"`·`"나이아란?"` 질의가 `abstained: false`로 `naia.md` 문단을 반환하고 페르소나에 재검색 지침 포함 | `knowledge.test.ts`, `kiosk-demo.test.ts` |
+| 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 잠시 쉬고 있어요"`·`"오늘 준비한 시연 사용량을 다 썼어요."`·`"부스 직원에게 말씀해 주세요."` 표시 및 `"들어가기"` 단추 숨김, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | 일반 웹판(OFF)에서 WebLLM 등록·표시 유지, 대화 답변 아래 사용량 줄 표시 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
+
+P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx`, `ChatArea.test.tsx`) + `SettingsTab.test.tsx` WebLLM 옵션 숨김 시험 통과, Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과, `nva_matting_hole_measure.py` 몸 구멍 0건 및 닫힌 영역 불투명 배경 픽셀 프레임 0건 통과, `codex-runs/kiosk-agy/fix-chat.png`(`1280x800`) 시각 검토 완료.
+
+## UC-WEB-KIOSK-R3 — 웹 IR 키오스크 3판 1회차 대표님 시연 지적 수정 (2026-11-06)
+
+시연판(`isKioskDemo() === true`)에서 대표님 시연 지적 10건을 해결해 투자자·방문자가 내부 JSON·내부 규칙 파일·데스크톱 전용 오류·화면 흔들림 없이 일관된 화면을 경험하게 한다:
+1. **대화창 도구 JSON 비노출**: 지식 검색 도구 호출 시 입력(`{"query":…}`)·결과(`{"abstained":…,"hits":[…]}`) 원문 JSON을 보이지 않고 접힌 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다(답 끝 `"근거: …"` 줄은 유지).
+2. **로그아웃 및 기억 내보내기 단추 제거**: 설정 화면(일반 탭·프로필 탭)에서 로그아웃·연결 해제 단추와 기억 내보내기 단추(`memory-transfer-export`)를 숨기고, 일반 웹 판에서는 기억 내보내기 단추를 다른 설정 단추(`.voice-preview-btn`)와 같은 모양으로 맞춘다.
+3. **설정 저장 `desktop_only:secure_store_set` 오류 제거**: 웹/키오스크 판에서 설정을 저장할 때 네이티브 `secure_store_set`을 호출하지 않고 브라우저 저장소로 대체해 오류 없이 저장된다.
+4. **음성 표시·선택 일관성 (`Naia Cloud TTS` 기본 + 브라우저 대체)**: 키오스크 판 기본 말하기를 `Naia Cloud TTS`(`"nextain"`, 목소리 `KIOSK_DEMO_TTS_VOICE = "ko-KR-Neural2-A"`, 시연 열쇠로 게이트웨이 TTS 호출)로 하고(`normalizeRetiredVoiceConfig`가 키오스크 판에서는 `"ko-KR-Neural2-A"`를 DragonHD로 바꾸지 않음), 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`를 고를 수 있고 음성 탭 목소리 고르기에는 `"기본 여성(Neural2)"`(`"ko-KR-Neural2-A"`)가 잠긴 상태로 선택되어 같은 값을 보인다(게이트웨이 TTS 실패 시 브라우저 음성으로 대체, `"naia-local-voice : 시동중 .."` 배지는 비노출).
+5. **파일 탐색기 탭·문구 정리**: `"온라인 (준비 중)"` 단추를 없애고 `"오프라인"`을 `"브라우저 안 오프라인 공간"`으로 풀어 쓴다.
+6. **파일 탐색기 내부 규칙 파일 숨김·제거**: `.agents`, `.users`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `agents-rules*` 등 ADK 내부 규칙 파일은 시연 번들·탐색기에서 숨기거나 빼고 시연용 파일(`kiosk-demo`, `conversations` 등)만 보인다.
+7. **키오스크 `"지식"` 탭 추가 및 마크다운 렌더링·제목 한 줄 정돈**: 상단 앱 막대와 설정의 `"지식"` 탭에서 시연 지식 묶음(`knowledge/*.md` 21개 원고 목록·본문)을 열람하며, 설정 > 지식 탭 오른쪽 원고 본문도 탐색기 뷰어처럼 마크다운(`MarkdownPreview`)으로 그려서 보이고 목록 폭과 미리보기 제목 글자 크기를 조정해 제목(`"나이아 서비스 소개"` 등)과 머리줄이 한 줄에 들어오게 한다.
+8. **오른쪽 파일 뷰어 폭 확장(60% 안팎)·대화창 비겹침·한 줄 경로·도구줄 잘림 방지**: 파일을 열면 탐색기 칸 전체가 화면 폭의 60% 안팎(`left: max(38vw, var(--naia-width, 520px))`)으로 넓어져 뷰어 본문이 넓게 보이면서도 `1280×720`에서 왼쪽 대화창을 덮지 않고(`1920×1080` 모양은 그대로 유지), 경로 줄은 파일 이름 한 줄로 줄여 쓰며 도구줄이 잘리지 않는다.
+9. **아바타·대화창 위치 고정, 대화창 상단 잘림 제거 및 배경 불투명도 강화**: 파일 탐색기나 다른 탭을 열고 닫아도 아바타와 대화창 위치가 왼쪽 한 곳에 일관되게 머물며, 대화창 위쪽 헤더(탭·단추)나 하단 입력창이 잘리지 않고 반투명 배경 뒤로 지나 치마(진한 빨강)가 번져 보라색 얼룩처럼 보이지 않도록 대화창 배경을 더 불투명하게 한다.
+10. **지나 캐릭터 머리 구멍·팔/다리 사이 검은 영역·클립 전환 시 크기/발 위치 일치**: 머리 오른쪽 위 빈 곳을 메우고, `"부드러운 움직임"` 실행 시 팔-허리·다리 사이 검은 배경을 투명화하며, 대기(`idle`)에서 `"부드러운 움직임"`(`motion`)으로 바뀔 때 지나의 크기와 발 위치가 튀지 않으면서 움직임 세기는 유지된다.
+
+### Test Coverage Map — UC-WEB-KIOSK-R3
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna`·생각 세기 `"low"`·도구 사용 `true`·작업 표면 인지 `"off"`·터미널 입력 허용 `false` 단일 강제(`resolveKioskDemoMainModel`/`applyKioskDemoMainModel`)·두뇌 탭 공급자/모델/생각 세기/도구 사용/작업 표면 인지 읽기 전용 잠금 및 터미널 직접 입력 칸 숨김, 기본 `Naia Cloud TTS`(`"nextain"`, 목소리 `"ko-KR-Neural2-A"` / `"기본 여성(Neural2)"` 잠금, 구글→DragonHD 옮기기 예외) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts`, `config-seed.test.ts`, `synthesize.test.ts`, `ChatArea.test.tsx` |
+| 빈 목록 | 초기 OPFS에서도 탐색기에 `kiosk-demo/knowledge/*.md` 시연 파일만 표시되고 내부 규칙 파일 비노출 | `web-workspace-path.test.tsx`, `knowledge.test.ts` |
+| 진행 | 도구 실행 중 `"자료 찾는 중"` 표시, `"부드러운 움직임"` 재생 중 크기·발 위치 고정 및 부드러운 스웨이 유지 | `ToolActivity.test.tsx`, `prebaked-renderer.test.ts` |
+| 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, ‘처음으로’·3분 무응답 리셋 시 `localStorage naia-config` 및 OPFS 설정이 키오스크 시드(페르소나·아바타·음성·두뇌)로 복원, 지식 탭에서 21개 원고 마크다운 렌더링 열람, 파일 열기 시 탐색기 폭 확장·한 줄 파일 이름·도구줄 보존, 지나 클립 머리 구멍·팔/다리 검은 영역 0 및 크기/발 위치 일치 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx` |
+| 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백, 시연 대화 중 크레딧 소진 시 일반 실패 버블+재시도 대신 `"지금은 시연을 잠시 쉬고 있어요"`·`"오늘 준비한 시연 사용량을 다 썼어요."`·`"부스 직원에게 말씀해 주세요."` 게이트 화면으로 전환(`"들어가기"` 숨김) | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts`, `ChatArea.test.tsx`, `KioskDemoGate.test.tsx` |
+| 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창·잠긴 두뇌 탭 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`codex-runs/kiosk-r3/cap-r7/`) |
+| 깃발 꺼짐 | `isKioskDemo() === false`에서 저장된 공급자·모델·생각 세기·도구·작업 표면 인지·터미널 직접 입력 설정 그대로 전송·유지, 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.test.ts`, `config-seed.test.ts` |
+
+
+## UC-NVA-WEB-STUDIO-NAIA — 웹판 기본 나이아 스튜디오 정본 교체 및 `naia-anime` 통합 (2026-11-06)
+
+웹판 기본 나이아 NVA 묶음(`packages/shell/public/nva/naia/`)을 나이아 스튜디오 정본(옷 입은 2D 셀 애니 나이아 6종 클립: `idle`, `talking-ko`, `greeting`, `happy`, `keyboard-idle` `"건반 치며 대기"`, `singing-keyboard` `"건반 치며 노래"`, VP9 2Mbps `yuva420p` `.webm` 및 Safari/WebKit용 `.stacked.mp4`)으로 교체한다. 같은 그림의 사본이 되는 `naia-anime` 묶음은 `WEB_NVA_ASSETS`와 `public/nva/naia-anime/`에서 제거해 5종(`naia`, `jina`, `jina-anime`, `minho`, `minho-anime`)으로 정리하고, 저장된 사용자 설정에 `"naia-anime"`이 남아 있으면 설정 읽기 정규화(`normalizeLocalRuntimeConfig`) 한 곳에서 `"naia"`로 매핑한다.
+
+| 시나리오 | 확인하는 것 | 시험 파일 |
+|---|---|---|
+| UC-NVA-WEB-STUDIO-NAIA | 웹판 NVA 카탈로그 5종(`naia-anime` 제거), 저장된 `nvaModel: "naia-anime"`의 `"naia"` 자동 매핑, 새 스튜디오 `naia` 매니페스트·클립(건반 동작 2종 및 `stacked_alpha` 포함) 검증 | `packages/shell/src/lib/web-runtime/__tests__/web-assets.test.ts`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/lib/__tests__/nva.test.ts` |
+
+## UC-WEB-KIOSK-ADK-LOCAL — 키오스크 시연판 ADK 투명성(`AGENTS.md` 맨 위·실제 파일 읽기·근거 표시) 및 `내 PC 에서 대답하기` 선택 (2026-11-07)
+
+시연판(`isKioskDemo() === true`)에서 투자자·손님이 나이아의 첫째 특징(투명성·로컬 모델)을 직접 확인하고 체험할 수 있게 한다:
+1. **지나 ADK 실제 파일 배치 및 "보이는 것 = 쓰는 것" 연결**:
+   - 작업 공간(`opfs://naia-adk/`) 루트 맨 위에 `AGENTS.md`(지나가 누구이고 무엇을 읽고 어떤 규칙으로 답하는지, 실제 대답 생성 시 시스템 프롬프트에 들어가는 지시 본문), 그 아래 `persona`(`persona/jina.md`), `memory`(`memory/guest-memory.md`), `knowledge`(`knowledge/*.md` 21편), `rules`(`rules/response-rules.md`) 폴더를 실제 파일로 시드한다(비밀·열쇠·내부 주소 미포함).
+   - 대화 턴마다 웹 워커(`adk-snapshot-fs.ts`·`agent-worker.ts`)와 기억(`memory.ts`)·지식(`knowledge.ts`·`kiosk-knowledge.ts`)이 OPFS의 `AGENTS.md`, `persona/jina.md`, `rules/response-rules.md`, `memory/guest-memory.md`, `knowledge/*.md`를 실제로 읽어 시스템 프롬프트·회상·지식 검색에 사용한다.
+2. **탐색기 `AGENTS.md` 맨 위 정렬 및 입장 후 1회 자동 열림**:
+   - 탐색기(`WebWorkspace.tsx`) 루트 목록 맨 위에 `AGENTS.md`가 오고 그 아래 `persona`·`memory`·`knowledge`·`rules`·`conversations`가 정렬된다.
+   - `"들어가기"` 뒤 탐색기가 열려 오른쪽 편집기 칸에 `AGENTS.md` 본문이 한 번 자동으로 열려 보이며, 왼쪽 아바타·대화창을 가리지 않는 배치(`left: max(38vw, var(--naia-width, 520px))`)를 유지한다.
+3. **대답마다 근거 파일 줄 표시 및 클릭 시 탐색기 열기**:
+   - 대답이 만들어질 때(`finishStreaming`) 그 턴의 근거 파일을 정해 메시지(`msg.evidenceFiles`)에 저장하고, 말풍선 아래 작은 근거 줄(`.chat-kiosk-evidence`)과 도구 활동 줄(`ToolActivity.tsx`)은 전역 슬라이드 상태를 참조하지 않고 메시지에 저장된 값과 `toolCalls`만 읽어 표시한다(이후 슬라이드를 열거나 장을 넘겨도 지난 말풍선 근거 칩이 바뀌지 않음).
+   - 근거 줄의 파일 단추를 누르면 탐색기(`WebWorkspace`)에서 해당 파일이 즉시 열린다.
+4. **`"내 PC 에서 대답하기"` 로컬 모델 전환**:
+   - 기본값은 클라우드(`nextain` / `gpt-5.6-luna`) 그대로 유지한다.
+   - 대화창 머리(및 설정 두뇌 탭)에 `"내 PC 에서 대답하기"` 전환 단추를 두고 옆에 `"그래픽 메모리 8GB 이상 기기에서만 됩니다"` 안내를 적는다.
+   - 누르면 WebGPU 지원 여부를 확인해 WebGPU가 없으면 안내 문구만 표시하고, WebGPU가 있으면 내려받기를 시작하기 전에 쉬운 한국어로 모델 크기(`약 2.5GB`)와 `"처음 한 번 내려받아요"`를 알리고 확인(`확인`/`취소`, 취소하면 아무것도 하지 않음)을 받은 뒤 WebLLM 경로로 모델을 내려받으며(진행률 표시) 이후 대답을 브라우저 안에서 생성하고 말풍선에 `"내 PC 에서 나온 답"` 배지를 표시한다. 로컬 모델 응답 시에도 `AGENTS.md`·페르소나·규칙·기억·지식 도구가 함께 연결되며, `"처음으로"` 초기화는 `WEB_LLM_MODEL_PREF_KEY`(`"naia-web-llm-model"`)를 함께 지운다.
+
+### Test Coverage Map — UC-WEB-KIOSK-ADK-LOCAL
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | OPFS에 `AGENTS.md`, `persona/jina.md`, `memory/guest-memory.md`, `knowledge/*.md`, `rules/response-rules.md` 시드, 탐색기 루트 맨 위 `AGENTS.md` 정렬 및 입장 후 1회 열림, `"내 PC 에서 대답하기"` 기본 꺼짐(클라우드 기본 유지) 및 `"그래픽 메모리 8GB 이상 기기에서만 됩니다"` 표시 | `kiosk-demo.test.ts`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts` |
+| 빈 목록 | 초기 OPFS에서 입장 시 ADK 파일 자동 시드 후 `AGENTS.md` 열림 및 인사 정상 동작 | `kiosk-demo.test.ts`, `web-workspace-path.test.tsx`, `kiosk-demo.spec.ts` |
+| 진행 | 지식 검색 중 도구 활동 표시, `"내 PC 에서 대답하기"` 켰을 때 WebLLM 모델 다운로드 진행률(`WebModelStatusBar`) 표시 | `ToolActivity.test.tsx`, `ChatArea.test.tsx` |
+| 성공 | 워커가 OPFS의 `AGENTS.md`·`persona/jina.md`·`rules/response-rules.md`·`memory/guest-memory.md`·`knowledge/*.md`를 실제로 읽어 답변 생성, 답변 아래 근거 줄(`AGENTS.md`, `knowledge/*.md`, `memory/guest-memory.md`) 클릭 시 탐색기에서 해당 파일 열림, 로컬 전환 시 말풍선에 `"내 PC 에서 나온 답"` 표시 | `kiosk-demo.test.ts`, `memory.test.ts`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts` |
+| 오류 | WebGPU 미지원 기기에서 `"내 PC 에서 대답하기"` 클릭 시 크래시 없이 WebGPU 필요 안내만 표시, `.agents`·`CLAUDE.md` 등 내부 파일은 계속 차단 | `ChatArea.test.tsx`, `web-workspace-path.test.tsx`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | `1280×800` 키오스크 화면(대화창·아바타 비가림) 및 `360px` 모바일 폭에서 레이아웃·키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo() === false` 일반 웹판·데스크톱 동작 무변경 보존 | `kiosk-demo.test.ts`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx` |
+
+## UC-WEB-KIOSK-S6 — "IR 발표해 줘" → 슬라이드 앱에서 지나가 장마다 설명 (2026-11-07)
+
+투자자·방문자가 웹 키오스크 시연판(`isKioskDemo() === true`)에서 `"IR 발표해 줘"`(또는 `"발표 시작해 줘"`, `"슬라이드 발표해 줘"`, `"IR 자료 발표해 줘"` 등)라고 말하면 오른쪽 작업 칸 전체에 슬라이드 앱(`land.naia.slides`)이 열리고, 공개용 지식 원고(`company`, `difference`, `adk`, `agents`, `brand`, `naia`, `growth`, `future` 등)로 구성한 9장짜리 공개 IR 발표 자료(`packages/shell/src/lib/kiosk-demo/slides/ir-public.json`)가 첫 장부터 표시된다.
+
+1. **공개용 발표 자료 및 민감 정보 무결성**: 실제 IR PDF나 재무 문서를 쓰지 않고 공개 지식 원고만으로 9장 발표 자료를 구성한다. 각 장은 제목, 짧은 요점 3줄 이내, 지나가 읽을 설명 대본으로 이루어지며 매출·투자액·억·밸류·계약 금액·개인 정보 등 민감 숫자나 낱말을 포함하지 않는다.
+2. **장별 자동 발표 및 이동·제어 단추**: 지나가 현재 시연판 TTS 경로(`SLIDE_PRESENTER_SPEAK_EVENT` → `ChatArea.tsx` TTS 파이프라인)로 각 장의 대본을 읽고, 발화가 끝나면 자동으로 다음 장으로 넘어간다. 사용자는 `멈춤`·`이어 가기`·`다음`·`이전`·`끝내기` 단추(또는 대화 명령)로 발표를 제어할 수 있으며, `끝내기`를 누르면 발화를 멈추고 슬라이드 앱을 닫는다.
+3. **중간 질문 응답 후 이어 가기**: 발표 도중 사용자가 질문을 입력하면 발표가 즉시 멈추고(`answering` 상태) 지나가 그 장 원고를 바탕으로 질문에 답한 뒤, 답변이 끝나고 1.2초 뒤(또는 사용자가 `이어 가기`를 누르면) 멈췄던 장부터 발표를 이어 간다. 답변 직후 1.2초 자동 재개 대기 중에 새 질문이 들어오면 대기 타이머를 취소하고 새 질문에 먼저 답한다.
+4. **웹 명령표 격리 및 1280x800 화면 배치**: 웹 명령표(`command-table.ts`, `router.ts`)에서 시연판에 필요한 슬라이드 열기 명령(`slides_open_document`, `slides_open_pdf`, `slides_cancel_open`)만 `isKioskDemo()`일 때 웹 구현으로 열고 일반 웹판(`isKioskDemo() === false`)과 데스크톱 동작은 바꾸지 않는다. `1280x800` 해상도에서 지나는 평소 자리(왼쪽 대화 칸 위)에 그대로 두고, 오른쪽 작업 공간 전체를 슬라이드 앱이 채우며 슬라이드 카드(16:9 비율 유지)와 글자가 잘리지 않게 표시된다.
+
+### Test Coverage Map — S6
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 공개 IR 발표 자료 9장 구조(장마다 제목·요점 3줄 이내·대본) 및 민감 낱말(매출, 투자, 억, 밸류, 계약금 등) 0건, 키오스크 깃발 ON일 때만 `slides_open_document`·`slides_open_pdf`·`slides_cancel_open` 웹 경로 개방 | `slides.test.ts`, `command-table.test.ts`, `router.test.ts` |
+| 빈 목록 | 파일 선택 없이도 `"IR 발표해 줘"` 발화 시 내장 공개 IR 덱이 즉시 열리고 1장부터 시작 | `slides.test.ts`, `kiosk-demo.spec.ts` |
+| 진행 | 장별 대본 TTS 발화 중 `presenting` 표시, 문장 단위 합성 완료 후 다음 장 자동 이동, 중간 질문 시 `answering` 전환 | `slides.test.ts`, `kiosk-demo.spec.ts` |
+| 성공 | 첫 장 열림 → 대본 발화 완료 후 다음 장 이동 → 멈춤/이전/다음 조작 → 중간 질문 답변 및 이어 가기 → 끝내기로 슬라이드 닫힘 | `slides.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | 잘못된 페이지/빈 입력 방어, 발화 취소·중단 시 늦은 음성 완료 이벤트가 장을 넘기지 않음 | `slides.test.ts`, `ChatArea.test.tsx` |
+| 좁은 폭 / 1280x800 | `1280x800`에서 왼쪽 대화 칸(및 위 지나 아바타)·오른쪽 작업 공간 전체 슬라이드 칸 비겹침 및 글자 잘림 없음, 모바일 폭에서도 컨트롤 접근 가능 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo() === false`일 때 `slides_*` 명령은 기존 `desktop-only` 유지 및 일반 웹/데스크톱 동작 무변경 | `slides.test.ts`, `command-table.test.ts`, `router.test.ts` |
+
+## UC-WEB-KIOSK-STUDIO-NVA — 키오스크 시연판 스튜디오 정본 지나·나이아 NVA 교체, 다중 움직임·발음 입 모양·기본 목소리(`ko-KR-Neural2-A`, 게이트웨이 등록 뒤 `naia-voice:tpl-jina`) 연결 (2026-11-07)
+
+키오스크 시연판(`isKioskDemo() === true`)과 웹판의 `jina`, `jina-anime`, `naia` NVA 묶음을 스튜디오 정본 묶음(`jina-original-bb6c1d46c3fd8119.nva` → `public/nva/jina/`, `jina-anime-f9ffb5477a7c1e8b.nva` → `public/nva/jina-anime/`, `naia-anime-4ab74a4793c10e91.nva` → `public/nva/naia/`) 원본 그대로(재인코딩·축소 없이 `speech/atlas.bin`, `speech/atlas-index.json`, `speech/neutral-head.png` 포함) 교체하고, 구 파일(`.stacked.mp4`, `motion.webm` 등)을 제거한다:
+1. **여러 움직임(스튜디오 동일 규칙)**: 첫 입장 인사 시 `manifest.animations.greeting`(`greeting`이 없으면 첫 제스처 클립)을 인사 음성과 겹쳐도 취소되지 않도록 1회 재생(`playGreetingAction()`)하고, 대기(`idle`) 중에는 18초 주기 타이머(`startIdleGestureLoop()`)로 `greeting`을 제외한 제스처 클립(`idea`, `happy` 등 — `jina`에서 `greeting`과 같은 동작이던 `guidance`는 빼고 `greeting`으로 연결)을 순환 재생한다. 재생 전환 중 끊김은 실패 아님(`play()` 대기 중 `pause()`로 끊긴 `AbortError`·세대 전환·활성 비디오 전환은 정상 전환으로 처리하고, 진짜 디코드·재생 오류일 때만 폴백으로 전환하며 캔버스를 지우고 숨김). 알파 합성 시 가장자리를 안쪽으로 1~2px 침식하고 premultiplied 검은 테두리 섞임을 제거한다.
+2. **발음 입 모양(`speech/atlas.bin` + `browser-speech-plan.ts`)**: `naia.land` 스튜디오의 `browser-speech-plan.ts`(커밋 `8d5f3725a2facfc9db39212a893f90d389f4ec26`)와 정본 `SpeechPlayer`(`CanonicalSpeechStage`)를 셸에 연결해 게이트웨이 `/v1/studio/speech-plan/units`(요청 본문 `{ text, language: speechUnitsLanguage(locale) }`, 오프라인/폴백 시 한글 자모·영문 음소 분해 G2P)로 음절·발음 단위(`SpeechUnit`) 계획을 만들고 `speech/atlas.bin` 전이 클립으로 오디오 시계에 맞춰 입 모양을 합성한다. 한국어 단위 요청은 라틴 글자를 한글 읽기로 바꿔 보냄(게이트웨이가 언어 전환을 거절하므로). 아바타 렌더러가 준비되는 즉시(화면 열 때) `warmSpeechAssets()`로 `speech/atlas.bin`을 받기 시작하며, 아직 자료가 도착하지 않은 동안 말하면 `talking` 영상으로 입을 움직여 대신하고, 렌더러 단위 자산 캐시(`assetBlobCache`)로 새 스테이지마다 `speech/atlas.bin` 등을 다시 받지 않는다.
+3. **키오스크 기본 목소리(`ko-KR-Neural2-A`, 게이트웨이 등록 뒤 `naia-voice:tpl-jina`)**: 키오스크 시연판 기본 목소리(`KIOSK_DEMO_TTS_VOICE`)는 지금 운영 게이트웨이가 받는 `"ko-KR-Neural2-A"`(`ttsProvider: "nextain"`, 설정 표시 `"기본 여성(Neural2)"`)로 두고, 저장값이 `"naia-voice:tpl-jina"`여도 키오스크 판에서는 `"ko-KR-Neural2-A"`로 정규화한다. 지나 고유 목소리(`"naia-voice:tpl-jina"`)는 운영 게이트웨이에 등록된 뒤 `config-seed.ts`의 `KIOSK_DEMO_TTS_VOICE` 상수 한 곳만 바꿔 켜며, `synthNextain`이 게이트웨이 `/v1/audio/speech`의 `audio/wav` 바이너리 응답과 JSON 응답을 모두 처리하도록 유지한다(일반 웹판 `#824`는 `"browser"` TTS 유지).
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 스튜디오 정본 3종(`jina`, `jina-anime`, `naia`) 매니페스트·클립·`speech/atlas.bin` 무손실 배치, 키오스크 기본 목소리 `"ko-KR-Neural2-A"` 시드 및 저장된 `"naia-voice:tpl-jina"` → `"ko-KR-Neural2-A"` 정규화 | `nva.test.ts`, `config.test.ts`, `kiosk-demo.test.ts`, `SettingsTab.test.tsx` |
+| 빈 목록 | 초기 브라우저 진입 시 `speech/atlas.bin`을 선로드하지 않고 첫 인사 시작 뒤 `warmSpeechAssets()`로 백그라운드 프리페치 | `browser-speech-plan.test.ts`, `kiosk-demo.spec.ts` |
+| 진행 | 첫 인사 시 `greeting` 클립이 인사 TTS 발화 중에도 끊기지 않고 재생되며, 발화 중 발음 단위(`SpeechPlan`)에 맞춰 `CanonicalSpeechStage`가 입 모양을 렌더링 | `prebaked-renderer.test.ts`, `canonical-speech.test.ts`, `browser-speech-plan.test.ts`, `kiosk-demo.spec.ts` |
+| 성공 | 대기 중 `idea`·`guidance`·`happy` 제스처 순환 재생, 게이트웨이 `/v1/audio/speech`(`ko-KR-Neural2-A`) 요청·재생 및 `/v1/studio/speech-plan/units`(`{ text, language: "ko" }`) 입 모양 동기화, `1280x800` 캡처(`n-greet.png`, `n-idle.png`, `n-talk.png`, `n-naia.png`)에서 지나 둘레 알파 빵꾸 0 확인 | `prebaked-renderer.test.ts`, `synthesize.test.ts`, `browser-speech-plan.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | 게이트웨이 `/v1/audio/speech` 또는 `/v1/studio/speech-plan/units` 실패 시 브라우저 TTS 및 로컬 한글/영문 G2P 발음 계획으로 즉시 폴백, 재생 전환 중 `AbortError`·세대 전환은 실패로 처리하지 않으며 진짜 미디어 재생 실패 시에만 `failMedia` 호출 및 캔버스 비움·숨김 | `prebaked-renderer.test.ts`, `VideoAvatarCanvas.test.tsx`, `browser-speech-plan.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | `1280x800` 키오스크 표준 화면 및 `360x780` 모바일 화면에서 아바타·대화창·입장 게이트 레이아웃 유지 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo() === false`인 일반 웹판은 기본 `browser` TTS와 기존 설정 동작을 그대로 유지 | `kiosk-demo.test.ts`, `config.test.ts` |
+
+## UC-WEB-KIOSK-MOBILE-FIX — 휴대폰 세로 화면·멈춤 문구·잔액 검증 가드·발표 중간 질문 근거 정돈 (2026-11-07)
+
+대표님 휴대폰 세로(`390x844`, `412x915`) 시연 검수 지적 4건과 조정자 화면 검수 지적(`5`, `5-1`)을 해결한다:
+1. **혼자 보는 사람 기준 멈춤 문구**: 시연 사용량 소진 멈춤 화면(`KioskDemoGate.tsx`)에서 `"부스 직원에게 말씀해 주세요."`를 빼고 `"오늘 준비한 시연 사용량을 다 썼어요."`·`"잠시 뒤 다시 들어와 주세요."`로 안내한다.
+2. **휴대폰 세로 대화 머리·동작 토글 축소**: 휴대폰 세로(`390x844`, `412x915`)에서 대화 머리(`.chat-header`, `.kiosk-local-answer-toggle`, `.kiosk-chat-reset`)와 동작 단추 줄(`.nva-gesture-actions`)의 글자·여백을 줄이고 한 줄로 배치해 대화 글을 덜 가리게 한다.
+3. **휴대폰 세로 지나 목·머리 잘림 제거**: 휴대폰 세로에서 지나의 얼굴과 어깨가 화면 위쪽 안에 온전히 들어오도록 아바타 위치·크기를 맞추고, 데스크톱 `1280x800` 배치는 그대로 유지한다.
+4. **대화 시트 끌기 시 아바타 제자리 유지**: 휴대폰 세로에서 대화 시트 손잡이(`.web-mobile-sheet-handle`)를 끌어 올리거나 내려도(`collapsed` / `half` / `expanded` 또는 드래그 중) 아바타 레이어와 캔버스는 움직이거나 크기가 바뀌지 않고 시트가 아바타 위를 덮는 방식으로 동작한다.
+5. **잘못된 멈춤 화면 방지(잔액 0 이하 확인 시에만 멈춤 + 일반 오류 1회 재시도)**: 멈춤 화면(`unavailable`)은 `/v1/profile/balance` 잔액 조회로 크레딧이 `0` 이하임이 확인될 때만 띄운다. 잔액 조회 일시 실패(1회 재시도 포함)나 잔액이 남아 있을 때 발생한 대화·음성 오류(402 낱말 포함 오류 등)로는 멈춤 화면을 띄우지 않고, 대화를 자동으로 한 번 다시 시도한 뒤에도 실패하면 대화 칸에 `"잠시 문제가 있어요, 다시 말해 주세요."`만 표시한다.
+6. **조정자 시각·동작 검수 5건(`5-1`) 및 2회차 장 질문 모델 입력·단일 원고 근거 정돈**:
+   - 슬라이드 발표 중간 질문은 정해진 낱말 맞추기(`answerKioskSlideQuestion`) 대신 현재 장의 본문 요점(`bullets`)·발표문(`script`)·단일 원고 경로(`knowledge/${slide.source}`)·규칙을 `buildKioskSlideQuestionPrompt`로 모델 입력(`environmentSegments` 및 워커 시스템 프롬프트 `buildKioskSystemPromptFromSnapshot`)에 넣어 답하게 한다. 현재 장에 없는 내용(예: 2장 `"브랜드 체계"`에서 `"핵심 지표"`·`"가격"`)을 물으면 `"이 장에는 핵심 지표가 없어요"`·`"이 장에는 가격 내용이 없어요"`처럼 없다고 답한 뒤 현재 장 내용(`루나(달)·테라(지구)·솔(태양)·스텔라(별)·노바(신성)` 등)만 안내하고, 현재 장에 있는 내용(예: `"이 장에서 노바는 뭐예요?"`, `"방금 장 요약해 줘"`)은 현재 장 본문·발표문만으로 답한다.
+   - 발표 진행 중(`presenting`) 또는 질문 답변 중(`answering`)인 장 질문 동안에만 다른 지식 카드(`marketing.md`, `growth.md` 등)를 찾는 일반 지식 검색 도구를 비활성화·차단하고 그 메시지의 `evidenceFiles`에 해당 장 원고 파일 하나(`knowledge/${slide.source}`, 예: 2장이면 `knowledge/brand.md`)를 저장한다. 슬라이드 창만 열려 있고 발표가 끝났거나(`completed`) 멈춤(`paused`)·대기(`ready`) 상태이면 지금 장 원고를 참고(`buildKioskSlideReferencePrompt`)로 넣되 지식 검색(`skill_knowledge_search`·`skill_knowledge_ask`)은 켜 두어 다른 장·일반 지식 질문에도 정상 답한다.
+   - `"이 기기·브라우저에서는 WebGPU 를 사용할 수 없어 클라우드로 대답합니다"` 안내 상자가 대화 첫 글 윗줄을 덮지 않도록 글 목록 위 고정 줄(`flex-shrink: 0`)로 자리를 차지하고 닫기 단추를 제공한다.
+   - 시연판 도구 줄 `"자료 찾음"` 완료 표시를 빨간 `✗` 대신 성공 `✓`로 표시한다.
+   - 탐색기 `AGENTS.md` 첫 문단의 `**지나 (Jina)**` 마크다운 굵게 표시가 별표 원문 노출 없이 `<strong>`으로 렌더링되게 한다.
+   - 대화 답변 아래 근거 칩 줄(`.chat-kiosk-evidence`)과 아래 동작 단추 줄(`.nva-gesture-actions`) 사이의 간격을 띄워 겹치지 않게 하며, 대답 본문에는 파일 이름·근거 줄을 쓰지 않고 TTS에서도 `근거:`·`출처:` 줄과 `*.md` 파일 이름·괄호 속 출처를 읽지 않는다.
+   - 휴대폰 작업공간(`WebWorkspace.tsx`)은 파일 탐색기를 열고 닫을 수 있고 휴대폰 기본값은 닫힘이라 본문이 화면 폭을 꽉 채우며, 휴대폰 설정 창은 위 탭 줄(`.settings-tab-bar`)을 상단에 고정해 페르소나 탭에서도 사라지거나 글자 위가 잘리지 않고 닫기(`✕`) 단추와 겹치지 않게 하며 아래 적용 단추(`.settings-actions`)는 내용 위에 떠서 덮지 않고 본문 아래 자기 자리에 놓인다.
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 멈춤 문구 `"잠시 뒤 다시 들어와 주세요."`, 도구 완료 `✓ 자료 찾음`, `AGENTS.md` `**지나 (Jina)**` 굵게 렌더링, WebGPU 안내 상자 고정 줄 및 근거 칩·동작 단추 간격 | `KioskDemoGate.test.tsx`, `ToolActivity.test.tsx`, `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 빈 목록 | 초기 진입 시 잔액 조회 일시 실패여도 멈춤 화면으로 잘못 빠지지 않고 재시도·진입 허용 | `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx` |
+| 진행 | 발표 중 중간 질문 시 현재 장 본문·대본·규칙을 모델 입력(`buildKioskSlideQuestionPrompt` → `buildKioskSystemPromptFromSnapshot`)에 주입하고 타 지식 카드 검색 차단, 일시적 대화 오류 발생 시 1회 자동 재시도 | `slides.test.ts`, `adk-snapshot-fs.test.ts`, `ToolActivity.test.tsx`, `ChatArea.test.tsx` |
+| 성공 | 슬라이드 2장에서 다양한 중간 질문(`"방금 장에서 핵심 지표가 뭐예요?"`, `"이 장에서 노바는 뭐예요?"`, `"방금 장 요약해 줘"`, `"가격은 얼마예요?"`)에 2장 본문·발표문만으로 응답하고 근거 칩에 `knowledge/brand.md` 하나만 표시, 휴대폰 세로(`390x844`)에서 지나 머리·어깨 온전 노출 및 시트 드래그 전후 아바타 위치 불변 | `slides.test.ts`, `adk-snapshot-fs.test.ts`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts` |
+| 오류 | 잔액 조회에서 크레딧 `<= 0` 확인 시에만 멈춤 화면 전환, 그 외 오류는 1회 재시도 후 `"잠시 문제가 있어요, 다시 말해 주세요."` 대화 안내 | `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 휴대폰 세로(`390x844`, `412x915`)에서 상단 토글 한 줄 축소·지나 머리 비잘림·시트 오버레이 및 `1280x800` 데스크톱 배치 보존 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo() === false` 일반 웹판·데스크톱 동작 무변경 보존 | `kiosk-demo.test.ts`, `ChatArea.test.tsx` |
+
 ## UC-B2C-026 — NVA 테마와 호환 캐릭터 카드
 
 P01: 사용자는 설정 → 페르소나에서 SillyTavern/TavernAI 카드(v2/v3 PNG·JSON)를 불러와 내용을 확인하고 적용한다. 카드의 성격·상황·첫 인사·예시 대화를 기존 페르소나 경로로 전달하고, 아바타·음성·배경을 묶은 테마를 선택한다. 로컬 모델은 기존 모델 설정을 유지한다. 웹·로컬 동기화는 0.2.7 범위다.
@@ -2696,3 +3020,165 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | Authored greeting playback 360/1100px and decoder routing | `packages/shell/e2e/character-theme.spec.ts`, `packages/shell/src/lib/__tests__/local-media-url.test.ts` |
 | Korean text/long URL; failed media with keyboard input 360/1100px | `packages/shell/e2e/chat-korean-keepall.spec.ts`, `packages/shell/e2e/onboarding-fresh.spec.ts` |
 | Installed video narration, pause/resume, narrow layout and locale | `packages/shell/e2e/slides-sidecar.spec.ts` |
+## UC-WEB-KIOSK-FIX7B — 대표님 6판 실주소 지적 나머지 8건 (2026-11-08)
+
+6판 실주소 시연 검수에서 지적된 나머지 8건을 해결한다:
+1. **가로·세로 손 전환 단추(`FR-WEB-KIOSK-FIX7B.1`)**: 화면 방향 자동 판단과 별도로 사용자가 가로 배치(`landscape`)·세로 배치(`portrait`)를 직접 바꾸는 아이콘 단추(`data-testid="layout-orientation-toggle"`)를 두고 선택 상태를 기억한다. 휴대폰 세로(`412x915`)에서 가로 배치를 고르면 가로 배치로 그리고, 가로 화면(`915x412`, `1440x900`)에서 세로 배치를 고르면 세로 배치로 그린다.
+2. **아래 줄 AI·TTS·방송 글자를 아이콘으로(`FR-WEB-KIOSK-FIX7B.2`)**: 대화창 위 줄(`.chat-header` 안 `AiControlBar`)의 `"AI"`, `"TTS"`, `"방송"` 글자 단추를 아이콘 단추로 바꾸고 켜짐·꺼짐이 아이콘 색·모양으로 보이게 하며 `title`·`aria-label`로 이름을 유지한다. 휴대폰 폭(`412px`)에서 한 줄에 들어간다.
+3. **아바타 아이콘과 확대·축소·이동 정리(`FR-WEB-KIOSK-FIX7B.3`)**: 아바타 영역 오른쪽 아래 구석의 작은 단추들을 아바타 아이콘 단추(`data-testid="avatar-controls-toggle"`) 하나로 묶고, 누르면 확대(`+`)·축소(`−`)·이동(`✥`, 회전 `⊕` 포함)·위치 초기화(`⌂`) 및 배치 전환 단추가 펼쳐지게 정리한다.
+4. **가로 배치 처음 아바타 영역 비율(`FR-WEB-KIOSK-FIX7B.4`)**: 가로 배치일 때 처음 아바타 영역 비율을 줄여 대화창이 주가 되도록 초기 대화창 높이 비율을 높이고(`KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.76`), 사용자가 바꾼 대화창 높이·가로 폭 비율을 기억한다.
+5. **가로 배치 오른쪽 `"naia-adk 프로젝트를 읽지 못했습니다"` 패널 제거와 대화창 잘림 방지(`FR-WEB-KIOSK-FIX7B.5`)**: 웹 시연판(`isKioskDemo()`)에서는 데스크톱 전용 프로젝트 선택 패널(`projects` 앱)을 빼고, 데스크톱(`1440x900`)과 휴대폰 가로(`915x412`) 모두에서 대화창이 잘리지 않게 한다.
+6. **캐릭터 카드·페르소나·`AGENTS.md` 역할 분리(`FR-WEB-KIOSK-FIX7B.6`, 결정 문서 3절 그대로)**:
+   - `KIOSK_AGENTS_MD`에서 1절 `"지나가 누구인가"` 정체성을 빼고 `"지금 캐릭터는 페르소나 설정(캐릭터 카드)을 따른다."` 한 줄만 둔다(일하는 규칙·근거 규칙·도구는 그대로 유지).
+   - `KIOSK_PERSONA_MD`(`persona/jina.md`)와 `config-seed.ts`의 지나 페르소나 기본값을 **지나 캐릭터 카드 한 장**(`chara_card_v2` JSON: `name: "지나"`, `description`, `personality`, `scenario`, `first_mes` = 시연판 첫 인사, `mes_example`)으로 옮겨 시연판 첫 실행 때 카드 라이브러리에 들어가 적용된 상태로 시작하게 한다(지나 정지 그림 `/nva/jina/speech/neutral-head.png` 포함).
+   - 지나 카드를 지나 NVA 테마(`nvaModel: "jina"`, 목소리 설정값 그대로, 배경)와 묶어 다른 카드를 적용했다가 지나 카드로 돌아오면 지나 테마로 돌아온다.
+   - **웹 시연판 지나 테마 배경**: 웹 시연판(`isKioskDemo()`)의 지나 테마 기본 배경(`KIOSK_JINA_THEME.backgroundVideo`)은 웹 번들 자산인 사무실 배경(`"naia-autumn-office-live.mp4"`, `WEB_DEFAULT_BACKGROUND`)을 쓰며, 웹 모드에서 테마나 설정이 가리키는 배경 파일이 `WEB_BACKGROUND_ASSETS`에 없을 때는 빈 화면이 되지 않도록 콘솔 경고(`Logger.warn`) 한 줄을 남기고 기본 배경(`WEB_DEFAULT_BACKGROUND`)으로 돌아간다(데스크톱 앱 동작은 그대로 유지).
+   - 페르소나 탭에서 적용된 카드의 칸(이름, 소개 `description`, 성격, 상황, 첫 인사 + `alternate_greetings` 고르기, 예시 대화, 로어북 항목 목록, 카드 쪽 지시 `system_prompt`·`post_history_instructions`, 만든 사람·메모·꼬리표)을 모두 보이고 고칠 수 있게 하며, 고친 칸은 `"카드에서 바꿈"` 표시를 붙이고 `"카드 원래대로"` 단추로 되돌린다. 고친 값은 실제 대화 시스템 프롬프트에 들어가며, 카드가 도구 권한·모델·안전 규칙을 못 바꾸는 계약은 그대로 지킨다.
+7. **웹 시연판 방송·AI 참견 단추 숨김(`FR-WEB-KIOSK-FIX7B.7`)**: 웹 시연판 빌드(`VITE_NAIA_KIOSK_DEMO=1`)에서 방송, AI 참견(및 능동발화) 기능 단추를 숨기고 캐릭터 카드 불러오기는 그대로 둔다.
+8. **목소리 BC250 직결 흔적 지우기(`FR-WEB-KIOSK-FIX7B.8`)**: `packages/shell/src/lib/config-seed.ts`의 `KIOSK_DEMO_TTS_HOST`와 `vllmTtsHost: KIOSK_DEMO_TTS_HOST` 시드를 지운다(`synthNextain` 게이트웨이 `/v1/audio/speech` 경로와 8초 브라우저 대체 경로 모두 이 값을 쓰지 않음을 확인). `KIOSK_DEMO_TTS_VOICE`는 바꾸지 않는다.
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX7B
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 가로·세로 손 전환 단추 기본 표시·상태 기억, AI·TTS·방송 아이콘 단추(`title`·`aria-label`), 아바타 구석 아이콘 1개 묶음 및 펼침, 가로 배치 초기 대화창 비율 확대·비잘림, 시연판 `projects` 앱 제외, 지나 캐릭터 카드+테마 기본 적용, 시연판 방송·AI 참견 숨김, `KIOSK_DEMO_TTS_HOST` 제거 | `AiControlBar.test.tsx`, `AppMainContent.test.tsx`, `kiosk-demo.test.ts`, `character-theme.test.ts`, `SettingsTab.test.tsx` |
+| 빈 목록 | 첫 실행 빈 저장소에서도 지나 캐릭터 카드와 지나 NVA 테마가 라이브러리에 시드되어 적용된 상태로 시작 | `kiosk-demo.test.ts`, `character-theme.test.ts` |
+| 진행 | 페르소나 탭에서 적용된 카드의 모든 칸 편집 중 `"카드에서 바꿈"` 표시 및 `"카드 원래대로"` 복원 동작 | `character-theme.test.ts`, `SettingsTab.test.tsx` |
+| 성공 | 카드 칸 수정 내용이 실제 대화 시스템 프롬프트(`config.persona` / `buildKioskSystemPromptFromSnapshot`)에 반영되고, 다른 카드 적용 후 지나 카드로 돌아오면 지나 테마(`nvaModel: "jina"`, 목소리, 웹 시연판 지나 테마 배경 `naia-autumn-office-live.mp4`) 복원 및 미설치 웹 배경 시 콘솔 경고 후 기본 배경 폴백 | `character-theme.test.ts`, `kiosk-demo.test.ts`, `adk-snapshot-fs.test.ts`, `SettingsTab.test.tsx` |
+| 오류·보안 경계 | 손상된 카드 거절 및 카드가 도구 권한(`enableTools`/`allowedTools`)·모델(`provider`/`model`)·안전 규칙(`AGENTS.md`/`rules/response-rules.md`)을 바꾸지 못함 | `character-theme.test.ts`, `kiosk-demo.test.ts` |
+| 좁은 폭 / 반응형 | 휴대폰 세로(`412x915`), 휴대폰 가로(`915x412`), 데스크톱(`1440x900`)에서 대화 머리 한 줄 유지, 손 전환 배치 전환, 대화창 잘림 없음 | `AiControlBar.test.tsx`, `AppMainContent.test.tsx`, `fix7b-shots` 캡처 |
+
+## UC-WEB-KIOSK-FIX7C — 7판 고침 셋째 묶음: 매팅 머리카락·동작 구멍 제거, 캔버스 고화질 버퍼·확대, 슬라이드 앱 노출 (2026-11-08)
+
+7판(`fix7`·`fix7b`) 적용 뒤 발견된 아바타 매팅 구멍, 화면 축소·확대 저해상도 흐림, 웹 시연판 슬라이드 앱 목록 누락을 해결한다:
+1. **머리 위 점 및 동작 클립 구멍 제거(`FR-WEB-KIOSK-FIX7C.1`)**: `nva-chromakey-gl.ts`(`alpha-repair`)와 `nva-stacked-alpha-gl.ts`에서 바깥 윤곽선(어깨·팔·목)의 검은 줄 제거와 색 복원은 유지하되, 어두운 머리카락 안쪽 픽셀을 밝게 띄우거나 침식해 노란·갈색 배경 점이 비치지 않게 하고, 대기(`idle.webm`)·발화(`talking-ko.webm`)·동작 클립(`greeting.webm`·`guidance.webm`·`idea.webm`·`happy.webm`) 전부의 머리카락·몸통 안쪽 구멍을 주변 깨끗한 색으로 메운다. 오목한 바깥 배경(귀·턱·포니테일 틈·고양이 귀 사이)은 메우지 않는다.
+2. **캔버스 버퍼 표시 크기×확대×화소 비율 맞춤 및 `imageSmoothingQuality="high"`(`FR-WEB-KIOSK-FIX7C.2`)**: `VideoAvatarCanvas.tsx`에서 캔버스 버퍼를 고정 `720×1280` + CSS `scale(zoom)`으로 늘리는 대신, `표시 크기 × zoom × min(devicePixelRatio, 2)`로 맞추고 `ResizeObserver`와 `zoom` 변경 때 다시 맞춘다. `VideoAvatarCanvas.tsx`, `prebaked-renderer.ts`(`ctx`·`offscreenCtx`·동작 클립 경로 포함), `nva-procedural-motion.ts` 모든 2D 컨텍스트에 `imageSmoothingEnabled = true; imageSmoothingQuality = "high"`를 적용해 `1920×1080`(화소 비율 1·1.25) 등 축소·확대 화면 모두에서 고화질을 유지한다.
+3. **웹 시연판 앱 목록에 슬라이드 앱 노출(`FR-WEB-KIOSK-FIX7C.3`)**: 이미 있는 `SlidesViewer.tsx`·`SlidesCenterArea.tsx`와 `lib/kiosk-demo/slides.ts`(IR 공개 덱 `ir-public.json`)를 사용해 웹 시연판(`isKioskDemo()`) 시작 시 `land.naia.slides` 앱을 등록하고, 데스크톱 앱 막대(`AppBar`)와 휴대폰 세로 메뉴(`.web-mobile-menu-list`) 모두에서 슬라이드 아이콘을 보여 주며, 열면 IR 공개 덱 첫 장이 뜨고 대화로 `"다음 장"`을 말하면 2장으로 넘어간다.
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX7C
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | `nva-chromakey-gl`·`nva-stacked-alpha-gl` 내부 구멍 메움 및 바깥 테두리 침식 분리, 캔버스 버퍼 `표시 크기 × zoom × dpr` 및 `imageSmoothingQuality="high"`, 시연판 앱 목록 `land.naia.slides` 노출 | `VideoAvatarCanvas.test.tsx`, `prebaked-renderer.test.ts`, `nva-stacked-alpha.test.ts`, `slides.test.ts` |
+| 빈 목록 / 초기 | 시연판 부팅 시 대화 입력 전에도 앱 목록에 슬라이드 앱 아이콘이 표시되고 클릭 시 IR 공개 덱 1장 표시 | `slides.test.ts`, `fix7c-shots/after-slides-app.png` |
+| 진행 | 동작 클립(`greeting`·`guidance`·`idea`·`happy`) 재생 및 발화(립싱크) 중에도 고화질 버퍼와 매팅 구멍 메움이 동일하게 적용됨 | `prebaked-renderer.test.ts`, `fix7c-shots/after-motion-*.png` |
+| 성공 | 슬라이드 앱 열기 후 `"다음 장"` 대화로 2장 전환, 확대(`zoom=2`, `zoom=1.5`) 및 `dpr=2`·`1920x1080`(`dpr=1`·`1.25`)에서 버퍼 크기·화질 확인 | `VideoAvatarCanvas.test.tsx`, `slides.test.ts`, `fix7c-shots` |
+| 오류·보안 경계 | 비시연판 웹 모드에서는 데스크톱 전용 슬라이드 명령 차단 유지, 오목한 바깥 배경(귀·목·포니테일 틈) 오탐 메움 0 | `slides.test.ts`, `fix7c-shots` |
+| 좁은 폭 / 반응형 | 휴대폰 세로(`412x915`) 메뉴에서 슬라이드 앱 열기·닫기(`✕`), 데스크톱(`1440x900`, `1920x1080`) 반응형 확인 | `fix7c-shots` 캡처 |
+
+## UC-WEB-KIOSK-FIX7D — 웹 시연판 탐색기 배치 유지 및 유튜브 재생 (2026-11-08)
+
+7판 넷째 묶음(`fix7d`)으로 대표님이 앞서 지적한 두 가지 문제를 해결한다:
+1. **탐색기 누르면 배치가 가운데로 초기화되는 결함 해결(`FR-WEB-KIOSK-FIX7D.1`)**:
+   - 웹 시연판(`VITE_NAIA_KIOSK_DEMO=1`, `--mode web`)에서 파일 탐색기 단추(`AppBar`의 `workspace` 탭 `📁`, 휴대폰 메뉴의 `📁 작업 공간`, 또는 `WebWorkspace` 안의 `📁 파일 탐색기` 접기·펼치기 단추 `web-workspace-tree-toggle` / `web-workspace-tree-collapse`)를 눌러 열고 닫아도 사용자가 정한 배치(가로·세로 `layoutOrientation`, 아바타 영역 비율 `chatHeight`·`chatHeightRatio`·`naiaWidth`, 패널 위치 `naiaWidth`·`chatMode`·`railCollapsed`)가 기본 가운데 배치(`38vw` / `44vw`)로 초기화되거나 덮어써지지 않는다.
+   - 휴대폰(세로 화면 및 수동 세로 배치)은 파일 탐색기 트리가 기본 닫힘으로 시작하고 닫으면 본문 보기 영역이 가로 폭을 꽉 채우는(`fix7` 결정) 동작을 그대로 지킨다.
+2. **웹 시연판 유튜브·BGM 재생(`FR-WEB-KIOSK-FIX7D.2`)**:
+   - 웹 시연판(`VITE_NAIA_KIOSK_DEMO=1`, `--mode web`)에서 `"유튜브 틀어 줘"`(또는 `"음악 틀어 줘"`, `"노래 틀어 줘"`, `"유튜브 멈춰"` 등)를 대화로 요청하거나 상단 BGM·유튜브 재생기(`BgmPlayer`)를 누르면 데스크톱 전용 막힘 없이 열쇠 없는 브라우저 호환 방식(`youtube-nocookie.com/embed/...` iframe API 및 내장 공개 카탈로그 검색 폴백)으로 실제 재생기가 뜨고 재생·정지된다.
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX7D
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 웹 시연판에서 탐색기 단추·트리 토글 기본 표시 및 상단 BGM·유튜브 재생기(`BgmPlayer`) 기본 마운트·`skill_youtube_bgm` 도구 노출 | `AppMainContent.test.tsx`, `AppBar.test.tsx`, `App.test.tsx`, `BgmPlayer.test.tsx` |
+| 빈 목록 / 닫힘 | 휴대폰·세로 배치에서 파일 탐색기 트리 기본 닫힘 및 닫았을 때 본문 보기 영역이 가로 폭 100% 채움 | `web-workspace-path.test.tsx`, `fix7d-shots/after-explorer-412x915.png` |
+| 진행 | 대화로 `"유튜브 틀어 줘"` 요청 시 `skill_youtube_bgm` 도구 호출 및 `youtube-nocookie.com/embed/...` 재생기 로드·재생 상태(`playing`) 진입 | `ChatArea.test.tsx`, `bgm-skill.test.ts`, `BgmPlayer.test.tsx` |
+| 성공 | 탐색기 열고 닫은 뒤 `layoutOrientation`·`chatHeight`·`chatHeightRatio`·`naiaWidth`·`chatMode`·`railCollapsed` 값이 그대로 유지되고, 유튜브 재생 중 멈춤(`stop` / `"유튜브 멈춰"`) 시 즉시 정지 | `AppMainContent.test.tsx`, `web-workspace-path.test.tsx`, `bgm-skill.test.ts`, `ChatArea.test.tsx` |
+| 오류·폴백 | 데스크톱 BGM 사이드카(`ensure_bgm_server` / `127.0.0.1:18791`)나 CLI 감지(`cli_detect_refresh`)가 없는 웹 환경에서도 오류 없이 내장 유튜브 카탈로그로 검색·재생되고 `SkillsTab`이 깨끗하게 표시됨 | `bgm-skill.test.ts`, `BgmPlayer.test.tsx`, `SkillsTab.test.tsx` |
+| 좁은 폭 / 반응형 | 데스크톱(`1440x900`)과 휴대폰(`412x915`)에서 탐색기 전후 배치 유지(`before/after-explorer-*.png`) 및 유튜브 재생기 표시(`after-youtube-*.png`) 확인 | `fix7d-shots` 헤드리스 브라우저 캡처 |
+
+## UC-WEB-KIOSK-FIX7F — 7판 고침 여섯째 묶음: 지나 정수리 들쭉 자국 제거, 지나 애니 머리카락 테두리 점선 제거, 대화창 머리 줄 단추 겹침 방지, 지나 치마·팔 바깥 가장자리 계단 현상 제거 (2026-11-08)
+
+7판(`fix7c`·`fix7d`·`fix7e` 병합본) 캡처 검수에서 발견된 네 가지 문제를 해결한다:
+1. **지나(실사) 머리 정수리 가운데 들쭉날쭉 자국 제거(`FR-WEB-KIOSK-FIX7F.1`)**:
+   - `nva-chromakey-gl.ts`(`alpha-repair`, `u_mode == 1`)에서 정수리 안쪽 구멍(위·아래 모두 머리카락에 둘러싸인 내부 구멍) 메움은 유지하되, 정수리 최상단 바깥 윤곽선에서 알파 팽창(`max(a, avgA1 * 0.85)`)으로 반투명 청록 스필 행(`y=66`)이 불투명 계단으로 튀어나오거나 `1~2px` 미세 홈(`y=69, 71`)이 조기 투명 반환(`pE/pW <= 0.05`)으로 패이는 현상을 없앤다.
+   - 어두운 머리카락 가장자리의 청록·파랑 배경 번짐(`B > R`, `G > R`)을 내부 머리색으로 정리해 실사 지나·나이아 화질을 해치지 않으면서 정수리 윤곽이 매끄럽게 이어지게 한다.
+2. **지나 애니 머리카락 바깥 테두리 어두운 점선 제거(`FR-WEB-KIOSK-FIX7F.2`)**:
+   - `nva-chromakey-gl.ts`(`alpha-repair`, `u_mode == 1`)와 `nva-stacked-alpha-gl.ts`에서 진짜 내부 구멍과 바깥 실루엣 테두리를 분리한다.
+   - 바깥 실루엣 테두리에서는 `isCrown`·`isDarkHairEdge`라도 알파를 바깥으로 팽창(`max(a, avgA1 * 0.85)`)하지 않고 `minA1`·`minA2` 기반 바깥 침식(`erode1`·`erode2`)과 투명 도랑(`a ≈ 0`) 바깥에 분리된 1~3px 매팅 잔여 섬 제거를 적용하며, 미리 곱한 검은 테두리 색을 안쪽 머리카락 색으로 치환해 어두운 점선이 남지 않게 한다.
+3. **대화창 머리 줄 `"내 PC에서 대답하기"` 단추와 `"처음으로"` 글자 겹침 방지(`FR-WEB-KIOSK-FIX7F.3`)**:
+   - `87562aba`(가로 대화 머리 겹침 고침)의 방식을 따라 `.kiosk-local-answer-header`와 `.kiosk-chat-reset`이 자식 단추 폭보다 작게 수축해 옆 단추 위로 넘치지 않도록 `flex-shrink: 0`을 부여하고, 데스크톱 가로 배치(`1440x900` 포함 모든 높이)에서 대화 머리 줄 안 `.kiosk-local-answer-hint` 숨김·단추 패딩 축소·`.chat-header` 줄바꿈 허용을 적용한다.
+   - 좁은 폭(`<= 600px`, 휴대폰 세로 `412x915` 포함)에서는 `"내 PC에서 대답하기"` 단추가 화면에서는 짧은 `"내 PC"`로 보이게 줄이되 DOM `textContent`·`aria-label`·`title`은 전체 문구를 유지해 첫 화면과 유튜브 재생 뒤 화면 모두에서 `"처음으로"`와 겹치지 않게 한다.
+4. **실사 지나 휴대폰 세로 첫 화면 치마·왼팔 바깥 가장자리 계단식 들쭉날쭉 현상 제거(`FR-WEB-KIOSK-FIX7F.4`)**:
+   - `nva-chromakey-gl.ts`(`alpha-repair`)에서 자주색(버건디) 치마(`rgb ≈ (72, 9, 16)`, `luma ≈ 0.11`)와 어두운 소매·팔 바깥 가장자리가 `isDarkHairEdge`(`inLuma < 0.22`)로 오분류되어 바깥 침식과 내부 색 치환이 꺼지거나, 바깥 매팅 도랑이 구멍 메움(`hole_fill`)으로 채워져 검은·회색 계단 테두리가 남는 문제를 해결한다.
+   - 구멍 메움을 4방위 불투명 피사체에 둘러싸인 진짜 내부 구멍으로 한정하고, 치마·팔을 포함한 모든 바깥 실루엣 가장자리에 바깥 침식(`erode1`·`erode2`)과 내부 피사체 색 복원을 적용하며, `prebaked-renderer.ts`에서 WebGL 키어 처리 해상도를 원본 비디오 픽셀 격자(`sourceWidth`, `sourceHeight`)에 맞춰 서브텍셀 계단 아티팩트 없이 부드럽게 보간되게 한다.
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX7F
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 지나 정수리 바깥 경계 들쭉 자국·청록 스필 제거, 지나 애니 머리카락 바깥 테두리 어두운 점선·분리 섬 제거, 지나 치마·왼팔 바깥 가장자리 계단 테두리 제거, 대화창 머리 줄 단추 비겹침 | `prebaked-renderer.test.ts`, `ChatArea.test.tsx` |
+| 빈 목록 / 초기 | 첫 진입 기본 대화창 상태(메시지 1건, 유튜브 미재생)에서 데스크톱 `1440x900`·휴대폰 `412x915` 대화 머리 줄 단추 겹침 `0px` 및 치마·팔 가장자리 매끄러움 | `ChatArea.test.tsx`, `fix7f-shots/after-desktop-landscape-home.png`, `fix7f-shots/after-mobile-portrait-home.png` |
+| 진행 | 동작 클립(`greeting`·`guidance`·`idea`) 재생 및 유튜브 BGM 재생(`after-youtube-412x915.png`) 중에도 정수리 구멍 메움 유지 및 대화창 머리 줄 단추 겹침 `0px` | `prebaked-renderer.test.ts`, `ChatArea.test.tsx`, `fix7f-shots/after-youtube-412x915.png` |
+| 성공 | 정수리 2x 지나(`after-head-crown-2x-jina.png`)·정수리 2x 지나 애니(`after-head-crown-2x-jina-anime.png`)·머리어깨 2x 지나 애니(`after-head-shoulder-2x-jina-anime.png`)·휴대폰 세로 첫 화면(`after-mobile-portrait-home.png`) 화소 검증 및 실사 나이아·지나 화질 유지 | `prebaked-renderer.test.ts`, `fix7f-shots` |
+| 오류·보안 경계 | WebGPU 미지원 기기에서 `"내 PC에서 대답하기"` 클릭 시 8GB 안내 배너가 기존과 동일하게 표시되고 오목한 바깥 배경(귀·목·포니테일 틈) 및 몸통 바깥 배경은 메우지 않음 | `ChatArea.test.tsx`, `prebaked-renderer.test.ts` |
+| 좁은 폭 / 반응형 | 데스크톱(`1440x900`), 휴대폰 세로(`412x915`), 초소형 폭(`360px`)에서 대화 머리 줄 단추 경계 상자 교차 `0px` 및 키보드/ARIA 이름 유지 | `ChatArea.test.tsx`, `fix7f-shots` |
+
+## UC-WEB-KIOSK-FIX7G — 7판 고침 일곱째·여덟째 묶음(fix7g·fix7h): 화면 위치·색 문턱 없는 다단계 GPU 외부 연결성 매팅·주 피사체 연결 가는 선 보존·실제 영상 골든 및 반례 GPU 시험 (2026-11-08)
+
+`fix7f`·`fix7g` 적대 검수(`result-fix7frev1.md`, `result-fix7grev1.md`) 지적을 구조적으로 해결하고, 한 번의 조각 셰이더에서 주변 몇 화소와 색 문턱으로 구멍·섬을 맞히는 방식 대신 **다단계 GPU 연결성 채우기(flood)** 구조로 바꾼다:
+1. **외부 배경 연결 마스크로 내부 구멍 판정 — 위치·색 문턱 제거(`FR-WEB-KIOSK-FIX7G.1`, `FR-WEB-KIOSK-FIX7H.1`)**:
+   - `nva-chromakey-gl.ts`에서 화면 위치 상수(`v_uv.y < ...`)뿐 아니라 구멍 판정에 쓰이던 색·휘도 문턱(`luma < 0.26`, `luma < 0.30` 등)에 기대지 않는다.
+   - 낮춘 해상도 FBO 핑퐁 단계에서 캔버스 가장자리에서 시작해 투명 화소를 따라 퍼지는 **바깥 배경 연결 마스크**를 GPU로 계산한다. 바깥과 이어진 투명은 배경(투명 유지)이고, 바깥과 이어지지 않은 투명은 색(어두운 머리 `RGB(20,20,25)`, 중간 회색 `RGB(68,68,68)`, 밝은 흰색 `RGB(230,230,220)`)이나 화면 위아래 위치(`y=50`, `y=90`, `y=160`)와 무관하게 내부 구멍으로 판정해 주변 불투명 피사체 색으로 메운다. 바깥과 틈으로 이어진 오목한 배경은 메우지 않는다.
+2. **주 피사체 연결 마스크로 떨어진 섬 제거 및 모든 방향 가는 선 보존(`FR-WEB-KIOSK-FIX7G.2`, `FR-WEB-KIOSK-FIX7H.2`)**:
+   - 가로·세로 축 길이 휴리스틱 대신, 주 피사체 코어(충분한 두께를 가진 불투명 영역)에서 불투명 화소를 따라 퍼지는 **피사체 연결 마스크**를 같은 GPU 다단계 전파로 계산한다.
+   - 주 피사체와 이어지지 않은 작은 불투명 성분(`2x2` 점, `1px` 도랑 너머 분리 점선, 블록 없이 홀로 떠 있는 `2x20` 섬 등)은 방향·길이와 상관없이 지운다.
+   - 주 피사체에 이어진 가는 선(수직 `2x20`, `45°` 대각선 `(70,59)`, 곡선 잔머리·귀걸이·손끝 등)은 방향과 색상에 상관없이 보존한다.
+   - `nva-stacked-alpha-gl.ts`(WebGL1 폴백 경로)는 축별 소스 텍셀 `uniform vec2 uTexel = vec2(1/videoWidth, 1/(videoHeight/2))`로 색 정리와 고립 점 제거를 분리해 폭 `128`·`720`·`1440`에서 2px 선을 보존한다.
+3. **위치·색 문턱 없는 알파 기반 경계 매끄럽게 하기 및 휴대폰 프레임 캐시(`FR-WEB-KIOSK-FIX7H.3`, `FR-WEB-KIOSK-FIX7H.4`)**:
+   - 구멍 메움과 분리 섬 제거를 마친 뒤 바깥 경계에서만 알파 이웃 분포로 계단·스캔라인 홈과 반투명 스필 테두리를 매끄럽게 정제해, 실제 지나 `idle.webm`(`t=1.000s`) 정수리 ROI(`x=[300,420), y=[20,150)`) 경계 총변동(`≤ 113`)과 굴곡량(`≤ 128`)을 `fix7f` 이하로 유지하고 전체 프레임 분리 섬을 `0`으로 만든다.
+   - 연결성 보조 패스는 낮춘 해상도로 수행하며, 비디오의 현재 클립·시각(`currentTime`)이 바뀌지 않았고 출력 크기가 같으면 이전 프레임의 GPU 결과를 재사용해 휴대폰(`412x915`) 프레임 시간을 최소화한다.
+4. **실제 브라우저 GPU(WebGL2) 실제 영상 골든 시험·반례 시험·화면 폭 경계 상자 시험(`FR-WEB-KIOSK-FIX7G.3`, `FR-WEB-KIOSK-FIX7H.4`)**:
+   - Playwright Chromium 실제 WebGL2에서 실제 영상(`jina/clips/idle.webm` `1.000s`, `jina/clips/talking-ko.webm` `1.000s`, `naia`, `jina-anime`)을 디코드해 같은 시험 안에서 `fix7f` 기준 셰이더와 현재 `NvaChromakeyGL`을 모두 실행하고, 정수리 ROI 경계 총변동·굴곡량이 `fix7f` 측정값 이하이고 분리 섬이 `0`임을 검증한다.
+   - 적대 검수 반례(대각선 연결선 `(70,59)` `A=255` 유지, 분리된 `2x20` 섬 `A=0` 제거, 같은 `4x4` 구멍을 `RGB(20,20,25)`·`(68,68,68)`·`(230,230,220)` 세 색으로 모두 `A=255` 복원, 위아래 위치 이동 불변, 바깥과 이어진 틈 비메움)와 기존 `fix7g` GPU 시험·대화창 머리 줄 6개 뷰포트 경계 상자 시험을 모두 검증한다.
+5. **`.agents/context/process-status.json` 절대 경로 제거(`FR-WEB-KIOSK-FIX7G.4`)**:
+   - 문서와 상태 파일에 개인 절대 경로·열쇠·개인정보를 남기지 않는다.
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX7G / UC-WEB-KIOSK-FIX7H
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 다단계 GPU 외부 배경 연결 마스크(내부 구멍 색·위치 무관 복원) + 주 피사체 연결 마스크(대각선·수직 연결선 보존, 분리 `2x2`·`2x20` 섬 제거) + 알파 기반 경계 정제, `nva-stacked-alpha-gl` 축별 `uTexel` | `prebaked-renderer.test.ts`, `nva-stacked-alpha.test.ts`, `e2e/kiosk-demo.spec.ts` |
+| 빈 목록 / 초기 | 첫 화면 기본 상태에서 데스크톱 `1440x900`·휴대폰 `412x915` 대화 머리 줄 단추 경계 상자 비겹침 및 아바타 정상 표시 | `e2e/kiosk-demo.spec.ts`, `ChatArea.test.tsx`, `fix7h-shots` |
+| 진행 | 실제 영상(`jina` `idle.webm`·`talking-ko.webm` `1.000s`, `naia`, `jina-anime`) 프레임 디코드 및 동일 프레임 재호출 캐시 동작, `412x915` 유튜브 재생 카드 노출 상태 검증 | `e2e/kiosk-demo.spec.ts`, `prebaked-renderer.test.ts`, `fix7h-shots` |
+| 성공 | 실제 Chromium WebGL2에서 실제 영상 정수리 ROI 총변동·굴곡량 `≤ fix7f` 및 분리 섬 `0`, 반례 5종(대각선 연결선 `(70,59)` `A=255`, 분리 `2x20` 섬 `A=0`, 3색 구멍 `RGB(20,20,25)`·`(68,68,68)`·`(230,230,220)` 모두 `A=255`, 위치 이동 불변, 바깥 연결 틈 `A=0`) 전부 통과 | `e2e/kiosk-demo.spec.ts`, `prebaked-renderer.test.ts`, `nva-stacked-alpha.test.ts` |
+| 오류·보안 경계 | 바깥 배경과 이어진 오목한 틈 오탐 메움 `0`, WebGL 컨텍스트 유실 시 안전 폴백, 문서·상태 파일 개인 절대 경로 `0건` | `e2e/kiosk-demo.spec.ts`, `prebaked-renderer.test.ts` |
+| 좁은 폭 / 반응형 | `599x800`, `600x800`, `601x800`, `412x915`, `915x412`, `1440x900`에서 대화창 머리 줄 단추 실제 경계 상자 교차 `0px`, 접근성 이름·키보드 동작 및 `412x915` 프레임 처리 시간 확인 | `e2e/kiosk-demo.spec.ts`, `fix7h-shots` |
+
+## UC-WEB-KIOSK-FIX7J — 7판 고침 열째 묶음(fix7j): 매 장면 GPU 안팎 판정을 중단하고 원본 해상도 정확한 연결 성분으로 구운 `.stacked.mp4` 알파 재생 (2026-11-09)
+
+`fix7a`~`fix7i` 아홉 차례의 런타임 셰이더 유한 전파·문턱 수정을 끝내고, `result-fix7hrev1.md` 적대 검수 지적 1~7을 구조적으로 해결한다. 안팎(연결성) 판정을 런타임 셰이더에서 빼고, 클립마다 원본 해상도에서 정확한 연결 성분(BFS/라벨링, 반복 횟수 상한 없음)으로 한 번 계산한 알파와 경계 색을 `.stacked.mp4`에 구워 기본 재생한다:
+1. **원본 해상도 정확한 연결 성분 기반 오프라인 알파 굽기(`FR-WEB-KIOSK-FIX7J.1`)**:
+   - `packages/shell/src/lib/avatar/nva-alpha-bake.ts`의 순수 함수(`bakeAvatarFrameRgba`, `bakeAvatarFrameAlpha`)와 `scripts/bake-nva-stacked.mjs` 도구는 원본 해상도(`720x1280` 또는 임의 `width x height`)에서 반복 횟수 상한·절반 해상도 다운샘플·사전 브리지·내부 개구부 시드 없이 정확한 연결 성분을 계산한다.
+   - **바깥 배경**: 캔버스 네 가장자리와 4-연결로 이어진 투명 성분(`alpha < 128`)을 BFS로 끝까지 추적한다. 25회 굽은 4px 미로(`64x256`·`256x256`)와 1px 굽은 외부 통로(`128x256`·`720x256`)는 끝점까지 바깥 배경(`A=0`)으로 남고, 가장자리와 이어지지 않은 닫힌 `30x30` 내부 구멍이나 `alpha=0.84`/`0.86` 벽·방향 수 `n=5`/`6` 안쪽 `4x4` 구멍은 불투명(`A=255`)으로 메워진다.
+   - **주 피사체 및 의도된 분리 장식 보존**: 가장 큰 8-연결 불투명 성분을 주 피사체로 선택해 그 성분과 이어진 1px 세로선(`128x256`·`720x256`), `2x20` 세로선, `2x2` `45°` 대각선(`(70,59)`), 대각 한 접점 `2x2` 성분(`(64,54)`, `(65,55)`)을 해상도와 무관하게 보존한다. 주 피사체와 떨어진 `2x20` 섬과 `8x8` 섬(`(61,50,8,8)`) 및 외곽 매팅 부스러기는 제거하되, `jina-anime` `idea` `1.717s` 손가락 위 별 효과(`bbox x[209,250] y[164,210]`) 등 의도된 분리 장식은 규칙으로 보존한다.
+   - **경계 알파·색 보정 단계 분리**: 연결성 판정 뒤에 별도 단계로 닫힌 구멍 내부 색 복원과 바깥 경계 다크 매트·청록/주황 스필 제거 및 경계 알파 정제를 수행한다.
+2. **`result-fix7hrev1.md` 반례 전수 순수 함수 시험 고정(`FR-WEB-KIOSK-FIX7J.2`)**:
+   - 구현 전 `packages/shell/src/lib/avatar/__tests__/nva-alpha-bake.test.ts`에 `result-fix7hrev1.md`의 모든 반례와 의도된 별 장식 보존 시험을 순수 함수 단위 시험으로 먼저 고정(RED 커밋)하고, 구현 후 모두 통과(GREEN)시킨다.
+3. **전체 키오스크 클립 `.stacked.mp4` 굽기 및 매니페스트/클립 선택 우선화(`FR-WEB-KIOSK-FIX7J.3`)**:
+   - `jina`(5개), `jina-anime`(4개), `naia`(4개), `minho`(3개), `minho-anime`(3개) 클립을 구워 `*.stacked.mp4`를 생성하고 각 `manifest.json`의 `stacked_alpha.clips`에 등록한다.
+   - 원본 `.webm`은 되돌리기용(`?nva_alpha=webm`)으로 남기되, 기본 클립 선택(`shouldUseStackedAlpha` 및 `VideoAvatarCanvas`)은 `stacked_alpha.clips`의 `.stacked.mp4`를 우선 선택한다.
+4. **런타임 stacked 클립의 `alpha-repair` 우회 및 미구운 클립 폴백 한계 명시(`FR-WEB-KIOSK-FIX7J.4`)**:
+   - 런타임(`prebaked-renderer.ts`)에서 `.stacked.mp4` 클립(`isStackedAlphaClipUrl`)은 `NvaChromakeyGL`(`alpha-repair`)을 거치지 않고 `NvaStackedAlphaGL`로 직접 그린다. `NvaStackedAlphaGL`은 이미 구워진 상단 색·하단 알파를 침식 없이 충실히 합성해 1px/2px 선과 대각 한 접점 `2x2` 성분을 보존한다.
+   - `NvaChromakeyGL`의 `alpha-repair` 셰이더는 `.stacked.mp4`가 없는 클립(사용자·스튜디오 새 미구운 `.webm` 클립 또는 `?nva_alpha=webm` 강제 폴백) 전용으로만 남기고, 그 경우 유한 GPU 패스 한계가 있음을 문서에 명시한다.
+5. **실제 Chromium Blob/206 seek 12개 클립 다중 시각 측정 및 문서 정합(`FR-WEB-KIOSK-FIX7H.1~4`, `FR-WEB-KIOSK-FIX7J.5`)**:
+   - `packages/shell/e2e/kiosk-demo.spec.ts`에서 Blob URL 또는 HTTP `206 Partial Content` Range 응답으로 실제 `video.currentTime`이 요청 시각(`1.000s`, `0.373s`, `1.717s`, 오차 `< 0.05s`)으로 이동했음을 검증하고, 12개 클립의 정수리 ROI(`x[300,420), y[20,150)`) 경계 총변동(TV)·굴곡량(Curv) 비퇴행, 불필요한 분리 섬 `0`(단 `jina-anime/idea` `1.717s` 별 효과 보존), stacked 경로 반례 GPU E2E를 검증한다.
+   - `docs/requirements.md`에 `FR-WEB-KIOSK-FIX7H.1~4`와 `FR-WEB-KIOSK-FIX7J.1~5`를 모두 정의해 시나리오-요구사항 추적성 공백을 닫는다.
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX7J
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 원본 해상도 정확한 연결 성분 알파 굽기(`nva-alpha-bake.ts`), 전 클립 `.stacked.mp4` 우선 선택, stacked 클립 런타임 `alpha-repair` 우회 및 baked 고립 픽셀 알파 180 보존(`FR-WEB-KIOSK-FIX7J.6`, Chromium GPU) | `nva-alpha-bake.test.ts`, `nva-stacked-alpha.test.ts`, `prebaked-renderer.test.ts`, `VideoAvatarCanvas.test.tsx`, `e2e/kiosk-demo.spec.ts` |
+| 빈 목록 / 초기 | 투명 입력 프레임(`A=0`) 또는 주 피사체 없는 단독 소형 섬(`2x20`, `8x8`) 입력 시 전체 `A=0` 반환, 키오스크 첫 진입 기본 화면(`1440x900`·`412x915`) 정상 표시 | `nva-alpha-bake.test.ts`, `e2e/kiosk-demo.spec.ts` |
+| 진행 | 실제 Chromium에서 Blob/206 Range로 12개 클립 `1.000s`·`0.373s`·`1.717s` 실제 seek(`|currentTime - target| < 0.05`) 및 동작 전환 재생 | `e2e/kiosk-demo.spec.ts`, `VideoAvatarCanvas.test.tsx` |
+| 성공 | `result-fix7hrev1.md` 반례 전수(닫힌 `30x30` 구멍, 1px 굽은 통로 `128`/`720`폭, 25회 4px 미로·`256` 긴 미로, `0.84`/`0.86` 문턱, 방향 수 `n=5`/`6`, 분리 `8x8`·`2x20` 섬 제거, 대각 한 접점 `2x2`·`2x20`·`2x2` 대각선 보존, `jina-anime` `idea` `1.717s` 별 장식 보존) 및 12개 클립 TV/Curv 비퇴행·불필요 섬 `0` 통과 | `nva-alpha-bake.test.ts`, `e2e/kiosk-demo.spec.ts` |
+| 오류·보안 경계 | `?nva_alpha=webm` 또는 `stacked_alpha.clips` 미등록 새 클립에서 원본 `.webm` + `alpha-repair` 폴백 동작 및 한계 문서화, 개인 절대 경로·비밀값 노출 `0건` | `nva-stacked-alpha.test.ts`, `VideoAvatarCanvas.test.tsx`, `prebaked-renderer.test.ts` |
+| 좁은 폭 / 반응형 | `128x256`·`720x256`·`720x1280` 등 다양한 종횡비·해상도에서 1px 통로·1px 선·대각 한 접점 `2x2` 동일 보존 및 `412x915` 모바일 세로·`1440x900` 데스크톱 뷰포트 정상 표시 | `nva-alpha-bake.test.ts`, `nva-stacked-alpha.test.ts`, `e2e/kiosk-demo.spec.ts` |
+
+## UC-WEB-KIOSK-R12 — 휴대폰 데스크톱 사이트 시연
+
+휴대폰 방문자가 데스크톱 사이트를 켜거나 끈 상태에서 세로로 열면 읽기 쉬운 휴대폰 대화와 스크롤 가능한 설정 탭을 사용한다. 시연 설정에는 잔액과 모델명이 보이지 않고 대답하는 곳에서 나이아 서버와 내 기기(WebGPU)를 고른다. 기기를 돌리거나 PC를 사용하면 기존 배치로 돌아간다.
+
+P02 검증: 기본·빈 대화·진행·성공·오류 복구·좁은 폭 상태를 기존 키오스크 Playwright 흐름과 함께 확인한다. 판정 및 확대/해제, 회전, PC·가로 태블릿은 web-assets 단위 시험으로 확인하고 대화 시트 계산은 AppMainContent 시험으로 확인한다. 설정 탭의 키보드 접근과 글자 잘림도 화면에서 확인한다.
+
+확대된 첫 화면의 입장 버튼과 대화판 42% 높이, 크기·방향·시각 뷰포트 변화 및 확대 해제는 웹 단위 시험과 Playwright의 실제 bounding box로 확인한다.

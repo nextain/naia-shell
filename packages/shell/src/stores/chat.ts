@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { resolveKioskEvidenceFiles } from "../components/chat-presentation";
+import { isKioskLocalAnswerEnabled } from "../lib/config-seed";
 import { isNaiaAccountProvider } from "../lib/credits";
 import { cardGreeting } from "../lib/character-greeting";
 import { loadConfig } from "../lib/config";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import type {
 	ChatMessage,
@@ -48,6 +51,7 @@ interface ChatState {
 	characterTransitionPending: boolean;
 	streamingContent: string;
 	streamingAppName?: string;
+	streamingEvidenceFiles?: string[];
 	/** A tool event occurred; separate the next visible text round once. */
 	streamingToolBoundaryPending: boolean;
 	streamingThinking: string;
@@ -65,7 +69,17 @@ interface ChatState {
 	setMessages: (messages: ChatMessage[]) => void;
 	addMessage: (
 		msg: Pick<ChatMessage, "role" | "content"> &
-			Partial<Pick<ChatMessage, "cost" | "failure" | "appName">>,
+			Partial<
+				Pick<
+					ChatMessage,
+					| "cost"
+					| "failure"
+					| "appName"
+					| "toolCalls"
+					| "evidenceFiles"
+					| "localAnswer"
+				>
+			>,
 	) => void;
 	recordVoiceCostSummary: (
 		targetLocalSessionId: string,
@@ -75,6 +89,7 @@ interface ChatState {
 	deleteSessionOverlay: (key: string) => void;
 	updateLastMessage: (role: ChatMessage["role"], content: string) => void;
 	startStreaming: (appName?: string) => void;
+	setStreamingEvidenceFiles: (files: string[] | undefined) => void;
 	appendStreamChunk: (text: string) => void;
 	markStreamingToolBoundary: () => void;
 	appendThinkingChunk: (text: string) => void;
@@ -320,12 +335,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	startStreaming: (appName) =>
 		set({
 			streamingAppName: appName,
+			streamingEvidenceFiles: undefined,
 			isStreaming: true,
 			streamingContent: "",
 			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
 		}),
+
+	setStreamingEvidenceFiles: (files) =>
+		set({ streamingEvidenceFiles: files }),
 
 	appendStreamChunk: (text) => {
 		if (!text) return;
@@ -394,6 +413,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			isStreaming,
 			streamingContent,
 			streamingAppName,
+			streamingEvidenceFiles,
 			streamingThinking,
 			streamingToolCalls,
 			pendingApproval,
@@ -405,10 +425,23 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		}
 		const toolCalls =
 			streamingToolCalls.length > 0 ? streamingToolCalls : undefined;
+		const resolvedEvidenceFiles =
+			streamingEvidenceFiles && streamingEvidenceFiles.length > 0
+				? streamingEvidenceFiles
+				: isKioskDemo() && streamingContent.trim()
+					? resolveKioskEvidenceFiles({
+							id: "",
+							role: "assistant",
+							content: streamingContent,
+							timestamp: 0,
+							toolCalls,
+						})
+					: undefined;
 		set((s) => ({
 			isStreaming: false,
 			streamingContent: "",
 			streamingAppName: undefined,
+			streamingEvidenceFiles: undefined,
 			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
@@ -420,9 +453,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 					role: "assistant" as const,
 					content: streamingContent,
 					appName: streamingAppName,
+					evidenceFiles:
+						resolvedEvidenceFiles && resolvedEvidenceFiles.length > 0
+							? resolvedEvidenceFiles
+							: undefined,
 					thinking: streamingThinking || undefined,
 					timestamp: Date.now(),
 					toolCalls,
+					localAnswer:
+						s.provider === "webllm" || isKioskLocalAnswerEnabled()
+							? true
+							: undefined,
 				},
 			],
 		}));
@@ -541,7 +582,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	},
 
 	enqueueMessage: (text) =>
-		set((s) => ({ messageQueue: [...s.messageQueue, text] })),
+		set((s) =>
+			// 직전에 쌓인 글과 같으면 연타로 보고 버린다.
+			s.messageQueue[s.messageQueue.length - 1] === text
+				? s
+				: { messageQueue: [...s.messageQueue, text] },
+		),
 
 	dequeueMessage: () => {
 		const { messageQueue } = get();

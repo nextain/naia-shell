@@ -333,6 +333,8 @@ export function drawWithMotion(
 	tMs: number,
 ): void {
 	if (rect.dw <= 0 || rect.dh <= 0) return;
+	target.imageSmoothingEnabled = true;
+	target.imageSmoothingQuality = "high";
 
 	if (!spec || isReducedMotion()) {
 		target.drawImage(

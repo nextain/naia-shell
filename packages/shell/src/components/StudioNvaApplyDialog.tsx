@@ -183,7 +183,7 @@ export function StudioNvaApplyDialog({
 				data-testid="studio-nva-apply-dialog"
 				style={{
 					width: "min(100%, 440px)",
-					maxHeight: "90vh",
+					maxHeight: "calc(var(--naia-vh, 1vh) * 90)",
 					overflow: "auto",
 					margin: 0,
 					border: 0,

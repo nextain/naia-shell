@@ -1,4 +1,5 @@
 {
+  "last_updated": "2026-11-09T00:40:44.605043+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -19,6 +20,331 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_ir_kiosk_fix7j_20261109": {
+      "issue": 824,
+      "title": "키오스크 시연판 7판 열째 묶음(fix7j): 매 장면 GPU 안팎 판정을 중단하고 원본 해상도 정확한 연결 성분(BFS/라벨링, 반복 상한 없음)으로 구운 .stacked.mp4 알파 재생 + result-fix7hrev1 반례 전수 순수 함수 시험 고정",
+      "branch": "fix/web-kiosk-026-topology",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX7H.1~4, FR-WEB-KIOSK-FIX7J.1~5",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX7J",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "verification": "P01-P03 completed; Step 2 pure-function counterexample tests fixed in packages/shell/src/lib/avatar/__tests__/nva-alpha-bake.test.ts.",
+      "evidence": "packages/shell/src/lib/avatar/__tests__/nva-alpha-bake.test.ts",
+      "last_updated": "2026-11-09T00:05:00+00:00"
+    },
+    "web_ir_kiosk_fix7h_20261108": {
+      "issue": 824,
+      "title": "키오스크 시연판 7판 여덟째 묶음(fix7h): 매트를 '바깥과 이어졌나'로 가르는 여러 단계 GPU 처리(낮춘 해상도 핑퐁/점프 플러딩 외부 배경 연결 마스크·주 피사체 연결 마스크·알파 기반 경계 매끄럽게 하기·프레임 캐시) + 실제 영상 기준 시험 및 적대 검수 반례 시험",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX7G.1~3, FR-WEB-KIOSK-FIX7H.1~4",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX7G, UC-WEB-KIOSK-FIX7H",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Replaced single-pass color/axis-length matting heuristics in packages/shell/src/lib/avatar/nva-chromakey-gl.ts with a 3-stage WebGL2 topological flood-fill pipeline (lowered-resolution 0.5x SEED_FRAG + 8x2 ping-pong FLOOD_FRAG computing exterior background connectivity bgReach and main-subject connectivity fgReach + full-resolution FRAG composite with color/position-invariant interior hole fill, detached island removal, connected thin-line preservation across all directions including 45-deg diagonals, alpha-only boundary smoothing, and unchanged-frame caching). Pre-fix RED failure output captured before fix. Playwright e2e/kiosk-demo.spec.ts fix7g/fix7h 3/3 passed (real video jina idle 1.000s crown TV 111<=113, Curv 68<=128, islands 0; jina talking TV 114<=117, Curv 50<=75, islands 0; naia idle TV 18<=22, Curv 36<=40, islands 0; jina-anime idle TV 117<=128, Curv 88<=126, islands 0; all 11 clips 0 islands; diagonal (70,59) A=255; detached 2x20 A=0; 3-color holes RGB(20,20,25)/(68,68,68)/(230,230,220) all A=255; vertical shift invariant; exterior gap A=0; 6 viewports chat header non-overlap). Vitest prebaked-renderer.test.ts (28/28) and nva-stacked-alpha.test.ts (5/5) passed; full packages/shell Vitest 312/313 files passed (3384 passed | 26 skipped, 0 new failures); tsc, check-logging, check-assembly-coverage, enforce-root-structure all passed; 5 captures in codex-runs/kiosk-026/tmp/fix7h-shots/ visually verified.",
+      "evidence": "codex-runs/kiosk-026/result-fix7h.md",
+      "last_updated": "2026-11-08T21:06:00+00:00"
+    },
+    "web_ir_kiosk_fix7g_20261108": {
+      "issue": 824,
+      "title": "키오스크 시연판 7판 일곱째 묶음(fix7g): 화면 위치 상수 없는 영상 근거 매팅(내부 구멍 메움 위치 불변·피사체 연결 1~2px 가는 선 보존·분리된 작은 섬 제거·stacked 축별 텍셀 vec2) + 실제 브라우저 GPU(WebGL) 화소 시험 및 대화창 머리 줄 실 경계 상자 시험 + process-status 절대 경로 제거",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX7G.1~4",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX7G",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "tsc -b exited 0; check-logging.mjs 0 violations; check-assembly-coverage.mjs passed; focused Vitest (prebaked-renderer.test.ts + nva-stacked-alpha.test.ts) 2 files 32/32 passed; full Shell Vitest 312 files passed | 1 skipped | 0 failed (3,384 passed | 26 skipped | 0 failed, +1 passed vs fix7f 3,383); real Playwright Chromium WebGL GPU pixel test & chat header bounding-box test (599/600/601px, 412x915, 915x412, 1440x900) 2/2 passed; fix7g-shots visually & geometrically verified.",
+      "evidence": "codex-runs/kiosk-026/result-fix7g.md",
+      "last_updated": "2026-11-08T18:30:00+00:00"
+    },
+    "web_ir_kiosk_fix7f_20261108": {
+      "issue": 824,
+      "title": "키오스크 시연판 7판 여섯째 묶음(fix7f): 지나 정수리 들쭉 자국 제거·지나 애니 머리카락 바깥 테두리 어두운 점선 제거·실사 지나 치마/팔 바깥 가장자리 계단 제거·대화창 머리 줄 '내 PC에서 대답하기'와 '처음으로' 겹침 수정 및 합친 판 전체 시험",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX7F.1~4",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX7F",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "tsc -b exited 0; check-logging.mjs 0 violations; check-assembly-coverage.mjs passed; focused Vitest (prebaked-renderer.test.ts + ChatArea.test.tsx) 2 files 118/118 passed; full Shell Vitest 312 files passed | 1 skipped | 0 failed (3,383 passed | 26 skipped | 0 failed, +8 passed vs fix7e 3,375); build:web passed and fix7f-shots visually & geometrically verified (0px header overlap across 1440x900/412x915/YouTube, smooth Jina crown & skirt/arm edges, 0 dark dotted islands on Jina-anime).",
+      "evidence": "codex-runs/kiosk-026/result-fix7f.md",
+      "last_updated": "2026-11-08T15:37:30+00:00"
+    },
+    "web_ir_kiosk_jina_bg_fix7e_20261108": {
+      "issue": 824,
+      "title": "키오스크 시연판 7판 다섯째 묶음(fix7e): 지나 테마 기본 배경을 웹 번들 사무실 배경(naia-autumn-office-live.mp4)으로 복원하고, 웹 모드에서 미설치 테마/설정 배경 지정 시 Logger.warn 1줄 출력 후 기본 배경 폴백(데스크톱 동작 보존)",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX7B.6",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX7B",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "tsc -b exited 0; check-logging.mjs 0 violations; focused Vitest on changed files 4/4 passed (200 passed | 8 skipped); full Shell Vitest 312 files passed | 1 skipped | 0 failed (3,375 passed | 26 skipped | 0 failed, +3 passed vs fix7b 3,372); build:web passed and fix7e-shots/after-mobile-portrait-home.png + after-desktop-landscape-home.png verified office background behind Jina.",
+      "evidence": "codex-runs/kiosk-026/result-fix7e.md",
+      "last_updated": "2026-11-08T12:38:00+00:00"
+    },
+    "web_ir_kiosk_nva_box_fix6_20261108": {
+      "issue": 824,
+      "title": "키오스크 시연판 고침 6회차: 흰 상자(NVA playback rejected) 결함 수정 — 재생 전환 중 AbortError/세대 전환/활성 비디오 전환 시 failMedia 미호출, loop 클립 cancelOneShot 등록 및 playSpeechTiming 제스처 취소 시 generation 증가, 렌더러 단위 assetBlobCache, failMedia 시 clearRect 및 mode===error 시 캔버스 숨김",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-NVA.2, FR-WEB-KIOSK-NVA.3",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-STUDIO-NVA",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest on changed avatar/component files 2/2 passed (41/41 tests: prebaked-renderer.test.ts, VideoAvatarCanvas.test.tsx); verified pending idle play() interrupted by pause() with AbortError during gesture transition does not call onPlaybackFailure, genuine non-abort playback rejection still calls onPlaybackFailure and clears canvas, prefetchSpeechTiming shares renderer-level assetBlobCache without re-fetching speech/atlas.bin across stages, and VideoAvatarCanvas hides prebaked canvas when mode === 'error'.",
+      "evidence": "codex-runs/kiosk-026/result-fix6.md",
+      "last_updated": "2026-11-08T00:42:00+00:00"
+    },
+    "web_ir_kiosk_review5_fix5_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 고침 5회차: 5판 적대 검수 P2-1(근거 칩 사후 덮어쓰기 방지)·P2-2(발표 종료/일시정지 뒤 질문 가둠 해제 및 참고 원고+지식 검색 허용)·P2-3(내 PC 대답 약 2.5GB 최초 1회 내려받기 사전 확인)·P3-1(1.2초 재개 대기 중 후속 질문 시 타이머 취소)·P3-2(WEB_LLM_MODEL_PREF_KEY 초기화 상수 통일) 수정",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-ADK.3, FR-WEB-KIOSK-ADK.4, FR-WEB-KIOSK-S6.2, FR-WEB-KIOSK-MOBILE.6",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-ADK-LOCAL, UC-WEB-KIOSK-S6, UC-WEB-KIOSK-MOBILE-FIX",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest on changed files 4/4 passed (128/128 tests: slides.test.ts, kiosk-demo.test.ts, ToolActivity.test.tsx, ChatArea.test.tsx); verified P2-1 past message evidence chips and tool badges remain unchanged when slides open or change pages, P2-2 strict slide lock applies only during presenting/answering while completed/paused/ready includes active slide as reference with knowledge search enabled, P2-3 ~2.5GB + '처음 한 번 내려받아요' confirmation dialog before starting WebLLM download (cancel does nothing), P3-1 follow-up question within 1.2s auto-resume window cancels timer, and P3-2 resetKioskVisit clears WEB_LLM_MODEL_PREF_KEY ('naia-web-llm-model').",
+      "evidence": "codex-runs/kiosk-026/result-fix5.md",
+      "last_updated": "2026-11-07T19:19:00+00:00"
+    },
+    "web_ir_kiosk_units_latin_fix4_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 고침 4회차: 한국어(language === 'ko') 입 모양 단위 요청(/v1/studio/speech-plan/units, /api/studio/speech-plan/units) 직전 라틴 글자 한글 읽기 치환(replaceLatinWithHangulForSpeechUnits)으로 eSpeak NG 언어 전환 400 방지",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-NVA.3",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-STUDIO-NVA",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest on browser-speech-plan.test.ts 1/1 file (5/5 tests) passed; verified unit request body text transliterates table words (Nextain, Naia, AI, IR, GPU, WebGPU, Web, PC, PDF, TTS, API, App), non-table Latin chunks ('XYZ' -> '엑스와이지'), and mixed Hangul-Latin tokens ('AI를' -> '에이아이를') with 0 Latin characters remaining when language is 'ko', while preserving original text when language is 'en'.",
+      "evidence": "codex-runs/kiosk-026/result-fix4.md",
+      "last_updated": "2026-11-07T18:35:00+00:00"
+    },
+    "web_ir_kiosk_voice_fix3_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 고침 3회차: 운영 게이트웨이 400 unknown_voice 방지용 기본 목소리 ko-KR-Neural2-A 복원(저장값 naia-voice:tpl-jina 역마이그레이션) 및 /v1/studio/speech-plan/units 422 원인(locale -> language) 수정",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-NVA.3, FR-WEB-KIOSK-NVA.4",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-STUDIO-NVA",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest on changed files 5/5 passed (config.test.ts, kiosk-demo.test.ts, synthesize.test.ts, browser-speech-plan.test.ts, SettingsTab.test.tsx); verified /v1/audio/speech request body sends voice: 'ko-KR-Neural2-A' and /v1/studio/speech-plan/units request body sends language: 'ko'.",
+      "evidence": "codex-runs/kiosk-026/result-fix3.md",
+      "last_updated": "2026-11-07T18:15:00+00:00"
+    },
+    "web_ir_kiosk_slide_question_fix2_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 고침 2회차: 슬라이드 중간 질문 낱말 맞추기(answerKioskSlideQuestion) 제거 및 장 본문·발표문 모델 입력(buildKioskSlideQuestionPrompt) 직결 + 단일 장 원고 근거 칩/도구 줄 격리",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-MOBILE.6",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-MOBILE-FIX",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest on changed files 4/4 passed (120/120 tests: slides.test.ts, adk-snapshot-fs.test.ts, ToolActivity.test.tsx, ChatArea.test.tsx); verified model input messages contain active slide body, speaker script, single source file, and rules across diverse questions; build:web (kiosk ON + synthetic key) and f2-slides-q.png capture verified.",
+      "evidence": "codex-runs/kiosk-026/result-fix2.md",
+      "last_updated": "2026-11-07T17:38:00+00:00"
+    },
+    "web_ir_kiosk_mobile_fix_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 대표님 11/7 12:42~12:44 휴대폰 지적 넷(멈춤 문구·상단 토글 축소·목/머리 잘림·시트 끌기 시 아바타 고정) + 잘못된 멈춤 방지(잔액 0 이하 확인 시에만 멈춤, 일반 오류 1회 재시도) + 조정자 5-1 검수(중간 질문 근거·WebGPU 안내 고정 줄·도구 ✓·AGENTS.md 굵게·근거 칩 간격) 반영",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-MOBILE.1~6",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-MOBILE-FIX",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Full Shell Vitest 312 files passed / 0 failed / 1 skipped (3,351 passed / 0 failed / 26 skipped); build:web (kiosk ON + synthetic key) passed; Playwright e2e/kiosk-demo.spec.ts 9/9 passed (including 390x844 mobile portrait head/shoulder visibility, compact toggles, and stationary avatar during sheet drag); captures f-idle-zoom.png (0 alpha holes), f-slides-q.png, f-chat.png, f-mobile-before.png, f-mobile-after.png, f-sheet-up.png, f-paused.png verified.",
+      "evidence": "codex-runs/kiosk-026/result-fix.md",
+      "last_updated": "2026-11-07T16:50:00+00:00"
+    },
+    "web_ir_kiosk_026_one_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 네 갈래(0.2.6 + adk + slides + nva) 한 판 통합 및 대표님 지적(지나 평소 자리·슬라이드 작업 공간 전체 확장·대화 머리 AI/TTS 단추 줄·지식 탭 정렬) 반영",
+      "branch": "feat/web-ir-kiosk-026",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S1~S6, FR-WEB-KIOSK-ADK.1~4, FR-WEB-KIOSK-NVA.1~4, FR-WEB-KIOSK-FIX.1~7",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S1~S6, UC-WEB-KIOSK-ADK-LOCAL, UC-WEB-KIOSK-STUDIO-NVA",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "All 4 kiosk branches (feat/web-ir-kiosk-026, feat/web-ir-kiosk-adk, feat/web-ir-kiosk-slides, feat/web-ir-kiosk-nva) merged and CEO feedback applied (2-column presentation layout keeping Jina in left overlay above chat and expanding 16:9 IR slide card across right workspace without clipping at 1280x800; AI/TTS control bar moved inside chat header via PR #834 adaptation; Explorer Knowledge tab aligned with 0.2.6 width/theme; default voice naia-voice:tpl-jina). Full Shell Vitest 312 files passed / 0 failed / 1 skipped (3,349 passed / 0 failed / 26 skipped); build:web normal OFF and kiosk ON (synthetic key) passed; desktop build + bundle budget passed; knowledge.test.ts dist/dist-web forbidden token scan 32/32 passed; Playwright e2e/kiosk-demo.spec.ts 8/8 passed; 1280x800 captures o-chat.png, o-explorer.png, o-slides.png, o-slides-q.png, o-local.png, o-talk.png verified.",
+      "evidence": "codex-runs/kiosk-026/result-one.md",
+      "last_updated": "2026-11-07T15:34:00+00:00"
+    },
+    "web_ir_kiosk_nva_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 스튜디오 정본 지나·나이아 NVA 교체 및 발음 입 모양·지나 목소리(naia-voice:tpl-jina) 연결",
+      "branch": "feat/web-ir-kiosk-nva",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-NVA.1~4",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-STUDIO-NVA",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Studio canonical NVA bundles (jina, jina-anime, naia) extracted verbatim with speech/atlas.bin; focused Vitest 17 files passed (482 passed | 0 failed | 10 skipped); full Shell Vitest 291 files / 3099 tests passed (0 new failures; 9 known baseline test failures); build:web (normal OFF and kiosk ON) passed; Playwright e2e/kiosk-demo.spec.ts 6/6 passed; 1280x800 captures n-greet.png, n-idle.png (0 alpha holes), n-talk.png, n-naia.png verified.",
+      "evidence": "codex-runs/kiosk-026/result-nva.md",
+      "last_updated": "2026-11-07T13:19:00+00:00"
+    },
+    "web_ir_kiosk_s6_20261107": {
+      "issue": 824,
+      "title": "웹 IR 키오스크 시연판 슬라이드 앱 공개 IR 발표 및 장별 설명 (S6)",
+      "branch": "feat/web-ir-kiosk-slides",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S6.1~4, NFR-WEB-KIOSK-S6.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S6",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest 6 files 159/159 passed (slides.test.ts 6/6 including sensitive word check, knowledge.test.ts 29/29, command-table.test.ts 16/16, router.test.ts 14/14, slides-center-area.test.tsx 12/12, ChatArea.test.tsx 82/82); full packages/shell Vitest run completed with 0 S6 regressions; build:web normal OFF and kiosk ON (synthetic key) both passed; Playwright e2e/kiosk-demo.spec.ts S6 presentation flow passed and 1280x800 screenshots (s-open.png, s-next.png, s-question.png) visually verified; conform check.py --all (29 regions clean), check-file-anchors.mjs (121 files OK), check-assembly-coverage.mjs, enforce-root-structure.sh all passed.",
+      "evidence": "codex-runs/kiosk-026/result-slides.md",
+      "last_updated": "2026-11-07T11:31:00+00:00"
+    },
+    "web_ir_kiosk_adk_local_20261107": {
+      "issue": 824,
+      "title": "키오스크 시연판 ADK 투명성(AGENTS.md 맨 위·자동 열림·실제 파일 읽기·근거 줄) + 내 PC 에서 대답하기 선택",
+      "branch": "feat/web-ir-kiosk-adk",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-ADK.1~4, NFR-WEB-KIOSK-ADK.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-ADK-LOCAL",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Focused Vitest 10 files passed; full Shell Vitest 3067 passed / 8 failed / 25 skipped (8 failures in agent-pairing.test.ts match unchanged baseline, 0 new failures); build:web (normal OFF and kiosk ON + synthetic test key) both exited 0; Playwright e2e/kiosk-demo.spec.ts 7/7 passed; 1280x800 captures a-explorer.png, a-evidence.png, a-local.png visually verified; conform check.py --all (28 regions clean), check-file-anchors.mjs (120 files OK), check-assembly-coverage.mjs all passed.",
+      "evidence": "codex-runs/kiosk-026/result-adk.md",
+      "last_updated": "2026-11-07T10:55:00+00:00"
+    },
+    "web_ir_kiosk_fix_20261105": {
+      "issue": 824,
+      "title": "웹 IR 키오스크 시연판 적대 검수 수정 (1·3·4·5·6·7·8·10·11·12·13번)",
+      "branch": "feat/web-ir-kiosk-s4",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX.1~7, NFR-WEB-KIOSK-FIX.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Vitest 6 files 140/140 + SettingsTab WebLLM option test passed; knowledge.test.ts 29/29 (verify() 20/20 score 1, ask() 20/20 non-abstained coverage >= 0.6, safety:block 0 findings, dist/dist-web forbidden token scan 0 hits); nva_matting_hole_measure.py hole_frames=0 and opaque_backdrop_frames=0 across jina-idle.webm (192 frames) and jina-talking-ko.mp4 (511 frames) plus encoded WebM clips; Playwright e2e/kiosk-demo.spec.ts 5/5 passed; 1280x800 fix-chat.png visually verified; conform check.py --all (28 regions clean), check-file-anchors.mjs (120 files OK), check-assembly-coverage.mjs, enforce-root-structure.sh all passed.",
+      "evidence": "codex-runs/kiosk-agy/result-fix.md",
+      "last_updated": "2026-11-05T14:20:00+00:00"
+    },
+    "web_ir_kiosk_s4_20261105": {
+      "issue": 824,
+      "title": "웹 IR 키오스크 지나 아바타 다시 만들기·대화창 넓히기 (S4)",
+      "branch": "feat/web-ir-kiosk-s4",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S4.1~S4.2, NFR-WEB-KIOSK-S4.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S4",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "CPU matting and hole check (scripts/nva_matting_hole_measure.py) passed 0/2 bad clips (jina-idle.webm 192 frames hole_frames=0, jina-talking-ko.mp4 511 frames hole_frames=0) and encoded idle.webm/talking-ko.webm + stacked.mp4 verified hole_frames=0; focused Vitest 4 files 21/21 passed; build and build:web (normal OFF and kiosk ON) passed; Playwright e2e/kiosk-demo.spec.ts 4/4 passed; 1280x800 s4-entry.png and s4-chat.png visually verified.",
+      "evidence": "codex-runs/kiosk-agy/result-s4.md",
+      "last_updated": "2026-11-05T13:00:00+00:00"
+    },
+    "web_ir_kiosk_s1_20261105": {
+      "issue": 824,
+      "title": "IR 웹 키오스크 공개 지식·브라우저 지식 명령 (S1)",
+      "branch": "feat/web-ir-kiosk-s1",
+      "requirements": "docs/requirements.md FR-KIOSK-KNOWLEDGE-S1",
+      "scenario": "docs/user-scenarios.md UC-KIOSK-KNOWLEDGE-S1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done (S1 scoped acceptance)",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Kiosk 20-question retrieval, manuscript/KB sensitive-pattern scan and command isolation pass; focused Vitest 52/52, kiosk+Worker 72/72; browser OPFS/desktop executor/actual Worker and flag-OFF probes pass; web build and core/Shell/Worker/sidecar typechecks pass. Full Shell suite has failures outside focused acceptance; not claimed green. Structure checker retains two tracked baseline violations (tmp and tsconfig.build.json).",
+      "evidence": "codex-runs/kiosk-demo/result-s1.md",
+      "remaining": "S5/S7 live voice/provider/deployment acceptance; full Shell suite failures require separate triage.",
+      "last_updated": "2026-11-05T10:19:19.087357+00:00"
+    },
     "b2c_memory_r17": {
       "issue": 792,
       "last_updated": "2026-11-04T06:42:34.198967+00:00",
@@ -864,6 +1190,45 @@
       "last_updated": "2026-10-25T21:50:00+09:00"
     },
     "note": "2026-07-15 S-VOICE-AVATAR(FR-VOICE.5, 부스 토폴로지 립싱크 배선): 두뇌=로컬 ollama DNA + 음성=원격 omni(vllmTtsHost→/v1/audio/speech, 음색 서버해석 voice=naia-default) + 아바타=로컬 Ditto TRT(8g avatar-only) 에서 셸 합성 WAV 를 cascade /stream 립싱크로 직결. streamsAvatarPcm() 순수함수(synthesize.ts) — nextain·naia-local-voice=true. 구 'naia-local-voice 추가금지' 주석(ChatArea:1466)은 raw /tts 전제라 개정(표면 전환으로 사유 소멸, avatar-only 파사드는 /stream_text 무음). synthesize.test.ts 구 /tts 계약 4건→신 표면 계약 5건+게이트 3건 갱신. FR-VOICE.4(Rust CORS 프록시)=stale 표기(omni ACAO:* 실측, 프록시 코드 제거됨). 검증 tsc0·셸 vitest 1150 GREEN(107파일). ⚠️ 블로커(외부): omni :8892 /v1/audio/speech 가 HTTP 500(핸들러 크래시, 전 파라미터 변형 재현) — 런타임 레인에 채널 보고(alpha-adk .agents/progress/xsession-demo-2026-07-16-channel.md). realtime WS 경로는 정상(ref_audio_url e2e 225KB). | 2026-07-10 검증·경화(8G 아바타 근본수정 확인): opencode GLM 5.2 이식분 리뷰+실측. 근본진단 확인 = 아바타 스폰은 gpu.tier(EXCLUSIVE_8G_TIERS)+localFocus 구동(wm manifest.py: avatar=provider 무형, 슬롯 아님) → 요지=buildSlotsManifest 가 localGpuTier auto 를 **해석된 tier id**(resolveActiveTier→normalizeTierId)로 기록해야 wm 이 avatar_ditto_trt 를 띄움(미해소 시 캐릭터 미표시). adk-store.writeSlotsManifest = vram 미전달 시 detectGpuVramGb 자동감지. dev-setup+Rust(lib.rs/linux/macos/windows) = cascade 8910 고아(uvicorn 손자) 정리 kill_stale_cascade(EADDRINUSE 방지, R2.2b). GLM 잔여 TSC break(계약테스트 레거시 tier id 캐스트) 수정. vite.config test.exclude 에 src-tauri/** 추가(스테이징 agent 620 테스트 스코프 오염 제거). 검증 tsc0·셸 vitest 101파일/1096 GREEN·cargo check0·Playwright 전 스펙 격리(--workers=1) GREEN(workspace-panel 17/17·capability+slots 17/17; full 병렬 40실패=8G 부하 flakiness, 회귀 아님). | 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포): FR-CASCADE.1~4. R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b, pytest 31). R2.2=naia-os: slots-manifest write(Rust write_slots_manifest+adk-store writeSlotsManifest)+Rust start/stop/cascade_status+spawn_cascade(CASCADE_READY 핸드셰이크)+CascadeProcess(Drop/WindowEvent/PID)+설정 토글 UI+i18n6. cargo0·tsc0·SettingsTab+slots66. 원격금지 로컬 사이드카. 8GB 음성단독 6.9G 적합(RTF=R2.3 DEFER). 트랙=alpha-adk .agents/progress/naia-os-local-cascade-embedding-round2-2026-06-30.md. | 2026-06-30 Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 폐루프 + 로컬 음성 정직화. FR-VRAM.4(tier→슬롯 로컬 추천 배지, 숨김 아님)·FR-PROF.1(프로파일 탭 토큰 일관화)·FR-VOICE.1~3(naia-local-voice→vllmTtsHost 라우팅·silent free 폴백 제거→명확 미가용 알림·voice picker 채움). 신규 lib/capabilities/tier-slots.ts(+test 6/6). 적대리뷰 2벤더 PASS(blocker 0)+수정(채팅모드 알림 재무장·engine-capability-summary 토큰화·공개레포 내부명칭 중립화). 검증 tsc0·셸 vitest 1008 GREEN·영향테스트 72/73. 트랙=alpha-adk .agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md. Round2(로컬 cascade lifecycle 임베딩+wm #1 M5)=DEFER. | F0~F3 계약+스캐폴드(async, src/main). 계약+통합 테스트 67/67. | 2026-06-29 세션2+3: S-SLOT FR-SLOT.4 설정 탭 9개 재구성 완료 (#1~#13 전체 구현). profile/brain/voice/avatar/persona/memory/knowledge/skills/general. tsc 클린, test 35/35, cargo check 통과. 커밋 미수행(8개 파일). 트랙=alpha-adk .agents/progress/naia-os-settings-tab-restructure-2026-06-29.md §7. | 2026-06-30: K2 지식 근거→원문 칩(kb-compiler 통합 셸측). ToolActivity 지식 도구(skill_knowledge_ask/search) 분기 → KnowledgeToolResult(답변+sourceUris 칩); 칩클릭 근거→원문(URL=브라우저 navigate / 파일=워크스페이스 openFile, 기존 패널 api 재사용). 게이트 FR-KB-OS.1~3 + 셸 feature 시나리오. 검증: knowledge-result.test.ts(파싱)·knowledge-tool-result.test.tsx(RTL 렌더+dispatch)·e2e/chat-tools.spec.ts 지식도구 K2(Playwright 실 UI 답변+칩+칩클릭→브라우저 패널). 셸 vitest 977 GREEN·tsc0·구조게이트(enforce-root·file-anchors·assembly) PASS. 백엔드=naia-agent UC-KNOWLEDGE(live). 트랙=alpha-adk .agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md(K2). | 2026-06-30: K3 지식 그래프 2D/3D 뷰어. ToolActivity skill_knowledge_graph 분기 → KnowledgeGraphView(캔버스 force, 군집색·degree 크기, 2D↔3D 토글·원근+자동회전, 의존성0 엔진 examples/cms 포팅). 데이터=kb-compiler toGraphData(2ecb342)+naia-agent skill_knowledge_graph(b7e3b8c). 게이트 FR-KB-OS.4. 검증: knowledge-result.test.ts parseKnowledgeGraph + e2e/chat-tools.spec.ts 지식그래프 K3(Playwright 실 UI: 캔버스 렌더+노드3+2D/3D 토글 통과). tsc0.",
+    "kiosk_s2_memory": {
+      "title": "S2 키오스크 브라우저 기억 기본 저장",
+      "issue": null,
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "last_updated": "2026-11-05T10:18:20.242357+00:00",
+      "status": "done",
+      "scenario": "docs/user-scenarios.md UC-KIOSK-MEMORY-S2",
+      "requirements": "docs/requirements.md FR-KIOSK-MEMORY-S2",
+      "verification": "Kiosk Vitest with actual agent handler 7/7; Web runtime/worker regression 219 passed, 1 conditional integration skipped (covered by kiosk run); core/Shell/BGM and worker typechecks passed; kiosk Vite build passed; conform/file-anchor/assembly checks and gate negative probes passed. Full Shell 3035 passed, 9 failed, 24 skipped; same 9 failures reproduced on pristine HEAD (agent-pairing 8, SettingsTab logout 1). Root structure retains pre-existing tmp/ and tsconfig.build.json violations.",
+      "reset_api": "packages/shell/src/lib/kiosk-demo/memory.ts: resetKioskMemory()",
+      "deliverables": [
+        "packages/shell/src/lib/kiosk-demo/memory.ts",
+        "packages/shell/src/lib/kiosk-demo/memory.test.ts",
+        "packages/shell/web-worker/kiosk-browser-agent.ts"
+      ]
+    },
+    "web_ir_kiosk_integration_20261105": {
+      "issue": 824,
+      "branch": "feat/web-ir-kiosk-demo",
+      "title": "S1 knowledge + S2 memory + S3 entry integration",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S3 / UC-KIOSK-MEMORY-S2 / UC-KIOSK-KNOWLEDGE-S1",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S3.3",
+      "verification": "OFF/ON build:web passed; related kiosk/web-runtime/Worker 262 passed + 1 conditional skip, actual browser-agent memory + reset 9 passed, final UI/reset 87 passed; preview Chromium 4 passed, ON knowledge probe passed and OFF isolation passed. Full Shell 3084 passed / 9 failed / 25 skipped: agent-pairing 8 and SettingsTab logout 1; pristine f72d618 two-file comparison reproduced pairing 8 (logout passed there). No full-suite green claim. File anchors 97, conform and negative live hook probe passed. Root structure retains baseline tmp/ and tsconfig.build.json violations.",
+      "evidence": "codex-runs/kiosk-demo/result-int.md",
+      "remaining": "S4 Jina avatar; S5 real BC250 voice; S7 deployment/live provider/video acceptance"
+    },
     "b2c_memory_r18": {
       "status": "done",
       "last_updated": "2026-11-04T06:57:25.627965+00:00",
@@ -884,6 +1249,23 @@
       },
       "status": "done",
       "last_updated": "2026-11-06T12:36:00+09:00"
+    },
+    "web_ir_kiosk_fix7j_edge_step5_20261109": {
+      "issue": 824,
+      "branch": "fix/web-kiosk-026-stacked-runtime",
+      "status": "blocked",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX7J.6",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX7J",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "blocked",
+        "P05": "pending"
+      },
+      "verification": "Step 5 implementation: stacked compositor no longer remattes; all-browser stacked preference; unchanged WebM fallback. Vitest 23 files: 238 passed, 9 existing RED bake-stub failures, 1 skipped. New regression RED 3 failures before change; all changed suites passed after. Chromium GPU 1 passed. Shell tsc blocked by missing bgm-sidecar msedge-tts/youtubei.js types and derived TS7006 (3 errors). Additional layout acceptance blocked by missing NAIA_WEB_AGENT_DIR; stop per task instruction.",
+      "evidence": "packages/shell/src/lib/avatar/__tests__/nva-stacked-alpha.test.ts; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts; packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/e2e/kiosk-demo.spec.ts",
+      "last_updated": "2026-11-09T00:40:44.605043+00:00"
     }
   },
   "sdlc_gates": {
@@ -1175,6 +1557,37 @@
         "docs/user-scenarios.md UC-LLM-DEFAULT-DEEPSEEK-FLASH"
       ],
       "last_updated": "2026-08-08T03:00:00+09:00"
+    },
+    "web_kiosk_s3": {
+      "issue": null,
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S3",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S3.1~3 NFR-WEB-KIOSK-S3.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-11-05T10:16:04.358637+00:00",
+      "verification": "Vitest focused 155 passed; Playwright kiosk-demo 3 passed including 360px capture, keyboard greeting once and error retry; file-anchor negative and live conform probes passed. Baseline agent-pairing 8 failures reproduced at 5d7473a. Live account/BC250 acceptance belongs to S5/S7."
+    },
+    "web_kiosk_s5": {
+      "issue": 824,
+      "branch": "feat/web-ir-kiosk-s5",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S5",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S5.1~3 NFR-WEB-KIOSK-S5.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-11-05T13:01:45Z",
+      "verification": "Focused Vitest 7 files / 179 tests passed; web kiosk build passed; Playwright kiosk-demo S3/S5 3 passed; live browser verification against local dev server and BC250 endpoints recorded in codex-runs/kiosk-agy/bc250-network.log and s5-chat.png."
     }
   },
   "resource_registry": {

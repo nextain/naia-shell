@@ -106,3 +106,7 @@ packages/shell/C:\\*
 # 다른 기계가 clone 할 때 내용을 못 받고, 짝 해석까지 흔들린다.
 naia-agent-worktrees/
 worktrees/
+
+# 웹판 NVA 말하기 아틀라스(묶음당 60~150MB) — git 제외. scripts/web-nva-atlas.mjs 가 빌드 전에
+# speech/generation-result.json 의 sha256 으로 확인하고 NAIA_WEB_NVA_ATLAS_SOURCE 에서 가져온다.
+packages/shell/public/nva/*/speech/atlas.bin

@@ -109,6 +109,19 @@ describe("parseGestureTriggers — LLM 마커 → gesture key", () => {
 			parseGestureTriggers("[[gesture:하트]][[g:물방울]] 안녕", M).cleanText,
 		).toBe("안녕");
 	});
+	it("guidance 가 manifest 에서 빠진 경우 안내 상황을 greeting 이나 idea 로 잇는다", () => {
+		const actions = [
+			{ key: "greeting", label: "반가운 인사" },
+			{ key: "idea", label: "아이디어 반짝" },
+		];
+		expect(
+			parseGestureTriggers("[[gesture:guidance]] 안내합니다", actions).gestures,
+		).toEqual([{ key: "greeting", matched: "guidance" }]);
+		expect(
+			parseGestureTriggers("[[gesture:반가운 안내]] 안내합니다", actions)
+				.gestures,
+		).toEqual([{ key: "greeting", matched: "반가운 안내" }]);
+	});
 });
 
 describe("GestureTriggerStream — split response markers", () => {

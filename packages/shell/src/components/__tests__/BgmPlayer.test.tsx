@@ -2034,6 +2034,44 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		});
 		expect(postedEvents().filter((m) => m.event === "listening")).toHaveLength(0);
 	});
+
+	it("renders keyless youtube-nocookie embed and floating Now Playing card in web mode and stops on click (fix7d)", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			render(<BgmPlayer />);
+			const requested = bgmPlayback.request({
+				videoId: "5yx6BWlEVcY",
+				title: "Chillhop Music - Jazzy & Lofi Hip Hop Beats",
+			});
+			await act(async () => {
+				bgmCommandHandler()({
+					payload: JSON.stringify({
+						type: "bgm_youtube_play",
+						playbackId: requested.playbackId,
+						videoId: "5yx6BWlEVcY",
+						title: "Chillhop Music - Jazzy & Lofi Hip Hop Beats",
+					}),
+				});
+			});
+
+			expect(bgmPlayback.current()?.status).toBe("playing");
+			expect(useAvatarStore.getState().bgmVideoUrl).toContain(
+				"https://www.youtube-nocookie.com/embed/5yx6BWlEVcY",
+			);
+
+			const nowPlayingCard = screen.getByTestId("bgm-youtube-now-playing");
+			expect(nowPlayingCard).toHaveTextContent(
+				"Chillhop Music - Jazzy & Lofi Hip Hop Beats",
+			);
+
+			// Clicking the stop button on the floating card stops playback and hides the card
+			fireEvent.click(screen.getByTestId("bgm-web-stop-btn"));
+			expect(bgmPlayback.current()?.status).toBe("paused");
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 });
 
 describe("BgmPlayer local folder playlist loop", () => {

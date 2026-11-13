@@ -4,15 +4,28 @@ import type {
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useMemo, useRef } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
 import type { AppInstallRequest } from "../lib/app-store-client";
+import { getCameraActions } from "../lib/avatar/camera-actions";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	setStoredChatHeightRatio,
+	syncLayoutOrientationAttribute,
+	toggleLayoutOrientation,
+	useEffectiveLayoutOrientation,
+} from "../lib/ui-preferences";
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
+import {
+	isWebMode,
+	syncWebModeRootAttribute,
+} from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
+import { useChatStore } from "../stores/chat";
 import { AppBar } from "./AppBar";
 import { DeferredAdkSetupScreen } from "./DeferredAdkSetupScreen";
 import { DeferredChatArea } from "./DeferredChatArea";
@@ -66,6 +79,14 @@ interface ChatDragState {
 	startY: number;
 	startH: number;
 	moved: boolean;
+}
+
+function mobileZoom(): number {
+ return Number.parseFloat(document.documentElement.style.zoom) || 1;
+}
+
+export function mobileSheetDragHeight(startHeight: number, delta: number, viewportHeight: number): number {
+	return Math.max(136, Math.min(viewportHeight * 0.91, startHeight + delta));
 }
 
 export interface AppMainContentProps {
@@ -158,26 +179,61 @@ export function AppMainContent(props: AppMainContentProps) {
 	);
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
+	const webMode = isWebMode();
+	const hasMessages = useChatStore((state) => state.messages.length > 0);
+	const [mobileSheet, setMobileSheet] = useState<"collapsed" | "half" | "expanded">(hasMessages ? "half" : "collapsed");
+	const previousHasMessages = useRef(hasMessages);
+	useEffect(() => {
+		if (hasMessages !== previousHasMessages.current) {
+			setMobileSheet(hasMessages ? "half" : "collapsed");
+			previousHasMessages.current = hasMessages;
+		}
+	}, [hasMessages]);
+	const ttsEnabled = useAppStore((state) => state.ttsEnabled);
+	const layoutOrientation = useEffectiveLayoutOrientation();
+	const [mobileMenu, setMobileMenu] = useState(false);
+	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
+	const [avatarRotateActive, setAvatarRotateActive] = useState(false);
+	const avatarRotateRef = useRef(false);
+	const [avatarPanActive, setAvatarPanActive] = useState(false);
+	const avatarPanRef = useRef({ active: false, moved: false });
+	const mobileStart = useRef<{ y: number; height: number } | null>(null);
+	const setActiveApp = useAppStore((state) => state.setActiveApp);
+	useEffect(() => {
+		if (!webMode || !window.visualViewport) return;
+		const viewport = window.visualViewport;
+		const update = () => document.documentElement.style.setProperty("--mobile-viewport-bottom", `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) / mobileZoom()}px`);
+		viewport.addEventListener("resize", update);
+		viewport.addEventListener("scroll", update);
+		update();
+		return () => { viewport.removeEventListener("resize", update); viewport.removeEventListener("scroll", update); document.documentElement.style.removeProperty("--mobile-viewport-bottom"); };
+	}, [webMode]);
+	syncWebModeRootAttribute();
+	syncLayoutOrientationAttribute(layoutOrientation);
 
 	if (showAdkSetup)
 		return (
 			<>
-				<TitleBar
-					appVisible={naiaVisible}
-					onToggleApp={toggleNaia}
-					title={appTitle}
-				/>
+				{!webMode && (
+					<TitleBar
+						appVisible={naiaVisible}
+						onToggleApp={toggleNaia}
+						title={appTitle}
+					/>
+				)}
 				<DeferredAdkSetupScreen onComplete={onAdkSetupComplete} />
 			</>
 		);
 
 	return (
 		<>
-			<TitleBar
-				appVisible={naiaVisible}
-				onToggleApp={toggleNaia}
-				title={appTitle}
-			/>
+			{!webMode && (
+				<TitleBar
+					appVisible={naiaVisible}
+					onToggleApp={toggleNaia}
+					title={appTitle}
+				/>
+			)}
 			{configSaveError && (
 				<div role="alert" className="app-bar__remove-error">
 					{configSaveError}
@@ -230,6 +286,50 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			{naiaVisible && (
 				<>
+					{webMode && (activeApp === "workspace" || activeApp === "settings" || activeApp === "land.naia.slides") && <button type="button" className="web-mobile-workspace-close" aria-label="Close" onClick={() => setActiveApp(null)}>✕</button>}
+					{webMode && !showOnboarding && <div className="web-mobile-menu">
+						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
+						{mobileMenu && <div className="web-mobile-menu-list">
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
+							<button
+								type="button"
+								onClick={() => {
+									const next = toggleLayoutOrientation(layoutOrientation);
+									if (isKioskDemo()) {
+										if (next === "landscape" && activeApp === null) {
+											setActiveApp("workspace");
+										} else if (next === "portrait" && activeApp === "workspace") {
+											setActiveApp(null);
+										}
+									}
+									setMobileMenu(false);
+								}}
+							>
+								{layoutOrientation === "portrait"
+									? "가로 배치로 전환"
+									: "세로 배치로 전환"}
+							</button>
+							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => (
+								<button
+									type="button"
+									key={key}
+									onClick={() => {
+										const camera = getCameraActions();
+										camera.zoom(key === "ai.avatarZoomIn" ? 0.1 : -0.1);
+										camera.save();
+										setMobileMenu(false);
+									}}
+								>
+									{t(key)}
+								</button>
+							))}
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
+							<button type="button" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
+							{isKioskDemo() && <button type="button" data-app-id="land.naia.slides" onClick={() => { setActiveApp("land.naia.slides"); setMobileMenu(false); }}>▣ {t("slides.title")}</button>}
+							<button type="button" onClick={() => { setActiveApp("settings"); setMobileMenu(false); }}>⚙ {t("settings.title")}</button>
+						</div>}
+					</div>}
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
 						<div className="avatar-canvas-layer">
 							<Suspense fallback={null}>
@@ -244,10 +344,8 @@ export function AppMainContent(props: AppMainContentProps) {
 						</div>
 					)}
 					<div className="naia-overlay">
-						<Suspense fallback={null}>
-							<AiControlBar />
-						</Suspense>
-						<div className="naia-chat-area">
+						<div className="naia-chat-area" data-mobile-sheet={mobileSheet}>
+							<button type="button" className="web-mobile-sheet-handle" aria-label="Resize conversation" onPointerDown={(event) => { mobileStart.current = { y: event.clientY, height: (event.currentTarget.parentElement?.getBoundingClientRect().height ?? 136) / mobileZoom() }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { const start = mobileStart.current; if (!start || Math.abs(start.y - event.clientY) / mobileZoom() < 4) return; document.documentElement.style.setProperty("--mobile-sheet-drag-height", `${mobileSheetDragHeight(start.height, (start.y - event.clientY) / mobileZoom(), window.innerHeight / mobileZoom())}px`); }} onPointerCancel={() => { mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }} onPointerUp={(event) => { const delta = ((mobileStart.current?.y ?? event.clientY) - event.clientY) / mobileZoom(); setMobileSheet((state) => delta > 30 ? (state === "collapsed" ? "half" : "expanded") : delta < -30 ? (state === "expanded" ? "half" : "collapsed") : state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half"); mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }}><span /></button>
 							<button
 								type="button"
 								className="naia-chat-toggle"
@@ -267,42 +365,203 @@ export function AppMainContent(props: AppMainContentProps) {
 									if (!drag) return;
 									const delta = drag.startY - event.clientY;
 									if (!drag.moved && Math.abs(delta) > 4) drag.moved = true;
-									if (drag.moved)
-										setChatHeight(
-											Math.max(120, Math.min(600, drag.startH + delta)),
+									if (drag.moved) {
+										const maxH = Math.max(
+											240,
+											(typeof window !== "undefined" ? window.innerHeight : 800) -
+												88,
 										);
+										const nextH = Math.max(120, Math.min(maxH, drag.startH + delta));
+										setChatHeight(nextH);
+									}
 								}}
 								onPointerUp={() => {
 									const drag = chatDragRef.current;
 									chatDragRef.current = null;
-									if (!drag?.moved) setChatVisible((visible) => !visible);
+									if (!drag?.moved) {
+										setChatVisible((visible) => !visible);
+										return;
+									}
+									const vh =
+										typeof window !== "undefined" && window.innerHeight > 0
+											? window.innerHeight
+											: 800;
+									setStoredChatHeightRatio(chatHeight / vh);
 								}}
 							>
 								{chatVisible ? "▼" : "▲"}
 							</button>
 							<div
-								className="naia-chat-modes"
+								className={`naia-chat-modes${avatarCornerOpen ? " naia-chat-modes--open" : ""}`}
 								// biome-ignore lint/a11y/useSemanticElements: preserve the existing DOM/CSS contract during extraction.
 								role="group"
-								aria-label="대화창 레이아웃"
+								aria-label="아바타 및 대화창 조절"
 							>
+								{avatarCornerOpen && (
+									<div
+										className="naia-avatar-corner-panel"
+										data-testid="avatar-controls-panel"
+									>
+										<button
+											type="button"
+											data-testid="avatar-corner-zoom-in"
+											className="naia-chat-mode"
+											aria-label={t("ai.avatarZoomIn")}
+											title={t("ai.avatarZoomIn")}
+											onClick={() => {
+												const camera = getCameraActions();
+												camera.zoom(0.1);
+												camera.save();
+											}}
+										>
+											+
+										</button>
+										<button
+											type="button"
+											data-testid="avatar-corner-zoom-out"
+											className="naia-chat-mode"
+											aria-label={t("ai.avatarZoomOut")}
+											title={t("ai.avatarZoomOut")}
+											onClick={() => {
+												const camera = getCameraActions();
+												camera.zoom(-0.1);
+												camera.save();
+											}}
+										>
+											−
+										</button>
+										<button
+											type="button"
+											data-testid="avatar-corner-pan"
+											className={`naia-chat-mode${avatarPanActive ? " naia-chat-mode--active" : ""}`}
+											aria-label={t("ai.avatarPan")}
+											title={t("ai.avatarPan")}
+											style={{
+												cursor: avatarPanActive ? "grabbing" : "grab",
+												touchAction: "none",
+											}}
+											onPointerDown={(e) => {
+												e.currentTarget.setPointerCapture(e.pointerId);
+												avatarPanRef.current = { active: true, moved: false };
+												setAvatarPanActive(true);
+											}}
+											onPointerMove={(e) => {
+												if (!avatarPanRef.current.active) return;
+												if (
+													Math.abs(e.movementX) > 0 ||
+													Math.abs(e.movementY) > 0
+												) {
+													avatarPanRef.current.moved = true;
+												}
+												getCameraActions().pan(e.movementX, e.movementY);
+											}}
+											onPointerUp={(e) => {
+												e.currentTarget.releasePointerCapture(e.pointerId);
+												avatarPanRef.current.active = false;
+												setAvatarPanActive(false);
+												getCameraActions().save();
+											}}
+											onPointerCancel={(e) => {
+												e.currentTarget.releasePointerCapture(e.pointerId);
+												avatarPanRef.current.active = false;
+												setAvatarPanActive(false);
+											}}
+											onClick={() => {
+												if (avatarPanRef.current.moved) {
+													avatarPanRef.current.moved = false;
+													return;
+												}
+												const camera = getCameraActions();
+												camera.pan(0, -12);
+												camera.save();
+											}}
+										>
+											✥
+										</button>
+										<button
+											type="button"
+											data-testid="avatar-corner-rotate"
+											className={`naia-chat-mode${avatarRotateActive ? " naia-chat-mode--active" : ""}`}
+											aria-label={t("ai.avatarRotate")}
+											title={t("ai.avatarRotate")}
+											style={{
+												cursor: avatarRotateActive ? "grabbing" : "grab",
+												touchAction: "none",
+											}}
+											onPointerDown={(e) => {
+												e.currentTarget.setPointerCapture(e.pointerId);
+												avatarRotateRef.current = true;
+												setAvatarRotateActive(true);
+											}}
+											onPointerMove={(e) => {
+												if (!avatarRotateRef.current) return;
+												getCameraActions().rotate(e.movementX, e.movementY);
+											}}
+											onPointerUp={(e) => {
+												e.currentTarget.releasePointerCapture(e.pointerId);
+												avatarRotateRef.current = false;
+												setAvatarRotateActive(false);
+												getCameraActions().save();
+											}}
+											onPointerCancel={(e) => {
+												e.currentTarget.releasePointerCapture(e.pointerId);
+												avatarRotateRef.current = false;
+												setAvatarRotateActive(false);
+											}}
+										>
+											⊕
+										</button>
+										<button
+											type="button"
+											data-testid="avatar-corner-reset"
+											className="naia-chat-mode"
+											aria-label={t("ai.avatarReset")}
+											title={t("ai.avatarReset")}
+											onClick={() => getCameraActions().reset()}
+										>
+											⌂
+										</button>
+										{layoutOrientation === "landscape" && (
+											<>
+												<button
+													type="button"
+													className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
+													title="왼쪽 소형"
+													aria-pressed={uiMode === "app"}
+													onClick={() => setChatMode("app")}
+												>
+													▖
+												</button>
+												<button
+													type="button"
+													className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
+													title="왼쪽 채움"
+													aria-pressed={uiMode === "workspace"}
+													onClick={() => setChatMode("workspace")}
+												>
+													▌
+												</button>
+											</>
+										)}
+									</div>
+								)}
 								<button
 									type="button"
-									className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
-									title="왼쪽 소형"
-									aria-pressed={uiMode === "app"}
-									onClick={() => setChatMode("app")}
+									data-testid="avatar-controls-toggle"
+									className={`naia-chat-mode naia-avatar-corner-trigger${avatarCornerOpen ? " naia-chat-mode--active" : ""}`}
+									aria-expanded={avatarCornerOpen}
+									aria-label="아바타 화면 조절"
+									title="아바타 화면 조절"
+									onClick={() => setAvatarCornerOpen((open) => !open)}
 								>
-									▖
-								</button>
-								<button
-									type="button"
-									className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
-									title="왼쪽 채움"
-									aria-pressed={uiMode === "workspace"}
-									onClick={() => setChatMode("workspace")}
-								>
-									▌
+									<svg
+										className="naia-avatar-corner-trigger__icon"
+										viewBox="0 0 24 24"
+										aria-hidden="true"
+									>
+										<circle cx="12" cy="8" r="4" />
+										<path d="M5 20c0-3.87 3.13-7 7-7s7 3.13 7 7" />
+									</svg>
 								</button>
 							</div>
 							<div
@@ -313,7 +572,14 @@ export function AppMainContent(props: AppMainContentProps) {
 										: undefined
 								}
 							>
-								<DeferredChatArea variant={chatVariant} />
+								<DeferredChatArea
+									variant={chatVariant}
+									headerControls={
+										<Suspense fallback={null}>
+											<AiControlBar showCameraControls={false} />
+										</Suspense>
+									}
+								/>
 							</div>
 						</div>
 					</div>
@@ -377,6 +643,13 @@ export function AppMainContent(props: AppMainContentProps) {
 								className={`content-app${!activeApp ? " content-app--hidden" : ""}`}
 							>
 								{keepAliveApps.map((app) => {
+									// WO-03 / 지시서 #3: 웹판은 브라우저 탭이 꺼져 있어 마운트 자체를 막는다 (browser_wv_create 오류 방지).
+									if (
+										(isWebMode() && app.id === "browser") ||
+										(isKioskDemo() && app.id === "projects")
+									) {
+										return null;
+									}
 									if (
 										!shouldMountKeepAliveApp(
 											app,
@@ -400,6 +673,8 @@ export function AppMainContent(props: AppMainContentProps) {
 									);
 								})}
 								{activeApp &&
+									!(isWebMode() && activeApp === "browser") &&
+									!(isKioskDemo() && activeApp === "projects") &&
 									!keepAliveApps.some((app) => app.id === activeApp) && (
 										<div className="content-app__slot content-app__slot--active">
 											<ErrorBoundary scope={`App(${activeApp})`}>

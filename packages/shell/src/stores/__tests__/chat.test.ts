@@ -434,4 +434,17 @@ describe("UC-B2C-026-R2 card conversations", () => {
 		store.newConversation();
 		expect(useChatStore.getState().messages).toEqual([]);
 	});
+
+	it("drops a queued message identical to the one queued right before it", () => {
+		const store = useChatStore.getState();
+		store.enqueueMessage("같은 글");
+		store.enqueueMessage("같은 글");
+		store.enqueueMessage("다른 글");
+		store.enqueueMessage("같은 글");
+		expect(useChatStore.getState().messageQueue).toEqual([
+			"같은 글",
+			"다른 글",
+			"같은 글",
+		]);
+	});
 });

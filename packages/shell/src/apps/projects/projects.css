@@ -340,7 +340,7 @@
 .projects-app__terminal {
 	width: 100%;
 	min-width: 0;
-	height: min(52vh, 520px);
+	height: min(calc(var(--naia-vh, 1vh) * 52), 520px);
 	min-height: 220px;
 	padding: 8px;
 	border: 1px solid #263244;
@@ -429,7 +429,7 @@
 	flex-direction: column;
 	gap: 12px;
 	min-width: 0;
-	max-height: 60vh;
+	max-height: calc(var(--naia-vh, 1vh) * 60);
 	overflow: auto;
 	padding: 12px;
 	border: 1px solid var(--border-color, #263244);
@@ -486,7 +486,7 @@
 
 .projects-app__docs-preview {
 	min-width: 0;
-	max-height: 60vh;
+	max-height: calc(var(--naia-vh, 1vh) * 60);
 	overflow: auto;
 	padding: 14px;
 	border: 1px solid var(--border-color, #263244);
@@ -565,7 +565,7 @@
 	}
 
 	.projects-app__terminal {
-		height: 44vh;
+		height: calc(var(--naia-vh, 1vh) * 44);
 		min-height: 180px;
 	}
 }

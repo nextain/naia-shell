@@ -75,4 +75,27 @@ describe("ttsTextFilter", () => {
 			"",
 		);
 	});
+
+	it("strips citation lines (근거:/출처:), markdown file names (knowledge/*.md, *.md), and parenthesized citations", () => {
+		expect(
+			ttsTextFilter.filter(
+				"나이아는 비주얼 에이전트입니다.\n근거: knowledge/naia.md, persona/jina.md\n출처: `knowledge/company-overview.md`",
+				"ko",
+			),
+		).toBe("나이아는 비주얼 에이전트입니다.");
+
+		expect(
+			ttsTextFilter.filter(
+				"넥스테인은 AI 기술을 연구합니다 (출처: knowledge/company-overview.md).\n- **근거**: `ir-summary.md`",
+				"ko",
+			),
+		).toBe("넥스테인은 AI 기술을 연구합니다.");
+
+		expect(
+			ttsTextFilter.filter(
+				"자세한 내용은 `knowledge/naia.md`와 AGENTS.md(knowledge/vision.md)에서 확인하세요.",
+				"ko",
+			),
+		).toBe("자세한 내용은 와 에서 확인하세요.");
+	});
 });

@@ -1,5 +1,3 @@
-import type { NaiaTool } from "./app-registry";
-
 /** appExec 등록용 앱 id — 위젯 전용(앱 아님), app_skills_clear 대상 아님(항상 유지). */
 export const BGM_APP_ID = "bgm-widget";
 
@@ -26,7 +24,18 @@ export const BGM_ACTIONS = [
 ] as const;
 export type BgmAction = (typeof BGM_ACTIONS)[number];
 
-export const SKILL_YOUTUBE_BGM: NaiaTool = {
+export interface BgmSkillToolSpec {
+	name: string;
+	description: string;
+	parameters: {
+		type: "object";
+		properties: Record<string, unknown>;
+		required?: string[];
+	};
+	tier?: 0 | 1 | 2;
+}
+
+export const SKILL_YOUTUBE_BGM: BgmSkillToolSpec = {
 	name: "skill_youtube_bgm",
 	description:
 		"Naia 음악 플레이어 제어. 좋아요는 선호 표시일 뿐 재생 목록이 아니다. next/prev는 활성 플레이리스트(유튜브·로컬 파일 혼합 포함)와 실행 큐를 사용하며, 다음 곡이 없어 ok=false(no_next_track)가 오면 action=play로 새 곡을 검색해 재생한다. mode=radio_dj로 재생할 때는 곡이 끝날 때마다 DJ 멘트를 할 수 있도록 '플레이리스트/플리/모음/라디오/믹스'가 아닌 개별 단일곡(1.5~8분 길이 노래)으로 query를 넣어 검색한다. playlist_list/create/add_current/play, like_add/remove, shuffle, repeat(off/all/one)를 구분해서 사용한다. 사용자가 '지금 뭐 나와?' 등 현재 곡을 물으면 action=status를 확인해 announceTrack=true 이고 currentTrack이 있을 때 그 제목을 답하고, pendingTrack(confirmed=false)이 있으면 '곡이 없다'고 하지 말고 해당 곡을 요청해 재생 확인 중이라고 답한다. requested/loading/timeout이면 이미 재생 중이라고 단정하지 말고 JSON을 읽지 않는다.",
