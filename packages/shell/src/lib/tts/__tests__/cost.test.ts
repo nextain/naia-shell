@@ -9,9 +9,9 @@ describe("estimateTtsCost (#603)", () => {
 		expect(estimateTtsCost("browser", 1_000_000)).toBe(0);
 	});
 
-	it("nextain fallback uses Neural HD estimate when gateway omits cost", () => {
+	it("nextain fallback uses the Neural2 estimate when gateway omits cost", () => {
 		expect(
-			estimateTtsCost("nextain", 1_000_000, "ko-KR-SunHi:DragonHDLatestNeural"),
+			estimateTtsCost("nextain", 1_000_000, "ko-KR-Neural2-A"),
 		).toBeCloseTo(16, 5);
 		expect(estimateTtsCost("nextain", 12)).toBeCloseTo(0.000192, 8);
 	});
