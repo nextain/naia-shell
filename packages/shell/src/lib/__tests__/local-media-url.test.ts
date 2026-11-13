@@ -3,6 +3,7 @@ import {
 	createLocalMediaUrl,
 	isMediaSourceUrl,
 	localMediaUrlApi,
+	MEDIA_SOURCE_MIN_BYTES,
 	shouldUseMediaSource,
 	webmMediaSourceType,
 } from "../local-media-url";
@@ -43,7 +44,9 @@ describe("webmMediaSourceType", () => {
 
 describe("shouldUseMediaSource", () => {
 	afterEach(() => vi.unstubAllGlobals());
-	const webm = new Blob([], { type: "video/webm" });
+	const webm = new Blob([new Uint8Array(MEDIA_SOURCE_MIN_BYTES + 1)], {
+		type: "video/webm",
+	});
 
 	it("routes webm through MediaSource only on Linux WebKit", () => {
 		vi.stubGlobal("MediaSource", class {});
@@ -58,6 +61,18 @@ describe("shouldUseMediaSource", () => {
 		expect(shouldUseMediaSource(webm)).toBe(false);
 		vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Windows NT 10.0)" });
 		expect(shouldUseMediaSource(webm)).toBe(false);
+	});
+
+	it("keeps small webm clips (speech atlas slices) on the blob URL", () => {
+		vi.stubGlobal("MediaSource", class {});
+		vi.stubGlobal("navigator", {
+			userAgent: "Mozilla/5.0 (X11; Linux x86_64)",
+		});
+		const slice = webm.slice(0, 40_000, "video/webm");
+		expect(shouldUseMediaSource(slice)).toBe(false);
+		expect(
+			shouldUseMediaSource(webm.slice(0, MEDIA_SOURCE_MIN_BYTES, "video/webm")),
+		).toBe(false);
 	});
 
 	it("keeps the blob URL when MediaSource is missing", () => {
@@ -83,7 +98,11 @@ describe("isMediaSourceUrl", () => {
 			() => `blob:test/${++next}`,
 		);
 		vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-		const sourceUrl = createLocalMediaUrl(new Blob([], { type: "video/webm" }));
+		const sourceUrl = createLocalMediaUrl(
+			new Blob([new Uint8Array(MEDIA_SOURCE_MIN_BYTES + 1)], {
+				type: "video/webm",
+			}),
+		);
 		const plainUrl = createLocalMediaUrl(new Blob([], { type: "image/webp" }));
 		expect(isMediaSourceUrl(sourceUrl)).toBe(true);
 		expect(isMediaSourceUrl(plainUrl)).toBe(false);

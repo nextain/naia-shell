@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../logger";
 import type { NvaManifest } from "../../nva";
+import type { SpeechPlan } from "../nva-speech/speech-timing";
 import {
 	PrebakedAvatarRenderer,
 	canCarryAlpha,
@@ -765,5 +766,148 @@ describe("PrebakedAvatarRenderer", () => {
 			expect((renderer as any).motionSpec?.chest_y).toBeCloseTo(0.84, 5);
 			renderer.stop();
 		});
+	});
+});
+
+
+describe("PrebakedAvatarRenderer speech stage reuse", () => {
+	type Prepared = { play: (clock: () => number) => Promise<boolean> };
+	class FakeStage {
+		static made: FakeStage[] = [];
+		readonly canvas = document.createElement("canvas");
+		speaking = false;
+		assetsLoaded = true;
+		disposed = false;
+		stops = 0;
+		pending: Array<(value: Prepared | null) => void> = [];
+		constructor() {
+			FakeStage.made.push(this);
+		}
+		prepare(): Promise<Prepared | null> {
+			return new Promise((resolve) => this.pending.push(resolve));
+		}
+		ready(): void {
+			this.pending.shift()?.({ play: async () => true });
+		}
+		superseded(): void {
+			this.pending.shift()?.(null);
+		}
+		stop(): void {
+			this.stops++;
+		}
+		dispose(): void {
+			this.disposed = true;
+		}
+		warmAssets(): Promise<void> {
+			return Promise.resolve();
+		}
+		update(): boolean {
+			return false;
+		}
+	}
+	const plan: SpeechPlan = {
+		version: "1",
+		quality_mode: "aligned",
+		audio: { duration_us: 400_000 },
+		events: [{ unit: "sil", start_us: 0, end_us: 400_000 }],
+	};
+
+	function startRenderer() {
+		FakeStage.made = [];
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `/nva/jina/${path}`,
+			createSpeechStage: () => new FakeStage() as never,
+		});
+		renderer.start(makeVideo(), document.createElement("canvas"));
+		return renderer;
+	}
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("keeps the replaced stage as the next standby instead of building a new one", async () => {
+		const renderer = startRenderer();
+		const [active] = FakeStage.made;
+		const first = renderer.prefetchSpeechTiming(plan);
+		const standby = FakeStage.made[1];
+		standby.ready();
+		await (await first)?.play(() => 0);
+		expect(active.disposed).toBe(false);
+		expect(active.stops).toBeGreaterThan(0);
+
+		const second = renderer.prefetchSpeechTiming(plan);
+		expect(FakeStage.made).toHaveLength(2);
+		active.ready();
+		expect(await second).not.toBeNull();
+		renderer.stop();
+		expect(FakeStage.made.every((stage) => stage.disposed)).toBe(true);
+	});
+
+	it("disposes a standby stage that is still preparing when the next sentence supersedes it", async () => {
+		const renderer = startRenderer();
+		const first = renderer.prefetchSpeechTiming(plan);
+		const standby = FakeStage.made[1];
+		const second = renderer.prefetchSpeechTiming(plan);
+		expect(standby.disposed).toBe(true);
+		expect(FakeStage.made).toHaveLength(3);
+		standby.superseded();
+		expect(await first).toBeNull();
+		FakeStage.made[2].ready();
+		const prepared = await second;
+		expect(prepared).not.toBeNull();
+		expect(await prepared?.play(() => 0)).toBe(true);
+		renderer.stop();
+	});
+
+	it("does not queue the next prefetch behind a load that never settles", async () => {
+		// The real stage runs prepare() through a serial queue, and stop() does not
+		// end a running load: a body video that fires neither loadeddata nor error
+		// holds the queue. Model that: each prepare waits for the one before it.
+		class QueuedStage extends FakeStage {
+			private queue: Promise<unknown> = Promise.resolve();
+			override prepare(): Promise<Prepared | null> {
+				const turn = this.queue.then(() => super.prepare());
+				this.queue = turn;
+				return turn;
+			}
+		}
+		FakeStage.made = [];
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `/nva/jina/${path}`,
+			createSpeechStage: () => new QueuedStage() as never,
+		});
+		renderer.start(makeVideo(), document.createElement("canvas"));
+		const [active] = FakeStage.made;
+		const warm = renderer.prefetchSpeechTiming(plan);
+		await Promise.resolve();
+		FakeStage.made[1].ready();
+		await (await warm)?.play(() => 0);
+
+		// The spare (the old active stage) starts a load that never settles.
+		void renderer.prefetchSpeechTiming(plan);
+		expect(FakeStage.made).toHaveLength(2);
+		await Promise.resolve();
+		expect(active.pending).toHaveLength(1);
+
+		// The next sentence must not wait behind it.
+		const next = renderer.prefetchSpeechTiming(plan);
+		expect(active.disposed).toBe(true);
+		const fresh = FakeStage.made[2];
+		expect(fresh).toBeDefined();
+		await Promise.resolve();
+		fresh.ready();
+		const prepared = await next;
+		expect(prepared).not.toBeNull();
+		expect(await prepared?.play(() => 0)).toBe(true);
+		renderer.stop();
 	});
 });

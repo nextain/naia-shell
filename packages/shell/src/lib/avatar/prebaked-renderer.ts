@@ -119,6 +119,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	}
 	private speechStage: CanonicalSpeechStage | null = null;
 	private prefetchedSpeechStage: CanonicalSpeechStage | null = null;
+	/** Owner of the current prefetch; a superseded prefetch must not cancel a newer one on a reused stage. */
+	private prefetchTicket: object | null = null;
+	/**
+	 * True once the current prefetch finished loading. Only then is its stage
+	 * idle: a stage still preparing has a load running in its serial prepare
+	 * queue that stop() does not end, so it is disposed, never reused.
+	 */
+	private prefetchPrepared = false;
+	/**
+	 * A stopped stage kept for the next prefetch. A new stage builds a new
+	 * SpeechPlayer that verifies and loads the whole bundle again; a reused
+	 * one takes the player's same-bundle path, so standby prepare stays short.
+	 */
+	private spareSpeechStage: CanonicalSpeechStage | null = null;
+	private spareSpeechHost: HTMLVideoElement | null = null;
 	private speechKeyColor: string | undefined;
 
 	constructor(private readonly config: Config) {
@@ -137,6 +152,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.mountedVideo = video;
 		this.canvas = canvas;
 		this.ctx = canvas.getContext("2d", { alpha: true });
+		this.disposeSpareSpeechStage();
 		this.speechStage = this.createSpeechStage(video);
 		void this.playIdle();
 		this.startDrawLoop();
@@ -312,29 +328,34 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		const host = this.mountedVideo;
 		if (!this.speechStage || !host || this.disposed) return null;
 		this.cancelPrefetchedSpeechTiming();
-		const stage = this.createSpeechStage(host);
+		const stage = this.takeSpareSpeechStage(host) ?? this.createSpeechStage(host);
 		if (!stage) return null;
+		const ticket = {};
+		this.prefetchTicket = ticket;
+		this.prefetchPrepared = false;
 		this.prefetchedSpeechStage = stage;
 		this.speechKeyColor = this.keyColorFor(
 			this.config.manifest.animations.talking?.clip ?? "",
 		);
 		const ready = await stage.prepare(plan);
-		if (!ready || this.prefetchedSpeechStage !== stage || this.disposed) {
-			if (this.prefetchedSpeechStage === stage)
-				this.cancelPrefetchedSpeechTiming();
-			else stage.dispose();
+		if (!ready || this.prefetchTicket !== ticket || this.disposed) {
+			// A superseded prefetch already gave its stage back (or to a newer prefetch).
+			if (this.prefetchTicket === ticket) this.cancelPrefetchedSpeechTiming();
 			return null;
 		}
+		this.prefetchPrepared = true;
 		let used = false;
 		return {
 			play: async (clock) => {
 				if (used || typeof clock !== "function") return false;
 				used = true;
-				if (this.prefetchedSpeechStage !== stage || this.disposed) return false;
+				if (this.prefetchTicket !== ticket || this.disposed) return false;
 				const previous = this.speechStage;
 				this.speechStage = stage;
 				this.prefetchedSpeechStage = null;
-				previous?.dispose();
+				this.prefetchTicket = null;
+				this.prefetchPrepared = false;
+				if (previous) this.retireSpeechStage(previous, host);
 				return ready.play(clock);
 			},
 		};
@@ -342,8 +363,50 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	cancelPrefetchedSpeechTiming(): void {
 		const stage = this.prefetchedSpeechStage;
+		const prepared = this.prefetchPrepared;
 		this.prefetchedSpeechStage = null;
-		stage?.dispose();
+		this.prefetchTicket = null;
+		this.prefetchPrepared = false;
+		// A stage still preparing may sit on a load that never settles; reusing it
+		// would queue the next prepare behind that load forever.
+		if (stage && prepared && this.mountedVideo)
+			this.retireSpeechStage(stage, this.mountedVideo);
+		else stage?.dispose();
+	}
+
+	/** Stop a stage without dropping its loaded bundle; keep one as the spare. */
+	private retireSpeechStage(
+		stage: CanonicalSpeechStage,
+		host: HTMLVideoElement,
+	): void {
+		if (stage === this.spareSpeechStage) return;
+		if (this.disposed || this.spareSpeechStage || host !== this.mountedVideo) {
+			stage.dispose();
+			return;
+		}
+		stage.stop();
+		this.spareSpeechStage = stage;
+		this.spareSpeechHost = host;
+	}
+
+	private takeSpareSpeechStage(
+		host: HTMLVideoElement,
+	): CanonicalSpeechStage | null {
+		const stage = this.spareSpeechStage;
+		if (!stage) return null;
+		if (this.spareSpeechHost !== host) {
+			this.disposeSpareSpeechStage();
+			return null;
+		}
+		this.spareSpeechStage = null;
+		this.spareSpeechHost = null;
+		return stage;
+	}
+
+	private disposeSpareSpeechStage(): void {
+		this.spareSpeechStage?.dispose();
+		this.spareSpeechStage = null;
+		this.spareSpeechHost = null;
 	}
 
 	/** Revise the running browser-timed plan after a boundary event. */
@@ -658,6 +721,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.offscreenCtx = null;
 		this.interrupt();
 		this.cancelPrefetchedSpeechTiming();
+		this.disposeSpareSpeechStage();
 		this.speechStage?.dispose();
 		this.speechStage = null;
 		for (const v of this.clipVideos.values()) {
