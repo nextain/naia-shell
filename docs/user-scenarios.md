@@ -170,6 +170,7 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | 시나리오 | 사용자 경험 | 인지/레이어 | 검증(P02) |
 |---|---|---|---|
 | **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(browser/edge/nextain/local). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **S-TTS 시연판 바쁨** | 지나 목소리가 바쁘면 지연 후 지나로 한 번 더 요청하고, 그래도 실패하면 그 문장만 구글 목소리로 대체한다. 다른 실패는 즉시 대체하며 대기 중 중단하면 재요청하지 않는다. | 표현(speech) | `synthesize.test.ts`: 503·429, 재요청 성공·실패, 400·디코딩·네트워크 오류, Retry-After 기본값·상한, 대기 중 중단, 비시연판 회귀 |
 | **S-VOICE-CLOUD-OFF** (#603, epic #589) | 사용자는 음성 설정에서 타사 Google/OpenAI/ElevenLabs TTS·STT와 Gemini Live/OpenAI Realtime을 볼 수 없고, Azure Neural HD·Azure Voice Live·로컬 GPU/vLLM·browser/Edge/Vosk/Whisper만 쓴다. 이전 설정은 안전한 retained route로 이동하며 제거된 키는 저장·agent wire에 남지 않는다 | 설정 제어면 + 표현/감각 | `third-party-cloud-voice-absent.test.ts` · `config.test.ts` · `config-secrets.test.ts` · Settings/ChatArea focused tests · `cargo check` |
 | **S-CAP** (#365) | 모델을 고르면 그 모델 **능력에 맞춰 설정이 전개**(omni→STT/TTS 슬롯 숨김, 텍스트→노출). gateway 가 능력 선언 | 제어면(설정) — capability manifest 도출 | `test_models.py`·`capability-fetch.test.ts`·`slots.test.ts`. ⚠️ 라이브 /v1/models=게이트웨이 배포 |
 | **S-VRAM** (#2) | 내 GPU VRAM 을 감지해 **로컬에서 돌릴 수 있는 tier**(아바타·음성)를 보여주고 선택. opt-in 시 외부 슬롯 대신 로컬 | 제어면(설정) — VRAM→capability 브리지 | `vram-tiers.test.ts`. ⚠️ 실 VRAM 감지=실 GPU, 로컬 serving=windows-manager 로더(DEFER) |

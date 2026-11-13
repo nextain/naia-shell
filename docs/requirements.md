@@ -73,6 +73,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | **FR-TTS.1** | 파이프라인·프리뷰 TTS 를 셸이 직접 합성(`lib/tts/synthesize.ts`) — agent 우회. browser(isClientSide)는 기존 speechSynthesis 유지 | S-TTS·UC2 | `synthesize.test.ts`(provider 분기) · 셸 vitest |
 | **FR-TTS.2** | provider 분기: nextain(gateway `POST /v1/audio/speech`, `X-AnyLLM-Key: Bearer`)·vllm(OpenAI-compat)·edge(MS WS)·browser(speechSynthesis). **nextain creds(naiaKey/gatewayUrl)를 pipelineVoiceConfig 두 구성 지점에 탑재** = 무음 직접원인 해소. 사용자 키를 받는 Google/OpenAI/ElevenLabs TTS는 존재하지 않는다 | S-TTS | `synthesize.test.ts` · `third-party-cloud-voice-absent.test.ts` |
 | **FR-TTS.3** | edge WS 실패 시 browser speechSynthesis 폴백(`onstart/onend/onerror`로 avatar speaking 상태 누수 방지) → 기본값 무음 금지. 합성 실패 = `audioQueue.skipOrdered(seq)` 로 ordered 슬롯 해제(후속 오디오 stall 방지) | S-TTS | `edge-tts.test.ts` · audio-queue |
+| **FR-TTS.5** | 시연판 지나 목소리가 바쁨(503·429)이면 Retry-After 초(유효하지 않으면 1초, 최대 2초) 뒤 지나로 한 번 더 요청하고, 그래도 실패하면 그 문장만 구글 목소리로 대체한다. 다른 실패는 즉시 대체하고 대기 중 중단은 AbortError로 끝낸다. | S-TTS | `synthesize.test.ts` |
 | **FR-TTS.4** ([#585](https://github.com/nextain/naia-shell/issues/585)) | Naia Cloud TTS(`nextain`) 기본 목소리는 Azure Neural HD `ko-KR-SunHi:DragonHDLatestNeural` / `Hyunsu`. 게이트웨이 `cost_usd`는 API×1.1이며 셸은 서버 금액을 다시 곱하지 않는다. 피커 순서: edge → naia-local-voice → nextain. BYO API TTS는 제거한다 | S-TTS · UC-VOICE-TTS-HD | `registry.test.ts` · `sentence-pipeline.test.ts` |
 
 ### Azure omni live (#585, 2026-09-10)

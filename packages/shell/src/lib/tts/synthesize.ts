@@ -267,6 +267,42 @@ async function errorDetail(resp: Response): Promise<string> {
 	}
 }
 
+class NextainSpeechError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+		readonly retryAfter: string | null,
+	) {
+		super(message);
+	}
+}
+
+function kioskRetryDelayMs(retryAfter: string | null): number {
+	const raw = retryAfter?.trim();
+	if (!raw || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) return 1_000;
+	const seconds = Number(raw);
+	return Number.isFinite(seconds) ? Math.min(seconds, 2) * 1_000 : 1_000;
+}
+
+function waitForKioskRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new DOMException("Aborted", "AbortError"));
+			return;
+		}
+		const onAbort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			reject(new DOMException("Aborted", "AbortError"));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, delayMs);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
 /** nextain → gateway `/v1/audio/speech` (Azure Neural HD via Naia credit). */
 async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	if (!opts.naiaKey) {
@@ -283,11 +319,25 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			opts.voice || "ko-KR-SunHi:DragonHDLatestNeural",
 		);
 	}
-	// 키오스크: 지나 고유 목소리(nva manifest meta.voice.id)를 먼저 요청하고, 게이트웨이가
-	// 거절하거나(#169 운영 반영 전 포함) 오디오를 풀 수 없으면 그 문장만 구글 기본 여성으로
-	// 한 번 다시 요청해 소리가 끊기지 않게 한다.
+	// 키오스크: 바쁘면 지나 목소리를 한 번 더 시도하고, 실패하면 그 문장만 구글로 대체한다.
 	try {
-		const result = await requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_VOICE);
+		let result: SynthesizeResult;
+		try {
+			result = await requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_VOICE);
+		} catch (err) {
+			if (opts.signal?.aborted || isAbortError(err)) throw err;
+			if (
+				!(err instanceof NextainSpeechError) ||
+				(err.status !== 503 && err.status !== 429)
+			) throw err;
+			const delayMs = kioskRetryDelayMs(err.retryAfter);
+			Logger.info("tts", "kiosk voice busy; retrying jina once", {
+				status: err.status,
+				delayMs,
+			});
+			await waitForKioskRetry(delayMs, opts.signal);
+			result = await requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_VOICE);
+		}
 		await assertDecodableAudio(result.audioBase64);
 		return result;
 	} catch (err) {
@@ -328,8 +378,10 @@ async function requestNextainSpeech(
 		signal: opts.signal,
 	});
 	if (!resp.ok) {
-		throw new Error(
+		throw new NextainSpeechError(
 			`Naia TTS 실패 (${resp.status}): ${await errorDetail(resp)}`,
+			resp.status,
+			resp.headers?.get?.("Retry-After") ?? null,
 		);
 	}
 	const contentType = resp.headers?.get?.("content-type")?.toLowerCase() ?? "";
