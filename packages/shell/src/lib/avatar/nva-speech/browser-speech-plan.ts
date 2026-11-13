@@ -52,7 +52,9 @@ function normalizeWordUnits(word: SpeechPlanUnitsWord): {
 		if (!unit || unit === "sil") continue;
 		const rawWeight = word.weights?.[index];
 		const weight =
-			typeof rawWeight === "number" && Number.isFinite(rawWeight) && rawWeight > 0
+			typeof rawWeight === "number" &&
+			Number.isFinite(rawWeight) &&
+			rawWeight > 0
 				? rawWeight
 				: 1;
 		units.push(unit);
@@ -102,7 +104,10 @@ function buildEventsFromWordAllocations(
 	const usableEnd = Math.max(cursor + 0.16, totalDuration - tailHold);
 	for (const allocation of allocations) {
 		const wordStart = Math.max(cursor, allocation.start);
-		const wordEnd = Math.min(usableEnd, Math.max(wordStart + 0.04, allocation.end));
+		const wordEnd = Math.min(
+			usableEnd,
+			Math.max(wordStart + 0.04, allocation.end),
+		);
 		if (allocation.units.length === 0) continue;
 
 		if (wordStart - cursor >= 0.035) {
@@ -153,7 +158,11 @@ function buildEventsFromWordAllocations(
 	const merged: RawSpeechSegment[] = [];
 	for (const seg of raw) {
 		const prev = merged[merged.length - 1];
-		if (prev && prev.unit === seg.unit && Math.abs(prev.end - seg.start) < 1e-6) {
+		if (
+			prev &&
+			prev.unit === seg.unit &&
+			Math.abs(prev.end - seg.start) < 1e-6
+		) {
 			prev.end = seg.end;
 			prev.coarticulation_weight = Math.max(
 				prev.coarticulation_weight ?? 0,
@@ -178,7 +187,10 @@ function buildEventsFromWordAllocations(
 		const maxEndUs = durationUs - remainingEvents * 5_000;
 		const targetEndUs = isLast
 			? durationUs
-			: Math.min(maxEndUs, Math.max(cursorUs + 5_000, Math.round(seg.end * 1_000_000)));
+			: Math.min(
+					maxEndUs,
+					Math.max(cursorUs + 5_000, Math.round(seg.end * 1_000_000)),
+				);
 		events.push({
 			unit: seg.unit,
 			start_us: cursorUs,
@@ -220,14 +232,16 @@ export function buildBrowserTimedSpeechPlan(
 	);
 	const totalWeight =
 		normalizedWords.reduce(
-			(sum, word) => sum + word.weights.reduce((wSum, weight) => wSum + weight, 0),
+			(sum, word) =>
+				sum + word.weights.reduce((wSum, weight) => wSum + weight, 0),
 			0,
 		) || normalizedWords.length;
 
 	let cursor = leadHold;
 	const allocations: WordAllocation[] = normalizedWords.map((word, idx) => {
 		const wordWeight =
-			word.weights.reduce((sum, weight) => sum + weight, 0) || word.units.length;
+			word.weights.reduce((sum, weight) => sum + weight, 0) ||
+			word.units.length;
 		const span = Math.max(0.045, (activeSpan * wordWeight) / totalWeight);
 		const start = cursor;
 		const end =
@@ -285,12 +299,15 @@ export function updateBrowserTimedSpeechPlanForWordBoundary(input: {
 		.filter((word) => word.units.length > 0);
 	if (normalizedWords.length === 0) return null;
 
-	const currentPos = normalizedWords.findIndex((w) => w.wordIndex === wordIndex);
+	const currentPos = normalizedWords.findIndex(
+		(w) => w.wordIndex === wordIndex,
+	);
 	if (currentPos < 0) return null;
 
 	const wordWeights = normalizedWords.map(
 		(word) =>
-			word.weights.reduce((sum, weight) => sum + weight, 0) || word.units.length,
+			word.weights.reduce((sum, weight) => sum + weight, 0) ||
+			word.units.length,
 	);
 	const weightBefore = wordWeights
 		.slice(0, currentPos)
@@ -302,10 +319,7 @@ export function updateBrowserTimedSpeechPlanForWordBoundary(input: {
 	const defaultSecPerWeight = defaultTotal / totalWeight;
 	const observedSecPerWeight =
 		weightBefore > 0 && input.elapsedSeconds > 0.08
-			? Math.min(
-					0.22,
-					Math.max(0.038, input.elapsedSeconds / weightBefore),
-				)
+			? Math.min(0.22, Math.max(0.038, input.elapsedSeconds / weightBefore))
 			: defaultSecPerWeight;
 
 	const allocations: WordAllocation[] = [];
@@ -353,10 +367,7 @@ export interface BrowserTimedSpeechController {
 	readonly initialPlan: SpeechPlan;
 	clock(): number;
 	markStarted(): void;
-	updateForBoundary(
-		charIndex: number,
-		elapsedTime?: number,
-	): SpeechPlan | null;
+	updateForBoundary(charIndex: number, elapsedTime?: number): SpeechPlan | null;
 }
 
 const KO_SPEECH_UNITS_WORD_READINGS: Readonly<Record<string, string>> = {
@@ -533,7 +544,10 @@ const HANGUL_ONSET_UNITS: readonly (SpeechUnit | null)[] = [
 	"glottal", // ㅎ
 ];
 
-const HANGUL_NUCLEUS_UNITS: readonly (readonly [SpeechUnit, number] | readonly [SpeechUnit, number, SpeechUnit, number])[] = [
+const HANGUL_NUCLEUS_UNITS: readonly (
+	| readonly [SpeechUnit, number]
+	| readonly [SpeechUnit, number, SpeechUnit, number]
+)[] = [
 	["vowel-open", 1.15], // ㅏ
 	["vowel-mid", 1.1], // ㅐ
 	["palatal", 0.45, "vowel-open", 1.05], // ㅑ
@@ -647,8 +661,9 @@ export function synthesizePronunciationWordsFromText(
 			if (!unit) return;
 			if (units[units.length - 1] === unit) {
 				weights[weights.length - 1] =
-					Math.round(((weights[weights.length - 1] ?? 1) + weight * 0.45) * 100) /
-					100;
+					Math.round(
+						((weights[weights.length - 1] ?? 1) + weight * 0.45) * 100,
+					) / 100;
 				return;
 			}
 			units.push(unit);
@@ -697,9 +712,19 @@ export interface GatewaySpeechPlanUnitsDeps {
 	getConfig?: () => { gatewayUrl?: string; locale?: string } | null;
 	getNaiaKey?: () => Promise<string | undefined>;
 	fetchImpl?: typeof fetch;
+	timeoutMs?: number;
 }
 
-function resolveGatewayBaseUrl(config?: { gatewayUrl?: string } | null): string {
+/**
+ * Longest the units request may take. The sound waits only
+ * ALIGNED_PLAN_WAIT_MS for its plan, so a busy gateway must not hold the
+ * built-in G2P plan back past that (mouth stayed shut on the Google voice).
+ */
+export const SPEECH_PLAN_UNITS_TIMEOUT_MS = 1500;
+
+function resolveGatewayBaseUrl(
+	config?: { gatewayUrl?: string } | null,
+): string {
 	const raw =
 		config?.gatewayUrl?.trim() || LAB_GATEWAY_URL || "https://api.nextain.io";
 	return raw.replace(/\/+$/, "");
@@ -747,6 +772,9 @@ export async function fetchGatewaySpeechPlanUnits(
 					? replaceLatinWithHangulForSpeechUnits(trimmed)
 					: trimmed;
 			const resp = await fetchFn(`${baseUrl}/v1/studio/speech-plan/units`, {
+				signal: AbortSignal.timeout(
+					deps.timeoutMs ?? SPEECH_PLAN_UNITS_TIMEOUT_MS,
+				),
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -767,14 +795,22 @@ export async function fetchGatewaySpeechPlanUnits(
 					}
 				}
 			} else {
-				Logger.debug(LOG_NS, "Gateway speech-plan/units HTTP non-OK, using G2P fallback", {
-					status: resp.status,
-				});
+				Logger.debug(
+					LOG_NS,
+					"Gateway speech-plan/units HTTP non-OK, using G2P fallback",
+					{
+						status: resp.status,
+					},
+				);
 			}
 		} catch (err) {
-			Logger.debug(LOG_NS, "Gateway speech-plan/units request failed, using G2P fallback", {
-				error: String(err),
-			});
+			Logger.debug(
+				LOG_NS,
+				"Gateway speech-plan/units request failed, using G2P fallback",
+				{
+					error: String(err),
+				},
+			);
 		}
 	}
 

@@ -16,19 +16,65 @@ import {
 import { validateSpeechPlan } from "../vendor/speech-plan.js";
 
 describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
+	it("falls back to built-in G2P when the units request hangs past its limit", async () => {
+		const fetchMock = vi.fn(
+			(_url: string, init?: RequestInit) =>
+				new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () =>
+						reject(new DOMException("timed out", "TimeoutError")),
+					);
+				}),
+		);
+		const started = Date.now();
+		const words = await fetchGatewaySpeechPlanUnits("넥스테인 안내", "ko-KR", {
+			getConfig: () => ({
+				gatewayUrl: "https://api.nextain.io",
+				locale: "ko-KR",
+			}),
+			getNaiaKey: async () => "test-synth-key",
+			fetchImpl: fetchMock as unknown as typeof fetch,
+			timeoutMs: 50,
+		});
+		expect(Date.now() - started).toBeLessThan(1000);
+		expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+		expect(words.map((w) => w.word)).toEqual(["넥스테인", "안내"]);
+	});
+
 	it("builds a browser-timed speech plan from phoneme units and re-anchors on word boundary", () => {
 		const words = [
 			{
 				word: "안녕하세요",
 				char_start: 0,
 				char_end: 5,
-				units: ["vowel-open", "alveolar", "palatal", "vowel-mid", "glottal", "vowel-open", "alveolar", "vowel-mid", "palatal", "vowel-round"],
+				units: [
+					"vowel-open",
+					"alveolar",
+					"palatal",
+					"vowel-mid",
+					"glottal",
+					"vowel-open",
+					"alveolar",
+					"vowel-mid",
+					"palatal",
+					"vowel-round",
+				],
 			},
 			{
 				word: "지나입니다",
 				char_start: 6,
 				char_end: 11,
-				units: ["postalveolar", "vowel-spread", "alveolar", "vowel-open", "vowel-spread", "closed", "alveolar", "vowel-spread", "alveolar", "vowel-open"],
+				units: [
+					"postalveolar",
+					"vowel-spread",
+					"alveolar",
+					"vowel-open",
+					"vowel-spread",
+					"closed",
+					"alveolar",
+					"vowel-spread",
+					"alveolar",
+					"vowel-open",
+				],
 			},
 		];
 
@@ -65,7 +111,15 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 						word: "넥스테인",
 						char_start: 0,
 						char_end: 4,
-						units: ["alveolar", "vowel-mid", "velar", "alveolar", "vowel-mid", "vowel-spread", "alveolar"],
+						units: [
+							"alveolar",
+							"vowel-mid",
+							"velar",
+							"alveolar",
+							"vowel-mid",
+							"vowel-spread",
+							"alveolar",
+						],
 					},
 					{
 						word: "안내",
@@ -78,7 +132,10 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 		} as unknown as Response);
 
 		const words = await fetchGatewaySpeechPlanUnits("넥스테인 안내", "ko-KR", {
-			getConfig: () => ({ gatewayUrl: "https://api.nextain.io", locale: "ko-KR" }),
+			getConfig: () => ({
+				gatewayUrl: "https://api.nextain.io",
+				locale: "ko-KR",
+			}),
 			getNaiaKey: async () => "test-synth-key",
 			fetchImpl: fetchMock,
 		});
@@ -130,7 +187,10 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 		} as unknown as Response);
 
 		const deps = {
-			getConfig: () => ({ gatewayUrl: "https://api.nextain.io", locale: "ko-KR" }),
+			getConfig: () => ({
+				gatewayUrl: "https://api.nextain.io",
+				locale: "ko-KR",
+			}),
 			getNaiaKey: async () => "test-synth-key",
 			fetchImpl: fetchMock,
 		};
@@ -141,7 +201,9 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 			"ko-KR",
 			deps,
 		);
-		const gatewayBodyKo = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+		const gatewayBodyKo = JSON.parse(
+			fetchMock.mock.calls[0]?.[1]?.body as string,
+		);
 		expect(gatewayBodyKo.language).toBe("ko");
 		expect(gatewayBodyKo.text).toContain("에이아이를");
 		expect(gatewayBodyKo.text).toContain("엑스와이지");
@@ -156,7 +218,9 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 			"Nextain Naia AI IR GPU WebGPU Web PC PDF TTS API App XYZ AI를",
 			"ko",
 		);
-		const localBodyKo = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string);
+		const localBodyKo = JSON.parse(
+			fetchMock.mock.calls[1]?.[1]?.body as string,
+		);
 		expect(localBodyKo).toEqual({
 			text: "넥스테인 나이아 에이아이 아이알 지피유 웹지피유 웹 피씨 피디에프 티티에스 에이피아이 앱 엑스와이지 에이아이를",
 			language: "ko",
@@ -165,14 +229,18 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 
 		// 3. When language is "en", Latin text is preserved as-is
 		await fetchGatewaySpeechPlanUnits("Nextain AI and XYZ", "en-US", deps);
-		const gatewayBodyEn = JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string);
+		const gatewayBodyEn = JSON.parse(
+			fetchMock.mock.calls[2]?.[1]?.body as string,
+		);
 		expect(gatewayBodyEn).toEqual({
 			text: "Nextain AI and XYZ",
 			language: "en",
 		});
 
 		await fetchSpeechPlanUnits("Nextain AI and XYZ", "en");
-		const localBodyEn = JSON.parse(fetchMock.mock.calls[3]?.[1]?.body as string);
+		const localBodyEn = JSON.parse(
+			fetchMock.mock.calls[3]?.[1]?.body as string,
+		);
 		expect(localBodyEn).toEqual({
 			text: "Nextain AI and XYZ",
 			language: "en",
@@ -199,7 +267,9 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 	});
 
 	it("decomposes Korean and English text into canonical pronunciation units when gateway is offline", async () => {
-		const words = synthesizePronunciationWordsFromText("안녕하세요 Jina 안내해 드릴게요");
+		const words = synthesizePronunciationWordsFromText(
+			"안녕하세요 Jina 안내해 드릴게요",
+		);
 		expect(words.map((w) => w.word)).toEqual([
 			"안녕하세요",
 			"Jina",
@@ -220,7 +290,10 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 				durationSeconds: 2.4,
 			},
 			{
-				getConfig: () => ({ gatewayUrl: "https://api.nextain.io", locale: "ko-KR" }),
+				getConfig: () => ({
+					gatewayUrl: "https://api.nextain.io",
+					locale: "ko-KR",
+				}),
 				getNaiaKey: async () => "test-synth-key",
 				fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
 			},
@@ -233,7 +306,10 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 			"안녕하세요 지나입니다",
 			"ko-KR",
 			{
-				getConfig: () => ({ gatewayUrl: "https://api.nextain.io", locale: "ko-KR" }),
+				getConfig: () => ({
+					gatewayUrl: "https://api.nextain.io",
+					locale: "ko-KR",
+				}),
 				getNaiaKey: async () => "",
 			},
 		);
@@ -263,7 +339,11 @@ describe("browser-speech-plan (Studio pronunciation lip-sync port)", () => {
 				canvas: { width: 720, height: 1280, fps: 24 },
 				animations: {
 					idle: { clip: "clips/idle.webm", loop: true, can_talk: false },
-					talking: { clip: "clips/talking-ko.webm", loop: true, can_talk: true },
+					talking: {
+						clip: "clips/talking-ko.webm",
+						loop: true,
+						can_talk: true,
+					},
 					greeting: {
 						clip: "clips/greeting.webm",
 						loop: false,
