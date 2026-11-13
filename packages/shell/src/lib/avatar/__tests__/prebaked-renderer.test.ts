@@ -658,16 +658,20 @@ describe("PrebakedAvatarRenderer", () => {
 		]);
 
 		// Greeting gesture is preserved even when setSpeakingVisual(true) is called during initial greeting
-		const greetingPromise = renderer.playGreetingAction();
+		const greetingEnded = vi.fn();
+		const greetingPromise = renderer.playGreetingAction({ onEnded: greetingEnded });
 		await Promise.resolve();
 		await Promise.resolve();
 		renderer.setSpeakingVisual(true);
 		const greetingVid = videoForUrl("blob:clips/greeting.webm");
 		expect(await greetingPromise).toBe("greeting");
 		renderer.setSpeakingVisual(false);
+		// The first greeting holds its sound on this signal (wave → speak).
+		expect(greetingEnded).not.toHaveBeenCalled();
 		greetingVid.dispatchEvent(new Event("ended"));
 		await Promise.resolve();
 		await Promise.resolve();
+		await vi.waitFor(() => expect(greetingEnded).toHaveBeenCalledOnce());
 
 		// Round-robin idle variation cycles through non-greeting clips (guidance -> idea)
 		const firstIdle = renderer.triggerNextIdleGesture();

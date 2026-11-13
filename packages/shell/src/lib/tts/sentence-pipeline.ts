@@ -187,6 +187,14 @@ export interface SentenceTtsPipeline {
 			prefetchId?: string;
 			reservedSeq?: number;
 			skipSpeechPlan?: boolean;
+			/**
+			 * Held with the ready sound just before it plays (one-shot visuals that
+			 * must precede the mouth). `speechPlanReady` tells whether a mouth plan
+			 * will play; a rejection or a never-ready plan never blocks the sound.
+			 */
+			beforePlayback?: (info: {
+				speechPlanReady: Promise<boolean>;
+			}) => Promise<unknown>;
 			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
 			onPlaybackStarted?: () => void;
 		},
@@ -1157,6 +1165,9 @@ export function createSentenceTtsPipeline(
 			reservedSeq?: number;
 			reservedReveal?: () => void;
 			skipSpeechPlan?: boolean;
+			beforePlayback?: (info: {
+				speechPlanReady: Promise<boolean>;
+			}) => Promise<unknown>;
 			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
 			onPlaybackStarted?: () => void;
 		} = {},
@@ -1188,6 +1199,21 @@ export function createSentenceTtsPipeline(
 		};
 		const cascadeAvatar = deps.getRenderer();
 		const skipSpeechPlan = options.skipSpeechPlan === true;
+		// Caller hold (options.beforePlayback) joined with the plan's own gate;
+		// both run together and neither can keep the sound from playing.
+		const holdPlayback = (speechPlanReady: Promise<boolean>) =>
+			Promise.resolve()
+				.then(() => options.beforePlayback?.({ speechPlanReady }))
+				.catch(() => undefined);
+		const playbackGate = (planGate?: () => Promise<unknown>) => {
+			if (!options.beforePlayback) return planGate;
+			return () => {
+				const speechPlanReady = planGate
+					? planGate().then(Boolean, () => false)
+					: Promise.resolve(false);
+				return Promise.all([speechPlanReady, holdPlayback(speechPlanReady)]);
+			};
+		};
 
 		// 자기발화 텍스트 필터용 — 이 턴에 말한 문장을 기록 (최근 6문장 링버퍼).
 		recentTexts.push(clean);
@@ -1414,11 +1440,30 @@ export function createSentenceTtsPipeline(
 			}
 		};
 
+		// Browser speech honours the caller hold too; a browser-timed plan cuts
+		// a running gesture, so the hold is told a plan will play.
+		const speakViaBrowserAfterHold = () => {
+			if (!options.beforePlayback) {
+				speakViaBrowser();
+				return;
+			}
+			const epoch = speechEpoch;
+			const planned = Boolean(
+				!skipSpeechPlan &&
+					browserSource() &&
+					(deps.getRenderer() ?? cascadeAvatar)?.playSpeechTiming,
+			);
+			void holdPlayback(Promise.resolve(planned)).then(() => {
+				if (epoch !== speechEpoch || !activeRequests.has(reqId)) return;
+				speakViaBrowser();
+			});
+		};
+
 		// Client-side providers (e.g. "browser") don't go to the backend.
 		const providerMeta = getTtsProviderMeta(voiceCfg?.ttsProvider ?? "edge");
 		if (providerMeta?.isClientSide) {
 			deps.getQueue()?.skipOrdered(seq);
-			speakViaBrowser();
+			speakViaBrowserAfterHold();
 			return;
 		}
 
@@ -1652,7 +1697,7 @@ export function createSentenceTtsPipeline(
 							settleSentence("failed");
 						},
 						onPlaybackEnd: () => settleSentence("played"),
-						beforePlayback: alignedPlan?.beforePlayback,
+						beforePlayback: playbackGate(alignedPlan?.beforePlayback),
 					});
 				}
 				if (ttsProviderForCost === "naia-local-voice") {
@@ -1728,7 +1773,7 @@ export function createSentenceTtsPipeline(
 					provider: ttsProviderForCost,
 					error: String(err),
 				});
-				speakViaBrowser();
+				speakViaBrowserAfterHold();
 			});
 	}
 

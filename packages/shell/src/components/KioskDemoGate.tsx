@@ -12,6 +12,8 @@ import {
 	resetKioskVisit,
 	shouldResetKioskVisitOnEnter,
 } from "../lib/kiosk-demo/entry";
+import { prewarmWebSpeechAssets } from "../lib/avatar/nva-speech/speech-asset-prewarm";
+import { loadConfig } from "../lib/config";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
@@ -51,6 +53,8 @@ async function prepare(): Promise<Phase> {
 		installWebRuntime();
 		await cleanupExpiredPreviousVisit();
 		await prepareKioskDemoOnboarding();
+		// Mouth assets start loading here so the first greeting can already lip-sync.
+		void prewarmWebSpeechAssets(loadConfig()?.nvaModel);
 		await bootWebRuntimeAndModel({
 			consumeAuthCallback: async () => undefined,
 		});

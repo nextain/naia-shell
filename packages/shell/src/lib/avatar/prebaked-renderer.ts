@@ -22,6 +22,7 @@ import type {
 	PreparedSpeech,
 	SpeechPlan,
 } from "./nva-speech/speech-timing";
+import { takePrewarmedSpeechAsset } from "./nva-speech/speech-asset-prewarm";
 import { isStackedAlphaClipUrl } from "./nva-stacked-alpha";
 import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
 
@@ -266,12 +267,18 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	 * Play the greeting gesture clip (`greeting` if present in `manifest.animations`,
 	 * otherwise the first available gesture clip). Preserved across initial greeting TTS.
 	 */
-	async playGreetingAction(): Promise<string | null> {
+	async playGreetingAction(
+		options: { onEnded?: () => void } = {},
+	): Promise<string | null> {
 		const actions = this.getGestureActions();
 		if (actions.length === 0) return null;
 		const greeting =
 			actions.find((action) => action.key === "greeting") ?? actions[0]!;
-		const ok = await this.playActionInternal(greeting.key, true);
+		const ok = await this.playActionInternal(
+			greeting.key,
+			true,
+			options.onEnded,
+		);
 		return ok ? greeting.key : null;
 	}
 
@@ -331,6 +338,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private async playActionInternal(
 		key: string,
 		preserveDuringSpeech: boolean,
+		onEnded?: () => void,
 	): Promise<boolean> {
 		if (
 			!this.video ||
@@ -375,6 +383,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					this.greetingGestureActive = false;
 				}
 				resolveStarted(false);
+				onEnded?.();
 				if (
 					generation === this.generation &&
 					!this.disposed &&
@@ -389,6 +398,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					this.greetingGestureActive = false;
 				}
 				resolveStarted(false);
+				onEnded?.();
 				if (generation === this.generation && !this.disposed)
 					await this.playIdle();
 			},
@@ -586,9 +596,11 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					const loader = this.config.loadAssetBlob
 						? this.config.loadAssetBlob(path)
 						: (async () => {
-								const response = await fetch(
-									await this.config.resolveAssetUrl(path),
-								);
+								const url = await this.config.resolveAssetUrl(path);
+								// Bytes the entry screen already fetched (kiosk gate).
+								const prewarmed = await takePrewarmedSpeechAsset(url);
+								if (prewarmed) return prewarmed;
+								const response = await fetch(url);
 								if (!response.ok)
 									throw new Error(`NVA asset ${path} unavailable`);
 								return response.blob();

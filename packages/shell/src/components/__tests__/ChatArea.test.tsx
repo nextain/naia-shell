@@ -364,6 +364,139 @@ describe("ChatArea", () => {
 		);
 	});
 
+	describe("kiosk first greeting mouth and wave order (r13)", () => {
+		const greetingPlan = {
+			version: "1",
+			quality_mode: "aligned",
+			audio: { duration_us: 500_000 },
+			events: [{ unit: "sil", start_us: 0, end_us: 500_000 }],
+		} as never;
+		type GreetingCallbacks = {
+			beforePlayback?: () => Promise<unknown>;
+			onPlaybackStart?: (playback?: { clock: () => number }) => void;
+		};
+		function enterKioskWithRenderer() {
+			setWebAssetsModeForTests(true);
+			vi.stubEnv("MODE", "web");
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					agentName: "지나",
+					ttsEnabled: true,
+					ttsProvider: "nextain",
+				}),
+			);
+			const wave: { end: () => void } = { end: () => {} };
+			const play = vi.fn(async () => true);
+			const renderer = {
+				hasAuthoredClip: () => false,
+				playAuthoredClip: vi.fn(),
+				setSpeakingVisual: vi.fn(),
+				playSpeechTiming: vi.fn(async () => true),
+				interrupt: vi.fn(),
+				stop: vi.fn(),
+				canPlaySpeechPlans: () => true,
+				prepareSpeechTiming: vi.fn(async () => ({ play })),
+				warmSpeechAssets: vi.fn(async () => {}),
+				playGreetingAction: vi.fn(
+					async (options?: { onEnded?: () => void }) => {
+						wave.end = () => options?.onEnded?.();
+						return "greeting";
+					},
+				),
+			};
+			useCascadeAvatarStore.setState({ renderer: renderer as never });
+			requestKioskGreeting();
+			return { renderer, wave, play };
+		}
+		const settled = async (promise: Promise<unknown> | undefined) => {
+			let done = false;
+			void promise?.then(() => {
+				done = true;
+			});
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			return done;
+		};
+
+		it("asks for a mouth plan and holds the sound until the wave ends", async () => {
+			const aligned = vi.fn(async () => greetingPlan);
+			setAlignedSpeechPlanSource(aligned);
+			const { renderer, wave, play } = enterKioskWithRenderer();
+			render(<ChatArea />);
+			await waitFor(() =>
+				expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(1),
+			);
+			expect(aligned).toHaveBeenCalledWith(
+				expect.objectContaining({
+					text: expect.stringContaining("안내를 맡은 지나입니다"),
+				}),
+			);
+			// The wave waits for the voice: nothing waved while it was synthesized.
+			expect(renderer.playGreetingAction).not.toHaveBeenCalled();
+			const callbacks = ttsSyncMocks.enqueueOrdered.mock
+				.calls[0][2] as GreetingCallbacks;
+			const gate = callbacks.beforePlayback?.();
+			await waitFor(() =>
+				expect(renderer.playGreetingAction).toHaveBeenCalledTimes(1),
+			);
+			expect(renderer.prepareSpeechTiming).toHaveBeenCalledTimes(1);
+			expect(await settled(gate)).toBe(false);
+			wave.end();
+			await gate;
+			const clock = () => 0;
+			callbacks.onPlaybackStart?.({ clock });
+			await waitFor(() => expect(play).toHaveBeenCalledWith(clock));
+			expect(renderer.playGreetingAction).toHaveBeenCalledTimes(1);
+		});
+
+		it("speech plan 400: the sound is not held and the wave plays alongside", async () => {
+			const aligned = vi.fn(async () => {
+				throw new Error("speech plan HTTP 400");
+			});
+			setAlignedSpeechPlanSource(aligned);
+			const { renderer } = enterKioskWithRenderer();
+			render(<ChatArea />);
+			await waitFor(() =>
+				expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(1),
+			);
+			expect(aligned).toHaveBeenCalledTimes(1);
+			const callbacks = ttsSyncMocks.enqueueOrdered.mock
+				.calls[0][2] as GreetingCallbacks;
+			// Resolves with the wave still running (never ended in this test).
+			await callbacks.beforePlayback?.();
+			expect(renderer.playGreetingAction).toHaveBeenCalledTimes(1);
+			expect(renderer.prepareSpeechTiming).not.toHaveBeenCalled();
+			callbacks.onPlaybackStart?.({ clock: () => 0 });
+			expect(renderer.playSpeechTiming).not.toHaveBeenCalled();
+			expect(
+				useChatStore
+					.getState()
+					.messages.some((m) => m.content.includes("안내를 맡은 지나입니다")),
+			).toBe(true);
+		});
+
+		it("voice failure: the greeting text and wave still come out", async () => {
+			setAlignedSpeechPlanSource(vi.fn(async () => greetingPlan));
+			ttsSyncMocks.synthesizeTts.mockRejectedValue(new Error("tts 502"));
+			const { renderer, wave } = enterKioskWithRenderer();
+			render(<ChatArea />);
+			await waitFor(() =>
+				expect(renderer.playGreetingAction).toHaveBeenCalledTimes(1),
+			);
+			wave.end();
+			await waitFor(() =>
+				expect(ttsSyncMocks.skipOrdered).toHaveBeenCalledTimes(1),
+			);
+			expect(ttsSyncMocks.enqueueOrdered).not.toHaveBeenCalled();
+			expect(
+				useChatStore
+					.getState()
+					.messages.some((m) => m.content.includes("안내를 맡은 지나입니다")),
+			).toBe(true);
+		});
+	});
+
 	it("hides message cost-badge in kiosk mode and shows it in normal web mode", () => {
 		localStorage.setItem(
 			"naia-config",

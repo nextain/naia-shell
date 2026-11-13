@@ -1427,3 +1427,136 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 		expect(renderer.playSpeechTiming).not.toHaveBeenCalled();
 	});
 });
+
+describe("sentence TTS pipeline — caller playback hold (r13 first greeting)", () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	const alignedPlan = {
+		version: "1",
+		quality_mode: "aligned",
+		audio: { duration_us: 500_000 },
+		events: [{ unit: "sil", start_us: 0, end_us: 500_000 }],
+	} as never;
+	type Gated = {
+		onPlaybackStart: (p?: { clock: () => number }) => void;
+		beforePlayback?: () => Promise<unknown>;
+	};
+	function speechRenderer(prepare: () => Promise<unknown>) {
+		return {
+			hasAuthoredClip: () => false,
+			playAuthoredClip: vi.fn(),
+			setSpeakingVisual: vi.fn(),
+			playSpeechTiming: vi.fn(async () => true),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(prepare),
+		} as never;
+	}
+
+	it("assets ready: the hold learns the plan is ready and the sound waits for it", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const play = vi.fn(async () => true);
+		const aligned = vi.fn(async () => alignedPlan);
+		const { deps, queue } = makeDeps({
+			getRenderer: () => speechRenderer(async () => ({ play })),
+			getAlignedSpeechPlanSource: () => aligned,
+		});
+		let releaseHold: () => void = () => {};
+		let planReady: boolean | null = null;
+		createSentenceTtsPipeline(deps).sendSentence("안녕하세요.", {
+			beforePlayback: async ({ speechPlanReady }) => {
+				planReady = await speechPlanReady;
+				await new Promise<void>((resolve) => {
+					releaseHold = resolve;
+				});
+			},
+		});
+		await flush();
+		expect(aligned).toHaveBeenCalledTimes(1);
+		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as Gated;
+		let open = false;
+		const gate = callbacks.beforePlayback?.().then(() => {
+			open = true;
+		});
+		await flush();
+		expect(planReady).toBe(true);
+		expect(open).toBe(false);
+		releaseHold();
+		await gate;
+		expect(open).toBe(true);
+	});
+
+	it("assets not ready in time: the plan wait ends, the hold hears no plan, the sound plays", async () => {
+		vi.useFakeTimers();
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+			const { deps, queue } = makeDeps({
+				// speech/atlas.bin still loading: prepare never settles.
+				getRenderer: () => speechRenderer(() => new Promise(() => {})),
+				getAlignedSpeechPlanSource: () => async () => alignedPlan,
+			});
+			let planReady: boolean | null = null;
+			createSentenceTtsPipeline(deps).sendSentence("안녕하세요.", {
+				beforePlayback: async ({ speechPlanReady }) => {
+					planReady = await speechPlanReady;
+				},
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			const callbacks = queue.enqueueOrdered.mock.calls[0][2] as Gated;
+			const gate = callbacks.beforePlayback?.();
+			await vi.advanceTimersByTimeAsync(ALIGNED_PLAN_WAIT_MS);
+			await gate;
+			expect(planReady).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("speech plan 400 or a throwing hold never blocks the sound", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { deps, queue } = makeDeps({
+			getRenderer: () => speechRenderer(async () => null),
+			getAlignedSpeechPlanSource: () => async () => {
+				throw new Error("speech plan HTTP 400");
+			},
+		});
+		let planReady: boolean | null = null;
+		const settledWith = vi.fn();
+		createSentenceTtsPipeline(deps).sendSentence("안녕하세요.", {
+			beforePlayback: async ({ speechPlanReady }) => {
+				planReady = await speechPlanReady;
+				throw new Error("wave failed");
+			},
+			onSentenceSettled: settledWith,
+		});
+		await flush();
+		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as Gated & {
+			onPlaybackEnd?: () => void;
+		};
+		await callbacks.beforePlayback?.();
+		expect(planReady).toBe(false);
+		callbacks.onPlaybackStart({ clock: () => 0 });
+		callbacks.onPlaybackEnd?.();
+		expect(settledWith).toHaveBeenCalledWith("played");
+	});
+
+	it("voice failure: the hold runs before the browser fallback and the sentence still settles", async () => {
+		synthesizeMock.mockRejectedValue(new Error("tts 502"));
+		const { deps, queue, reveal } = makeDeps();
+		const hold = vi.fn(async () => {});
+		const settledWith = vi.fn();
+		createSentenceTtsPipeline(deps).sendSentence("안녕하세요.", {
+			beforePlayback: hold,
+			onSentenceSettled: settledWith,
+		});
+		await flush();
+		await flush();
+		expect(hold).toHaveBeenCalledTimes(1);
+		expect(queue.skipOrdered).toHaveBeenCalledTimes(1);
+		expect(reveal).toHaveBeenCalled();
+		expect(settledWith).toHaveBeenCalledTimes(1);
+		expect(settledWith.mock.calls[0][0]).not.toBe("cancelled");
+	});
+});

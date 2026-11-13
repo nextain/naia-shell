@@ -7,6 +7,7 @@ import {
 	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
+import { resolveWebNvaAssetUrl } from "../lib/avatar/nva-speech/speech-asset-prewarm";
 import { shouldUseStackedAlpha } from "../lib/avatar/nva-stacked-alpha";
 import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
 import {
@@ -333,17 +334,13 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				const cached = urls.get(relativePath);
 				if (cached) return cached;
 				if (isWebMode()) {
-					const validatedBase = resolveNvaAssetPath(bundleDir, relativePath);
-					const normalizedRel = relativePath
-						.replace(/\\/g, "/")
-						.replace(/^\/+/, "");
-					const stackedRel = shouldUseStackedAlpha()
-						? (manifest.stacked_alpha?.clips?.[normalizedRel] ??
-							manifest.stacked_alpha?.clips?.[relativePath])
-						: undefined;
-					const url = stackedRel
-						? resolveNvaAssetPath(bundleDir, stackedRel)
-						: validatedBase;
+					const url = resolveWebNvaAssetUrl(
+						bundleDir,
+						manifest,
+						relativePath,
+						shouldUseStackedAlpha(),
+						resolveNvaAssetPath,
+					);
 					urls.set(relativePath, url);
 					return url;
 				}

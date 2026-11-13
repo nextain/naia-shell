@@ -412,6 +412,9 @@ const ttsChunkerOptions = {
 // Built-in skills are always available in UI (non-toggle). The legacy Store
 // blackjack tool stays here because old agent configs treat it as a built-in;
 // its execution authorization still requires the active signed app owner.
+/** Longest the first greeting's sound waits for the wave clip (3.9s) to end. */
+const KIOSK_GREETING_WAVE_LIMIT_MS = 5000;
+
 const BUILTIN_SKILLS = new Set<string>([
 	...MODEL_FACING_TOOL_KEEP_LIST,
 	...LEGACY_APP_TOOL_KEEP_LIST,
@@ -1716,48 +1719,59 @@ export function ChatArea({
 				.addMessage({ role: "assistant", content: KIOSK_DEMO_GREETING });
 		}
 		initializeSpeechTts(config);
-		let greetingMotionTriggered = false;
-		const tryTriggerGreetingMotion = (
-			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
-		): boolean => {
-			if (greetingMotionTriggered || !renderer) return false;
-			greetingMotionTriggered = true;
-			void renderer.warmSpeechAssets?.();
-			const withGreeting = renderer as typeof renderer & {
-				playGreetingAction?: () => Promise<string | null>;
-			};
-			if (typeof withGreeting.playGreetingAction === "function") {
-				void withGreeting.playGreetingAction();
-			} else {
-				void getCameraActions().playAction("greeting");
-			}
-			return true;
-		};
-		let unsubRenderer: (() => void) | null = null;
-		let rendererWaitTimer: ReturnType<typeof setTimeout> | null = null;
-		if (!tryTriggerGreetingMotion(useCascadeAvatarStore.getState().renderer)) {
-			unsubRenderer = useCascadeAvatarStore.subscribe((state) => {
-				if (tryTriggerGreetingMotion(state.renderer)) {
-					unsubRenderer?.();
-					unsubRenderer = null;
-					if (rendererWaitTimer) clearTimeout(rendererWaitTimer);
+		// The wave clip cannot move the mouth and a mouth plan cuts a running
+		// gesture, so the wave starts once the voice is ready and the sound is
+		// held until it ends (wave → speak). Without a mouth plan (plan 400,
+		// late assets) or without a voice, the wave just plays alongside.
+		let greetingWave: Promise<void> | null = null;
+		let greetingWaveTimer: ReturnType<typeof setTimeout> | null = null;
+		const playGreetingWave = (): Promise<void> => {
+			greetingWave ??= new Promise<void>((resolve) => {
+				const renderer = useCascadeAvatarStore.getState().renderer;
+				const done = () => {
+					if (greetingWaveTimer) clearTimeout(greetingWaveTimer);
+					greetingWaveTimer = null;
+					resolve();
+				};
+				greetingWaveTimer = setTimeout(done, KIOSK_GREETING_WAVE_LIMIT_MS);
+				const withGreeting = renderer as
+					| (typeof renderer & {
+							playGreetingAction?: (options?: {
+								onEnded?: () => void;
+							}) => Promise<string | null>;
+					  })
+					| null;
+				if (typeof withGreeting?.playGreetingAction === "function") {
+					void withGreeting.playGreetingAction({ onEnded: done }).then(
+						(key) => {
+							if (!key) done();
+						},
+						done,
+					);
+				} else if (renderer) {
+					void getCameraActions().playAction("greeting").then(done, done);
+				} else {
+					done();
 				}
 			});
-			rendererWaitTimer = setTimeout(() => {
-				unsubRenderer?.();
-				unsubRenderer = null;
-			}, 4000);
-		}
+			return greetingWave;
+		};
 		sentencePipelineRef.current?.sendSentence(KIOSK_DEMO_GREETING, {
-			skipSpeechPlan: true,
+			beforePlayback: async ({ speechPlanReady }) => {
+				const waved = playGreetingWave();
+				if (await speechPlanReady) await waved;
+			},
+			onPlaybackStarted: () => void playGreetingWave(),
+			onSentenceSettled: (outcome) => {
+				if (outcome !== "cancelled") void playGreetingWave();
+			},
 		});
 		finishLocalVoicePrebuffer();
 		return () => {
 			if (sentencePipelineRef.current?.hasActiveRequests()) {
 				requestKioskGreeting();
 			}
-			unsubRenderer?.();
-			if (rendererWaitTimer) clearTimeout(rendererWaitTimer);
+			if (greetingWaveTimer) clearTimeout(greetingWaveTimer);
 		};
 	}, []);
 

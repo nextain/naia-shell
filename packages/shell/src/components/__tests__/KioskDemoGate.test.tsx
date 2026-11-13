@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 	auth: vi.fn(),
 	verifyAuth: vi.fn(),
 	prep: vi.fn(),
+	prewarm: vi.fn(async () => {}),
 	boot: vi.fn(),
 	greeting: vi.fn(),
 	install: vi.fn(),
@@ -28,6 +29,9 @@ vi.mock("../../lib/web-runtime/web-workspace-commands", () => ({
 }));
 vi.mock("../../lib/onboarding-core", () => ({
 	prepareKioskDemoOnboarding: mocks.prep,
+}));
+vi.mock("../../lib/avatar/nva-speech/speech-asset-prewarm", () => ({
+	prewarmWebSpeechAssets: mocks.prewarm,
 }));
 vi.mock("../../lib/web-runtime/auto-install", () => ({
 	bootWebRuntimeAndModel: mocks.boot,
@@ -106,6 +110,8 @@ it("waits for preparation and opens once only after a gesture", async () => {
 	expect((screen.getByText("처음으로") as HTMLButtonElement).disabled).toBe(
 		false,
 	);
+	// Mouth assets are already loading on the entry screen, before the gesture.
+	expect(mocks.prewarm).toHaveBeenCalledOnce();
 	fireEvent.click(screen.getByText("들어가기"));
 	expect(screen.getByText("conversation")).toBeTruthy();
 	expect(mocks.greeting).toHaveBeenCalledOnce();
