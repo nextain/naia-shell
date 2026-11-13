@@ -278,6 +278,21 @@ class NextainSpeechError extends Error {
 	}
 }
 
+/**
+ * Longest one kiosk voice request may take. Only two voice requests run at
+ * once, so a request the gateway never answers held a slot until the next
+ * question and every later sentence waited behind it (r14 review).
+ */
+export const KIOSK_VOICE_REQUEST_TIMEOUT_MS = 20_000;
+
+function withKioskVoiceTimeout(opts: SynthesizeOpts): SynthesizeOpts {
+	const timeout = AbortSignal.timeout(KIOSK_VOICE_REQUEST_TIMEOUT_MS);
+	return {
+		...opts,
+		signal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout,
+	};
+}
+
 function kioskRetryDelayMs(retryAfter: string | null): number {
 	const raw = retryAfter?.trim();
 	if (!raw || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) return 1_000;
@@ -327,7 +342,11 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	try {
 		let result: SynthesizeResult;
 		try {
-			result = await requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_VOICE);
+			result = await requestNextainSpeech(
+				base,
+				withKioskVoiceTimeout(opts),
+				KIOSK_DEMO_TTS_VOICE,
+			);
 		} catch (err) {
 			if (opts.signal?.aborted || isAbortError(err)) throw err;
 			if (
@@ -342,7 +361,11 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 				delayMs,
 			});
 			await waitForKioskRetry(delayMs, opts.signal);
-			result = await requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_VOICE);
+			result = await requestNextainSpeech(
+				base,
+				withKioskVoiceTimeout(opts),
+				KIOSK_DEMO_TTS_VOICE,
+			);
 		}
 		await assertDecodableAudio(result.audioBase64);
 		emitKioskVoiceState("ok");
@@ -355,7 +378,11 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			error: err instanceof Error ? err.message : String(err),
 		});
 		emitKioskVoiceState("fallback");
-		return requestNextainSpeech(base, opts, KIOSK_DEMO_TTS_FALLBACK_VOICE);
+		return requestNextainSpeech(
+			base,
+			withKioskVoiceTimeout(opts),
+			KIOSK_DEMO_TTS_FALLBACK_VOICE,
+		);
 	}
 }
 
