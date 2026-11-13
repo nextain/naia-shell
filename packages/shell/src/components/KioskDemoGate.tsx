@@ -47,19 +47,39 @@ async function cleanupExpiredPreviousVisit(): Promise<void> {
 	});
 }
 
-async function prepare(): Promise<Phase> {
+type AccessRefusal = "missing-key" | "unavailable";
+
+/**
+ * Gateway's word on the demo key. It runs beside the local preparation and
+ * never holds the entry button: a slow or failed balance lookup lets the
+ * visitor in, and a refusal that lands later closes the gate again.
+ */
+async function checkAccess(): Promise<AccessRefusal | null> {
+	if (typeof verifyKioskDemoWebAuth !== "function") return null;
+	try {
+		const verified = await verifyKioskDemoWebAuth();
+		if (
+			!verified.ok &&
+			(verified.reason === "missing-key" || verified.reason === "unavailable")
+		) {
+			return verified.reason;
+		}
+	} catch {
+		// Do not log arbitrary provider exceptions: they may contain credentials.
+		Logger.debug("KioskDemo", "access check failed");
+	}
+	return null;
+}
+
+async function prepare(refused: () => AccessRefusal | null): Promise<Phase> {
 	try {
 		if (!seedKioskDemoWebAuth()) return "missing-key";
-		if (typeof verifyKioskDemoWebAuth === "function") {
-			const verified = await verifyKioskDemoWebAuth();
-			if (!verified.ok) {
-				if (verified.reason === "missing-key") return "missing-key";
-				if (verified.reason === "unavailable") return "unavailable";
-			}
-		}
 		installWebRuntime();
 		await cleanupExpiredPreviousVisit();
 		await prepareKioskDemoOnboarding();
+		// A refusal already known skips the model; a later one closes the gate.
+		const refusal = refused();
+		if (refusal) return refusal;
 		// Mouth assets start loading here so the first greeting can already lip-sync.
 		void prewarmWebSpeechAssets(loadConfig()?.nvaModel);
 		await bootWebRuntimeAndModel({
@@ -162,13 +182,25 @@ export function KioskDemoGate({
 	const [resetFailed, setResetFailed] = useState(false);
 	const resetPending = useRef(false);
 	const preparation = useRef<Promise<Phase> | null>(null);
+	const access = useRef<Promise<AccessRefusal | null> | null>(null);
+	const refused = useRef<AccessRefusal | null>(null);
 	const accepted = useRef(false);
 	useEffect(() => {
 		if (!enabled) return;
 		let active = true;
-		preparation.current ??= prepare();
+		access.current ??= checkAccess().then((refusal) => {
+			refused.current = refusal;
+			return refusal;
+		});
+		preparation.current ??= prepare(() => refused.current);
+		void access.current.then((refusal) => {
+			if (!active || !refusal) return;
+			accepted.current = false;
+			setEntered(false);
+			setPhase(refusal);
+		});
 		void preparation.current.then((next) => {
-			if (active) setPhase(next);
+			if (active) setPhase(refused.current ?? next);
 		});
 		return () => {
 			active = false;
@@ -261,8 +293,10 @@ export function KioskDemoGate({
 									type="button"
 									onClick={() => {
 										setPhase("preparing");
-										preparation.current = prepare();
-										void preparation.current.then(setPhase);
+										preparation.current = prepare(() => refused.current);
+										void preparation.current.then((next) =>
+											setPhase(refused.current ?? next),
+										);
 									}}
 								>
 									다시 시도

@@ -280,6 +280,82 @@ it("transitions back to unavailable screen when credits run out mid-demo", async
 	expect(screen.queryByText("conversation")).toBeNull();
 });
 
+it("enables entry while the balance lookup is still pending", async () => {
+	mocks.verifyAuth.mockImplementationOnce(() => new Promise(() => {}));
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(mocks.boot).toHaveBeenCalledOnce();
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+	expect(mocks.greeting).toHaveBeenCalledOnce();
+});
+
+it("closes the gate when a slow balance lookup reports zero credits after entry", async () => {
+	let answer!: (value: unknown) => void;
+	mocks.verifyAuth.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				answer = resolve;
+			}),
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+
+	answer({ ok: false, reason: "unavailable" });
+	expect(
+		await screen.findByRole("heading", {
+			name: "지금은 시연을 잠시 쉬고 있어요",
+		}),
+	).toBeTruthy();
+	expect(screen.queryByText("conversation")).toBeNull();
+	expect(screen.queryByText("들어가기")).toBeNull();
+});
+
+it("shows the missing key notice when a slow lookup rejects the key before entry", async () => {
+	let answer!: (value: unknown) => void;
+	mocks.verifyAuth.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				answer = resolve;
+			}),
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	answer({ ok: false, reason: "missing-key" });
+	expect(await screen.findByRole("alert")).toHaveProperty(
+		"textContent",
+		"시연 열쇠 없음",
+	);
+	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+		true,
+	);
+	expect(screen.queryByText("conversation")).toBeNull();
+});
+
+it("lets the visitor in when the balance lookup throws", async () => {
+	mocks.verifyAuth.mockRejectedValueOnce(new Error("network"));
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+});
+
 // 시험은 흉내 비밀번호의 해시를 넣어 확인한다. 진짜 비밀번호는 코드에도 시험에도 없다.
 const FAKE_PASSCODE = "0000";
 const WRONG_PASSCODE = "1111";
