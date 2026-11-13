@@ -332,7 +332,7 @@
    대화창 가운데 끌기 토글(▼)을 덮었다(14판 검수 R5). 가로 화면에서는 버튼 줄을 토글 줄 위로 올리고,
    알림은 토글 왼쪽까지만 차지하게 한다. */
 .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .naia-chat-area > .naia-chat-modes {
-	top: -36px;
+	top: -46px;
 }
 .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .naia-chat-area > .kiosk-voice-notice {
 	max-width: calc(50% - 40px);
