@@ -508,7 +508,7 @@ def send_chat(
         retry_env["WAIT"] = "10"
         try:
             retry_res = runner_fn(
-                [f"{BASE_DIR}/jun-send-nz.sh", compact_prompt, "new"],
+                [SEND_SCRIPT, compact_prompt, "new"],
                 cwd=BASE_DIR,
                 env=retry_env,
                 capture_output=True,

@@ -109,18 +109,25 @@ class TestRadioRunsheetFixes(unittest.TestCase):
                 return SimpleNamespace(stdout="답을 만들다 실패했어요. 다시 시도할까요?")
             return SimpleNamespace(stdout="채팅으로 남겨 주신 이야기를 만나 볼게요. 반갑습니다!")
 
-        out_a = runner.send_chat(
-            "코너 ③ 청취자 채팅",
-            "20:00 시험 채팅 1",
-            "질문 프롬프트",
-            wait_sec=18,
-            new_chat=False,
-            history_window=hw,
-            runner_fn=mock_runner_retry_ok,
-            eval_fn=lambda _js: "[]",
-            retry_on_error=True,
-        )
+        saved_send = runner.SEND_SCRIPT
+        runner.SEND_SCRIPT = "/custom/send.sh"
+        try:
+            out_a = runner.send_chat(
+                "코너 ③ 청취자 채팅",
+                "20:00 시험 채팅 1",
+                "질문 프롬프트",
+                wait_sec=18,
+                new_chat=False,
+                history_window=hw,
+                runner_fn=mock_runner_retry_ok,
+                eval_fn=lambda _js: "[]",
+                retry_on_error=True,
+            )
+        finally:
+            runner.SEND_SCRIPT = saved_send
         self.assertIn("채팅으로 남겨 주신 이야기를 만나 볼게요", out_a)
+        # the retry uses the same RADIO_SEND_SCRIPT as the first try
+        self.assertEqual([c[0] for c in calls], ["/custom/send.sh", "/custom/send.sh"])
         self.assertFalse(hw.last_turn_failed)
 
         # Case B: TimeoutExpired -> corner fallback line, shown and played as audio
