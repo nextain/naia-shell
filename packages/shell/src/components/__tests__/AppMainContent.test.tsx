@@ -171,7 +171,7 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 		expect(container.querySelector("img.app-bg-image")?.getAttribute("src")).toBe("/fallback.webp");
 	});
 
-	it("persists manual layout orientation override and applies landscape layout on mobile portrait viewport", () => {
+	it("ignores old manual layout preference on web and follows viewport changes", () => {
 		setWebAssetsModeForTests(true);
 		const prevW = window.innerWidth;
 		const prevH = window.innerHeight;
@@ -202,7 +202,10 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 
 			expect(getStoredLayoutOrientation()).toBe("landscape");
 			expect(localStorage.getItem(LAYOUT_ORIENTATION_STORAGE_KEY)).toBe("landscape");
-			expect(resolveEffectiveLayoutOrientation()).toBe("landscape");
+			expect(resolveEffectiveLayoutOrientation()).toBe("portrait");
+			Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+			Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
+			act(() => window.dispatchEvent(new Event("resize")));
 			expect(appRoot?.getAttribute("data-layout-orientation")).toBe("landscape");
 			expect(document.documentElement.getAttribute("data-layout-orientation")).toBe("landscape");
 		} finally {
@@ -272,7 +275,7 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 
 		const appRoot = container.querySelector(".app-root") as HTMLElement;
 		const appLayoutBefore = container.querySelector(".app-layout") as HTMLElement;
-		expect(appRoot.getAttribute("data-layout-orientation")).toBe("portrait");
+		expect(appRoot.getAttribute("data-layout-orientation")).toBe("landscape");
 		expect(appRoot.style.getPropertyValue("--naia-width")).toBe("260px");
 		expect(appLayoutBefore.style.left).toBe("260px");
 
@@ -299,7 +302,7 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 		);
 
 		const appLayoutDuring = container.querySelector(".app-layout") as HTMLElement;
-		expect(appRoot.getAttribute("data-layout-orientation")).toBe("portrait");
+		expect(appRoot.getAttribute("data-layout-orientation")).toBe("landscape");
 		expect(appRoot.style.getPropertyValue("--naia-width")).toBe("260px");
 		expect(appLayoutDuring.style.left).toBe("260px");
 		expect(localStorage.getItem(LAYOUT_ORIENTATION_STORAGE_KEY)).toBe("portrait");
@@ -330,7 +333,7 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 			/>,
 		);
 
-		expect(appRoot.getAttribute("data-layout-orientation")).toBe("portrait");
+		expect(appRoot.getAttribute("data-layout-orientation")).toBe("landscape");
 		expect(appRoot.style.getPropertyValue("--naia-width")).toBe("260px");
 		expect(localStorage.getItem(LAYOUT_ORIENTATION_STORAGE_KEY)).toBe("portrait");
 		expect(localStorage.getItem("naia:chatHeightRatio")).toBe("0.62");

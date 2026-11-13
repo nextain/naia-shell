@@ -15,7 +15,6 @@ import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	setStoredChatHeightRatio,
 	syncLayoutOrientationAttribute,
-	toggleLayoutOrientation,
 	useEffectiveLayoutOrientation,
 } from "../lib/ui-preferences";
 import type { UpdateInfo } from "../lib/updater";
@@ -292,24 +291,7 @@ export function AppMainContent(props: AppMainContentProps) {
 						{mobileMenu && <div className="web-mobile-menu-list">
 							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
 							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
-							<button
-								type="button"
-								onClick={() => {
-									const next = toggleLayoutOrientation(layoutOrientation);
-									if (isKioskDemo()) {
-										if (next === "landscape" && activeApp === null) {
-											setActiveApp("workspace");
-										} else if (next === "portrait" && activeApp === "workspace") {
-											setActiveApp(null);
-										}
-									}
-									setMobileMenu(false);
-								}}
-							>
-								{layoutOrientation === "portrait"
-									? "가로 배치로 전환"
-									: "세로 배치로 전환"}
-							</button>
+
 							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => (
 								<button
 									type="button"

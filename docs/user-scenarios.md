@@ -3183,3 +3183,14 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 P02 검증: 기본·빈 대화·진행·성공·오류 복구·좁은 폭 상태를 기존 키오스크 Playwright 흐름과 함께 확인한다. 판정 및 확대/해제, 회전, PC·가로 태블릿은 web-assets 단위 시험으로 확인하고 대화 시트 계산은 AppMainContent 시험으로 확인한다. 설정 탭의 키보드 접근과 글자 잘림도 화면에서 확인한다.
 
 확대된 첫 화면의 입장 버튼과 대화판 42% 높이, 크기·방향·시각 뷰포트 변화 및 확대 해제는 웹 단위 시험과 Playwright의 실제 bounding box로 확인한다.
+
+
+## UC-WEB-KIOSK-R13-KL — 시연 지식과 화면
+
+방문자는 지나에게 웹 시험판과 앱 우선 기능, 음성, 운영 성능과 웹의 장점을 물을 수 있고, 첫 인사에서 회사 소개 슬라이드 발표를 들을 수 있다. 작은 창에서 대화창을 펼친 뒤 창을 넓히거나 과거 세로 설정으로 다시 열어도 웹 배치는 현재 화면에 맞고 모바일 대화창은 화면 폭을 채운다.
+
+| 검증 | 범위 |
+|---|---|
+| `src/lib/kiosk-demo/knowledge.test.ts` | 지식 컴파일, 기존 원고 갱신과 방문자 수정 보존 |
+| `src/components/__tests__/ChatArea.test.tsx` | 첫 인사, 음성·입 모양 및 실패 대체 |
+| `src/components/__tests__/AppMainContent.test.tsx`, `e2e/web-mobile-r12.spec.ts` | 창 크기 변경, 저장된 방향, 좁은 폭·메뉴·대화창 조작 |

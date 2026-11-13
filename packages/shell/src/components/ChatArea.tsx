@@ -22,7 +22,7 @@ import {
 	isKioskLocalAnswerEnabled,
 	setKioskLocalAnswerEnabled,
 } from "../lib/config-seed";
-import { KIOSK_DEMO_GREETING } from "../lib/persona";
+import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
 import { verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import { startWebModel } from "../lib/web-runtime/model-start";
@@ -534,11 +534,11 @@ export async function loadOrCreateSession(): Promise<void> {
 				isKioskDemo() &&
 				currentStore.messages.length === 1 &&
 				currentStore.messages[0]?.role === "assistant" &&
-				currentStore.messages[0]?.content === KIOSK_DEMO_GREETING;
+				[KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN].includes(currentStore.messages[0]?.content ?? "");
 			if (currentStore.messages.length === 0 || onlyKioskGreeting) {
 				const restored =
 					onlyKioskGreeting &&
-					history[0]?.content !== KIOSK_DEMO_GREETING &&
+					![KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN].includes(history[0]?.content ?? "") &&
 					currentStore.messages[0]
 						? [currentStore.messages[0], ...history]
 						: history;
@@ -1707,16 +1707,21 @@ export function ChatArea({
 		const config = loadConfig();
 		if (!config) return;
 		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
+		const greeting = getLocale() === "ko" ? KIOSK_DEMO_GREETING : KIOSK_DEMO_GREETING_EN;
+		const initialMessages = useChatStore.getState().messages;
+		if (initialMessages.length === 1 && initialMessages[0].content === KIOSK_DEMO_GREETING && greeting !== KIOSK_DEMO_GREETING) {
+			useChatStore.getState().setMessages([{ ...initialMessages[0], content: greeting }]);
+		}
 		if (
 			!useChatStore
 				.getState()
 				.messages.some(
-					(m) => m.role === "assistant" && m.content === KIOSK_DEMO_GREETING,
+					(m) => m.role === "assistant" && m.content === greeting,
 				)
 		) {
 			useChatStore
 				.getState()
-				.addMessage({ role: "assistant", content: KIOSK_DEMO_GREETING });
+				.addMessage({ role: "assistant", content: greeting });
 		}
 		initializeSpeechTts(config);
 		// The wave clip cannot move the mouth and a mouth plan cuts a running
@@ -1756,7 +1761,7 @@ export function ChatArea({
 			});
 			return greetingWave;
 		};
-		sentencePipelineRef.current?.sendSentence(KIOSK_DEMO_GREETING, {
+		sentencePipelineRef.current?.sendSentence(greeting, {
 			beforePlayback: async ({ speechPlanReady }) => {
 				const waved = playGreetingWave();
 				if (await speechPlanReady) await waved;

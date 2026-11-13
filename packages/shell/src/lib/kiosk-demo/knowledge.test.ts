@@ -61,6 +61,22 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 			applySafety([{ id: "leak.md", text: "이 문서는 대외비 내부자료입니다." }], "block"),
 		).toThrow(SafetyBlockedError);
 	});
+	it("upgrades untouched web knowledge while preserving a visitor-edited manuscript", async () => {
+		on();
+		const fs = createMemoryWebFs();
+		const web = readFileSync("src/lib/kiosk-demo/knowledge/web.md", "utf8");
+		const old = `${web.split("\n\n\n웹 버전")[0]}\n`;
+		const oldKb = JSON.parse(bundled);
+		const card = oldKb.kb.cards.find((item: { sourceUris?: string[] }) => item.sourceUris?.some((uri) => uri.endsWith("/web.md")));
+		card.fields.content = old.split("\n").slice(1).join("\n").trim();
+		await fs.writeBytes(kbPath(KIOSK_SCOPE), JSON.stringify(oldKb));
+		await fs.writeBytes("naia-adk/.bundle/knowledge/web.md", old);
+		await fs.writeBytes("naia-adk/knowledge/web.md", `${old}개인 수정`);
+		await seedKioskKnowledge(fs);
+		expect(await fs.readText("naia-adk/.bundle/knowledge/web.md")).toBe(web);
+		expect(await fs.readText("naia-adk/knowledge/web.md")).toBe(`${old}개인 수정`);
+		expect(await fs.readText(kbPath(KIOSK_SCOPE))).toContain("RTX 3090");
+	});
 	it("rejects sensitive financial content, Korean amounts, equity %, valuation and internal paths", () => {
 		assertPublicKnowledge(bundled);
 		for (const bad of [

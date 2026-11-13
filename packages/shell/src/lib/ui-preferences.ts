@@ -416,6 +416,8 @@ export function getStoredLayoutOrientation(): LayoutOrientation | null {
 }
 
 export function resolveEffectiveLayoutOrientation(): LayoutOrientation {
+	if (typeof document !== "undefined" && document.documentElement.dataset.naiaWeb === "true")
+		return detectViewportLayoutOrientation();
 	return getStoredLayoutOrientation() ?? detectViewportLayoutOrientation();
 }
 

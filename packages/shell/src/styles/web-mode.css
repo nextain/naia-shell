@@ -739,6 +739,7 @@
 	top: auto;
 	left: 0 !important;
 	width: 100% !important;
+	max-width: 100% !important;
 	max-height: none;
 	bottom: var(--mobile-viewport-bottom, 0px);
 	pointer-events: auto;
@@ -1256,3 +1257,6 @@
 [data-naia-web="true"][data-naia-mobile="true"] .bgm-track-toggle,
 [data-naia-web="true"][data-naia-mobile="true"] .bgm-volume { display: none; }
 [data-naia-web="true"][data-naia-mobile="true"] .bgm-player-controls { justify-content: center; }
+
+/* Web layout follows the viewport; the native shell keeps its manual control. */
+[data-naia-web="true"] [data-testid="layout-orientation-toggle"] { display: none; }

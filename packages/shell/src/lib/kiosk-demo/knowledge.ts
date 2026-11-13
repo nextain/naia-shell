@@ -97,6 +97,29 @@ const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
 	query: "?raw",
 	import: "default",
 });
+
+// Upgrade only the untouched bundled web manuscript and its compiled card.
+const R13_OLD_WEB = "# 웹판 브라우저 입구\n\n설치 없이 웹에서 쓸 수 있나요라는 질문에 답하면, 웹판은 가벼운 사용자가 **설치 없이 브라우저에서 시작**하는 기본 입구이며 웹판과 이번 시연의 지원 범위를 구분해 안내합니다. 휴대폰 화면 배치와 파일 탐색기, 기억 내보내기 등이 개발되었습니다. 2026년 11월 기준 웹판 0.2.5는 핵심 기능 개발을 마치고 공개 전 마무리 단계입니다. 이번 IR 시연은 웹판에서 시연 전용 계정과 준비된 회사 지식을 사용하는 구성입니다. 일반 서비스 전체의 공개 출시나 모든 데스크톱 명령 지원을 뜻하지 않습니다. 시연 화면의 기능은 이번 시연 범위에 든 것부터 안내합니다.\n";
+async function upgradeBundledWebKnowledge(fs: WebFs): Promise<void> {
+ const updated = manuscripts["./knowledge/web.md"];
+ for (const path of [webAdkOpfsPath(`${KIOSK_SOURCE_DIR}/web.md`), webAdkOpfsPath("knowledge/web.md")]) {
+  if ((await fs.readText(path))?.trim() === R13_OLD_WEB.trim()) await fs.writeBytes(path, updated);
+ }
+ const path = kbPath(KIOSK_SCOPE);
+ const raw = await fs.readText(path);
+ if (!raw) return;
+ try {
+  const current = JSON.parse(raw);
+  const fresh = JSON.parse(kbRaw);
+  const card = current.kb?.cards?.find((item: { sourceUris?: string[] }) => item.sourceUris?.some((uri) => uri.endsWith("/web.md")));
+  const replacement = fresh.kb?.cards?.find((item: { sourceUris?: string[] }) => item.sourceUris?.some((uri) => uri.endsWith("/web.md")));
+  if (card?.fields?.content === R13_OLD_WEB.split("\n").slice(1).join("\n").trim() && replacement) {
+   card.fields = replacement.fields;
+   await fs.writeBytes(path, JSON.stringify(current, null, 2));
+  }
+ } catch { /* Leave custom or invalid data untouched. */ }
+}
+
 const configPath = webAdkOpfsPath("naia-settings/knowledge.json");
 export const kbPath = (scope: string) =>
 	webAdkOpfsPath(`naia-settings/knowledge/${safeScope(scope)}/kb.json`);
@@ -261,6 +284,7 @@ export async function seedKioskKnowledge(fs: WebFs): Promise<void> {
 			Logger.debug("KioskKnowledge", "seed public KB", { scope: KIOSK_SCOPE });
 			parseKioskKb(kbRaw);
 			await migrateLegacyKioskKnowledge(fs);
+			await upgradeBundledWebKnowledge(fs);
 			for (const [path, text] of Object.entries(manuscripts)) {
 				const sourcePath = webAdkOpfsPath(
 					`${KIOSK_SOURCE_DIR}/${path.split("/").pop()!}`,

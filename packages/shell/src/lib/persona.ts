@@ -273,4 +273,7 @@ export const KIOSK_DEMO_PERSONA = `당신은 넥스테인의 안내 직원 지�
 비공개 자료나 매출 등 민감한 수치는 안내하지 않습니다.`;
 
 export const KIOSK_DEMO_GREETING =
-	"게스트님, 안녕하세요. 넥스테인의 안내를 맡은 지나입니다. 나이아와 넥스테인이 궁금하시면 편하게 물어봐 주세요.";
+	"게스트님, 안녕하세요. 넥스테인의 안내를 맡은 지나입니다. 나이아와 넥스테인이 궁금하시면 편하게 물어봐 주세요. 회사 소개 슬라이드 발표도 해 드릴 수 있어요.";
+
+export const KIOSK_DEMO_GREETING_EN =
+	"Hello, guest. I’m Jina, your guide to Nextain. Please ask me about Naia and Nextain. I can also present our company introduction slides.";

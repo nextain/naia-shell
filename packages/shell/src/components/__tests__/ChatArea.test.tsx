@@ -429,7 +429,7 @@ describe("ChatArea", () => {
 			);
 			expect(aligned).toHaveBeenCalledWith(
 				expect.objectContaining({
-					text: expect.stringContaining("안내를 맡은 지나입니다"),
+					text: expect.stringContaining("your guide to Nextain"),
 				}),
 			);
 			// The wave waits for the voice: nothing waved while it was synthesized.
@@ -472,7 +472,7 @@ describe("ChatArea", () => {
 			expect(
 				useChatStore
 					.getState()
-					.messages.some((m) => m.content.includes("안내를 맡은 지나입니다")),
+					.messages.some((m) => m.content.includes("your guide to Nextain")),
 			).toBe(true);
 		});
 
@@ -492,7 +492,7 @@ describe("ChatArea", () => {
 			expect(
 				useChatStore
 					.getState()
-					.messages.some((m) => m.content.includes("안내를 맡은 지나입니다")),
+					.messages.some((m) => m.content.includes("your guide to Nextain")),
 			).toBe(true);
 		});
 	});
