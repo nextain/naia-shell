@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,6 +8,7 @@ import {
 	DEFAULT_PRIVATE_SLIDES_PATHS,
 	ensureWebKioskPrivateSlides,
 	readPrivateSlidesManifest,
+	webKioskPrivateSlidesWanted,
 } from "../web-kiosk-private-slides.mjs";
 
 const IMAGE = "0123456789abcdef.jpg";
@@ -114,6 +116,51 @@ describe("web-kiosk-private-slides", () => {
 		expect(fs.readFileSync(path.join(paths.imageDir, IMAGE))).toEqual(
 			IMAGE_BYTES,
 		);
+	});
+
+	it("removes pictures the record does not list, with or without a source", () => {
+		writeSource();
+		ensureWebKioskPrivateSlides({ ...paths, source: sourceDir });
+		const orphan = path.join(paths.imageDir, "fedcba9876543210.jpg");
+		const partial = path.join(paths.imageDir, `${IMAGE}.partial`);
+		fs.writeFileSync(orphan, "older-picture");
+		fs.writeFileSync(partial, "half");
+		ensureWebKioskPrivateSlides(paths);
+		expect(fs.readdirSync(paths.imageDir)).toEqual([IMAGE]);
+	});
+
+	it("removes unlisted pictures even when the build then stops for a missing file", () => {
+		fs.mkdirSync(paths.imageDir, { recursive: true });
+		fs.writeFileSync(path.join(paths.imageDir, "fedcba9876543210.jpg"), "x");
+		expect(() => ensureWebKioskPrivateSlides(paths)).toThrow(
+			/NAIA_WEB_KIOSK_PRIVATE_SLIDES_SOURCE/,
+		);
+		expect(fs.readdirSync(paths.imageDir)).toEqual([]);
+	});
+
+	it("is wanted only for the kiosk demo build", () => {
+		expect(webKioskPrivateSlidesWanted({ VITE_NAIA_KIOSK_DEMO: "1" })).toBe(
+			true,
+		);
+		expect(webKioskPrivateSlidesWanted({})).toBe(false);
+		expect(webKioskPrivateSlidesWanted({ VITE_NAIA_KIOSK_DEMO: "0" })).toBe(
+			false,
+		);
+	});
+
+	it("skips the build step without the demo flag, even with no source", () => {
+		const {
+			VITE_NAIA_KIOSK_DEMO: _demo,
+			NAIA_WEB_KIOSK_PRIVATE_SLIDES_SOURCE: _source,
+			...env
+		} = process.env;
+		const run = spawnSync(
+			process.execPath,
+			[path.resolve(__dirname, "../web-kiosk-private-slides.mjs")],
+			{ env, encoding: "utf8" },
+		);
+		expect(run.status).toBe(0);
+		expect(run.stdout).toContain("건너뜀");
 	});
 
 	it("rejects a relative source", () => {

@@ -110,6 +110,22 @@ function assertScriptFollowsManifest(deck, manifest, scriptFile) {
 	}
 }
 
+// 그림 디렉터리는 통째로 산출물에 복사된다. 기록에 없는 파일(바뀌기 전 그림 등)이 남아 공개되지 않게 지운다.
+function removeUnrecordedPictures(imageDir, manifest, log) {
+	if (!fs.existsSync(imageDir)) return;
+	const recorded = new Set(manifest.slides.map((slide) => slide.image));
+	for (const name of fs.readdirSync(imageDir)) {
+		if (recorded.has(name)) continue;
+		log(`[web-kiosk-private-slides] 기록에 없는 파일 지움 ${name}`);
+		fs.rmSync(path.join(imageDir, name), { recursive: true, force: true });
+	}
+}
+
+/** 비공개 장은 시연판 빌드에서만 쓴다(vite.config.ts 의 kioskPrivateSlidesPlugin 과 같은 판정). */
+export function webKioskPrivateSlidesWanted(env = process.env) {
+	return env.VITE_NAIA_KIOSK_DEMO === "1";
+}
+
 /** 비공개 장의 그림과 원고가 기록과 같은지 확인하고, 다르거나 없으면 원천에서 가져온다. */
 export function ensureWebKioskPrivateSlides(options = {}) {
 	const { manifestPath, imageDir, scriptFile } = {
@@ -119,6 +135,7 @@ export function ensureWebKioskPrivateSlides(options = {}) {
 	const source = options.source ?? "";
 	const log = options.log ?? (() => {});
 	const manifest = readPrivateSlidesManifest(manifestPath);
+	removeUnrecordedPictures(imageDir, manifest, log);
 	const wanted = [
 		...manifest.slides.map((slide) => ({
 			record: slide,
@@ -146,8 +163,15 @@ export function ensureWebKioskPrivateSlides(options = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	ensureWebKioskPrivateSlides({
-		source: process.env[PRIVATE_SLIDES_SOURCE_ENV],
-		log: (line) => console.log(line),
-	});
+	if (webKioskPrivateSlidesWanted()) {
+		ensureWebKioskPrivateSlides({
+			source: process.env[PRIVATE_SLIDES_SOURCE_ENV],
+			log: (line) => console.log(line),
+		});
+	} else {
+		// 일반 웹판은 공개 장만 쓰고 kiosk-slides 를 산출물에서 지운다. 원천 없이도 빌드된다.
+		console.log(
+			"[web-kiosk-private-slides] 시연판 빌드가 아니라 건너뜀 (VITE_NAIA_KIOSK_DEMO 가 1 이 아님)",
+		);
+	}
 }
