@@ -140,9 +140,8 @@ export async function readAdkSnapshot(
 export interface ActiveSlideRequestContext {
 	page: number;
 	title: string;
-	subtitle?: string;
+	/** 근거로 삼는 발표 대본의 탐색기 경로 (`slides/*.md`). */
 	source: string;
-	bullets: string[];
 	script: string;
 	restrictToSlide?: boolean;
 	instructions: string;
@@ -180,15 +179,10 @@ export function extractActiveSlideFromChatRequest(
 					const d = entry.data;
 					const page = typeof d.page === "number" ? d.page : 1;
 					const title = typeof d.title === "string" ? d.title : "";
-					const subtitle =
-						typeof d.subtitle === "string" ? d.subtitle : undefined;
 					const source =
 						typeof d.source === "string" && d.source.trim()
 							? d.source.trim()
-							: "brand.md";
-					const bullets = Array.isArray(d.bullets)
-						? d.bullets.filter((b): b is string => typeof b === "string")
-						: [];
+							: "slides/nextain-ir-public.md";
 					const script = typeof d.script === "string" ? d.script : "";
 					const restrictToSlide = d.restrictToSlide !== false;
 					const instructions =
@@ -197,9 +191,7 @@ export function extractActiveSlideFromChatRequest(
 						return {
 							page,
 							title,
-							subtitle,
 							source,
-							bullets,
 							script,
 							restrictToSlide,
 							instructions,

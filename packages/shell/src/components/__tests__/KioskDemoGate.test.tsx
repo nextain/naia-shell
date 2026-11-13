@@ -8,6 +8,11 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import {
+	KIOSK_PASSCODE_PASSED_KEY,
+	KIOSK_PASSCODE_SHA256,
+	sha256Hex,
+} from "../../lib/kiosk-demo/passcode";
 import { KioskDemoGate } from "../KioskDemoGate";
 const mocks = vi.hoisted(() => ({
 	auth: vi.fn(),
@@ -49,6 +54,8 @@ vi.mock("../../lib/kiosk-demo/memory", () => ({
 beforeEach(() => {
 	localStorage.clear();
 	sessionStorage.clear();
+	// 비밀번호 화면은 아래 전용 시험에서만 본다. 나머지는 이미 통과한 브라우저로 시작한다.
+	localStorage.setItem(KIOSK_PASSCODE_PASSED_KEY, "1");
 	vi.stubEnv("MODE", "web");
 	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 	vi.clearAllMocks();
@@ -271,4 +278,65 @@ it("transitions back to unavailable screen when credits run out mid-demo", async
 	expect(screen.queryByText("지나와 이야기해 보세요")).toBeNull();
 	expect(screen.queryByText("들어가기")).toBeNull();
 	expect(screen.queryByText("conversation")).toBeNull();
+});
+
+// 시험은 흉내 비밀번호의 해시를 넣어 확인한다. 진짜 비밀번호는 코드에도 시험에도 없다.
+const FAKE_PASSCODE = "0000";
+const WRONG_PASSCODE = "1111";
+const mountWithPasscode = async () => {
+	const fakeSha256 = await sha256Hex(FAKE_PASSCODE);
+	expect(fakeSha256).not.toBe(KIOSK_PASSCODE_SHA256);
+	return render(
+		<StrictMode>
+			<KioskDemoGate passcodeSha256={fakeSha256}>
+				<div>conversation</div>
+			</KioskDemoGate>
+		</StrictMode>,
+	);
+};
+it("asks a 4-digit passcode with a numeric keypad before the entry screen", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	await mountWithPasscode();
+	const input = screen.getByTestId("kiosk-passcode-input");
+	expect(input.getAttribute("inputmode")).toBe("numeric");
+	expect(input.getAttribute("maxlength")).toBe("4");
+	expect(screen.queryByRole("button", { name: "들어가기" })).toBeNull();
+	expect(screen.queryByText("conversation")).toBeNull();
+});
+it("keeps the gate closed on a wrong passcode and lets the visitor type again", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	await mountWithPasscode();
+	const input = screen.getByTestId("kiosk-passcode-input") as HTMLInputElement;
+	fireEvent.change(input, { target: { value: WRONG_PASSCODE } });
+	expect((await screen.findByRole("alert")).textContent).toContain(
+		"비밀번호가 맞지 않아요",
+	);
+	expect(input.value).toBe("");
+	expect(screen.queryByRole("button", { name: "들어가기" })).toBeNull();
+	expect(localStorage.getItem(KIOSK_PASSCODE_PASSED_KEY)).toBeNull();
+	fireEvent.change(input, { target: { value: FAKE_PASSCODE } });
+	expect(await screen.findByRole("button", { name: "들어가기" })).toBeTruthy();
+});
+it("opens on the right passcode, stores only the pass flag, and does not ask again", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	const first = await mountWithPasscode();
+	fireEvent.change(screen.getByTestId("kiosk-passcode-input"), {
+		target: { value: FAKE_PASSCODE },
+	});
+	expect(await screen.findByRole("button", { name: "들어가기" })).toBeTruthy();
+	expect(localStorage.getItem(KIOSK_PASSCODE_PASSED_KEY)).toBe("1");
+	const stored = JSON.stringify({ ...localStorage });
+	expect(stored).not.toContain(FAKE_PASSCODE);
+	expect(stored).not.toContain(await sha256Hex(FAKE_PASSCODE));
+	first.unmount();
+	await mountWithPasscode();
+	expect(screen.queryByTestId("kiosk-passcode-input")).toBeNull();
+	expect(await screen.findByRole("button", { name: "들어가기" })).toBeTruthy();
+});
+it("does not show the passcode screen outside the demo build", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+	await mountWithPasscode();
+	expect(screen.getByText("conversation")).toBeTruthy();
+	expect(screen.queryByTestId("kiosk-passcode-input")).toBeNull();
 });

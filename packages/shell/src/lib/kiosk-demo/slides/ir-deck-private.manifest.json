@@ -1,0 +1,27 @@
+{
+	"script": {
+		"file": "ir-deck-private.json",
+		"sha256": "ff3022b5847de26a78ffe18321e007237ccd8dbd3edce4bd32b00a93b10654b3",
+		"bytes": 1071
+	},
+	"slides": [
+		{
+			"page": 7,
+			"image": "f608c264bcc0b826.jpg",
+			"sha256": "5e103f9a311b9194af9af1ffa0da0115b5407c675a348208af2a3e11e6eea97a",
+			"bytes": 212505
+		},
+		{
+			"page": 8,
+			"image": "779234950ed72e5f.jpg",
+			"sha256": "8e7f2b20124a9d8186a5c75911dd3bd392becd889baf1978e20994f41ba7a3c4",
+			"bytes": 141890
+		},
+		{
+			"page": 9,
+			"image": "0a815c0b4003be18.jpg",
+			"sha256": "7b82dd0b22fc6cbcf46a83d1d5b3bca29d2b7b403be29b3ee3ea472cd2abdd32",
+			"bytes": 118160
+		}
+	]
+}

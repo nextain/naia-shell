@@ -9,13 +9,15 @@ const normalizeKioskEvidenceFile = (raw: string): string | null => {
 	if (/^jina\.md$/i.test(fileName)) return "persona/jina.md";
 	if (/^guest-memory\.md$/i.test(fileName)) return "memory/guest-memory.md";
 	if (/^response-rules\.md$/i.test(fileName)) return "rules/response-rules.md";
+	if (/^nextain-ir-public\.md$/i.test(fileName))
+		return "slides/nextain-ir-public.md";
 	return `knowledge/${fileName}`;
 };
 
-// 근거 칩은 실제 지식 자료(knowledge/*.md)를 읽은 답에만 붙인다. 지시 파일(AGENTS.md)·기억 파일을
+// 근거 칩은 실제 지식 자료(knowledge/*.md)나 발표 대본(slides/*.md)을 읽은 답에만 붙인다. 지시 파일(AGENTS.md)·기억 파일을
 // 기본으로 붙이거나 답 본문에 적힌 파일 이름을 근거로 삼지 않는다.
 const isKnowledgeEvidence = (file: string): boolean =>
-	file.startsWith("knowledge/");
+	file.startsWith("knowledge/") || file.startsWith("slides/");
 
 export const resolveKioskEvidenceFiles = (msg: ChatMessage): string[] => {
 	if (msg.role !== "assistant" || msg.failure || !msg.content.trim()) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import rawIrPublicDeck from "../../src/lib/kiosk-demo/slides/ir-public.json";
+import rawIrDeck from "../../src/lib/kiosk-demo/slides/ir-deck.json";
 import {
 	type AdkSnapshot,
 	type DirLike,
@@ -335,16 +335,16 @@ describe("adk-snapshot-fs", () => {
 		});
 
 		it("injects active slide body, speaker script, and rules into the actual model messages for diverse slide questions while suppressing general KB search instructions", async () => {
-			const slide2 = rawIrPublicDeck.slides[1]!;
+			const slide2 = rawIrDeck.slides[1]!;
+			const SLIDE_SCRIPT_FILE = "slides/nextain-ir-public.md";
 			const buildSlidePrompt = (question: string) =>
 				[
-					`[현재 발표 중인 슬라이드: ${slide2.page}장 — ${slide2.title} (${slide2.subtitle})]`,
-					`장 원고 파일: knowledge/${slide2.source}`,
-					`장 본문 요점:\n${slide2.bullets.map((b) => `- ${b}`).join("\n")}`,
+					`[현재 발표 중인 슬라이드: ${slide2.page}장 — ${slide2.title}]`,
+					`발표 대본 파일: ${SLIDE_SCRIPT_FILE}`,
 					`장 발표문:\n${slide2.script}`,
 					`규칙:`,
-					`1. 발표 중간 질문에는 반드시 지금 보고 있는 ${slide2.page}장('${slide2.title}')의 장 본문 요점과 장 발표문에 적힌 내용만으로 답하세요.`,
-					`5. 근거 파일은 오직 knowledge/${slide2.source} 하나만 사용하세요.`,
+					`1. 발표 중간 질문에는 반드시 지금 보고 있는 ${slide2.page}장('${slide2.title}')의 제목과 장 발표문에 적힌 내용만으로 답하세요.`,
+					`5. 근거 파일은 오직 ${SLIDE_SCRIPT_FILE} 하나만 사용하세요.`,
 					`사용자 질문: ${question}`,
 				].join("\n");
 			const questions = [
@@ -368,9 +368,7 @@ describe("adk-snapshot-fs", () => {
 									data: {
 										page: slide2.page,
 										title: slide2.title,
-										subtitle: slide2.subtitle,
-										source: slide2.source,
-										bullets: slide2.bullets,
+										source: SLIDE_SCRIPT_FILE,
 										script: slide2.script,
 										instructions: buildSlidePrompt(question),
 									},
@@ -383,8 +381,8 @@ describe("adk-snapshot-fs", () => {
 				const activeSlide = extractActiveSlideFromChatRequest(rawChatRequest);
 				expect(activeSlide).not.toBeNull();
 				expect(activeSlide?.page).toBe(2);
-				expect(activeSlide?.source).toBe("brand.md");
-				expect(activeSlide?.bullets).toEqual(slide2.bullets);
+				expect(activeSlide?.source).toBe(SLIDE_SCRIPT_FILE);
+				expect(activeSlide).not.toHaveProperty("bullets");
 				expect(activeSlide?.script).toBe(slide2.script);
 
 				const systemPrompt = buildKioskSystemPromptFromSnapshot(
@@ -399,11 +397,10 @@ describe("adk-snapshot-fs", () => {
 				);
 
 				expect(systemPrompt).toContain(
-					"[현재 발표 중인 슬라이드: 2장 — 브랜드 체계: 나이아와 별자리 모델 이름 (Brand & Naming Universe)]",
+					`[현재 발표 중인 슬라이드: 2장 — ${slide2.title}]`,
 				);
-				expect(systemPrompt).toContain("장 원고 파일: knowledge/brand.md");
 				expect(systemPrompt).toContain(
-					"별자리 코드명: 루나(달)·테라(지구)·솔(태양)·스텔라(별)·노바(신성)",
+					`발표 대본 파일: ${SLIDE_SCRIPT_FILE}`,
 				);
 				expect(systemPrompt).toContain(slide2.script);
 				expect(systemPrompt).toContain(`사용자 질문: ${question}`);
@@ -465,12 +462,9 @@ describe("adk-snapshot-fs", () => {
 				expect(capturedBodies).toHaveLength(1);
 				const wireMessages = capturedBodies[0]!.messages;
 				expect(wireMessages[0]?.role).toBe("system");
-				expect(wireMessages[0]?.content).toContain(
-					"별자리 코드명: 루나(달)·테라(지구)·솔(태양)·스텔라(별)·노바(신성)",
-				);
 				expect(wireMessages[0]?.content).toContain(slide2.script);
 				expect(wireMessages[0]?.content).toContain(
-					"근거 파일은 오직 knowledge/brand.md 하나만 사용하세요.",
+					`근거 파일은 오직 ${SLIDE_SCRIPT_FILE} 하나만 사용하세요.`,
 				);
 				expect(wireMessages[1]).toEqual({ role: "user", content: question });
 

@@ -50,6 +50,8 @@ export const extractKioskToolFiles = (tool: ToolCall): string[] => {
 				found.add("memory/guest-memory.md");
 			} else if (/^response-rules\.md$/i.test(fileName)) {
 				found.add("rules/response-rules.md");
+			} else if (/^nextain-ir-public\.md$/i.test(fileName)) {
+				found.add("slides/nextain-ir-public.md");
 			} else if (!found.has(`knowledge/${fileName}`) && knowledgeCount < 2) {
 				found.add(`knowledge/${fileName}`);
 				knowledgeCount += 1;

@@ -4,7 +4,10 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { t } from "../../lib/i18n";
-import type { KioskIrSlide } from "../../lib/kiosk-demo/slides";
+import {
+	type KioskIrSlide,
+	kioskIrSlideImageUrl,
+} from "../../lib/kiosk-demo/slides";
 
 type SlidesWorkerLocation = Pick<Location, "protocol" | "host" | "pathname">;
 
@@ -144,35 +147,19 @@ export function SlidesViewer({
 						) : null}
 					</Document>
 					{slideCard ? (
-						<article
+						<figure
 							className="slides-app__card-overlay"
 							data-testid="slides-card-overlay"
 							data-slide-page={slideCard.page}
 						>
-							<div className="slides-app__card-meta">
-								<span className="slides-app__card-badge">
-									IR {String(slideCard.page).padStart(2, "0")} /{" "}
-									{String(Math.max(1, totalPages)).padStart(2, "0")}
-								</span>
-								<span className="slides-app__card-subtitle">
-									{slideCard.subtitle}
-								</span>
-							</div>
-							<h2
-								className="slides-app__card-title"
-								data-testid="slides-card-title"
-							>
-								{slideCard.title}
-							</h2>
-							<ul
-								className="slides-app__card-bullets"
-								data-testid="slides-card-bullets"
-							>
-								{slideCard.bullets.map((bullet, index) => (
-									<li key={`${slideCard.id}-${index}`}>{bullet}</li>
-								))}
-							</ul>
-						</article>
+							<img
+								className="slides-app__card-image"
+								data-testid="slides-card-image"
+								src={kioskIrSlideImageUrl(slideCard)}
+								alt={slideCard.title}
+								draggable={false}
+							/>
+						</figure>
 					) : null}
 				</div>
 			) : (

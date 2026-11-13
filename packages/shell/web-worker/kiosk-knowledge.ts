@@ -2,19 +2,16 @@
 import { makeKnowledgeSkillsExecutor } from "@naia-agent/adapters/knowledge-skill.js";
 import type { ToolExecutorPort } from "@naia-agent/ports/uc1.js";
 import { createOpfsWebFs } from "../src/lib/web-runtime/web-fs";
-import {
-	KIOSK_SOURCE,
-	readKioskKnowledgeService,
-} from "../src/lib/kiosk-demo/knowledge";
+import { readKioskKnowledgeService } from "../src/lib/kiosk-demo/knowledge";
 import type { ActiveSlideRequestContext } from "./adk-snapshot-fs";
 
 function buildActiveSlideHit(slide: ActiveSlideRequestContext) {
-	const snippet = [...slide.bullets, slide.script].filter(Boolean).join(" ");
+	const snippet = [slide.title, slide.script].filter(Boolean).join(" ");
 	return {
 		title: slide.title,
 		snippet,
 		score: 1,
-		sourceUris: [`${KIOSK_SOURCE}/${slide.source}`],
+		sourceUris: [`opfs://naia-adk/${slide.source}`],
 	};
 }
 

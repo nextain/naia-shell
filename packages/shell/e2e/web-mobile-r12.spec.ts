@@ -11,6 +11,7 @@ for (const scenario of [
  test("layout and settings", async ({ page }) => {
  await page.route(/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::|\/|$))/, route => route.abort());
  await page.route("**/v1/profile/balance", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ credits: 100 }) }));
+ await page.addInitScript(() => localStorage.setItem("naia-kiosk-passcode-passed", "1"));
  await page.addInitScript(({width, height}) => {
   Object.defineProperty(screen, "width", { configurable: true, value: width });
   Object.defineProperty(screen, "height", { configurable: true, value: height });

@@ -7,6 +7,8 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { createElement } from "react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,8 +34,8 @@ import { useChatStore } from "../../stores/chat";
 import * as kioskFlag from "./flag";
 import {
 	FORBIDDEN_IR_SLIDE_WORDS,
-	type KioskIrDeck,
 	assertPublicIrSlides,
+	buildKioskIrDeck,
 	buildKioskIrPdfBytes,
 	buildKioskIrScriptMarkdown,
 	buildKioskSlideQuestionPrompt,
@@ -43,12 +45,32 @@ import {
 	getKioskIrSlide,
 	getKioskIrSlides,
 	handleKioskSlidesChatTurn,
+	kioskIrSlideImageUrl,
 	isKioskSlideQuestionTurnActive,
 	notifyKioskSlidesTurnSettled,
 	registerKioskSlidesController,
 	seedKioskSlidesWorkspace,
 } from "./slides";
-import rawIrPublicDeck from "./slides/ir-public.json";
+import rawIrDeck from "./slides/ir-deck.json";
+import rawPrivateManifest from "./slides/ir-deck-private.manifest.json";
+import { getKioskPrivateIrSlides } from "./slides/private-deck";
+
+// 비공개 장(숫자가 든 장)의 원고는 저장소 밖에 있다. 시험은 기록된 쪽 번호·그림 이름에 시험용 원고를 붙여 쓴다.
+vi.mock("./slides/private-deck", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("./slides/private-deck")>();
+	return {
+		...actual,
+		getKioskPrivateIrSlides: vi.fn(() =>
+			actual.KIOSK_PRIVATE_IR_SLIDE_PAGES.map((page, index) => ({
+				page,
+				image: actual.KIOSK_PRIVATE_IR_SLIDE_IMAGES[index]!,
+				title: `시험용 비공개 장 ${page}`,
+				script: `시험용 비공개 장 ${page}의 낭독 원고예요. 실제 원고는 저장소 밖에 있어요.`,
+			})),
+		),
+	};
+});
 
 vi.mock("../logger", () => ({
 	Logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -131,48 +153,102 @@ describe("kiosk-demo S6 public IR slides", () => {
 		useAppStore.getState().setActiveApp(null);
 	});
 
-	it("provides an 8-10 slide public IR deck with <=3 bullets per slide and zero sensitive words", () => {
+	it("provides the 9-slide company intro deck: one picture, title and script per slide", () => {
 		const slides = getKioskIrSlides();
-		expect(slides.length).toBeGreaterThanOrEqual(8);
-		expect(slides.length).toBeLessThanOrEqual(10);
+		expect(slides.length).toBe(9);
+		expect(rawIrDeck.slides.length + rawPrivateManifest.slides.length).toBe(9);
 
-		const rawJson = JSON.stringify(rawIrPublicDeck);
-		for (const forbidden of [
-			"매출",
-			"투자",
-			"억",
-			"밸류",
-			"계약금",
-			"계약 금액",
-			"영업이익",
-			"순이익",
-			"지분",
-			"기업가치",
-			"개인 정보",
-			"개인정보",
-			...FORBIDDEN_IR_SLIDE_WORDS,
-		]) {
+		const rawJson = JSON.stringify(rawIrDeck);
+		for (const forbidden of FORBIDDEN_IR_SLIDE_WORDS) {
 			expect(rawJson).not.toContain(forbidden);
 		}
+		// 재료 폴더의 원래 그림 이름과 원본 자료 쪽 번호·파일 이름은 덱에 남기지 않는다.
+		expect(rawJson).not.toMatch(/slide-\d+\.jpg|irPage|\.pdf/);
 
+		const images = new Set<string>();
 		for (let i = 0; i < slides.length; i += 1) {
 			const slide = slides[i]!;
 			expect(slide.page).toBe(i + 1);
 			expect(slide.title.trim().length).toBeGreaterThan(0);
-			expect(slide.bullets.length).toBeGreaterThanOrEqual(1);
-			expect(slide.bullets.length).toBeLessThanOrEqual(3);
-			for (const bullet of slide.bullets) {
-				expect(bullet.trim().length).toBeGreaterThan(0);
-				expect(bullet).not.toContain("\n");
-			}
 			expect(slide.script.trim().length).toBeGreaterThan(20);
-			expect(getKioskIrSlide(slide.page)?.id).toBe(slide.id);
+			expect(slide.image).toMatch(/^[0-9a-f]{16}\.jpg$/);
+			images.add(slide.image);
+			expect(getKioskIrSlide(slide.page)?.image).toBe(slide.image);
 		}
+		expect(images.size).toBe(slides.length);
 	});
 
-	it("rejects decks containing sensitive financial terms or >3 bullet lines", () => {
-		const baseDeck = structuredClone(rawIrPublicDeck) as KioskIrDeck;
-		for (const word of ["매출", "투자", "억", "밸류", "계약금"]) {
+	it("keeps the number slides out of the repository: only page, file name, sha256 and bytes are recorded", () => {
+		const rawJson = JSON.stringify(rawIrDeck);
+		expect(rawJson).not.toMatch(/\d[\d,]*\s*(?:만\s*원|억|명)/);
+		const privateImages = rawPrivateManifest.slides.map((slide) => slide.image);
+		for (const slide of rawIrDeck.slides) {
+			expect(privateImages).not.toContain(slide.image);
+		}
+		for (const record of [...rawPrivateManifest.slides, rawPrivateManifest.script]) {
+			expect(record.sha256).toMatch(/^[0-9a-f]{64}$/);
+			expect(record.bytes).toBeGreaterThan(0);
+		}
+		for (const record of rawPrivateManifest.slides) {
+			expect(Object.keys(record).sort()).toEqual([
+				"bytes",
+				"image",
+				"page",
+				"sha256",
+			]);
+			expect(
+				kioskIrSlideImageUrl(record),
+			).toBe(`/kiosk-slides/private/${record.image}`);
+		}
+		expect(Object.keys(rawPrivateManifest.script).sort()).toEqual([
+			"bytes",
+			"file",
+			"sha256",
+		]);
+	});
+
+	it("runs on the public slides alone when no private slides are built in, and rejects private pages that differ from the record", () => {
+		vi.mocked(getKioskPrivateIrSlides).mockReturnValueOnce([]);
+		const publicOnly = getKioskIrSlides();
+		expect(publicOnly.map((slide) => slide.page)).toEqual(
+			rawIrDeck.slides.map((slide) => slide.page),
+		);
+
+		const privateSlides = getKioskPrivateIrSlides();
+		vi.mocked(getKioskPrivateIrSlides).mockReturnValueOnce(
+			privateSlides.slice(1),
+		);
+		expect(() => getKioskIrSlides()).toThrow(
+			"invalid_ir_deck:private_pages_mismatch",
+		);
+	});
+
+	it("serves every public slide picture as a real JPEG under a random name", () => {
+		const publicDir = resolve(__dirname, "../../../public");
+		const slides = rawIrDeck.slides;
+		for (const slide of slides) {
+			const url = kioskIrSlideImageUrl(slide);
+			expect(url).toBe(`/kiosk-slides/${slide.image}`);
+			const bytes = readFileSync(join(publicDir, url));
+			expect(bytes.length).toBeGreaterThan(10_000);
+			expect(bytes.length).toBeLessThan(10 * 1024 * 1024);
+			expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xff, 0xd8, 0xff]);
+		}
+		// 비공개 장 그림은 빌드 때 private/ 아래로만 들어온다(git 제외).
+		expect(
+			readdirSync(join(publicDir, "kiosk-slides"))
+				.filter((name) => name !== "private")
+				.sort(),
+		).toEqual(slides.map((slide) => slide.image).sort());
+	});
+
+	it("allows the decided revenue/sign-up/funding numbers but still rejects unlisted sensitive terms and bad pictures", () => {
+		const baseDeck = buildKioskIrDeck();
+		const withNumbers = structuredClone(baseDeck);
+		withNumbers.slides[0]!.script += " 매출 1,234만원, 투자 9억원";
+		expect(() => assertPublicIrSlides(withNumbers)).not.toThrow();
+
+		for (const word of ["밸류", "계약금", "지분", "기업가치", "개인정보"]) {
 			const mutated = structuredClone(baseDeck);
 			mutated.slides[0]!.script += ` 올해 ${word} 목표`;
 			expect(() => assertPublicIrSlides(mutated)).toThrow(
@@ -180,10 +256,14 @@ describe("kiosk-demo S6 public IR slides", () => {
 			);
 		}
 
-		const tooManyBullets = structuredClone(baseDeck);
-		tooManyBullets.slides[0]!.bullets.push("네 번째 줄");
-		expect(() => assertPublicIrSlides(tooManyBullets)).toThrow(
-			"invalid_ir_deck:bullets_count_page_1",
+		const originalName = {
+			...baseDeck,
+			slides: baseDeck.slides.map((slide, index) =>
+				index === 0 ? { ...slide, image: "slide-01.jpg" } : slide,
+			),
+		};
+		expect(() => assertPublicIrSlides(originalName)).toThrow(
+			"invalid_ir_deck:image_name_page_1",
 		);
 	});
 
@@ -223,7 +303,7 @@ describe("kiosk-demo S6 public IR slides", () => {
 			bytes: number[];
 			scriptContent: string;
 		};
-		expect(doc.name).toBe("넥스테인 공개 IR 발표.pdf");
+		expect(doc.name).toBe("넥스테인 회사 소개.pdf");
 		expect(doc.sourceFormat).toBe("pdf");
 		expect(doc.bytes.length).toBeGreaterThan(500);
 		expect(doc.scriptContent).toContain("## 1.");
@@ -276,8 +356,9 @@ describe("kiosk-demo S6 public IR slides", () => {
 			render(createElement(SlidesCenterArea, { naia: new MockBridge() }));
 
 			await waitFor(() =>
-				expect(screen.getByTestId("slides-card-title")).toHaveTextContent(
-					"넥스테인(Nextain)과 나이아의 출발",
+				expect(screen.getByTestId("slides-card-image")).toHaveAttribute(
+					"alt",
+					"넥스테인 · 나와 우리 조직이 소유하고 함께 일하는 AI",
 				),
 			);
 			expect(screen.getByText("1 / 9")).toBeInTheDocument();
@@ -292,8 +373,9 @@ describe("kiosk-demo S6 public IR slides", () => {
 			);
 
 			await waitFor(() => expect(screen.getByText("2 / 9")).toBeInTheDocument());
-			expect(screen.getByTestId("slides-card-title")).toHaveTextContent(
-				"브랜드 체계: 나이아와 별자리 모델 이름",
+			expect(screen.getByTestId("slides-card-image")).toHaveAttribute(
+				"alt",
+				"문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다",
 			);
 			await waitFor(() =>
 				expect(speechRequests.at(-1)?.page).toBe(2),
@@ -366,12 +448,11 @@ describe("kiosk-demo S6 public IR slides", () => {
 	it("builds model-input slide grounding prompt containing active slide body, speaker script, single source file, and rules for diverse questions", () => {
 		vi.spyOn(kioskFlag, "isKioskDemo").mockReturnValue(true);
 		const slide2 = getKioskIrSlide(2)!;
-		expect(slide2.title).toBe("브랜드 체계: 나이아와 별자리 모델 이름");
-		expect(slide2.source).toBe("brand.md");
+		expect(slide2.title).toBe("문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다");
 
 		const questions = [
 			"방금 장에서 핵심 지표가 뭐예요?",
-			"이 장에서 노바는 뭐예요?",
+			"이 장에서 남의 클라우드에 묶인다는 게 뭐예요?",
 			"방금 장 요약해 줘",
 			"가격은 얼마예요?",
 		];
@@ -379,16 +460,15 @@ describe("kiosk-demo S6 public IR slides", () => {
 		for (const q of questions) {
 			const prompt = buildKioskSlideQuestionPrompt(slide2, q);
 			expect(prompt).toContain(
-				"[현재 발표 중인 슬라이드: 2장 — 브랜드 체계: 나이아와 별자리 모델 이름 (Brand & Naming Universe)]",
+				"[현재 발표 중인 슬라이드: 2장 — 문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다]",
 			);
-			expect(prompt).toContain("장 원고 파일: knowledge/brand.md");
-			expect(prompt).toContain(
-				"별자리 코드명: 루나(달)·테라(지구)·솔(태양)·스텔라(별)·노바(신성)",
-			);
+			expect(prompt).toContain("발표 대본 파일: slides/nextain-ir-public.md");
 			expect(prompt).toContain(slide2.script);
-			expect(prompt).toContain("이 장에는 지표가 없어요");
-			expect(prompt).toContain("이 장에는 가격 내용이 없어요");
-			expect(prompt).toContain("근거 파일은 오직 knowledge/brand.md 하나만 사용하세요.");
+			expect(prompt).toContain("이 장에는 그 내용이 없어요");
+			expect(prompt).toContain(
+				"근거 파일은 오직 slides/nextain-ir-public.md 하나만 사용하세요.",
+			);
+			expect(prompt).not.toContain("장 본문 요점");
 			expect(prompt).toContain(`사용자 질문: ${q}`);
 			expect(prompt).not.toContain("안드로메다");
 			expect(prompt).not.toContain("카시오페아");
@@ -427,14 +507,15 @@ describe("kiosk-demo S6 public IR slides", () => {
 			expect(isKioskSlideQuestionTurnActive()).toBe(false);
 			const slide9 = getActiveKioskIrSlide()!;
 			expect(slide9.page).toBe(9);
-			expect(slide9.source).toBe("future.md");
 
 			const refPrompt = buildKioskSlideReferencePrompt(
 				slide9,
 				"기억의 주인은 누구인가요?",
 			);
 			expect(refPrompt).toContain("[현재 열려 있는 슬라이드 참고: 9장");
-			expect(refPrompt).toContain("장 원고 파일: knowledge/future.md");
+			expect(refPrompt).toContain(
+				"발표 대본 파일: slides/nextain-ir-public.md",
+			);
 			expect(refPrompt).toContain("skill_knowledge_search");
 			expect(refPrompt).toContain("사용자 질문: 기억의 주인은 누구인가요?");
 		} finally {
@@ -453,18 +534,20 @@ describe("kiosk-demo S6 public IR slides", () => {
 		render(createElement(SlidesCenterArea, { naia: new MockBridge() }));
 
 		await waitFor(() =>
-			expect(screen.getByTestId("slides-card-title")).toHaveTextContent(
-				"넥스테인(Nextain)과 나이아의 출발",
-			),
+			expect(screen.getByTestId("slides-card-image")).toHaveAttribute(
+					"alt",
+					"넥스테인 · 나와 우리 조직이 소유하고 함께 일하는 AI",
+				),
 		);
 		expect(screen.getByText("1 / 9")).toBeInTheDocument();
 
 		const handledNext = await handleKioskSlidesChatTurn("다음 장");
 		expect(handledNext).toBe(true);
 		await waitFor(() => expect(screen.getByText("2 / 9")).toBeInTheDocument());
-		expect(screen.getByTestId("slides-card-title")).toHaveTextContent(
-			"브랜드 체계: 나이아와 별자리 모델 이름",
-		);
+		expect(screen.getByTestId("slides-card-image")).toHaveAttribute(
+				"alt",
+				"문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다",
+			);
 	});
 
 	it("seeds the read-aloud script into the explorer's slides folder without the old folder name or 키오스크", async () => {
@@ -477,9 +560,9 @@ describe("kiosk-demo S6 public IR slides", () => {
 			"naia-adk/slides/nextain-ir-public.md",
 		]);
 		const script = await fs.readText("naia-adk/slides/nextain-ir-public.md");
-		expect(script).toContain("## 9. 앞으로의 확장");
+		expect(script).toContain("## 9. 시험용 비공개 장 9");
 		expect(script).not.toContain("키오스크");
-		expect(JSON.stringify(rawIrPublicDeck)).not.toContain("키오스크");
+		expect(JSON.stringify(rawIrDeck)).not.toContain("키오스크");
 		const write = vi.spyOn(fs, "writeBytes");
 		await seedKioskSlidesWorkspace(fs);
 		expect(write).not.toHaveBeenCalled();

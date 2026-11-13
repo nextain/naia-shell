@@ -15,6 +15,13 @@ import {
 import { prewarmWebSpeechAssets } from "../lib/avatar/nva-speech/speech-asset-prewarm";
 import { loadConfig } from "../lib/config";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	KIOSK_PASSCODE_LENGTH,
+	KIOSK_PASSCODE_SHA256,
+	hasPassedKioskPasscode,
+	markKioskPasscodePassed,
+	verifyKioskPasscode,
+} from "../lib/kiosk-demo/passcode";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
 import { resolveEffectiveLayoutOrientation } from "../lib/ui-preferences";
@@ -66,8 +73,89 @@ async function prepare(): Promise<Phase> {
 	}
 }
 
-export function KioskDemoGate({ children }: { children: ReactNode }) {
+function KioskPasscodeForm({
+	expectedSha256,
+	onPassed,
+}: {
+	expectedSha256: string;
+	onPassed: () => void;
+}) {
+	const [value, setValue] = useState("");
+	const [wrong, setWrong] = useState(false);
+	const checking = useRef(false);
+	const submit = async (candidate: string) => {
+		if (checking.current) return;
+		checking.current = true;
+		try {
+			if (await verifyKioskPasscode(candidate, expectedSha256)) {
+				markKioskPasscodePassed();
+				onPassed();
+				return;
+			}
+			setWrong(true);
+			setValue("");
+		} finally {
+			checking.current = false;
+		}
+	};
+	return (
+		<form
+			className="kiosk-entry__passcode"
+			onSubmit={(event) => {
+				event.preventDefault();
+				void submit(value);
+			}}
+		>
+			<h1 id="kiosk-title">비밀번호를 입력해 주세요</h1>
+			<p>
+				<label htmlFor="kiosk-passcode">숫자 {KIOSK_PASSCODE_LENGTH}자리</label>
+			</p>
+			<input
+				id="kiosk-passcode"
+				data-testid="kiosk-passcode-input"
+				type="password"
+				inputMode="numeric"
+				pattern="[0-9]*"
+				autoComplete="off"
+				maxLength={KIOSK_PASSCODE_LENGTH}
+				value={value}
+				aria-invalid={wrong}
+				aria-describedby={wrong ? "kiosk-passcode-error" : undefined}
+				// biome-ignore lint/a11y/noAutofocus: 첫 화면의 하나뿐인 입력 칸
+				autoFocus
+				onChange={(event) => {
+					const next = event.target.value
+						.replace(/\D/g, "")
+						.slice(0, KIOSK_PASSCODE_LENGTH);
+					setValue(next);
+					if (next) setWrong(false);
+					if (next.length === KIOSK_PASSCODE_LENGTH) void submit(next);
+				}}
+			/>
+			{wrong && (
+				<p id="kiosk-passcode-error" role="alert">
+					비밀번호가 맞지 않아요. 다시 입력해 주세요.
+				</p>
+			)}
+			<div className="kiosk-entry__actions">
+				<button type="submit" disabled={value.length !== KIOSK_PASSCODE_LENGTH}>
+					확인
+				</button>
+			</div>
+		</form>
+	);
+}
+
+export function KioskDemoGate({
+	children,
+	passcodeSha256 = KIOSK_PASSCODE_SHA256,
+}: {
+	children: ReactNode;
+	/** 시험에서 흉내 해시를 넣는 자리. 운영은 기본값을 쓴다. */
+	passcodeSha256?: string;
+}) {
 	const enabled = isKioskDemo();
+	const [passcodePassed, setPasscodePassed] = useState(hasPassedKioskPasscode);
 	const [phase, setPhase] = useState<Phase>("preparing");
 	const [entered, setEntered] = useState(false);
 	const [resetting, setResetting] = useState(false);
@@ -137,7 +225,12 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 		<main className="kiosk-entry" lang="ko">
 			<section aria-labelledby="kiosk-title" className="kiosk-entry__card">
 				<p>NAIA · NEXTAIN</p>
-				{phase === "unavailable" ? (
+				{!passcodePassed ? (
+					<KioskPasscodeForm
+						expectedSha256={passcodeSha256}
+						onPassed={() => setPasscodePassed(true)}
+					/>
+				) : phase === "unavailable" ? (
 					<div role="alert" className="kiosk-entry__unavailable">
 						<h1 id="kiosk-title">지금은 시연을 잠시 쉬고 있어요</h1>
 						<p>오늘 준비한 시연 사용량을 다 썼어요.</p>

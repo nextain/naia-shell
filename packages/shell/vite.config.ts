@@ -1,4 +1,4 @@
-import { cpSync, realpathSync } from "node:fs";
+import { cpSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,10 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin, searchForWorkspaceRoot } from "vite";
 import { resolveWebAgentDir } from "./scripts/web-agent-dir.mjs";
 import { buildWebAdkBundle } from "./scripts/web-adk-bundle.mjs";
+import {
+	PRIVATE_SLIDES_SOURCE_ENV,
+	ensureWebKioskPrivateSlides,
+} from "./scripts/web-kiosk-private-slides.mjs";
 import { WEB_CSP } from "./src/lib/web-runtime/csp";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,7 +22,7 @@ const workerPath = path.resolve(__dirname, "web-worker/create-agent-worker.ts");
 function desktopPublicAssetsPlugin(): Plugin {
 	let outputDirectory = "";
 	const publicDirectory = path.resolve(__dirname, "public");
-	const webOnly = new Set(["nva", "backgrounds"]);
+	const webOnly = new Set(["nva", "backgrounds", "kiosk-slides"]);
 	return {
 		name: "desktop-public-assets",
 		apply: "build",
@@ -30,6 +34,54 @@ function desktopPublicAssetsPlugin(): Plugin {
 				recursive: true,
 				filter: (source) => !webOnly.has(path.relative(publicDirectory, source).split(path.sep)[0]),
 			});
+		},
+	};
+}
+
+// 회사 소개 슬라이드 그림은 비밀번호를 거치는 시연판에서만 내보낸다. 일반 웹판 산출물에서는 지운다.
+function kioskSlidesAssetsPlugin(): Plugin {
+	let outputDirectory = "";
+	return {
+		name: "kiosk-slides-assets",
+		apply: "build",
+		configResolved(config) {
+			outputDirectory = path.resolve(config.root, config.build.outDir);
+		},
+		closeBundle() {
+			if (process.env.VITE_NAIA_KIOSK_DEMO === "1") return;
+			rmSync(path.join(outputDirectory, "kiosk-slides"), {
+				recursive: true,
+				force: true,
+			});
+		},
+	};
+}
+
+// 숫자가 든 비공개 장의 원고는 저장소 밖에 있다. 시연판 웹 빌드에서만 기록(sha256)과 맞는 원고를
+// 덱에 합치고, 없으면 빌드를 멈춘다. 그 밖의 빌드와 시험에는 빈 목록을 준다.
+function kioskPrivateSlidesPlugin(mode: string, command: string): Plugin {
+	const virtualId = "virtual:kiosk-private-slides";
+	const resolvedVirtualId = `\0${virtualId}`;
+	return {
+		name: "kiosk-private-slides",
+		resolveId(id: string) {
+			if (id === virtualId) return resolvedVirtualId;
+		},
+		load(id: string) {
+			if (id !== resolvedVirtualId) return;
+			let deck: { slides: unknown[] } = { slides: [] };
+			if (mode === "web" && process.env.VITE_NAIA_KIOSK_DEMO === "1") {
+				try {
+					deck = ensureWebKioskPrivateSlides({
+						source: process.env[PRIVATE_SLIDES_SOURCE_ENV],
+					});
+				} catch (error) {
+					if (command === "build") throw error;
+					// 개발 서버는 공개 장만으로 띄운다.
+					console.warn(`[kiosk-private-slides] ${(error as Error).message}`);
+				}
+			}
+			return `export default ${JSON.stringify(deck)};`;
 		},
 	};
 }
@@ -172,7 +224,8 @@ export default defineConfig(async ({ mode, command }) => {
 			react(),
 			...(command === "build" && !isWeb ? [desktopPublicAssetsPlugin()] : []),
 			virtualAgentWorkerPlugin(mode),
-			...(isWeb ? [webCspPlugin(), webAdkPlugin()] : []),
+			kioskPrivateSlidesPlugin(mode, command),
+			...(isWeb ? [webCspPlugin(), webAdkPlugin(), kioskSlidesAssetsPlugin()] : []),
 		],
 		build: {
 			// Bundle-budget verification uses this graph to prove that large optional

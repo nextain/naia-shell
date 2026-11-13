@@ -1,6 +1,7 @@
 import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
+	KIOSK_IR_SLIDES_EVIDENCE_FILE,
 	buildKioskSlideQuestionPrompt,
 	buildKioskSlideReferencePrompt,
 	getActiveKioskIrSlide,
@@ -2859,9 +2860,7 @@ export function ChatArea({
 					data: {
 						page: activeKioskSlide.page,
 						title: activeKioskSlide.title,
-						subtitle: activeKioskSlide.subtitle,
-						source: activeKioskSlide.source,
-						bullets: activeKioskSlide.bullets,
+						source: KIOSK_IR_SLIDES_EVIDENCE_FILE,
 						script: activeKioskSlide.script,
 						restrictToSlide: kioskSlideTurnActive,
 						instructions: slidePrompt,
@@ -2871,7 +2870,7 @@ export function ChatArea({
 			if (kioskSlideTurnActive) {
 				useChatStore
 					.getState()
-					.setStreamingEvidenceFiles([`knowledge/${activeKioskSlide.source}`]);
+					.setStreamingEvidenceFiles([KIOSK_IR_SLIDES_EVIDENCE_FILE]);
 			}
 		}
 		Logger.info("ChatArea", "handleSend → sendChatMessage", {
