@@ -59,7 +59,10 @@ describe("web-nva-atlas", () => {
 	});
 
 	it("copies a missing atlas from a local source and then accepts it as is", async () => {
-		fs.writeFileSync(path.join(sourceDir, "jina", "speech", "atlas.bin"), ATLAS);
+		fs.writeFileSync(
+			path.join(sourceDir, "jina", "speech", "atlas.bin"),
+			ATLAS,
+		);
 		await expect(
 			ensureWebNvaAtlases({ nvaDir, source: sourceDir }),
 		).resolves.toEqual(["jina/speech/atlas.bin"]);
@@ -86,7 +89,10 @@ describe("web-nva-atlas", () => {
 
 	it("replaces a present atlas that no longer matches the record", async () => {
 		fs.writeFileSync(path.join(nvaDir, "jina", "speech", "atlas.bin"), "stale");
-		fs.writeFileSync(path.join(sourceDir, "jina", "speech", "atlas.bin"), ATLAS);
+		fs.writeFileSync(
+			path.join(sourceDir, "jina", "speech", "atlas.bin"),
+			ATLAS,
+		);
 		await ensureWebNvaAtlases({ nvaDir, source: sourceDir });
 		expect(
 			fs.readFileSync(path.join(nvaDir, "jina", "speech", "atlas.bin")),
