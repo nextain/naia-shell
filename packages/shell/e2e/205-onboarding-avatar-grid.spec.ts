@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
@@ -29,13 +29,11 @@ const NVA_DIRS = ["naia", "naia-anime", "minho", "jina"];
 const NVA_VIDEO_BASE64 = readFileSync(
 	path.resolve(process.cwd(), "e2e/fixtures/head-green-100.mp4"),
 ).toString("base64");
-const LIVE_NAIA_CLIP = path.resolve(
-	process.cwd(),
-	"../../../naia-adk/naia-settings/nva-files/naia/clips/idle.webm",
-);
-const LIVE_NAIA_VIDEO_BASE64 = existsSync(LIVE_NAIA_CLIP)
-	? readFileSync(LIVE_NAIA_CLIP).toString("base64")
-	: NVA_VIDEO_BASE64;
+// The mocked live-action path ends in .webm, so serve actual WebM bytes.
+// Keep the crop check independent of an optional sibling naia-adk checkout.
+const LIVE_NAIA_VIDEO_BASE64 = readFileSync(
+	path.resolve(process.cwd(), "e2e/fixtures/base-alpha-200.webm"),
+).toString("base64");
 const NVA_MANIFEST = {
 	nva_version: "0.2",
 	meta: { name: "QA portrait" },

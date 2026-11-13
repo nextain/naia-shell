@@ -1588,3 +1588,9 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 - VideoAvatarCanvas와 ResilientVideo는 오류 시 이미지를 표시하지 않는다. 시험 캡처 Naia.webp를 삭제하고 생성 도구도 이 자산을 사용하지 않는다.
 - 시험용 Naia Skin Head/With Hair 프리셋과 선택 시험을 제거하며 정상 네 VRM은 유지한다. 이전 FR-V017.22의 두 프리셋 제공 요구는 이 hotfix로 폐기한다.
 - 상태: Done. P04: 관련 Vitest 35/35 (RED에서 interrupt/전환 두 timeout 재현 후 GREEN), Shell·core·sidecar typecheck, Playwright 온보딩 3/3 및 투명 오류·반응형 2/2. 실제 3090 방송 운영 수용은 수행하지 않았다.
+
+### FR-NVA-BROADCAST-HOTFIX / FR-B2C-026-R15 — browser regression follow-up (#451, #855, P01–P05)
+
+- Keep the Linux large-WebM MediaSource workaround specific to WebKitGTK; Linux Chromium retains its Blob decoder for authored clips with timestamps rejected by MSE.
+- Browser fixtures restore the native workspace pointer, provide WebM bytes for WebM paths, assert transparent media errors, wait for rendered Markdown before layout measurement, and match the selected Slides locale.
+- Done: regression paths are the avatar grid #448, startup latency, character theme 360/1100px, Korean keep-all, Linux media failure 360/1100px, and installed Slides video. Validation evidence is recorded with the fix commit.

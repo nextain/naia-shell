@@ -8,6 +8,11 @@ import {
 	webmMediaSourceType,
 } from "../local-media-url";
 
+const LINUX_WEBKIT =
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 Version/60.5 Safari/605.1.15";
+const LINUX_CHROMIUM =
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36";
+
 const bytes = (...parts: string[]) =>
 	new Uint8Array(
 		parts.flatMap((p) => [0, ...Array.from(p, (c) => c.charCodeAt(0))]),
@@ -43,15 +48,17 @@ describe("shouldUseMediaSource", () => {
 		type: "video/webm",
 	});
 
-	it("routes webm through MediaSource only on Linux", () => {
+	it("routes webm through MediaSource only on Linux WebKit", () => {
 		vi.stubGlobal("MediaSource", class {});
 		vi.stubGlobal("navigator", {
-			userAgent: "Mozilla/5.0 (X11; Linux x86_64)",
+			userAgent: LINUX_WEBKIT,
 		});
 		expect(shouldUseMediaSource(webm)).toBe(true);
 		expect(shouldUseMediaSource(new Blob([], { type: "audio/mpeg" }))).toBe(
 			false,
 		);
+		vi.stubGlobal("navigator", { userAgent: LINUX_CHROMIUM });
+		expect(shouldUseMediaSource(webm)).toBe(false);
 		vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Windows NT 10.0)" });
 		expect(shouldUseMediaSource(webm)).toBe(false);
 	});
@@ -70,7 +77,7 @@ describe("shouldUseMediaSource", () => {
 
 	it("keeps the blob URL when MediaSource is missing", () => {
 		vi.stubGlobal("MediaSource", undefined);
-		vi.stubGlobal("navigator", { userAgent: "Linux" });
+		vi.stubGlobal("navigator", { userAgent: LINUX_WEBKIT });
 		expect(shouldUseMediaSource(webm)).toBe(false);
 	});
 });
@@ -85,7 +92,7 @@ describe("isMediaSourceUrl", () => {
 				addEventListener() {}
 			},
 		);
-		vi.stubGlobal("navigator", { userAgent: "Linux" });
+		vi.stubGlobal("navigator", { userAgent: LINUX_WEBKIT });
 		let next = 0;
 		vi.spyOn(URL, "createObjectURL").mockImplementation(
 			() => `blob:test/${++next}`,

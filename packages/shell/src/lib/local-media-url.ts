@@ -3,8 +3,8 @@
 //   "operation not supported"; 3090 2026-11-06: 1.7 MB plays, 2.8 MB+ fails, same clip
 //   decodes fine from file). asset:// does not play video at all there. Feeding the same
 //   bytes through MediaSource plays to the end and keeps the VP9 alpha.
-//   So on Linux a video/webm Blob above MEDIA_SOURCE_MIN_BYTES gets a MediaSource URL;
-//   everything else (and Windows/macOS) keeps the plain blob: URL. Small clips stay on
+//   So on Linux WebKitGTK a video/webm Blob above MEDIA_SOURCE_MIN_BYTES gets a MediaSource URL;
+//   everything else (Chromium, Windows/macOS) keeps the plain blob: URL. Small clips stay on
 //   blob: because every MediaSource attach leaves WebKit MSE pipeline threads behind
 //   (3090 2026-11-10: speech atlas slices, one MediaSource each, grew WebKitWebProcess
 //   to ~18k vqueue:src/webkitmediasrc threads in under an hour). Both kinds are released with URL.revokeObjectURL.
@@ -14,8 +14,14 @@
 import { Logger } from "./logger";
 
 function isLinuxWebView(): boolean {
+	if (typeof navigator === "undefined") return false;
+	const ua = navigator.userAgent;
+	// The large-Blob decoder workaround is for WebKitGTK. Chromium's native
+	// Blob decoder also accepts WebM files that its stricter MSE demuxer rejects.
 	return (
-		typeof navigator !== "undefined" && navigator.userAgent.includes("Linux")
+		ua.includes("Linux") &&
+		ua.includes("AppleWebKit/") &&
+		!/Chrom(?:e|ium)\//.test(ua)
 	);
 }
 

@@ -202,12 +202,26 @@ if (-not $NvidiaReady) {
     "tensorrt-cu12_libs==$($InstallerPackageLock.packages.'tensorrt-cu12-libs')",
     "nvidia-cuda-runtime-cu12==$($InstallerPackageLock.packages.'nvidia-cuda-runtime-cu12')"
   ) "Pinned NVIDIA runtime acquisition failed"
-  Invoke-Runtime @(
-    "-B", "-I", "-m", "pip", "install", "--disable-pip-version-check",
-    "--no-deps", "--target", $NvidiaPending, "--report", $PyPiReport,
-    "--index-url", "https://pypi.org/simple",
-    "tensorrt-cu12==$($InstallerPackageLock.packages.'tensorrt-cu12')"
-  ) "Pinned TensorRT Python package acquisition failed"
+  # The tensorrt-cu12 metapackage's setup otherwise runs a nested pip
+  # that installs the bindings and libraries into the bundled interpreter, ignoring
+  # --target, which writes into the immutable artifact (#842). The step above
+  # already staged both. `-I` does not hide this variable; setup.py reads it.
+  $PriorTrtInternalPip = $env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP
+  $env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP = "1"
+  try {
+    Invoke-Runtime @(
+      "-B", "-I", "-m", "pip", "install", "--disable-pip-version-check",
+      "--no-deps", "--target", $NvidiaPending, "--report", $PyPiReport,
+      "--index-url", "https://pypi.org/simple",
+      "tensorrt-cu12==$($InstallerPackageLock.packages.'tensorrt-cu12')"
+    ) "Pinned TensorRT Python package acquisition failed"
+  } finally {
+    if ($null -eq $PriorTrtInternalPip) {
+      Remove-Item Env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP -ErrorAction SilentlyContinue
+    } else {
+      $env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP = $PriorTrtInternalPip
+    }
+  }
   $env:PYTHONPATH = $NvidiaPending
   Invoke-Runtime @("-B", "-s", "-c", $VerifyNvidia) "Acquired TensorRT package verification failed"
   $Receipt = [ordered]@{

@@ -983,7 +983,7 @@ describe("SettingsTab", () => {
 			"naia-config",
 			JSON.stringify({
 				provider: "ollama",
-				model: "",
+				model: "qwen3:8b",
 				apiKey: "",
 			}),
 		);

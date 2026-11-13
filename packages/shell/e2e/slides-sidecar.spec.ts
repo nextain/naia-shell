@@ -267,9 +267,9 @@ test("installed video segment keeps one source, pauses/resumes, and returns to n
 	await finishSpeech(page, 0);
 	const video = frame.getByTestId("slides-video-demo.mp4");
 	await expect(frame.getByTestId("slides-video-indicator")).toHaveText(
-		"1-1 / 영상",
+		"1-1 / Video",
 	);
-	await expect(video).toHaveAttribute("aria-label", "1-1 / 영상 demo.mp4");
+	await expect(video).toHaveAttribute("aria-label", "1-1 / Video demo.mp4");
 	await expect(frame.getByTestId("slides-video-viewer")).toBeVisible();
 	await expect(frame.getByTestId("slides-viewer")).toHaveAttribute("hidden");
 	expect(
@@ -394,7 +394,9 @@ test("avatar remains in its left panel at narrow width when Slides focus is acti
 		};
 	});
 	expect(layoutDuring).toEqual({ ...layoutBefore, cropMarker: null });
-	await page.screenshot({ path: testInfo.outputPath("avatar-panel-focus-narrow.png") });
+	await page.screenshot({
+		path: testInfo.outputPath("avatar-panel-focus-narrow.png"),
+	});
 });
 
 test("cancel, missing sidecar and narrow-screen script controls preserve the PDF workflow", async ({
