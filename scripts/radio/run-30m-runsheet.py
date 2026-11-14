@@ -37,6 +37,7 @@ OUT_DIR = os.environ.get("RADIO_OUT_DIR") or (os.path.join(BASE_DIR, "rtmp", "re
 SHOW_TAG = os.environ.get("RADIO_SHOW_TAG") or "show2-20261109"
 RUNSHEET_LOG = f"{OUT_DIR}/radio-{SHOW_TAG}-runsheet.log"
 TRAINING_JSONL = f"{OUT_DIR}/training-{SHOW_TAG}.jsonl"
+SUMMARY_JSON = f"{OUT_DIR}/radio-{SHOW_TAG}-summary.json"
 NODE = os.environ.get("RADIO_NODE") or "node"
 WK_SCRIPT = os.environ.get("RADIO_WK_SCRIPT") or os.path.join(BASE_DIR, "wk.mjs")
 SEND_SCRIPT = os.environ.get("RADIO_SEND_SCRIPT") or os.path.join(BASE_DIR, "jun-send-nz.sh")
@@ -652,6 +653,13 @@ def run_broadcast():
     set_bgm_volume(0.35)
     check_health("show2-start")
 
+    song_outcomes = []
+
+    def run_song(mp3_path, label, end_elapsed_sec, **kwargs):
+        ok = bool(play_song_until(mp3_path, label, end_elapsed_sec, **kwargs))
+        song_outcomes.append((label, ok))
+        return ok
+
     # Cue 1: 00:00 오프닝
     send_chat(
         "오프닝",
@@ -691,7 +699,7 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
         "M1 불을 꺼도 돼요 (한국어, 2:38)",
         480,
@@ -744,7 +752,7 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
         "M2 It's Okay to Turn Off the Light (영어, 3:02)",
         1170,
@@ -789,7 +797,7 @@ def run_broadcast():
     check_health("after-corner3")
 
     # 감성 충전 인터루드 트랙 (무음 대기 대신 음악 송출로 방송 밀도 유지)
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/Afternoon Whispers.mp3",
         "M3 Afternoon Whispers (로파이 인터루드)",
         1440,
@@ -851,7 +859,7 @@ def run_broadcast():
     check_health("after-Q1-Q5")
 
     # 클로징 전 앙코르 곡 & 브릿지 토크 (30분 풀 런타임 중 무음 구간 0건 유지)
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/Shattered Reflection.mp3",
         "M4 Shattered Reflection (클로징 전 감성 선곡)",
         1650,
@@ -877,7 +885,7 @@ def run_broadcast():
     check_health("after-closing")
 
     # 30:00 (1800s) 녹화 종료까지 앙코르 송출. 곡이 짧아도 반복해 30:00 에 끝난다.
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
         "Closing Encore 불을 꺼도 돼요 (아웃트로 BGM)",
         SHOW_END_SEC,
@@ -885,7 +893,38 @@ def run_broadcast():
         min_sec=1,
     )
     wait_for_next_cue(SHOW_END_SEC)
-    log("=== All 30-min Show 2 runsheet cues completed cleanly! ===")
+    failed_songs = [label for label, ok in song_outcomes if not ok]
+    song_total = len(song_outcomes)
+    song_failures = len(failed_songs)
+    summary = {
+        "show_tag": SHOW_TAG,
+        "elapsed_sec": int(time.time() - START_TS),
+        "song_total": song_total,
+        "song_failures": song_failures,
+        "failed_songs": failed_songs,
+        "status": "CLEAN" if song_failures == 0 else "SONG_PLAYBACK_FAILED",
+    }
+    log(f"SUMMARY: {json.dumps(summary, ensure_ascii=False)}")
+    if song_failures == 0:
+        log(
+            f"=== All 30-min Show 2 runsheet cues completed cleanly! "
+            f"(songs={song_total - song_failures}/{song_total}, song_failures=0) ==="
+        )
+    else:
+        log(
+            f"=== 30-min Show 2 runsheet finished with {song_failures}/{song_total} song failure(s): "
+            f"{', '.join(failed_songs)} ==="
+        )
+    if OUT_DIR:
+        summary_path = f"{OUT_DIR}/radio-{SHOW_TAG}-summary.json"
+        try:
+            os.makedirs(OUT_DIR, exist_ok=True)
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(summary, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+        except Exception:
+            pass
+    return summary
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 from pathlib import Path
 #!/usr/bin/env python3
 import importlib.util
+import json
 import re
 import subprocess
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -316,6 +318,87 @@ class TestRadioRunsheetFixes(unittest.TestCase):
                 self.assertTrue(encore[0].startswith("Closing Encore") and encore[3])
                 self.assertEqual(encore[2], runner.SHOW_END_SEC)
                 self.assertEqual(end, runner.SHOW_END_SEC)
+
+    def _run_broadcast_with_song_policy(self, fail_prefixes=(), overrun_triggers=(), out_dir=""):
+        clock = SimpleNamespace(now=60_000.0)
+        fake_time = SimpleNamespace(
+            time=lambda: clock.now,
+            sleep=lambda sec: setattr(clock, "now", clock.now + sec),
+        )
+        logs = []
+
+        def fake_send_chat(_situation, trigger, _prompt_text, **_kw):
+            clock.now += 58.0 if trigger in overrun_triggers else 10.0
+            return "ok"
+
+        def fake_play(_path, label, max_duration_sec=None, loop=False, **_kw):
+            if any(label.startswith(pfx) for pfx in fail_prefixes):
+                clock.now += 1.0
+                return False
+            clock.now += max_duration_sec if loop else min(40.0, max_duration_sec or 40.0)
+            return True
+
+        with mock.patch.object(runner, "time", fake_time), \
+                mock.patch.object(runner, "send_chat", fake_send_chat), \
+                mock.patch.object(runner, "play_song_file", fake_play), \
+                mock.patch.object(runner, "set_bgm_volume", lambda v: None), \
+                mock.patch.object(runner, "check_health", lambda tag: None), \
+                mock.patch.object(runner, "log", logs.append), \
+                mock.patch.object(runner, "OUT_DIR", out_dir), \
+                mock.patch.object(runner, "SHOW_TAG", "unit-test"), \
+                mock.patch.dict(runner.os.environ, {"RADIO_START_TS": ""}):
+            summary = runner.run_broadcast()
+        return summary, logs
+
+    def test_11_run_broadcast_counts_song_failures_across_all_five_slots_in_summary(self):
+        # Case A: Clean run -> 0/5 song failures, persisted summary JSON + clean banner
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary_ok, logs_ok = self._run_broadcast_with_song_policy(out_dir=tmpdir)
+            self.assertEqual(summary_ok["song_total"], 5)
+            self.assertEqual(summary_ok["song_failures"], 0)
+            self.assertEqual(summary_ok["failed_songs"], [])
+            self.assertEqual(summary_ok["status"], "CLEAN")
+            self.assertTrue(any("completed cleanly" in line and "song_failures=0" in line for line in logs_ok))
+            summary_file = Path(tmpdir) / "radio-unit-test-summary.json"
+            self.assertTrue(summary_file.is_file())
+            persisted_ok = json.loads(summary_file.read_text(encoding="utf-8"))
+            self.assertEqual(persisted_ok, summary_ok)
+
+        # Case B: Partial failures (ffmpeg failure on M1 + Closing Encore, late-turn skip on M3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary_partial, logs_partial = self._run_broadcast_with_song_policy(
+                fail_prefixes=("M1 ", "Closing Encore "),
+                overrun_triggers=("23:00 시험 채팅 3",),
+                out_dir=tmpdir,
+            )
+            self.assertEqual(summary_partial["song_total"], 5)
+            self.assertEqual(summary_partial["song_failures"], 3)
+            self.assertEqual(
+                summary_partial["failed_songs"],
+                [
+                    "M1 불을 꺼도 돼요 (한국어, 2:38)",
+                    "M3 Afternoon Whispers (로파이 인터루드)",
+                    "Closing Encore 불을 꺼도 돼요 (아웃트로 BGM)",
+                ],
+            )
+            self.assertEqual(summary_partial["status"], "SONG_PLAYBACK_FAILED")
+            self.assertFalse(any("completed cleanly" in line for line in logs_partial))
+            self.assertTrue(any("3/5 song failure(s)" in line for line in logs_partial))
+            summary_lines = [line for line in logs_partial if line.startswith("SUMMARY: ")]
+            self.assertEqual(len(summary_lines), 1)
+            self.assertEqual(json.loads(summary_lines[0][len("SUMMARY: "):]), summary_partial)
+            persisted_partial = json.loads((Path(tmpdir) / "radio-unit-test-summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(persisted_partial["song_failures"], 3)
+
+        # Case C: All 5 song slots fail -> proves none of the 5 call sites is omitted
+        summary_all, logs_all = self._run_broadcast_with_song_policy(
+            fail_prefixes=("M1 ", "M2 ", "M3 ", "M4 ", "Closing Encore "),
+        )
+        self.assertEqual(summary_all["song_total"], 5)
+        self.assertEqual(summary_all["song_failures"], 5)
+        self.assertEqual(len(summary_all["failed_songs"]), 5)
+        self.assertEqual(summary_all["status"], "SONG_PLAYBACK_FAILED")
+        self.assertTrue(any("5/5 song failure(s)" in line for line in logs_all))
 
 
 if __name__ == "__main__":
