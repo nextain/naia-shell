@@ -454,6 +454,41 @@ describe("OnboardingWizard", () => {
 		expect(screen.queryByText("▶")).toBeNull();
 	});
 
+	it("excludes avatar-baked naia-autumn-office-live.mp4 from live background preview cards (#026-r2 item 6)", async () => {
+		const { invoke } = await import("@tauri-apps/api/core");
+		localStorage.setItem("naia-adk-path", "C:\\naia-test\\rc026\\naia-adk");
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation(
+			(cmd: string, args?: { subdir?: string }) => {
+				if (cmd === "list_naia_assets") {
+					return Promise.resolve(
+						args?.subdir === "background"
+							? [
+									"naia-autumn-office-live.mp4",
+									"naia-autumn-office-uhd.webp",
+									"naia-dawn-city-uhd.webp",
+								]
+							: [],
+					);
+				}
+				return defaultInvoke(cmd);
+			},
+		);
+
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+		for (let index = 0; index < 4; index += 1) {
+			fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+			flush();
+		}
+
+		expect(screen.queryByText("naia-autumn-office-live")).toBeNull();
+		expect(screen.getByText("naia-autumn-office-uhd")).toBeDefined();
+		expect(screen.getByText("naia-dawn-city-uhd")).toBeDefined();
+	});
+
 	// #447-5: own-key/provider setup left onboarding. "직접 설정" now finishes
 	// onboarding with the Naia-account default and opens the full Settings screen
 	// (which owns provider + model + key) — it never collects a provider-less key.

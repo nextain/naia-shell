@@ -9,6 +9,7 @@ mod agent_grpc;
 mod app;
 mod app_sandbox;
 mod broadcast;
+pub(crate) mod ffmpeg_sidecar;
 mod slides_import;
 mod slides_files;
 mod slides_recording;
@@ -4573,12 +4574,20 @@ fn prepare_agent_relaunch_unlocked(state: &AppState) -> Result<(), String> {
 /// relaunch plugin. The guard remains set until `cancel_app_relaunch` or the
 /// process exits through the successful relaunch path.
 #[tauri::command]
-fn prepare_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn prepare_app_relaunch(
+    state: tauri::State<'_, AppState>,
+    pty_registry: tauri::State<'_, pty::PtyRegistry>,
+) -> Result<(), String> {
     claim_agent_relaunch(&state.agent_relaunch_pending)?;
+    crate::herdr::mark_herdr_shutting_down();
+    if let Ok(mut guard) = pty_registry.lock() {
+        guard.clear();
+    }
     let result = with_discord_lifecycle(&state.discord_lifecycle, || {
         prepare_agent_relaunch_unlocked(&state)
     });
     if result.is_err() {
+        crate::herdr::reset_herdr_shutting_down();
         state
             .agent_relaunch_pending
             .store(false, std::sync::atomic::Ordering::Release);
@@ -4590,6 +4599,7 @@ fn prepare_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String>
 /// update/reset operation reports its error.
 #[tauri::command]
 fn cancel_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    crate::herdr::reset_herdr_shutting_down();
     state
         .agent_relaunch_pending
         .store(false, std::sync::atomic::Ordering::Release);
@@ -9899,6 +9909,45 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
+pub(crate) fn isolated_naia_home_dir() -> Option<std::path::PathBuf> {
+    let adk_pointer = data_home::child_from_dirs_home(DataHomeChild::AdkPath)?;
+    let default_pointer = data_home::user_home_path()
+        .map(|home| data_home::direct_child_of(&home, DataHomeChild::AdkPath));
+    if Some(&adk_pointer) != default_pointer.as_ref() {
+        adk_pointer.parent().map(std::path::Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn resolve_default_adk_root(
+    isolated_home: Option<&std::path::Path>,
+    env_home: Option<&str>,
+    dirs_home: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    if let Some(isolated) = isolated_home.filter(|p| !p.as_os_str().is_empty()) {
+        return Some(isolated.join("naia-adk"));
+    }
+    if let Some(env_h) = env_home.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(std::path::PathBuf::from(env_h).join("naia-adk"));
+    }
+    dirs_home.map(|h| h.join("naia-adk"))
+}
+
+#[tauri::command]
+fn default_adk_path() -> Result<String, String> {
+    let isolated = isolated_naia_home_dir();
+    let env_home = data_home::user_home();
+    let dirs_home = data_home::user_home_path();
+    resolve_default_adk_root(
+        isolated.as_deref(),
+        Some(env_home.as_str()),
+        dirs_home.as_deref(),
+    )
+    .map(|p| p.to_string_lossy().into_owned())
+    .ok_or_else(|| "Unable to resolve default ADK path".to_string())
+}
+
 pub(crate) fn current_adk_path() -> Result<String, String> {
     if debug_e2e_enabled() {
         if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
@@ -12306,14 +12355,185 @@ async fn fetch_linked_channels(naia_key: String, user_id: String) -> Result<Stri
 
 // ?? naia-settings asset commands ?????????????????????????????????????????????
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NaiaAssetContract {
+    asset_subdirs: Vec<String>,
+    #[allow(dead_code)]
+    default_pure_background_asset: String,
+    excluded_avatar_background_assets: Vec<String>,
+}
+
+const EMBEDDED_NAIA_ASSET_CONTRACT_JSON: &str =
+    include_str!("../../src/lib/naia-asset-contract.json");
+
+fn naia_asset_contract() -> &'static NaiaAssetContract {
+    static CONTRACT: std::sync::OnceLock<NaiaAssetContract> = std::sync::OnceLock::new();
+    CONTRACT.get_or_init(|| {
+        serde_json::from_str(EMBEDDED_NAIA_ASSET_CONTRACT_JSON)
+            .expect("embedded naia-asset-contract.json must be valid")
+    })
+}
+
+pub(crate) fn naia_settings_asset_subdirs() -> &'static [String] {
+    &naia_asset_contract().asset_subdirs
+}
+
+pub(crate) fn excluded_avatar_background_assets() -> &'static [String] {
+    &naia_asset_contract().excluded_avatar_background_assets
+}
+
+pub(crate) fn is_excluded_background_asset(subdir: &str, filename: &str) -> bool {
+    if subdir != "background" {
+        return false;
+    }
+    let trimmed = filename
+        .trim()
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(filename);
+    excluded_avatar_background_assets()
+        .iter()
+        .any(|excluded| excluded.eq_ignore_ascii_case(trimmed))
+}
+
+/// Normalize an ADK workspace path for `asset://` scope registration across
+/// Linux, macOS, and Windows (drive letters `C:\...`, `D:\...`, backslashes,
+/// mixed separators, and trailing slashes). Rejects empty strings, filesystem
+/// roots (`/`), and bare Windows drive roots (`C:`, `C:\`) so `C:\**` can never
+/// be added to `asset_protocol_scope`.
+pub(crate) fn normalize_adk_scope_path(adk_path: &str) -> Option<std::path::PathBuf> {
+    let raw = adk_path.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let without_verbatim = if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        if rest.len() >= 4 && rest[..4].eq_ignore_ascii_case(r"UNC\") {
+            raw
+        } else {
+            rest
+        }
+    } else {
+        raw
+    };
+    let trimmed = without_verbatim.trim_end_matches(['/', '\\']);
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.len() == 2
+        && trimmed.as_bytes()[0].is_ascii_alphabetic()
+        && trimmed.as_bytes()[1] == b':'
+    {
+        return None;
+    }
+    if cfg!(windows) || trimmed.contains('\\') {
+        Some(std::path::PathBuf::from(trimmed.replace('/', "\\")))
+    } else {
+        Some(std::path::PathBuf::from(trimmed))
+    }
+}
+
+/// Collect the 4 asset subdirectories that may be registered with Tauri's runtime
+/// `asset_protocol_scope` for a given ADK workspace
+/// (`<adk>/naia-settings/{vrm-files,background,bgm-musics,nva-files}`),
+/// including canonicalized paths when present on disk. Never includes `<adk>` root
+/// or `<adk>/naia-settings` (which contain `data-private/secure-keys.dat` and
+/// `.sessions`/`.memory`/`.identity`).
+pub(crate) fn collect_adk_asset_scope_directories(adk_path: &str) -> Vec<std::path::PathBuf> {
+    let Some(base) = normalize_adk_scope_path(adk_path) else {
+        return Vec::new();
+    };
+    let mut roots = vec![base.clone()];
+    if let Ok(canon) = dunce::canonicalize(&base) {
+        if canon != base {
+            roots.push(canon);
+        }
+    }
+    let mut dirs = Vec::new();
+    let mut push_unique = |p: std::path::PathBuf| {
+        if !dirs.contains(&p) {
+            dirs.push(p);
+        }
+    };
+    for root in roots {
+        let settings = root.join("naia-settings");
+        for subdir in naia_settings_asset_subdirs() {
+            let dir = settings.join(subdir);
+            push_unique(dir.clone());
+            if let Ok(canon_dir) = dunce::canonicalize(&dir) {
+                push_unique(canon_dir);
+            }
+        }
+    }
+    dirs
+}
+
+/// Register only the 4 `naia-settings` asset subdirectories
+/// (`background`, `vrm-files`, `bgm-musics`, `nva-files`) in Tauri's runtime
+/// `asset_protocol_scope()`, while forbidding `data-private`, `data-private/.tmp`,
+/// and `data-private/secure-keys.dat` across both normalized and canonicalized ADK roots.
+pub(crate) fn allow_adk_asset_protocol_scope(app_handle: &tauri::AppHandle, adk_path: &str) {
+    let scope_dirs = collect_adk_asset_scope_directories(adk_path);
+    if scope_dirs.is_empty() {
+        return;
+    }
+    let scope = app_handle.asset_protocol_scope();
+    for dir in &scope_dirs {
+        if let Err(e) = scope.allow_directory(dir, true) {
+            log_verbose(&format!(
+                "[asset-scope] allow_directory failed for {}: {e}",
+                dir.display()
+            ));
+        }
+    }
+    if let Some(base) = normalize_adk_scope_path(adk_path) {
+        let mut roots = vec![base.clone()];
+        if let Ok(canon) = dunce::canonicalize(&base) {
+            if canon != base {
+                roots.push(canon);
+            }
+        }
+        for root in roots {
+            let secure_store_dir = root.join(SECURE_STORE_DIR);
+            if let Err(e) = scope.forbid_directory(&secure_store_dir, true) {
+                log_verbose(&format!(
+                    "[asset-scope] secure store forbid_directory failed for {}: {e}",
+                    secure_store_dir.display()
+                ));
+            }
+            let secure_store_path = secure_store_dir.join(SECURE_STORE_FILE);
+            if let Err(e) = scope.forbid_file(&secure_store_path) {
+                log_verbose(&format!(
+                    "[asset-scope] secure store forbid_file failed for {}: {e}",
+                    secure_store_path.display()
+                ));
+            }
+            let secure_store_temp_path = secure_store_dir.join(SECURE_STORE_TEMP_DIR);
+            if let Err(e) = scope.forbid_directory(&secure_store_temp_path, true) {
+                log_verbose(&format!(
+                    "[asset-scope] secure store temp forbid_directory failed for {}: {e}",
+                    secure_store_temp_path.display()
+                ));
+            }
+        }
+    }
+}
+
 /// List filenames inside `{adk_path}/naia-settings/{subdir}/`.
 /// Only whitelisted subdirs are allowed.
 #[tauri::command]
-async fn list_naia_assets(adk_path: String, subdir: String) -> Result<Vec<String>, String> {
-    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "nva-files"];
-    if !ALLOWED.contains(&subdir.as_str()) {
+async fn list_naia_assets(
+    app_handle: tauri::AppHandle,
+    adk_path: String,
+    subdir: String,
+) -> Result<Vec<String>, String> {
+    if !naia_settings_asset_subdirs()
+        .iter()
+        .any(|allowed| allowed == &subdir)
+    {
         return Err(format!("Invalid subdir: {subdir}"));
     }
+    allow_adk_asset_protocol_scope(&app_handle, &adk_path);
     let dir = std::path::PathBuf::from(&adk_path)
         .join("naia-settings")
         .join(&subdir);
@@ -12327,7 +12547,9 @@ async fn list_naia_assets(adk_path: String, subdir: String) -> Result<Vec<String
         for entry in dir_entries.flatten() {
             if entry.path().is_dir() == want_dir {
                 if let Some(name) = entry.file_name().to_str() {
-                    entries.push(name.to_string());
+                    if !is_excluded_background_asset(&subdir, name) {
+                        entries.push(name.to_string());
+                    }
                 }
             }
         }
@@ -12513,14 +12735,18 @@ async fn upload_nva_bundle(runtime_url: String, bundle_dir: String) -> Result<St
 /// background file-import UI (#12). Only whitelisted subdirs + file extensions.
 #[tauri::command]
 async fn import_naia_asset(
+    app_handle: tauri::AppHandle,
     adk_path: String,
     subdir: String,
     source_path: String,
 ) -> Result<String, String> {
-    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "nva-files"];
-    if !ALLOWED.contains(&subdir.as_str()) {
+    if !naia_settings_asset_subdirs()
+        .iter()
+        .any(|allowed| allowed == &subdir)
+    {
         return Err(format!("Invalid subdir: {subdir}"));
     }
+    allow_adk_asset_protocol_scope(&app_handle, &adk_path);
     let src = std::path::PathBuf::from(&source_path);
 
     // nva-files: .nva is a ZIP archive (manifest.json + clips/). Extract it.
@@ -12804,8 +13030,17 @@ async fn compile_knowledge(
 /// Reload the running Agent from the just-written settings and return an
 /// honest memory reload result. During onboarding there may be no Agent yet;
 /// the next SetWorkspace call will load the persisted files.
+/// An intermediate state where the main LLM role does not yet have a selected
+/// model (`invalid llmRoles(main/incomplete)` / `invalid llmRoles(main/missing)`)
+/// is not treated as a save/reload failure.
+fn is_incomplete_main_role_memory_error(memory_error: &str) -> bool {
+    let trimmed = memory_error.trim();
+    trimmed.contains("invalid llmRoles(main/incomplete)")
+        || trimmed.contains("invalid llmRoles(main/missing)")
+}
+
 fn ensure_memory_reload_succeeded(memory_error: &str, memory_retained: bool) -> Result<(), String> {
-    if memory_error.is_empty() {
+    if memory_error.is_empty() || is_incomplete_main_role_memory_error(memory_error) {
         return Ok(());
     }
     Err(format!(
@@ -13785,13 +14020,13 @@ async fn inspect_adk_dir(adk_path: String) -> String {
 
 /// Create `{adk_path}/naia-settings/` and standard subdirectories.
 #[tauri::command]
-async fn init_naia_settings(adk_path: String) -> Result<(), String> {
+async fn init_naia_settings(app_handle: tauri::AppHandle, adk_path: String) -> Result<(), String> {
     if adk_path.is_empty() {
         return Err("adk_path is empty".to_string());
     }
     let base = std::path::PathBuf::from(&adk_path).join("naia-settings");
     // Visible asset dirs
-    for subdir in &["vrm-files", "background", "bgm-musics"] {
+    for subdir in naia_settings_asset_subdirs() {
         std::fs::create_dir_all(base.join(subdir))
             .map_err(|e| format!("Failed to create {subdir}: {e}"))?;
     }
@@ -13800,6 +14035,7 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
         std::fs::create_dir_all(base.join(subdir))
             .map_err(|e| format!("Failed to create {subdir}: {e}"))?;
     }
+    allow_adk_asset_protocol_scope(&app_handle, &adk_path);
     Ok(())
 }
 
@@ -13846,6 +14082,7 @@ async fn write_naia_path_cache(
         if adk_path.is_empty() {
             return Err("adk_path is empty".to_string());
         }
+        allow_adk_asset_protocol_scope(&app_handle, &adk_path);
         let home = data_home::user_home_path()
             .ok_or_else(|| "Cannot determine home directory".to_string())?;
         // Native E2E owns its workspace through NAIA_E2E_ADK_PATH. Never let
@@ -13989,53 +14226,9 @@ async fn delete_naia_ref_audio(adk_path: String) -> Result<(), String> {
 /// resource directory into `{adk_path}/naia-settings/`. Skips files that already exist.
 #[tauri::command]
 async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> Result<(), String> {
-    // Extend asset:// protocol scope to include this ADK path (#277).
-    // Static tauri.conf.json scope (`$HOME/**`, `/var/home/*/naia-adk/**`, ??
-    // covers default placements only. Users who put their ADK on
-    // `/mnt/external/...`, `/opt/...`, `D:\...`, `/Volumes/...` would
-    // otherwise fail to load VRM / BGM / background via asset:// URLs.
-    // This is the single chokepoint ??every ADK setup path (new /
-    // use-existing / recreate / load) calls copy_bundled_assets after the
-    // user picks the path. Idempotent: re-adding an already-allowed path
-    // is a no-op inside Tauri's scope set.
-    // Non-fatal on failure: scope extension may fail under unusual
-    // permission conditions, but the asset:// request itself will error
-    // visibly to the user instead of silently denying.
-    if let Err(e) = app_handle
-        .asset_protocol_scope()
-        .allow_directory(&adk_path, true)
-    {
-        log_verbose(&format!(
-            "[copy_bundled_assets] asset scope extend failed for {adk_path}: {e}"
-        ));
-    }
-    // The broad ADK grant is needed for user and installed-app assets. Keep the
-    // credential file itself outside asset:// without blocking app runtime files
-    // under the same data-private directory.
-    let secure_store_path = std::path::Path::new(&adk_path)
-        .join(SECURE_STORE_DIR)
-        .join(SECURE_STORE_FILE);
-    if let Err(e) = app_handle
-        .asset_protocol_scope()
-        .forbid_file(&secure_store_path)
-    {
-        log_verbose(&format!(
-            "[copy_bundled_assets] secure store asset scope forbid failed for {}: {e}",
-            secure_store_path.display()
-        ));
-    }
-    let secure_store_temp_path = std::path::Path::new(&adk_path)
-        .join(SECURE_STORE_DIR)
-        .join(SECURE_STORE_TEMP_DIR);
-    if let Err(e) = app_handle
-        .asset_protocol_scope()
-        .forbid_directory(&secure_store_temp_path, true)
-    {
-        log_verbose(&format!(
-            "[copy_bundled_assets] secure store temp scope forbid failed for {}: {e}",
-            secure_store_temp_path.display()
-        ));
-    }
+    // Extend asset:// protocol scope to include this ADK path and all
+    // naia-settings/{vrm-files,background,bgm-musics,nva-files} subtrees (#277, #026-r2).
+    allow_adk_asset_protocol_scope(&app_handle, &adk_path);
     Ok(())
 }
 
@@ -14455,6 +14648,8 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::platform::suppress_error_dialogs();
+
     // Initialize env_logger so `log` crate macros (info!, debug!, warn!) produce output.
     // Control verbosity with RUST_LOG env var, e.g. RUST_LOG=tauri_plugin_stt=debug
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -14589,6 +14784,7 @@ pub fn run() {
             delete_stt_model,
             prepare_app_relaunch,
             cancel_app_relaunch,
+            default_adk_path,
             store_startup_message,
             send_to_agent_command,
             cancel_stream,
@@ -14818,6 +15014,12 @@ pub fn run() {
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
+            // Register cached ADK workspace and naia-settings/{background,vrm-files,bgm-musics,nva-files}
+            // in the runtime asset_protocol_scope on startup so Windows/custom ADK paths
+            // (e.g. C:\naia-test\rc026\naia-adk\naia-settings\background) are immediately allowed (#026-r2).
+            if let Ok(Some(cached_adk)) = read_naia_path_cache() {
+                allow_adk_asset_protocol_scope(&app_handle, &cached_adk);
+            }
             // Resolve the bundled Herdr binary (resource_dir/herdr) with a PATH
             // fallback, once, before any Workspace spawn/API call.
             herdr::init_herdr_bin(&app_handle);
@@ -15263,6 +15465,11 @@ pub fn run() {
                     // lease here so e2e "정상 종료 뒤 lease 가 정리된다" is not racing
                     // a driver that never delivers Destroyed.
                     if should_teardown_for_window(window.label()) {
+                        crate::herdr::mark_herdr_shutting_down();
+                        let pty_registry: tauri::State<'_, pty::PtyRegistry> = window.state();
+                        if let Ok(mut guard) = pty_registry.lock() {
+                            guard.clear();
+                        }
                         let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
                             window.state();
                         project_agent_pty::shutdown_project_agent_sessions(&project_agents);
@@ -15278,6 +15485,11 @@ pub fn run() {
 						));
 						return;
 					}
+                    crate::herdr::mark_herdr_shutting_down();
+                    let pty_registry: tauri::State<'_, pty::PtyRegistry> = window.state();
+                    if let Ok(mut guard) = pty_registry.lock() {
+                        guard.clear();
+                    }
                     // Kill Chrome on app exit (not on React component unmount)
                     crate::browser::browser_embed_kill();
                     // #582 S6b: 정상 종료도 소유 런타임 정리 경로다 (계약 4.8).
@@ -15373,6 +15585,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                crate::herdr::mark_herdr_shutting_down();
+                let pty_registry: tauri::State<'_, pty::PtyRegistry> = app_handle.state();
+                if let Ok(mut guard) = pty_registry.lock() {
+                    guard.clear();
+                }
                 log_verbose("[project_agent_pty::shutdown] branch=application_exit");
                 let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
                     app_handle.state();
@@ -16635,9 +16852,29 @@ mod tests {
     #[test]
     fn agent_reload_propagates_memory_failure_and_retention_state() {
         assert!(ensure_memory_reload_succeeded("", false).is_ok());
+        assert!(ensure_memory_reload_succeeded("invalid llmRoles(main/incomplete)", true).is_ok());
+        assert!(ensure_memory_reload_succeeded("invalid llmRoles(main/missing)", false).is_ok());
         let error = ensure_memory_reload_succeeded("invalid memory role", true).unwrap_err();
         assert!(error.contains("previous memory retained=true"));
         assert!(error.contains("invalid memory role"));
+    }
+
+    #[test]
+    fn default_adk_root_prefers_isolated_naia_home_over_os_profile() {
+        let isolated = std::path::Path::new("/tmp/naia-test-home");
+        let os_home = std::path::Path::new("/home/user");
+        assert_eq!(
+            resolve_default_adk_root(Some(isolated), Some("/home/user"), Some(os_home)),
+            Some(std::path::PathBuf::from("/tmp/naia-test-home/naia-adk"))
+        );
+        assert_eq!(
+            resolve_default_adk_root(None, Some("/custom/env-home"), Some(os_home)),
+            Some(std::path::PathBuf::from("/custom/env-home/naia-adk"))
+        );
+        assert_eq!(
+            resolve_default_adk_root(None, Some(""), Some(os_home)),
+            Some(std::path::PathBuf::from("/home/user/naia-adk"))
+        );
     }
 
     #[test]
@@ -20462,5 +20699,68 @@ mod voxcpm2_installer_precheck_tests {
             error_code: None,
         };
         assert_eq!(voxcpm2_effective_gpu(&inventory, Some(3)), Some(3));
+    }
+
+    #[test]
+    fn collect_adk_asset_scope_directories_includes_only_four_asset_subdirs_and_rejects_drive_roots() {
+        for raw_adk in [
+            r"C:\naia-test\rc026\naia-adk",
+            r"D:\workspace\naia-adk\",
+            r"C:\Users\Public/naia-adk/",
+            r"\\?\C:\naia-test\rc026\naia-adk\",
+        ] {
+            let dirs = collect_adk_asset_scope_directories(raw_adk);
+            let normalized: Vec<String> = dirs
+                .iter()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .collect();
+            assert_eq!(
+                normalized.len(),
+                4,
+                "expected only 4 asset subdirs for {raw_adk}: {normalized:?}"
+            );
+            assert!(
+                !normalized.iter().any(|p| p.ends_with("/naia-adk") || p.ends_with("/naia-settings")),
+                "ADK root and naia-settings root must not be registered directly: {normalized:?}"
+            );
+            for subdir in ["background", "vrm-files", "bgm-musics", "nva-files"] {
+                assert!(
+                    normalized
+                        .iter()
+                        .any(|p| p.ends_with(&format!("/naia-settings/{subdir}"))),
+                    "missing naia-settings/{subdir} scope for {raw_adk}: {normalized:?}"
+                );
+            }
+        }
+        for rejected in ["   ", "/", "\\", "C:", r"C:\", "C:/", r"\\?\C:\"] {
+            assert!(
+                collect_adk_asset_scope_directories(rejected).is_empty(),
+                "expected empty scope for bare/root path {rejected}"
+            );
+        }
+    }
+
+    #[test]
+    fn excluded_background_asset_filters_avatar_baked_live_video_only_from_backgrounds() {
+        assert!(is_excluded_background_asset(
+            "background",
+            "naia-autumn-office-live.mp4"
+        ));
+        assert!(is_excluded_background_asset(
+            "background",
+            r"C:\naia-test\rc026\naia-adk\naia-settings\background\naia-autumn-office-live.mp4"
+        ));
+        assert!(!is_excluded_background_asset(
+            "background",
+            "naia-autumn-office-uhd.webp"
+        ));
+        assert!(!is_excluded_background_asset(
+            "background",
+            "naia-dawn-city-uhd.webp"
+        ));
+        assert!(!is_excluded_background_asset(
+            "nva-files",
+            "naia-autumn-office-live.mp4"
+        ));
     }
 }

@@ -174,6 +174,13 @@ jobs:
             "NAIA_VOXCPM2_PROFILE_REGISTRY=$((Resolve-Path packages/shell/scripts/voxcpm2-profile-registry.json).Path)" >> $env:GITHUB_ENV
           }
 
+      - name: Provision verified Windows ffmpeg sidecar
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          node packages/shell/scripts/stage-runtime.mjs --provision-windows-ffmpeg
+          if ($LASTEXITCODE -ne 0) { throw "Windows ffmpeg sidecar provisioning failed" }
+
       - name: Provision verified Linux VoxCPM2 release input
         if: matrix.platform == 'linux'
         shell: bash
@@ -878,8 +885,13 @@ jobs:
           }
           $shellBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "naia-shell.exe")
           $nodeBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "node.exe")
-          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1) {
-            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count)"
+          $ffmpegBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "ffmpeg.exe")
+          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1 -or $ffmpegBinary.Count -ne 1) {
+            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count), ffmpeg.exe=$($ffmpegBinary.Count)"
+          }
+          node packages/shell/scripts/stage-runtime.mjs --verify-windows-ffmpeg $ffmpegBinary[0].FullName
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSI ffmpeg.exe verification failed"
           }
 
       - name: Validate Linux package structures
@@ -962,6 +974,11 @@ jobs:
           }
           if (-not (Test-Path -LiteralPath (Join-Path $resourceDir "node.exe") -PathType Leaf)) {
             throw "Installed bundled node.exe not found: $resourceDir"
+          }
+          $installedFfmpeg = Join-Path $resourceDir "ffmpeg.exe"
+          node packages/shell/scripts/stage-runtime.mjs --verify-windows-ffmpeg $installedFfmpeg
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installed NSIS ffmpeg.exe verification failed"
           }
           node packages/shell/scripts/verify-installed-smoke.mjs `
             --binary $binary --resource-dir $resourceDir --timeout-ms 120000

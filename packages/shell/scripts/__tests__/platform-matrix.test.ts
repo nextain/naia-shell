@@ -22,7 +22,12 @@ import { describe, expect, it } from "vitest";
 import { prepareSteamDepot } from "../prepare-steam-depot.mjs";
 // .mjs(JS) 모듈 — 타입 선언 없음. tsconfig include=["src"] 라 tsc 스코프 밖(vitest 만 수집).
 import {
+	FFMPEG_DEV_PLACEHOLDER_PREFIX,
+	MIN_WINDOWS_FFMPEG_BYTES,
+	WINDOWS_FFMPEG_FALLBACK_CANDIDATES,
+	WINDOWS_FFMPEG_SPEC,
 	assertBundleArchSupported,
+	downloadPinnedWindowsFfmpeg,
 	ensureNodeExecutable,
 	extractArchive,
 	generateConf,
@@ -30,7 +35,11 @@ import {
 	installerCoreEnv,
 	prepareRuntime,
 	provisionNode,
+	provisionWindowsFfmpegSidecar,
+	resolveWindowsFfmpegSource,
 	selectNodeArchive,
+	validateWindowsFfmpegBinary,
+	verifyPinnedWindowsFfmpegBinary,
 	wrapStaticExecutableForBundle,
 } from "../stage-runtime.mjs";
 
@@ -1280,5 +1289,304 @@ describe("installer workflow integration contracts", () => {
 	it("verifies the Steam marker and its hash-list entry in CI (#727)", () => {
 		expect(workflow).toContain("Steam depot distribution marker is missing");
 		expect(workflow).toContain("Steam depot hash list does not cover the distribution marker");
+	});
+});
+
+describe("Windows ffmpeg sidecar staging and placeholder guard (FR-WIN-RTX2070-R2.1)", () => {
+	function makeFakePeBinary(size = MIN_WINDOWS_FFMPEG_BYTES + 128) {
+		const buf = Buffer.alloc(size, 0x90);
+		buf[0] = 0x4d; // 'M'
+		buf[1] = 0x5a; // 'Z'
+		return buf;
+	}
+
+	it("pins Windows ffmpeg release version, archive/binary sizes, and SHA-256 in platform-matrix.json and shares Rust sidecar validation across build.rs and broadcast.rs", () => {
+		expect(WINDOWS_FFMPEG_SPEC).toEqual(matrix.os.win32.ffmpeg);
+		expect(WINDOWS_FFMPEG_SPEC.version).toBe("7.1.1");
+		expect(WINDOWS_FFMPEG_SPEC.url).toContain(
+			"https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+		);
+		expect(WINDOWS_FFMPEG_SPEC.archiveBytes).toBe(92234348);
+		expect(WINDOWS_FFMPEG_SPEC.archiveSha256).toMatch(/^[0-9a-f]{64}$/);
+		expect(WINDOWS_FFMPEG_SPEC.binaryBytes).toBe(87429632);
+		expect(WINDOWS_FFMPEG_SPEC.binarySha256).toMatch(/^[0-9a-f]{64}$/);
+		expect(WINDOWS_FFMPEG_SPEC.minBytes).toBe(1_000_000);
+		expect(WINDOWS_FFMPEG_SPEC.fallbackCandidates).toEqual([
+			"C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
+			"C:\\ffmpeg\\bin\\ffmpeg.exe",
+		]);
+		expect(WINDOWS_FFMPEG_FALLBACK_CANDIDATES).toEqual(
+			WINDOWS_FFMPEG_SPEC.fallbackCandidates,
+		);
+
+		const stageRuntimeSrc = readFileSync(
+			resolve(SHELL, "scripts/stage-runtime.mjs"),
+			"utf8",
+		);
+		expect(stageRuntimeSrc).not.toContain("chocolatey");
+		expect(stageRuntimeSrc).not.toContain("C:\\\\ffmpeg\\\\bin\\\\ffmpeg.exe");
+		expect(stageRuntimeSrc).toContain(
+			"const verified = verifyPinnedWindowsFfmpegBinary(targetPath);",
+		);
+
+		const buildRs = readFileSync(
+			resolve(SHELL, "src-tauri/build.rs"),
+			"utf8",
+		);
+		const libRs = readFileSync(
+			resolve(SHELL, "src-tauri/src/lib.rs"),
+			"utf8",
+		);
+		const broadcastRs = readFileSync(
+			resolve(SHELL, "src-tauri/src/broadcast.rs"),
+			"utf8",
+		);
+		const sharedRs = readFileSync(
+			resolve(SHELL, "src-tauri/src/ffmpeg_sidecar.rs"),
+			"utf8",
+		);
+		// P1-1: include! must be at file scope at the very top of build.rs, not inside a function body
+		expect(buildRs.trimStart().startsWith('include!("src/ffmpeg_sidecar.rs");')).toBe(
+			true,
+		);
+		const ensureFnIdx = buildRs.indexOf("fn ensure_ffmpeg_sidecar_for_tauri_build()");
+		expect(ensureFnIdx).toBeGreaterThan(
+			buildRs.indexOf('include!("src/ffmpeg_sidecar.rs");'),
+		);
+		expect(buildRs.slice(ensureFnIdx)).not.toContain("include!(");
+		expect(buildRs.slice(ensureFnIdx)).not.toMatch(/^\s*use\s+/m);
+		expect(buildRs).toContain("if is_windows || require_real {");
+
+		// App side uses ffmpeg_sidecar.rs as a normal module via lib.rs
+		expect(libRs).toContain("pub(crate) mod ffmpeg_sidecar;");
+		expect(broadcastRs).toContain("use crate::ffmpeg_sidecar::{");
+		expect(broadcastRs).not.toContain('include!("ffmpeg_sidecar.rs");');
+
+		// Included/module file must have no crate:: paths, no inner #![...] attrs, and no use imports
+		expect(sharedRs).toContain("pub fn validate_ffmpeg_sidecar_file(");
+		expect(sharedRs).not.toContain("crate::");
+		expect(sharedRs).not.toContain("#![");
+		expect(sharedRs).not.toMatch(/^\s*use\s+/m);
+		expect(sharedRs.match(/#\[allow\(dead_code\)\]/g)?.length).toBe(6);
+
+		// P3-4-1·2: Contract test enforces that Rust constants in ffmpeg_sidecar.rs equal platform-matrix.json
+		const rustMinBytes = Number(
+			sharedRs
+				.match(/pub const MIN_WINDOWS_FFMPEG_BYTES:\s*u64\s*=\s*([0-9_]+);/)?.[1]
+				?.replace(/_/g, ""),
+		);
+		expect(rustMinBytes).toBe(WINDOWS_FFMPEG_SPEC.minBytes);
+
+		const rustPrefix = sharedRs.match(
+			/pub const FFMPEG_DEV_PLACEHOLDER_PREFIX:\s*&\[u8\]\s*=\s*b"([^"]+)";/,
+		)?.[1];
+		expect(rustPrefix).toBe(WINDOWS_FFMPEG_SPEC.placeholderPrefix);
+
+		const rustSourceEnv = sharedRs.match(
+			/pub const FFMPEG_SIDECAR_SOURCE_ENV:\s*&str\s*=\s*"([^"]+)";/,
+		)?.[1];
+		expect(rustSourceEnv).toBe(WINDOWS_FFMPEG_SPEC.sourceEnv);
+
+		const rustRequireEnv = sharedRs.match(
+			/pub const FFMPEG_REQUIRE_REAL_ENV:\s*&str\s*=\s*"([^"]+)";/,
+		)?.[1];
+		expect(rustRequireEnv).toBe(WINDOWS_FFMPEG_SPEC.requireRealEnv);
+
+		const fallbackBlock =
+			sharedRs.match(
+				/pub const WINDOWS_FFMPEG_FALLBACK_CANDIDATES:\s*&\[&str\]\s*=\s*&\[([\s\S]*?)\];/,
+			)?.[1] ?? "";
+		const rustFallbacks = Array.from(
+			fallbackBlock.matchAll(/r?"([^"]+)"/g),
+			(m) => m[1],
+		);
+		expect(rustFallbacks).toEqual(WINDOWS_FFMPEG_SPEC.fallbackCandidates);
+
+		const workflow = readFileSync(
+			resolve(REPO_ROOT, ".github/workflows/build-installers.yml"),
+			"utf8",
+		);
+		expect(workflow).toContain(
+			"node packages/shell/scripts/stage-runtime.mjs --provision-windows-ffmpeg",
+		);
+		expect(
+			workflow.match(
+				/node packages\/shell\/scripts\/stage-runtime\.mjs --verify-windows-ffmpeg/g,
+			)?.length ?? 0,
+		).toBe(2);
+	});
+
+	it("rejects the 30-byte dev placeholder, tiny files, and non-MZ headers", () => {
+		const dir = mkdtempSync(resolve(tmpdir(), "naia-win-ffmpeg-validate-"));
+		try {
+			const placeholder = resolve(dir, "ffmpeg-placeholder.exe");
+			writeFileSync(placeholder, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
+			expect(() => validateWindowsFfmpegBinary(placeholder)).toThrow(
+				/개발용 자리표시 파일/,
+			);
+
+			const tinyPe = resolve(dir, "ffmpeg-tiny.exe");
+			writeFileSync(tinyPe, Buffer.from([0x4d, 0x5a, 0x00, 0x00]));
+			expect(() => validateWindowsFfmpegBinary(tinyPe)).toThrow(
+				/크기가 비정상/,
+			);
+
+			const nonPe = resolve(dir, "ffmpeg-non-pe.exe");
+			const badBuf = Buffer.alloc(MIN_WINDOWS_FFMPEG_BYTES + 64, 0x41);
+			writeFileSync(nonPe, badBuf);
+			expect(() => validateWindowsFfmpegBinary(nonPe)).toThrow(
+				/PE\(MZ\) 헤더가 유효하지 않습니다/,
+			);
+
+			const validPe = resolve(dir, "ffmpeg-valid.exe");
+			const peBuf = makeFakePeBinary();
+			writeFileSync(validPe, peBuf);
+			expect(
+				validateWindowsFfmpegBinary(validPe, {
+					expectedBytes: peBuf.length,
+					expectedSha256: createHash("sha256").update(peBuf).digest("hex"),
+				}),
+			).toEqual({
+				filePath: validPe,
+				size: MIN_WINDOWS_FFMPEG_BYTES + 128,
+			});
+			expect(() =>
+				validateWindowsFfmpegBinary(validPe, {
+					expectedSha256: "0".repeat(64),
+				}),
+			).toThrow(/SHA256 불일치/);
+
+			// P3-4-3: verifyPinnedWindowsFfmpegBinary (--verify-windows-ffmpeg) enforces pinned size and SHA-256
+			const pinnedSpec = {
+				...WINDOWS_FFMPEG_SPEC,
+				binaryBytes: peBuf.length,
+				binarySha256: createHash("sha256").update(peBuf).digest("hex"),
+			};
+			expect(
+				verifyPinnedWindowsFfmpegBinary(validPe, { spec: pinnedSpec }),
+			).toEqual({
+				filePath: validPe,
+				size: peBuf.length,
+			});
+			expect(() =>
+				verifyPinnedWindowsFfmpegBinary(validPe, {
+					spec: { ...pinnedSpec, binarySha256: "f".repeat(64) },
+				}),
+			).toThrow(/SHA256 불일치/);
+			expect(() =>
+				verifyPinnedWindowsFfmpegBinary(validPe, {
+					spec: { ...pinnedSpec, binaryBytes: peBuf.length + 16 },
+				}),
+			).toThrow(/고정 해시 계약과 다릅니다/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("overwrites an existing 30-byte placeholder sidecar with a real PE binary from NAIA_FFMPEG_SIDECAR_SOURCE, PATH, or SHA256-verified pinned release, and fails if none is available", () => {
+		const dir = mkdtempSync(resolve(tmpdir(), "naia-win-ffmpeg-stage-"));
+		try {
+			const srcTauriDir = resolve(dir, "src-tauri");
+			const binariesDir = resolve(srcTauriDir, "binaries");
+			mkdirSync(binariesDir, { recursive: true });
+			const targetSidecar = resolve(
+				binariesDir,
+				"ffmpeg-x86_64-pc-windows-msvc.exe",
+			);
+			writeFileSync(targetSidecar, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
+
+			// Fails when only a placeholder exists and neither PATH nor pinned release download succeeds
+			expect(() =>
+				provisionWindowsFfmpegSidecar("win32", "x64", {
+					srcTauriDir,
+					env: { PATH: dir },
+					execFileSyncImpl: () => {
+						throw new Error("where.exe / curl not available");
+					},
+				}),
+			).toThrow(/실제 ffmpeg\.exe 를 찾지 못했습니다/);
+
+			// Succeeds via SHA-256-verified pinned release fallback when PATH/Chocolatey has no ffmpeg
+			const fakeArchiveBuf = Buffer.from("pinned-zip-archive-bytes");
+			const fakeBinaryBuf = makeFakePeBinary();
+			const fakeSpec = {
+				...WINDOWS_FFMPEG_SPEC,
+				version: "7.1.1-test",
+				file: "ffmpeg-test.zip",
+				binaryEntry: "ffmpeg-test/bin/ffmpeg.exe",
+				archiveBytes: fakeArchiveBuf.length,
+				archiveSha256: createHash("sha256")
+					.update(fakeArchiveBuf)
+					.digest("hex"),
+				binaryBytes: fakeBinaryBuf.length,
+				binarySha256: createHash("sha256").update(fakeBinaryBuf).digest("hex"),
+			};
+			const stagedFromPinned = provisionWindowsFfmpegSidecar("win32", "x64", {
+				srcTauriDir,
+				env: { PATH: dir },
+				spec: fakeSpec,
+				execFileSyncImpl: (cmd: string, args: string[]) => {
+					if (cmd === "where.exe") throw new Error("not in PATH");
+					if (cmd.startsWith("curl")) {
+						const outIdx = args.indexOf("--output");
+						writeFileSync(args[outIdx + 1], fakeArchiveBuf);
+						return "";
+					}
+					if (cmd.endsWith("tar") || cmd.endsWith("tar.exe")) {
+						const cIdx = args.indexOf("-C");
+						const extractRoot = args[cIdx + 1];
+						const binPath = resolve(
+							extractRoot,
+							...fakeSpec.binaryEntry.split("/"),
+						);
+						mkdirSync(dirname(binPath), { recursive: true });
+						writeFileSync(binPath, fakeBinaryBuf);
+						return "";
+					}
+					return "";
+				},
+			});
+			expect(stagedFromPinned?.origin).toBe("pinned-release(7.1.1-test)");
+			expect(validateWindowsFfmpegBinary(targetSidecar).size).toBe(
+				fakeBinaryBuf.length,
+			);
+
+			// Rejects tampered archive SHA-256 in downloadPinnedWindowsFfmpeg
+			expect(() =>
+				downloadPinnedWindowsFfmpeg(
+					{ ...fakeSpec, version: "7.1.1-bad-sha" },
+					{
+						cacheDir: resolve(dir, "bad-cache"),
+						execFileSyncImpl: (cmd: string, args: string[]) => {
+							if (cmd.startsWith("curl")) {
+								const outIdx = args.indexOf("--output");
+								writeFileSync(
+									args[outIdx + 1],
+									Buffer.from("tampered-archive-bytes--------"),
+								);
+							}
+							return "";
+						},
+					},
+				),
+			).toThrow(/아카이브 (크기|SHA256) 불일치/);
+
+			// Succeeds and replaces placeholder when NAIA_FFMPEG_SIDECAR_SOURCE points to a valid PE binary
+			writeFileSync(targetSidecar, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
+			const realSource = resolve(dir, "real-ffmpeg.exe");
+			writeFileSync(realSource, makeFakePeBinary());
+			const staged = provisionWindowsFfmpegSidecar("win32", "x64", {
+				srcTauriDir,
+				env: { NAIA_FFMPEG_SIDECAR_SOURCE: realSource },
+				execFileSyncImpl: () => "",
+			});
+			expect(staged?.origin).toBe("NAIA_FFMPEG_SIDECAR_SOURCE");
+			expect(staged?.size).toBeGreaterThanOrEqual(MIN_WINDOWS_FFMPEG_BYTES);
+			expect(validateWindowsFfmpegBinary(targetSidecar).size).toBe(
+				MIN_WINDOWS_FFMPEG_BYTES + 128,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

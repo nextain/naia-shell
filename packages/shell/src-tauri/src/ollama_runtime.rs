@@ -293,6 +293,15 @@ impl ReservationSnapshot {
         }
     }
 
+    fn running_unleased() -> Self {
+        Self {
+            kind: Some("local_llm".to_string()),
+            status: ReservationStatus::Running,
+            bytes: None,
+            reason_code: None,
+        }
+    }
+
     fn denied(reason_code: &str) -> Self {
         Self {
             kind: Some("local_llm".to_string()),
@@ -751,6 +760,7 @@ struct RuntimeSettings {
     poll_interval: Duration,
     graceful_stop_timeout: Duration,
     force_stop_timeout: Duration,
+    allow_cpu_fallback_without_device: bool,
 }
 
 impl Default for RuntimeSettings {
@@ -762,6 +772,7 @@ impl Default for RuntimeSettings {
             poll_interval: POLL_INTERVAL,
             graceful_stop_timeout: GRACEFUL_STOP_TIMEOUT,
             force_stop_timeout: FORCE_STOP_TIMEOUT,
+            allow_cpu_fallback_without_device: false,
         }
     }
 }
@@ -933,11 +944,12 @@ struct ManagedProcess {
     version: String,
     generation: u64,
     reservation: Option<ReservationLease>,
+    cpu_fallback: bool,
 }
 
 struct ExternalReservation {
     host: String,
-    lease: ReservationLease,
+    lease: Option<ReservationLease>,
 }
 
 /// Tauri-managed state shared by the status, install, and remove commands.
@@ -1045,8 +1057,22 @@ fn select_ollama_device(
             .with_reason_code("device_mapping_unverified"));
         }
         device
+    } else if inventory.devices.len() == 1 {
+        &inventory.devices[0]
     } else {
-        if inventory.devices.len() != 1 {
+        let mut nvidia_devices = inventory
+            .devices
+            .iter()
+            .filter(|device| device.vendor == HardwareVendor::Nvidia);
+        let Some(first_nvidia) = nvidia_devices.next() else {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::DeviceSelectionRequired,
+                "reservation",
+                false,
+            )
+            .with_reason_code("device_selection_required"));
+        };
+        if nvidia_devices.next().is_some() {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::DeviceSelectionRequired,
                 "reservation",
@@ -1054,7 +1080,7 @@ fn select_ollama_device(
             )
             .with_reason_code("device_selection_required"));
         }
-        &inventory.devices[0]
+        first_nvidia
     };
 
     if device.vendor != HardwareVendor::Nvidia {
@@ -1383,16 +1409,19 @@ fn reserve_external_local(
         }
         if let Some(existing) = state.external_reservation.as_ref() {
             if existing.host == host {
-                return match ReservationSnapshot::from_lease(&existing.lease) {
-                    Some(snapshot) => ExternalAdmission::Reserved(snapshot),
-                    None => ExternalAdmission::Denied(
-                        RuntimeError::new(
-                            RuntimeErrorCode::ReservationLeaseLost,
-                            "reservation",
-                            true,
-                        )
-                        .with_reason_code("reservation_lease_lost"),
-                    ),
+                return match existing.lease.as_ref() {
+                    Some(lease) => match ReservationSnapshot::from_lease(lease) {
+                        Some(snapshot) => ExternalAdmission::Reserved(snapshot),
+                        None => ExternalAdmission::Denied(
+                            RuntimeError::new(
+                                RuntimeErrorCode::ReservationLeaseLost,
+                                "reservation",
+                                true,
+                            )
+                            .with_reason_code("reservation_lease_lost"),
+                        ),
+                    },
+                    None => ExternalAdmission::Reserved(ReservationSnapshot::running_unleased()),
                 };
             }
         }
@@ -1408,9 +1437,50 @@ fn reserve_external_local(
     };
     drop(old_reservation);
 
-    let (lease, _device_id, _selector) = match manager.try_reserve_local(requested_device_id) {
+    let effective_device_id = requested_device_id
+        .map(str::to_string)
+        .or_else(|| crate::voice_runtime::selected_device_id(&(manager.inventory_loader)(), None));
+
+    let (lease, _device_id, _selector) = match manager.try_reserve_local(effective_device_id.as_deref()) {
         Ok(value) => value,
         Err(error) => {
+            if matches!(
+                error.code,
+                RuntimeErrorCode::DeviceSelectionRequired
+                    | RuntimeErrorCode::DeviceMappingUnverified
+                    | RuntimeErrorCode::DeviceNotFound
+                    | RuntimeErrorCode::AcceleratorInventoryUnavailable
+            ) {
+                let committed = {
+                    let mut state = manager.lock();
+                    if state
+                        .external_reservation_pending
+                        .as_ref()
+                        .is_some_and(|(current, current_host)| {
+                            *current == generation && current_host == host
+                        })
+                        && !state.shutdown_requested
+                    {
+                        state.external_reservation_pending = None;
+                        state.external_reservation = Some(ExternalReservation {
+                            host: host.to_string(),
+                            lease: None,
+                        });
+                        true
+                    } else {
+                        false
+                    }
+                };
+                return if committed {
+                    ExternalAdmission::Reserved(ReservationSnapshot::running_unleased())
+                } else {
+                    ExternalAdmission::Denied(RuntimeError::new(
+                        RuntimeErrorCode::RuntimeBusy,
+                        "reservation",
+                        true,
+                    ))
+                };
+            }
             let mut state = manager.lock();
             if state
                 .external_reservation_pending
@@ -1466,7 +1536,7 @@ fn reserve_external_local(
             state.external_reservation_pending = None;
             state.external_reservation = Some(ExternalReservation {
                 host: host.to_string(),
-                lease: lease_to_drop.take().expect("new external lease is present"),
+                lease: Some(lease_to_drop.take().expect("new external lease is present")),
             });
             true
         } else {
@@ -4467,6 +4537,10 @@ fn mark_managed_reservation_running(manager: &RuntimeManager, generation: u64) -
     else {
         return false;
     };
+    if process.cpu_fallback {
+        state.snapshot.reservation = ReservationSnapshot::running_unleased();
+        return true;
+    }
     let Some(lease) = process.reservation.as_ref() else {
         return false;
     };
@@ -4960,9 +5034,41 @@ fn perform_start_operation(
         "reserving",
     );
     emit_manager_snapshot(app.as_ref(), &manager);
-    let (lease, _selected_device_id, device_selector) =
-        match manager.try_reserve_local(device_id.as_deref()) {
-            Ok(reservation) => reservation,
+    let effective_device_id = device_id.clone().or_else(|| {
+        if app.is_some() || manager.settings.allow_cpu_fallback_without_device {
+            crate::voice_runtime::selected_device_id(&(manager.inventory_loader)(), None)
+        } else {
+            None
+        }
+    });
+    let (mut pending_reservation, device_selector, cpu_fallback) =
+        match manager.try_reserve_local(effective_device_id.as_deref()) {
+            Ok((lease, _selected_device_id, selector)) => {
+                manager.set_reservation_snapshot(
+                    ReservationSnapshot::from_lease(&lease)
+                        .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost")),
+                );
+                (Some(lease), selector, false)
+            }
+            Err(error)
+                if (app.is_some() || manager.settings.allow_cpu_fallback_without_device)
+                    && device_id.is_none()
+                    && matches!(
+                        error.code,
+                        RuntimeErrorCode::DeviceSelectionRequired
+                            | RuntimeErrorCode::DeviceMappingUnverified
+                            | RuntimeErrorCode::DeviceNotFound
+                            | RuntimeErrorCode::AcceleratorInventoryUnavailable
+                    ) =>
+            {
+                log_ollama_debug(
+                    "start.cpu_fallback",
+                    Some(&operation_id),
+                    &format!("reason={:?}", error.code),
+                );
+                manager.set_reservation_snapshot(ReservationSnapshot::starting());
+                (None, String::new(), true)
+            }
             Err(error) => {
                 let reason_code = error.reason_code.as_deref().unwrap_or("reservation_denied");
                 manager.set_reservation_snapshot(ReservationSnapshot::denied(reason_code));
@@ -4979,15 +5085,6 @@ fn perform_start_operation(
                 return;
             }
         };
-    let mut pending_reservation = Some(lease);
-    manager.set_reservation_snapshot(
-        ReservationSnapshot::from_lease(
-            pending_reservation
-                .as_ref()
-                .expect("reserved lease is present before spawn"),
-        )
-        .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost")),
-    );
     update_operation_snapshot(
         &manager,
         &operation_id,
@@ -5096,6 +5193,7 @@ fn perform_start_operation(
                 version: version.clone(),
                 generation,
                 reservation: pending_reservation.take(),
+                cpu_fallback,
             });
             state.snapshot.state = RuntimeState::InstalledStopped;
             state.snapshot.server_state = ServerState::Starting;
@@ -5119,6 +5217,7 @@ fn perform_start_operation(
                 version: version.clone(),
                 generation: 0,
                 reservation: pending_reservation.take(),
+                cpu_fallback,
             };
             if stop_managed_process(&mut pending, &manager.settings) {
                 drop(pending);
@@ -5690,10 +5789,14 @@ fn status_snapshot(
                         (Some(process.generation)
                             == process_state.as_ref().map(|current| current.0))
                         .then(|| {
-                            process
-                                .reservation
-                                .as_ref()
-                                .and_then(ReservationSnapshot::from_lease)
+                            if process.cpu_fallback {
+                                Some(ReservationSnapshot::running_unleased())
+                            } else {
+                                process
+                                    .reservation
+                                    .as_ref()
+                                    .and_then(ReservationSnapshot::from_lease)
+                            }
                         })
                         .flatten()
                     })
@@ -6567,6 +6670,7 @@ mod tests {
                 poll_interval: Duration::from_millis(5),
                 graceful_stop_timeout: Duration::from_secs(5),
                 force_stop_timeout: Duration::from_secs(2),
+                allow_cpu_fallback_without_device: false,
             },
             locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
             release_pin: Some(pin),
@@ -6829,6 +6933,7 @@ mod tests {
             poll_interval: Duration::from_millis(3),
             graceful_stop_timeout: Duration::from_millis(12),
             force_stop_timeout: Duration::from_millis(12),
+            allow_cpu_fallback_without_device: false,
         }
     }
 
@@ -9156,6 +9261,7 @@ mod tests {
                 version: RELEASE_VERSION.to_string(),
                 generation: 1,
                 reservation: Some(lease),
+                cpu_fallback: false,
             });
         }
         (manager, fake_process)
@@ -9744,5 +9850,94 @@ mod tests {
         assert!(child.graceful_calls.load(Ordering::Acquire) > 0);
         assert!(manager.lock().process.is_none());
         assert!(manager.lock().active_model_pull.is_none());
+    }
+
+    #[test]
+    fn external_local_server_admitted_without_device_selection_when_multiple_devices_present() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(1)).unwrap();
+        let port = external.address.port();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+
+        let mut multiple = e2e_fake_accelerator_inventory();
+        let mut second = multiple.devices[0].clone();
+        second.provider_id.value = "vulkan:uuid:ffeeddccbbaa99887766554433221100".to_string();
+        second.nvidia.as_mut().unwrap().compatibility_index = Some(1);
+        multiple.devices.push(second);
+
+        let manager = test_manager_with_inventory(
+            &anchor,
+            &root,
+            port,
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+            multiple,
+        );
+
+        let status = status_snapshot(&manager, None, None).unwrap();
+        assert_eq!(status.server_state, ServerState::ReadyExternalLocal);
+        assert_eq!(status.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(status.reservation.status, ReservationStatus::Running);
+        assert_eq!(status.reservation.reason_code, None);
+        assert!(status.error.is_none());
+
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let started = wait_for_operation(&manager, &operation);
+        assert_eq!(started.server_state, ServerState::ReadyExternalLocal);
+        assert_eq!(started.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(started.reservation.status, ReservationStatus::Running);
+        assert_eq!(started.reservation.reason_code, None);
+        assert!(started.error.is_none());
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn single_nvidia_among_mixed_adapters_auto_selects_and_managed_fallback_uses_cpu() {
+        let mut mixed = e2e_fake_accelerator_inventory();
+        let mut igpu = mixed.devices[0].clone();
+        igpu.vendor = HardwareVendor::Intel;
+        igpu.provider_id.value = "vulkan:pci:0000:00:02.0".to_string();
+        igpu.nvidia = None;
+        mixed.devices.push(igpu);
+
+        let (selected_id, selector) = select_ollama_device(&mixed, None).unwrap();
+        assert_eq!(selected_id, "vulkan:uuid:00112233445566778899aabbccddeeff");
+        assert_eq!(selector, "0");
+
+        let mut no_devices = e2e_fake_accelerator_inventory();
+        no_devices.status = DetectionStatus::NoDevices;
+        no_devices.devices.clear();
+
+        let runner = FakeRunner::new(Some(ApiFixture::ready(1)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let mut manager = test_manager_with_inventory(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+            no_devices,
+        );
+        manager.settings.allow_cpu_fallback_without_device = true;
+
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let started = wait_for_operation(&manager, &operation);
+        assert_eq!(started.server_state, ServerState::ReadyManaged);
+        assert_eq!(started.ownership, RuntimeOwnership::ManagedChild);
+        assert_eq!(started.reservation.status, ReservationStatus::Running);
+        assert!(started.error.is_none());
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
     }
 }

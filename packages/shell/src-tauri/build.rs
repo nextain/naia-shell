@@ -1,34 +1,88 @@
+include!("src/ffmpeg_sidecar.rs");
+
+use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::{
+    collections::BTreeSet,
+    env, fs,
+    path::{Path, PathBuf},
+};
+
 fn ensure_ffmpeg_sidecar_for_tauri_build() {
-    use std::{env, fs, path::PathBuf};
-    println!("cargo:rerun-if-env-changed=NAIA_FFMPEG_SIDECAR_SOURCE");
+    println!("cargo:rerun-if-changed=src/ffmpeg_sidecar.rs");
+
+    println!("cargo:rerun-if-env-changed={FFMPEG_SIDECAR_SOURCE_ENV}");
+    println!("cargo:rerun-if-env-changed={FFMPEG_REQUIRE_REAL_ENV}");
     let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") else {
         return;
     };
     let Ok(target) = env::var("TARGET") else {
         return;
     };
-    let ext = if target.contains("windows") {
-        ".exe"
-    } else {
-        ""
-    };
+    let is_windows = target.contains("windows");
+    let require_real = env::var(FFMPEG_REQUIRE_REAL_ENV)
+        .ok()
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let ext = if is_windows { ".exe" } else { "" };
     let binaries_dir = PathBuf::from(manifest_dir).join("binaries");
     let target_sidecar = binaries_dir.join(format!("ffmpeg-{target}{ext}"));
-    if target_sidecar.is_file() {
-        return;
-    }
     let _ = fs::create_dir_all(&binaries_dir);
-    if let Ok(src) = env::var("NAIA_FFMPEG_SIDECAR_SOURCE") {
-        let src_path = PathBuf::from(src.trim());
-        if src_path.is_file() {
-            let _ = fs::copy(&src_path, &target_sidecar);
+
+    if let Ok(src) = env::var(FFMPEG_SIDECAR_SOURCE_ENV) {
+        let trimmed = src.trim();
+        if !trimmed.is_empty() {
+            let src_path = PathBuf::from(trimmed);
+            if let Err(err) = validate_ffmpeg_sidecar_file(&src_path, is_windows) {
+                panic!("{FFMPEG_SIDECAR_SOURCE_ENV} does not point to a valid ffmpeg binary: {err}");
+            }
+            if src_path != target_sidecar {
+                fs::copy(&src_path, &target_sidecar)
+                    .expect("failed to copy NAIA_FFMPEG_SIDECAR_SOURCE into binaries/");
+            }
             return;
         }
     }
-    let _ = fs::write(&target_sidecar, b"#!naia-ffmpeg-dev-placeholder\n");
+
+    if validate_ffmpeg_sidecar_file(&target_sidecar, is_windows).is_ok() {
+        return;
+    }
+
+    if is_windows {
+        let mut candidates = Vec::new();
+        if let Some(paths) = env::var_os("PATH") {
+            for dir in env::split_paths(&paths) {
+                candidates.push(dir.join("ffmpeg.exe"));
+            }
+        }
+        for fallback in WINDOWS_FFMPEG_FALLBACK_CANDIDATES {
+            candidates.push(PathBuf::from(fallback));
+        }
+        for candidate in candidates {
+            if validate_ffmpeg_sidecar_file(&candidate, true).is_ok() {
+                let _ = fs::copy(&candidate, &target_sidecar);
+                if validate_ffmpeg_sidecar_file(&target_sidecar, true).is_ok() {
+                    return;
+                }
+            }
+        }
+    }
+
+    if is_windows || require_real {
+        let _ = fs::remove_file(&target_sidecar);
+        panic!(
+            "Real ffmpeg sidecar is required for target {target} (Windows targets never allow `#!naia-ffmpeg-dev-placeholder` because it triggers os error 216), \
+             but {} is missing or invalid. Run `node packages/shell/scripts/stage-runtime.mjs --provision-windows-ffmpeg` or set {FFMPEG_SIDECAR_SOURCE_ENV} to a valid ffmpeg binary (>= {MIN_WINDOWS_FFMPEG_BYTES} bytes).",
+            target_sidecar.display()
+        );
+    }
+
+    let mut placeholder = FFMPEG_DEV_PLACEHOLDER_PREFIX.to_vec();
+    placeholder.push(b'\n');
+    let _ = fs::write(&target_sidecar, &placeholder);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
         if let Ok(meta) = fs::metadata(&target_sidecar) {
             let mut perms = meta.permissions();
             perms.set_mode(0o755);
@@ -43,11 +97,6 @@ fn main() {
 
     // os <-> agent gRPC client codegen. The proto must come from the
     // explicitly paired naia-agent worktree; never fall back to a sibling repo.
-    use std::{
-        collections::BTreeSet,
-        env,
-        path::{Path, PathBuf},
-    };
     // ⚠️ agent-pairing.json 과 같은 값이어야 한다. 두 곳에 따로 적혀 있으므로
     //    src/test/agent-pairing-drift.contract.test.ts 가 둘이 갈라지는 것을 막는다.
     const REQUIRED_AGENT_COMMIT: &str = "bfa2aa956fc356b50f853c03316faf1b773d0f9e";
@@ -185,7 +234,6 @@ fn main() {
             proto.display()
         );
     }
-    use sha2::{Digest, Sha256};
     let proto_bytes = std::fs::read(&proto).expect("failed to read naia_agent.proto for hashing");
     let proto_text =
         String::from_utf8(proto_bytes.clone()).expect("naia_agent.proto must be UTF-8");

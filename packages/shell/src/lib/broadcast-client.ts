@@ -128,6 +128,99 @@ export function canStartBroadcastWithConfig(
 }
 
 /**
+ * Format a `broadcast_start` failure into a user-friendly localized message while
+ * always redacting the stream key (Item 2).
+ */
+export function formatBroadcastStartError(
+	rawError: unknown,
+	streamKey = "",
+): string {
+	const rawText =
+		rawError instanceof Error
+			? rawError.message
+			: typeof rawError === "string"
+				? rawError
+				: String(rawError ?? "");
+	const stripped = rawText.replace(/^Error:\s*/i, "").trim();
+	const safeReason = redactStreamKey(stripped, streamKey);
+	if (
+		/#!naia-ffmpeg-dev-placeholder|os error 216|PE\(MZ\)|ffmpeg 실행 파일을 찾을 수 없습니다/i.test(
+			safeReason,
+		)
+	) {
+		return `${t("broadcast.errorFfmpegInvalid")} (${safeReason})`;
+	}
+	return t("broadcast.startFailed", {
+		reason: safeReason || "Unknown error",
+	});
+}
+
+export function clearBroadcastError(): void {
+	setBroadcastBridgeSnapshot({ lastError: null });
+}
+
+/**
+ * Determine whether starting a broadcast requires an in-app confirmation step (Item 4).
+ * - On Linux, XDG Desktop Portal ScreenCast already prompts the user to select/confirm the window.
+ * - On Windows (where `gdigrab` grabs the `Naia` window directly) and other non-Linux OSes,
+ *   we show an in-app confirmation step before connecting to the external RTMP server.
+ */
+export function requiresBroadcastConfirmation(
+	platformOverride?: string,
+): boolean {
+	const raw =
+		platformOverride ??
+		(typeof navigator !== "undefined"
+			? `${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`
+			: "");
+	const normalized = raw.trim().toLowerCase();
+	if (normalized.includes("win")) {
+		return true;
+	}
+	if (normalized.includes("linux") && !normalized.includes("android")) {
+		return false;
+	}
+	return true;
+}
+
+export interface BroadcastConfirmationPreview {
+	platform: BroadcastPlatformId;
+	serverUrl: string;
+	maskedStreamKey: string;
+	destinationDisplay: string;
+	captureTarget: string;
+}
+
+export function getBroadcastConfirmationPreview(
+	config?: {
+		broadcastPlatform?: BroadcastPlatformId | null;
+		broadcastServerUrl?: string | null;
+		broadcastStreamKey?: string | null;
+	} | null,
+): BroadcastConfirmationPreview {
+	const platform: BroadcastPlatformId =
+		config?.broadcastPlatform ?? "youtube";
+	const preset =
+		BROADCAST_PLATFORM_PRESETS[platform] ??
+		BROADCAST_PLATFORM_PRESETS.youtube;
+	const rawServerUrl =
+		config?.broadcastServerUrl?.trim() || preset.defaultServerUrl;
+	const streamKey = config?.broadcastStreamKey?.trim() ?? "";
+	const safeServerUrl = redactStreamKey(rawServerUrl, streamKey).replace(
+		/\/+$/,
+		"",
+	);
+	const maskedStreamKey = maskStreamKeyForDisplay(streamKey) || "••••••••";
+	return {
+		platform,
+		serverUrl: safeServerUrl,
+		maskedStreamKey,
+		destinationDisplay: `${safeServerUrl}/${maskedStreamKey}`,
+		captureTarget: t("broadcast.confirmTargetNaiaWindow"),
+	};
+}
+
+/**
  * Evaluate YouTube BGM selection during active broadcast:
  * YouTube BGM is not blocked, and when broadcasting is active a single-line copyright notice is shown.
  */
@@ -602,7 +695,7 @@ export async function startBroadcast(): Promise<BroadcastStatusPayload> {
 		return status;
 	} catch (error) {
 		unsubscribeChat();
-		const errMsg = redactStreamKey(String(error), streamKey);
+		const errMsg = formatBroadcastStartError(error, streamKey);
 		Logger.error("Broadcast", "broadcast_start failed", { error: errMsg });
 		setBroadcastBridgeSnapshot({
 			state: "idle",
@@ -663,12 +756,4 @@ export async function stopBroadcast(): Promise<BroadcastStatusPayload> {
 		});
 		throw error;
 	}
-}
-
-export async function toggleBroadcast(): Promise<BroadcastStatusPayload> {
-	const current = getBroadcastBridgeSnapshot();
-	if (isBroadcastActive(current.state)) {
-		return stopBroadcast();
-	}
-	return startBroadcast();
 }
