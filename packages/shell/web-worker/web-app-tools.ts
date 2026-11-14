@@ -178,3 +178,16 @@ export function makeWebWeatherExecutor(): ToolExecutorPort {
 		execute: (call, opts) => builtin.execute(call, opts),
 	};
 }
+
+export const WEB_TIME_TOOL_NAME = "get_time";
+
+/** The app's get_time alone (builtin-skills clock), for the kiosk tool set. */
+export function makeWebTimeExecutor(): ToolExecutorPort {
+	const builtin = makeBuiltinSkillsExecutor({
+		clock: () => new Date(),
+	});
+	return {
+		specs: () => builtin.specs().filter((s) => s.name === WEB_TIME_TOOL_NAME),
+		execute: (call, opts) => builtin.execute(call, opts),
+	};
+}

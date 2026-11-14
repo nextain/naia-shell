@@ -142,4 +142,15 @@ describe.skipIf(!mod)("web app tools", () => {
 			"base",
 		);
 	});
+
+	it("kiosk time executor answers get_time alone like the app", async () => {
+		const kiosk = mod?.makeWebTimeExecutor?.();
+		if (!kiosk) throw new Error("makeWebTimeExecutor unavailable");
+		expect(kiosk.specs().map((s: { name: string }) => s.name)).toEqual([
+			"get_time",
+		]);
+		const r = await kiosk.execute(call("get_time"), {});
+		expect(r.output).toBeTruthy();
+		expect(Number.isNaN(Date.parse(String(r.output)))).toBe(false);
+	});
 });
