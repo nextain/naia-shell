@@ -237,6 +237,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 					...kioskSpecs.map((s) => s.name),
 					SKILL_YOUTUBE_BGM.name,
 					WEB_WEATHER_TOOL_NAME,
+					WEB_TIME_TOOL_NAME,
 				]
 			: [
 					...BROWSER_READ_TOOL_NAMES,
