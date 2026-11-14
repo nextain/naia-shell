@@ -285,12 +285,31 @@ class NextainSpeechError extends Error {
  */
 export const KIOSK_VOICE_REQUEST_TIMEOUT_MS = 20_000;
 
-function withKioskVoiceTimeout(opts: SynthesizeOpts): SynthesizeOpts {
+/**
+ * One kiosk voice request under the timeout. When the timeout fires while the
+ * body is still arriving, Chrome rejects the body read with AbortError (the
+ * signal reason is TimeoutError), which callers would take for a user abort and
+ * drop the sentence. Rethrow the timeout reason so the fallback still runs.
+ */
+async function requestKioskSpeech(
+	base: string,
+	opts: SynthesizeOpts,
+	voice: string,
+): Promise<SynthesizeResult> {
 	const timeout = AbortSignal.timeout(KIOSK_VOICE_REQUEST_TIMEOUT_MS);
-	return {
-		...opts,
-		signal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout,
-	};
+	try {
+		return await requestNextainSpeech(
+			base,
+			{
+				...opts,
+				signal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout,
+			},
+			voice,
+		);
+	} catch (err) {
+		if (timeout.aborted && !opts.signal?.aborted) throw timeout.reason;
+		throw err;
+	}
 }
 
 function kioskRetryDelayMs(retryAfter: string | null): number {
@@ -342,9 +361,9 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	try {
 		let result: SynthesizeResult;
 		try {
-			result = await requestNextainSpeech(
+			result = await requestKioskSpeech(
 				base,
-				withKioskVoiceTimeout(opts),
+				opts,
 				KIOSK_DEMO_TTS_VOICE,
 			);
 		} catch (err) {
@@ -361,9 +380,9 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 				delayMs,
 			});
 			await waitForKioskRetry(delayMs, opts.signal);
-			result = await requestNextainSpeech(
+			result = await requestKioskSpeech(
 				base,
-				withKioskVoiceTimeout(opts),
+				opts,
 				KIOSK_DEMO_TTS_VOICE,
 			);
 		}
@@ -378,9 +397,9 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			error: err instanceof Error ? err.message : String(err),
 		});
 		emitKioskVoiceState("fallback");
-		return requestNextainSpeech(
+		return requestKioskSpeech(
 			base,
-			withKioskVoiceTimeout(opts),
+			opts,
 			KIOSK_DEMO_TTS_FALLBACK_VOICE,
 		);
 	}

@@ -502,6 +502,36 @@ describe("synthesizeTts — nextain (gateway)", () => {
 				"ko-KR-Neural2-A",
 			]);
 		});
+
+		it("falls back to Google when the voice timeout fires while the body is arriving", async () => {
+			// Chrome rejects a body read cut by AbortSignal.timeout with AbortError.
+			const timeout = new AbortController();
+			vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(timeout.signal);
+			const slowBody = {
+				ok: true,
+				status: 200,
+				headers: { get: (k: string) => (k === "content-type" ? "audio/wav" : null) },
+				arrayBuffer: () =>
+					new Promise<ArrayBuffer>((_resolve, reject) => {
+						timeout.signal.addEventListener("abort", () =>
+							reject(new DOMException("aborted", "AbortError")),
+						);
+					}),
+			};
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(slowBody)
+				.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(0);
+			timeout.abort(new DOMException("timed out", "TimeoutError"));
+			expect((await result).audioBase64).toBe("SUQzBA==");
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"ko-KR-Neural2-A",
+			]);
+		});
 	});
 
 	it("kiosk retries when the browser cannot decode the tpl-jina audio", async () => {
