@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // `@naia-agent/*` resolves only in web mode (NAIA_WEB_AGENT_DIR, see vite.config.ts),
 // so the default desktop `vitest run` skips this suite. Run it with:
@@ -60,13 +60,36 @@ function make(root = fakeRoot()) {
 }
 
 describe.skipIf(!mod)("web app tools", () => {
-	it("lists the app names only (no get_weather, base kept)", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("lists the app names only (get_weather included, base kept)", () => {
 		const names = make()
 			.ex.specs()
 			.map((s) => s.name);
 		for (const n of WEB_APP_TOOL_NAMES) expect(names).toContain(n);
 		expect(names).toContain("read_file");
-		expect(names).not.toContain("get_weather");
+		expect(names).toContain("get_weather");
+	});
+
+	it("get_weather is the app's builtin: {latitude, longitude} in, open-meteo current out", async () => {
+		const fetchMock = vi.fn(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({
+				current: { temperature_2m: 12.3, weather_code: 3 },
+			}),
+		}));
+		vi.stubGlobal("fetch", fetchMock);
+		const r = await make().ex.execute(
+			call("get_weather", { latitude: 37.5665, longitude: 126.978 }),
+			{},
+		);
+		expect(r.output).toBe("기온 12.3°C, 코드 3");
+		const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
+		expect(url).toContain("https://api.open-meteo.com/v1/forecast?");
+		expect(url).toContain("current=temperature_2m,weather_code");
+		const bad = await make().ex.execute(call("get_weather", { city: "서울" }), {});
+		expect(bad.isError).toBe(true);
 	});
 
 	it("get_time answers with the clock", async () => {

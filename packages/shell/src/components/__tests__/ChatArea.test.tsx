@@ -4584,7 +4584,7 @@ describe("ChatArea", () => {
 			);
 			expect(evidencesAfterSlide5[1]).not.toHaveTextContent("knowledge/");
 
-			// 3. P2-2: Presentation finishes on slide 9 (completed) while slides window stays open -> asking "기억의 주인은 누구인가요?" keeps slide 9 as reference but enables knowledge search
+			// 3. P2-2: Presentation finishes on slide 10 (completed) while slides window stays open -> asking "기억의 주인은 누구인가요?" keeps slide 10 as reference but enables knowledge search
 			slideMode = "completed";
 			slidePage = 9;
 			fireEvent.change(input, {

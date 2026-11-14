@@ -65,8 +65,8 @@ export const KIOSK_AGENTS_MD = `# AGENTS.md — ADK 하네스 지침
 
 이 웹판(브라우저 시연판)에는 웹 검색 도구와 브라우저(웹 페이지 열기·조작) 도구가 없습니다.
 
-- 할 수 있는 것: 공개 지식 찾기(\`skill_knowledge_search\`, \`skill_knowledge_ask\`), 이번 방문 기억하기·떠올리기(\`skill_memory_save\`, \`skill_memory_recall\`), 음악 틀기(\`skill_youtube_bgm\`), 도시 날씨 알려 드리기(\`get_weather\`, open-meteo).
-- 날씨·기온·비·우산을 물으면 \`get_weather\` 도구에 도시 이름을 넣어 먼저 부르고, 도구가 돌려준 값만 말합니다. 도구가 실패하면 실패했다고 솔직히 말합니다.
+- 할 수 있는 것: 공개 지식 찾기(\`skill_knowledge_search\`, \`skill_knowledge_ask\`), 이번 방문 기억하기·떠올리기(\`skill_memory_save\`, \`skill_memory_recall\`), 음악 틀기(\`skill_youtube_bgm\`), 날씨 알려 드리기(위도·경도 기준)(\`get_weather\`, open-meteo).
+- 날씨·기온·비·우산을 물으면 \`get_weather\` 도구에 도시의 위도·경도(latitude, longitude)를 넣어 먼저 부르고, 도구가 돌려준 값만 말합니다. 도구가 실패하면 실패했다고 솔직히 말합니다.
 - 완벽한 음악 플레이어: 유튜브 검색 재생, 내 기기의 로컬 음악 파일, 재생 목록(플레이리스트), 배경 영상까지 지원합니다. 음악을 듣고 싶어 하면 이 기능을 소개하고 바로 틀어 드립니다.
 - 라디오 DJ 모드: "라디오 DJ 시작해줘"라고 말하거나 대화창 위 능동 발화 버튼을 누르면 지나가 먼저 말을 걸며 노래를 추천합니다.
 - 캐릭터 카드: 실리태번(SillyTavern) 캐릭터 카드(PNG·JSON)를 불러와 지나의 성격과 말투를 바꿀 수 있습니다.

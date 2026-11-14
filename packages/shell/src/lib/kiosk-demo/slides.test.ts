@@ -153,10 +153,10 @@ describe("kiosk-demo S6 public IR slides", () => {
 		useAppStore.getState().setActiveApp(null);
 	});
 
-	it("provides the 9-slide company intro deck: one picture, title and script per slide", () => {
+	it("provides the 10-slide company intro deck: one picture, title and script per slide", () => {
 		const slides = getKioskIrSlides();
-		expect(slides.length).toBe(9);
-		expect(rawIrDeck.slides.length + rawPrivateManifest.slides.length).toBe(9);
+		expect(slides.length).toBe(10);
+		expect(rawIrDeck.slides.length + rawPrivateManifest.slides.length).toBe(10);
 
 		const rawJson = JSON.stringify(rawIrDeck);
 		for (const forbidden of FORBIDDEN_IR_SLIDE_WORDS) {
@@ -361,7 +361,7 @@ describe("kiosk-demo S6 public IR slides", () => {
 					"넥스테인 · 나와 우리 조직이 소유하고 함께 일하는 AI",
 				),
 			);
-			expect(screen.getByText("1 / 9")).toBeInTheDocument();
+			expect(screen.getByText("1 / 10")).toBeInTheDocument();
 			await waitFor(() => expect(speechRequests.length).toBeGreaterThanOrEqual(1));
 			expect(speechRequests.at(-1)?.page).toBe(1);
 
@@ -372,7 +372,7 @@ describe("kiosk-demo S6 public IR slides", () => {
 				}),
 			);
 
-			await waitFor(() => expect(screen.getByText("2 / 9")).toBeInTheDocument());
+			await waitFor(() => expect(screen.getByText("2 / 10")).toBeInTheDocument());
 			expect(screen.getByTestId("slides-card-image")).toHaveAttribute(
 				"alt",
 				"문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다",
@@ -503,16 +503,16 @@ describe("kiosk-demo S6 public IR slides", () => {
 			expect(getActiveKioskIrSlide()?.page).toBe(2);
 
 			mode = "completed";
-			currentPage = 9;
+			currentPage = 10;
 			expect(isKioskSlideQuestionTurnActive()).toBe(false);
-			const slide9 = getActiveKioskIrSlide()!;
-			expect(slide9.page).toBe(9);
+			const slide10 = getActiveKioskIrSlide()!;
+			expect(slide10.page).toBe(10);
 
 			const refPrompt = buildKioskSlideReferencePrompt(
-				slide9,
+				slide10,
 				"기억의 주인은 누구인가요?",
 			);
-			expect(refPrompt).toContain("[현재 열려 있는 슬라이드 참고: 9장");
+			expect(refPrompt).toContain("[현재 열려 있는 슬라이드 참고: 10장");
 			expect(refPrompt).toContain(
 				"발표 대본 파일: slides/nextain-ir-public.md",
 			);
@@ -539,11 +539,11 @@ describe("kiosk-demo S6 public IR slides", () => {
 					"넥스테인 · 나와 우리 조직이 소유하고 함께 일하는 AI",
 				),
 		);
-		expect(screen.getByText("1 / 9")).toBeInTheDocument();
+		expect(screen.getByText("1 / 10")).toBeInTheDocument();
 
 		const handledNext = await handleKioskSlidesChatTurn("다음 장");
 		expect(handledNext).toBe(true);
-		await waitFor(() => expect(screen.getByText("2 / 9")).toBeInTheDocument());
+		await waitFor(() => expect(screen.getByText("2 / 10")).toBeInTheDocument());
 		expect(screen.getByTestId("slides-card-image")).toHaveAttribute(
 				"alt",
 				"문제: 기억은 끊기고, 남의 클라우드에 묶이고, 하는 일은 가려져 있다",
@@ -560,7 +560,7 @@ describe("kiosk-demo S6 public IR slides", () => {
 			"naia-adk/slides/nextain-ir-public.md",
 		]);
 		const script = await fs.readText("naia-adk/slides/nextain-ir-public.md");
-		expect(script).toContain("## 9. 시험용 비공개 장 9");
+		expect(script).toContain("## 10. 시험용 비공개 장 10");
 		expect(script).not.toContain("키오스크");
 		expect(JSON.stringify(rawIrDeck)).not.toContain("키오스크");
 		const write = vi.spyOn(fs, "writeBytes");

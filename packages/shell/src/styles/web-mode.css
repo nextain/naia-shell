@@ -1234,6 +1234,7 @@
 [data-naia-web="true"][data-naia-mobile="true"] .settings-tab,
 [data-naia-web="true"][data-naia-mobile="true"] .settings-model-roles { grid-template-columns: minmax(0, 1fr); }
 [data-naia-web="true"] .nva-gesture-actions__button,
+[data-naia-web="true"] .chat-output-stage,
 [data-naia-web="true"] .kiosk-local-answer-hint,
 [data-naia-web="true"] .chat-input { font-family: "Pretendard", "Inter", "KoreanUI", "NanumBarunGothic", "나눔바른고딕", "NanumGothic", "나눔고딕", "Noto Sans CJK KR", "Noto Sans CJK JP", "Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, sans-serif; }
 [data-naia-web="true"] .app-root .nva-gesture-actions__button,

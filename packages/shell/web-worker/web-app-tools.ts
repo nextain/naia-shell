@@ -3,23 +3,26 @@ import {
 	makeBuiltinSkillsExecutor,
 } from "@naia-agent/adapters/builtin-skills.js";
 import { makeCompositeToolExecutor } from "@naia-agent/adapters/composite-tool-executor.js";
+import { makeOpenMeteoFetchWeather } from "@naia-agent/adapters/openmeteo-weather.js";
 import type { ToolExecutorPort } from "@naia-agent/ports/uc1.js";
 import type { OpfsDirectoryHandleLike } from "./opfs-read-fs";
 
 /**
- * Web registration of the app's own model-facing tools (get_time, memo_*).
+ * Web registration of the app's own model-facing tools (get_time, get_weather, memo_*).
  * Same module, tool names and argument shapes as the app agent
  * (`adapters/builtin-skills.ts`); only the MemoStore backend differs
- * (OPFS file instead of the app's file-memo-store).
+ * (OPFS file instead of the app's file-memo-store). get_weather is the app's
+ * builtin too, fed by the app's own open-meteo fetcher
+ * (`adapters/openmeteo-weather.ts`, see compose-agent-deps.mjs).
  */
 export const WEB_APP_TOOL_NAMES = [
 	"get_time",
+	"get_weather",
 	"memo_list",
 	"memo_get",
 	"memo_save",
 ] as const;
 
-/** get_weather is added by the screen worker (feat/web-r15), not here. */
 const WEB_APP_TOOL_SET = new Set<string>(WEB_APP_TOOL_NAMES);
 
 export const WEB_PC_ONLY_NOTICE =
@@ -142,6 +145,7 @@ export function withWebAppTools(
 	const { store, ready } = makeOpfsMemoStore(deps.getRoot);
 	const builtin = makeBuiltinSkillsExecutor({
 		clock: deps.clock ?? (() => new Date()),
+		fetchWeather: makeOpenMeteoFetchWeather(),
 		memo: store,
 	});
 	const app: ToolExecutorPort = {
@@ -158,5 +162,19 @@ export function withWebAppTools(
 			WEB_NOT_YET_TOOL_NAMES.has(call.name)
 				? { output: WEB_PC_ONLY_NOTICE }
 				: composite.execute(call, opts),
+	};
+}
+
+export const WEB_WEATHER_TOOL_NAME = "get_weather";
+
+/** The app's get_weather alone (builtin-skills + open-meteo), for the kiosk tool set. */
+export function makeWebWeatherExecutor(): ToolExecutorPort {
+	const builtin = makeBuiltinSkillsExecutor({
+		clock: () => new Date(),
+		fetchWeather: makeOpenMeteoFetchWeather(),
+	});
+	return {
+		specs: () => builtin.specs().filter((s) => s.name === WEB_WEATHER_TOOL_NAME),
+		execute: (call, opts) => builtin.execute(call, opts),
 	};
 }
