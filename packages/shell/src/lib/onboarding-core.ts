@@ -176,6 +176,11 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 		...(typeof existing.vllmTtsHost === "string" && existing.vllmTtsHost.trim()
 			? { vllmTtsHost: existing.vllmTtsHost }
 			: {}),
+		// 손님이 같은 방문 중에 직접 끈 능동 발화는 새로고침 뒤에도 꺼진 채로 둔다.
+		// 새 방문은 방문 초기화(resetKioskVisit)가 시드로 되돌리므로 여기서는 손님 선택만 살린다.
+		...(typeof existing.proactiveSpeechPermitted === "boolean"
+			? { proactiveSpeechPermitted: existing.proactiveSpeechPermitted }
+			: {}),
 	};
 	const uiPath = webAdkOpfsPath("naia-settings/ui-config.json");
 	const ui = JSON.parse((await fs.readText(uiPath)) || "{}");

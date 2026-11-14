@@ -220,6 +220,18 @@ describe("S3 kiosk isolation", () => {
 			"test-kiosk-fixture-only",
 		);
 	});
+	it("keeps a visitor's manual proactive-speech off across reloads while defaulting fresh visits to on", async () => {
+		setWebAssetsModeForTests(true);
+		await prepareKioskDemoOnboarding();
+		let saved = JSON.parse(memory.get("naia-adk/naia-settings/config.json")!);
+		expect(saved.proactiveSpeechPermitted).toBe(true);
+		// Visitor turns it off; a reload (same OPFS config) must not switch it back on.
+		saved.proactiveSpeechPermitted = false;
+		memory.set("naia-adk/naia-settings/config.json", JSON.stringify(saved));
+		await prepareKioskDemoOnboarding();
+		saved = JSON.parse(memory.get("naia-adk/naia-settings/config.json")!);
+		expect(saved.proactiveSpeechPermitted).toBe(false);
+	});
 	it("a new workspace gets the complete persona, Jina avatar and greeting is consumed only once", async () => {
 		setWebAssetsModeForTests(true);
 		expect(KIOSK_DEMO_TTS_VOICE).toBe("naia-voice:tpl-jina");
