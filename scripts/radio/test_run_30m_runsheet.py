@@ -400,6 +400,123 @@ class TestRadioRunsheetFixes(unittest.TestCase):
         self.assertEqual(summary_all["status"], "SONG_PLAYBACK_FAILED")
         self.assertTrue(any("5/5 song failure(s)" in line for line in logs_all))
 
+    def test_12_v2_preflight_and_slot_table_match_fallback_keys_and_music_modes(self):
+        self.assertEqual(len(runner.RUNSHEET_V2_SLOTS), 30)
+        self.assertEqual(len(runner.V2_FOLLOWUP_PROMPTS), 3)
+        for _idx, _win, sit, _trig, prompt, _req in runner.RUNSHEET_V2_SLOTS:
+            self.assertIn(sit, runner.FALLBACK_AUDIO_FILES)
+            self.assertTrue(prompt.strip())
+        quiz_triggers = [s[3] for s in runner.RUNSHEET_V2_SLOTS[18:23]]
+        self.assertEqual(quiz_triggers, ["Q1", "Q2", "Q3", "Q4", "Q5"])
+
+        # In v2 + music_mode=none, preflight must NOT require any mp3 SONG_FILES
+        with mock.patch.object(runner, "BASE_DIR", "/radio"), \
+                mock.patch.object(runner, "WK_SCRIPT", "/radio/wk.mjs"), \
+                mock.patch.object(runner, "SEND_SCRIPT", "/radio/jun-send-nz.sh"), \
+                mock.patch.object(runner, "BGM_DIR", "/radio/bgm"), \
+                mock.patch.object(runner, "FALLBACK_AUDIO_DIR", "/radio/fallback"), \
+                mock.patch.object(runner, "RUNSHEET_MODE", "v2"), \
+                mock.patch.object(runner, "MUSIC_MODE", "none"), \
+                mock.patch.object(runner.os, "access", lambda _p, _m: True):
+            missing_none = runner.preflight(
+                which_fn=lambda name: "/usr/bin/" + name,
+                exists_fn=lambda path: not path.startswith("/radio/bgm/"),
+            )
+        self.assertEqual(missing_none, [])
+
+        # In internal-ko-en mode, preflight requires exactly the 2 Nextain original songs
+        with mock.patch.object(runner, "BASE_DIR", "/radio"), \
+                mock.patch.object(runner, "WK_SCRIPT", "/radio/wk.mjs"), \
+                mock.patch.object(runner, "SEND_SCRIPT", "/radio/jun-send-nz.sh"), \
+                mock.patch.object(runner, "BGM_DIR", "/radio/bgm"), \
+                mock.patch.object(runner, "FALLBACK_AUDIO_DIR", "/radio/fallback"), \
+                mock.patch.object(runner, "RUNSHEET_MODE", "v2"), \
+                mock.patch.object(runner, "MUSIC_MODE", "internal-ko-en"), \
+                mock.patch.object(runner.os, "access", lambda _p, _m: True):
+            missing_two = runner.preflight(
+                which_fn=lambda name: "/usr/bin/" + name,
+                exists_fn=lambda path: not path.startswith("/radio/bgm/"),
+            )
+        self.assertEqual(len(missing_two), 2)
+
+    def test_13_v2_talk_only_runs_without_5s_gap_rotates_followups_and_keeps_session(self):
+        clock = SimpleNamespace(now=70_000.0)
+        start = clock.now
+        fake_time = SimpleNamespace(
+            time=lambda: clock.now,
+            sleep=lambda sec: setattr(clock, "now", clock.now + sec),
+        )
+        sent = []
+        bgm_volumes = []
+
+        def fake_send_chat(situation, trigger, prompt_text, new_chat=False, **_kw):
+            began = clock.now - start
+            clock.now += 28.0
+            sent.append((situation, trigger, prompt_text, new_chat, began, clock.now - start))
+            return "ok"
+
+        with mock.patch.object(runner, "time", fake_time), \
+                mock.patch.object(runner, "send_chat", fake_send_chat), \
+                mock.patch.object(runner, "set_bgm_volume", bgm_volumes.append), \
+                mock.patch.object(runner, "check_health", lambda _tag: None), \
+                mock.patch.object(runner, "log", lambda _msg: None), \
+                mock.patch.object(runner, "RUNSHEET_MODE", "v2"), \
+                mock.patch.object(runner, "MUSIC_MODE", "none"), \
+                mock.patch.dict(runner.os.environ, {"RADIO_START_TS": "", "RADIO_V2_SLIDING_NEW_CHAT": "0"}):
+            summary = runner.run_broadcast()
+
+        self.assertEqual(bgm_volumes[0], 0.0)
+        self.assertEqual(summary["runsheet_mode"], "v2")
+        self.assertEqual(summary["music_mode"], "none")
+        self.assertEqual(summary["song_total"], 0)
+        self.assertEqual(summary["song_failures"], 0)
+        self.assertGreater(summary["followup_count"], 0)
+        # Never opens a new chat by default in v2
+        self.assertTrue(all(not item[3] for item in sent))
+        # Every inter-turn gap before show end is < 10s (0s immediate dispatch for normal slots)
+        for prev, nxt in zip(sent, sent[1:]):
+            gap = nxt[4] - prev[5]
+            self.assertLessEqual(gap, 9.0, f"gap {gap}s > 9s before {nxt[1]}")
+        # Consecutive follow-ups never repeat the exact same prompt
+        followups = [item[2] for item in sent if "이어묻기" in item[1]]
+        for a, b in zip(followups, followups[1:]):
+            self.assertNotEqual(a, b)
+        self.assertEqual(clock.now - start, runner.SHOW_END_SEC)
+
+    def test_14_v2_optional_internal_two_songs_counts_song_failures_in_summary(self):
+        clock = SimpleNamespace(now=80_000.0)
+        fake_time = SimpleNamespace(
+            time=lambda: clock.now,
+            sleep=lambda sec: setattr(clock, "now", clock.now + sec),
+        )
+
+        def fake_send_chat(_situation, _trigger, _prompt_text, **_kw):
+            clock.now += 45.0
+            return "ok"
+
+        def fake_play(_path, label, max_duration_sec=None, **_kw):
+            if label.startswith("M2 "):
+                clock.now += 1.0
+                return False
+            clock.now += min(158.0, max_duration_sec or 158.0)
+            return True
+
+        with mock.patch.object(runner, "time", fake_time), \
+                mock.patch.object(runner, "send_chat", fake_send_chat), \
+                mock.patch.object(runner, "play_song_file", fake_play), \
+                mock.patch.object(runner, "set_bgm_volume", lambda _v: None), \
+                mock.patch.object(runner, "check_health", lambda _tag: None), \
+                mock.patch.object(runner, "log", lambda _msg: None), \
+                mock.patch.object(runner, "RUNSHEET_MODE", "v2"), \
+                mock.patch.object(runner, "MUSIC_MODE", "internal-ko-en"), \
+                mock.patch.dict(runner.os.environ, {"RADIO_START_TS": ""}):
+            summary = runner.run_broadcast()
+
+        self.assertEqual(summary["song_total"], 2)
+        self.assertEqual(summary["song_failures"], 1)
+        self.assertEqual(summary["failed_songs"], ["M2 It's Okay to Turn Off the Light (영어, 3:02)"])
+        self.assertEqual(summary["status"], "SONG_PLAYBACK_FAILED")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
