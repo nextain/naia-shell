@@ -37,6 +37,7 @@ import {
 	wrapEngineWithEnableThinking,
 } from "./agent-port-relay";
 import { webGatewayBaseUrl } from "./gateway-url";
+import { WEB_APP_TOOL_NAMES, withWebAppTools } from "./web-app-tools";
 import { startKioskBrowserAgent } from "./kiosk-browser-agent";
 import { makeOpenAICompatProvider } from "./openai-compat-provider";
 import { makeOpfsReadFs } from "./opfs-read-fs";
@@ -235,7 +236,11 @@ self.addEventListener("message", (event: MessageEvent) => {
 					SKILL_YOUTUBE_BGM.name,
 					WEATHER_TOOL_NAME,
 				]
-			: [...BROWSER_READ_TOOL_NAMES, SKILL_YOUTUBE_BGM.name];
+			: [
+					...BROWSER_READ_TOOL_NAMES,
+					...WEB_APP_TOOL_NAMES,
+					SKILL_YOUTUBE_BGM.name,
+				];
 
 		const localProvider = makeWebLLMProvider({
 			getEngine: getEngineWithThinking,
@@ -263,9 +268,15 @@ self.addEventListener("message", (event: MessageEvent) => {
 			},
 		};
 
-		const baseToolExecutor = makeBrowserReadTools({
+		const browserReadTools = makeBrowserReadTools({
 			fs: makeOpfsReadFs(() => navigator.storage.getDirectory()),
 		});
+		// get_time / memo_* (same module as the app agent). Kiosk stays read-only.
+		const baseToolExecutor = isKioskDemo()
+			? browserReadTools
+			: withWebAppTools(browserReadTools, {
+					getRoot: () => navigator.storage.getDirectory() as never,
+				});
 
 		async function awaitKioskTools() {
 			const mod = await import("./kiosk-knowledge");

@@ -715,6 +715,13 @@
       ],
       "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
     },
+    "packages/shell/web-worker/web-app-tools.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-APP-TOOLS-20261114"
+      ],
+      "contract": "docs/user-scenarios.md#uc-web-app-tools-20261114"
+    },
     "packages/shell/web-worker/opfs-read-fs.ts": {
       "layer": "adapters",
       "uc": [

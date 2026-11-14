@@ -3216,3 +3216,8 @@ P02 검증: 기본·빈 대화·진행·성공·오류 복구·좁은 폭 상태
 | `src/lib/kiosk-demo/knowledge.test.ts` | 지식 컴파일, 기존 원고 갱신과 방문자 수정 보존 |
 | `src/components/__tests__/ChatArea.test.tsx` | 첫 인사, 음성·입 모양 및 실패 대체 |
 | `src/components/__tests__/AppMainContent.test.tsx`, `e2e/web-mobile-r12.spec.ts` | 창 크기 변경, 저장된 방향, 좁은 폭·메뉴·대화창 조작 |
+
+
+### UC-WEB-APP-TOOLS-20261114 — 웹에서도 지금 시각과 메모를 앱과 같은 도구로 쓴다
+
+웹 버전의 AI 는 앱과 같은 이름·같은 인자의 도구로 지금 시각(`get_time`)과 메모(`memo_list`, `memo_get`, `memo_save`)를 쓴다. 메모 저장은 앱처럼 사용자 승인을 받고, 브라우저 저장소에 남는다. 전시(kiosk) 판의 도구는 바뀌지 않는다. 앱에서만 되는 도구(브라우저 웹뷰·작업공간·위임)와 아직 통합되지 않은 도구(기억·지식)를 AI 가 부르면 "현재 앱에서는 되고 웹버전 통합 진행중입니다." 만 돌려준다. 근거: `packages/shell/web-worker/web-app-tools.ts`, 시험 `web-worker/__tests__/web-app-tools.test.ts`.
