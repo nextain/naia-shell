@@ -57,7 +57,7 @@ export function activateMicUnlessSpeechActivityOwnsVoice(
 export function parseSpeechProfileCommand(text: string): SpeechProfileCommand | undefined {
 	const phrase = text.toLowerCase().replace(/[\s,.!?]+/g, "");
 	const matches = (...commands: string[]) => commands.includes(phrase);
-	if (matches("개인라디오시작", "개인라디오시작해", "개인라디오시작해줘", "라디오dj시작", "라디오dj시작해", "라디오시작해", "라디오시작해줘", "radiodjstart")) {
+	if (matches("개인라디오시작", "개인라디오시작해", "개인라디오시작해줘", "라디오dj시작", "라디오dj시작해줘", "라디오dj켜줘", "라디오dj모드", "라디오dj모드시작", "라디오dj모드시작해줘", "라디오dj모드켜줘", "dj모드시작해줘", "dj모드켜줘", "dj시작해줘", "라디오dj시작해", "라디오시작해", "라디오시작해줘", "radiodjstart")) {
 		return { kind: "configure", profile: "personal_radio_dj" };
 	}
 	if (matches("행사소개시작", "행사소개시작해", "전시소개시작", "전시소개시작해", "도슨트시작", "도슨트시작해", "exhibitionstart")) {

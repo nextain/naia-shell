@@ -114,9 +114,7 @@ it("waits for preparation and opens once only after a gesture", async () => {
 			false,
 		),
 	);
-	expect((screen.getByText("처음으로") as HTMLButtonElement).disabled).toBe(
-		false,
-	);
+	expect(screen.queryByText("처음으로")).toBeNull();
 	// Mouth assets are already loading on the entry screen, before the gesture.
 	expect(mocks.prewarm).toHaveBeenCalledOnce();
 	fireEvent.click(screen.getByText("들어가기"));
@@ -167,33 +165,14 @@ it("shows a safe preparation error and offers retry", async () => {
 	);
 });
 
-it("entry reset waits, blocks duplicates and offers a safe retry on failure", async () => {
-	let rejectReset!: (e: Error) => void;
-	mocks.resetMemory.mockImplementationOnce(
-		() =>
-			new Promise<void>((_, reject) => {
-				rejectReset = reject;
-			}),
-	);
+it("entry screen has no 처음으로 button; reload resets the visit", async () => {
 	mount();
-	const reset = await screen.findByText("처음으로");
 	await waitFor(() =>
-		expect((reset as HTMLButtonElement).disabled).toBe(false),
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
 	);
-	fireEvent.click(reset);
-	await waitFor(() => expect(mocks.resetMemory).toHaveBeenCalledOnce());
-	expect((reset as HTMLButtonElement).disabled).toBe(true);
-	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
-		true,
-	);
-	fireEvent.click(reset);
-	expect(mocks.resetMemory).toHaveBeenCalledOnce();
-	rejectReset(Error("private detail"));
-	expect((await screen.findByRole("alert")).textContent).toContain(
-		"기억을 초기화하지 못했어요",
-	);
-	expect(screen.queryByText(/private detail/)).toBeNull();
-	expect((reset as HTMLButtonElement).disabled).toBe(false);
+	expect(screen.queryByText("처음으로")).toBeNull();
 });
 
 it("shows unavailable notice when gateway confirms zero credits", async () => {

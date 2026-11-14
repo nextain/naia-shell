@@ -9,6 +9,7 @@ import {
 } from "../web-runtime/web-workspace-commands";
 import { WEB_LLM_MODEL_PREF_KEY } from "../web-runtime/webllm-model";
 import { isKioskDemo } from "./flag";
+import { restoreKioskAdkOriginals } from "../web-runtime/web-adk-edit";
 import { seedKioskAdkWorkspace } from "./knowledge";
 
 export const KIOSK_VISIT_ACTIVE_SESSION_KEY = "naia-kiosk-visit-active";
@@ -82,9 +83,17 @@ export function isKioskVisitExpired(
 	}
 }
 
+let pageLoadVisitChecked = false;
+
+/** 시험용: 페이지를 새로 연 것처럼 되돌린다. */
+export function resetKioskPageLoadCheckForTest(): void {
+	pageLoadVisitChecked = false;
+}
+
 /**
- * 앞 방문자가 ‘처음으로’를 누르지 않고 떠난 뒤 새 탭이 열렸거나 무응답 기준 시간이 지났으면
- * 다음 입장 전에 이전 방문 기록을 지워야 한다. 같은 탭의 활성 방문 중 새로고침(F5)은 유지한다.
+ * 페이지가 새로 열릴 때(새 탭·새로고침 모두)는 이전 방문 기록이 있으면 항상 초기화한다.
+ * 앞 손님의 기억·대화·고친 ADK 파일을 다음 화면에 남기지 않기 위해서다.
+ * 같은 페이지 안에서 다시 판정할 때는 새 탭이거나 무응답 기준 시간이 지난 경우만 초기화한다.
  */
 export function shouldResetKioskVisitOnEnter(
 	now: number = Date.now(),
@@ -93,7 +102,10 @@ export function shouldResetKioskVisitOnEnter(
 	try {
 		if (typeof localStorage === "undefined") return false;
 		const raw = localStorage.getItem(KIOSK_VISIT_LAST_ACTIVE_KEY);
+		const firstCheckOfPageLoad = !pageLoadVisitChecked;
+		pageLoadVisitChecked = true;
 		if (!raw) return false;
+		if (firstCheckOfPageLoad) return true;
 		const sameTabActive =
 			typeof sessionStorage !== "undefined" &&
 			sessionStorage.getItem(KIOSK_VISIT_ACTIVE_SESSION_KEY) === "1";
@@ -170,6 +182,8 @@ async function resetKioskSettingsToSeed(): Promise<void> {
 			}),
 		);
 		await seedKioskAdkWorkspace(fs, { overwriteMemory: true });
+		// 손님이 고친 ADK 파일(AGENTS.md·규칙·지식·.agents·.users)을 원본으로 되돌린다.
+		await restoreKioskAdkOriginals(fs);
 	} catch {
 		// ignore OPFS errors when workspace is not mounted yet
 	}

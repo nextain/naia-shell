@@ -515,6 +515,7 @@ describe("command-table", () => {
 			"workspace_file_size",
 			"workspace_read_file",
 			"workspace_read_file_bytes",
+			"workspace_write_file",
 			"write_naia_config",
 			"write_naia_path_cache",
 			"write_naia_ui_config",

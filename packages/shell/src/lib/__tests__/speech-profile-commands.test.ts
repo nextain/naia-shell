@@ -93,4 +93,19 @@ describe("speech profile spoken commands", () => {
 		expect(mic.start).not.toHaveBeenCalled();
 		expect(mic.stop).toHaveBeenCalledTimes(1);
 	});
+
+	it("starts radio DJ mode from the phrases the kiosk greeting invites (r15)", () => {
+		for (const phrase of [
+			"라디오 DJ 시작해줘",
+			"라디오 DJ 모드 켜줘",
+			"DJ 모드 시작해줘",
+			"라디오 DJ모드",
+		]) {
+			expect(parseSpeechProfileCommand(phrase)).toEqual({
+				kind: "configure",
+				profile: "personal_radio_dj",
+			});
+		}
+		expect(parseSpeechProfileCommand("서울 날씨는 어때?")).toBeUndefined();
+	});
 });

@@ -412,12 +412,10 @@
 		gap: 3px;
 		min-width: max-content;
 	}
-	[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-hint,
-	[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-label-suffix {
+	[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-hint {
 		display: none;
 	}
-	[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-toggle,
-	[data-naia-web="true"][data-naia-mobile="true"] .kiosk-chat-reset {
+	[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-toggle {
 		flex-shrink: 0;
 		font-size: 10px !important;
 		padding: 2px 5px !important;
@@ -641,12 +639,10 @@
 		gap: 3px;
 		min-width: max-content;
 	}
-	[data-naia-web="true"] .chat-header .kiosk-local-answer-hint,
-	[data-naia-web="true"] .chat-header .kiosk-local-answer-label-suffix {
+	[data-naia-web="true"] .chat-header .kiosk-local-answer-hint {
 		display: none;
 	}
-	[data-naia-web="true"] .chat-header .kiosk-local-answer-toggle,
-	[data-naia-web="true"] .kiosk-chat-reset {
+	[data-naia-web="true"] .chat-header .kiosk-local-answer-toggle {
 		flex-shrink: 0;
 		font-size: 10px !important;
 		padding: 2px 5px !important;
@@ -715,9 +711,6 @@
 	[data-naia-web="true"][data-layout-orientation="landscape"] .chat-header {
 		flex-wrap: wrap !important;
 		row-gap: 4px !important;
-	}
-	[data-naia-web="true"] .chat-header .kiosk-local-answer-label-suffix {
-		display: none;
 	}
 }
 @media (max-width: 600px) {
@@ -938,9 +931,6 @@
 	[data-naia-web="true"][data-naia-mobile="true"][data-layout-orientation="landscape"] .chat-header {
 		flex-wrap: wrap !important;
 		row-gap: 4px !important;
-	}
-	[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-label-suffix {
-		display: none;
 	}
 
 
@@ -1260,3 +1250,22 @@
 
 /* Web layout follows the viewport; the native shell keeps its manual control. */
 [data-naia-web="true"] [data-testid="layout-orientation-toggle"] { display: none; }
+
+.web-workspace-edit-hint {
+	margin: 0;
+	padding: 4px 10px;
+	font-size: 12px;
+	opacity: 0.8;
+}
+
+/* 시연판 앱스토어·스킬 아이콘 안내(웹버전 통합 진행중) */
+.kiosk-ext-notice {
+	max-width: 60vw;
+	padding: 3px 8px;
+	border-radius: 7px;
+	background: rgba(8, 14, 28, 0.9);
+	border: 1px solid rgba(100, 160, 255, 0.32);
+	color: rgba(226, 232, 240, 0.92);
+	font-size: 11px;
+	line-height: 1.3;
+}

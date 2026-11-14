@@ -302,6 +302,9 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 			b2cNvaThemes: [KIOSK_JINA_THEME],
 			b2cGreetingAutoplay: true,
 		},
+		// 능동 발화 버튼이 잠기지 않게 프로필을 미리 정해 둔다. 웹판 지나가 실제로 하는 능동 발화는 라디오 DJ 뿐이다.
+		// 허용(proactiveSpeechPermitted)은 손님이 버튼을 누르거나 "라디오 DJ 시작해줘" 라고 할 때만 켜진다.
+		proactiveSpeechProfile: "personal_radio_dj",
 		provider: KIOSK_DEMO_LLM_PROVIDER,
 		model,
 		enableTools: KIOSK_DEMO_ENABLE_TOOLS,

@@ -65,9 +65,14 @@ export const KIOSK_AGENTS_MD = `# AGENTS.md — ADK 하네스 지침
 
 이 웹판(브라우저 시연판)에는 웹 검색 도구와 브라우저(웹 페이지 열기·조작) 도구가 없습니다.
 
-- 할 수 있는 것: 공개 지식 찾기(\`skill_knowledge_search\`, \`skill_knowledge_ask\`), 이번 방문 기억하기·떠올리기(\`skill_memory_save\`, \`skill_memory_recall\`), 음악 틀기(\`skill_youtube_bgm\`).
-- 할 수 없는 것: 인터넷 검색, 뉴스·날씨·주가 같은 실시간 정보 조회, 웹 페이지나 브라우저 열기.
-- 검색이나 브라우저 열기를 부탁받으면 한 번의 대답에서 "웹판에서는 웹 검색과 브라우저 열기를 할 수 없다"는 사실과 대안(공개 지식에서 찾아 드리기, 기억해 두기, 음악 틀기)을 함께 말합니다. 되묻거나 여러 번 시도하지 않고, 검색한 척하거나 결과를 지어내지 않습니다.
+- 할 수 있는 것: 공개 지식 찾기(\`skill_knowledge_search\`, \`skill_knowledge_ask\`), 이번 방문 기억하기·떠올리기(\`skill_memory_save\`, \`skill_memory_recall\`), 음악 틀기(\`skill_youtube_bgm\`), 도시 날씨 알려 드리기(\`get_weather\`, open-meteo).
+- 날씨·기온·비·우산을 물으면 \`get_weather\` 도구에 도시 이름을 넣어 먼저 부르고, 도구가 돌려준 값만 말합니다. 도구가 실패하면 실패했다고 솔직히 말합니다.
+- 완벽한 음악 플레이어: 유튜브 검색 재생, 내 기기의 로컬 음악 파일, 재생 목록(플레이리스트), 배경 영상까지 지원합니다. 음악을 듣고 싶어 하면 이 기능을 소개하고 바로 틀어 드립니다.
+- 라디오 DJ 모드: "라디오 DJ 시작해줘"라고 말하거나 대화창 위 능동 발화 버튼을 누르면 지나가 먼저 말을 걸며 노래를 추천합니다.
+- 캐릭터 카드: 실리태번(SillyTavern) 캐릭터 카드(PNG·JSON)를 불러와 지나의 성격과 말투를 바꿀 수 있습니다.
+- 앱스토어와 스킬 확장은 현재 설치형 앱에서는 되고, 웹버전 통합은 진행 중입니다.
+- 할 수 없는 것: 인터넷 검색, 뉴스·주가 같은 실시간 정보 조회, 웹 페이지나 브라우저 열기.
+- 검색이나 브라우저 열기를 부탁받으면 한 번의 대답에서 "웹판에서는 웹 검색과 브라우저 열기를 할 수 없다"는 사실과 대안(공개 지식에서 찾아 드리기, 기억해 두기, 음악 틀기, 날씨 알려 드리기)을 함께 말합니다. 되묻거나 여러 번 시도하지 않고, 검색한 척하거나 결과를 지어내지 않습니다.
 `;
 
 /** 10판까지 OPFS 에 심은 AGENTS.md(웹판 능력 안내 없음). 이 글 그대로일 때만 새 지침으로 바꾼다. */
@@ -348,6 +353,24 @@ export async function handleKioskKnowledgeCommand(
 	const { json, report } = await compileKioskKnowledge();
 	await fs.writeBytes(kbPath(config.scope), json);
 	return { ok: true, scope: config.scope, ...report };
+}
+
+/** 코드에 들어 있는 원본(AGENTS.md·rules·knowledge 원고). 번들 파일이면 null. */
+export function getKioskBundledOriginalText(rel: string): string | null {
+	if (rel === "AGENTS.md") return KIOSK_AGENTS_MD;
+	if (rel === "rules/response-rules.md") return KIOSK_RULES_MD;
+	const m = /^knowledge\/([^/]+\.md)$/.exec(rel);
+	if (m) return manuscripts[`./knowledge/${m[1]}`] ?? null;
+	return null;
+}
+
+/** 방문 초기화용: 손님이 고쳤을 수 있는 코드 원본 파일을 모두 원본으로 덮어쓴다. */
+export async function writeKioskBundledOriginals(fs: WebFs): Promise<void> {
+	await fs.writeBytes(webAdkOpfsPath("AGENTS.md"), KIOSK_AGENTS_MD);
+	await fs.writeBytes(webAdkOpfsPath("rules/response-rules.md"), KIOSK_RULES_MD);
+	for (const [path, text] of Object.entries(manuscripts)) {
+		await fs.writeBytes(webAdkOpfsPath(`knowledge/${path.split("/").pop()}`), text);
+	}
 }
 
 const adkSeeding = new WeakMap<WebFs, Promise<void>>();

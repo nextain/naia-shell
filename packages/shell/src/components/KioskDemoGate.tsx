@@ -178,8 +178,6 @@ export function KioskDemoGate({
 	const [passcodePassed, setPasscodePassed] = useState(hasPassedKioskPasscode);
 	const [phase, setPhase] = useState<Phase>("preparing");
 	const [entered, setEntered] = useState(false);
-	const [resetting, setResetting] = useState(false);
-	const [resetFailed, setResetFailed] = useState(false);
 	const resetPending = useRef(false);
 	const preparation = useRef<Promise<Phase> | null>(null);
 	const access = useRef<Promise<AccessRefusal | null> | null>(null);
@@ -304,7 +302,7 @@ export function KioskDemoGate({
 							) : (
 								<button
 									type="button"
-									disabled={phase !== "ready" || resetting}
+									disabled={phase !== "ready"}
 									onClick={() => {
 										if (accepted.current) return;
 										accepted.current = true;
@@ -329,40 +327,8 @@ export function KioskDemoGate({
 									들어가기
 								</button>
 							)}
-							<button
-								className="kiosk-entry__reset"
-								type="button"
-								disabled={phase !== "ready" || resetting}
-								onClick={async () => {
-									if (resetPending.current) return;
-									resetPending.current = true;
-									setResetting(true);
-									setResetFailed(false);
-									try {
-										await resetKioskVisit({
-											cancel: () => undefined,
-											resetMemory: resetKioskMemory,
-											newConversation: () =>
-												useChatStore.getState().newConversation(),
-											reload: () => window.location.reload(),
-										});
-									} catch {
-										setResetFailed(true);
-										setResetting(false);
-										resetPending.current = false;
-									}
-								}}
-							>
-								처음으로
-							</button>
 						</div>
 					</>
-				)}
-				{resetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
-				{resetFailed && (
-					<p role="alert">
-						기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.
-					</p>
 				)}
 			</section>
 		</main>

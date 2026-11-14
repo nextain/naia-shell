@@ -240,7 +240,7 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	workspace_set_root: "desktop-only",
 	workspace_start_watch: "desktop-only",
 	workspace_stop_watch: "desktop-only",
-	workspace_write_file: "desktop-only",
+	workspace_write_file: "web",
 	write_agent_key: "desktop-only",
 	write_jeonju_course_target: "desktop-only",
 	write_naia_knowledge_config: "desktop-only",

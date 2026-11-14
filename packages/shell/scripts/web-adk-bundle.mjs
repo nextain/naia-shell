@@ -10,6 +10,27 @@ import {
 export const ADK_TARGET_RE =
 	/^(AGENTS\.md|CLAUDE\.md|GEMINI\.md|README\.md|\.agents\/context\/.+|\.agents\/skills\/[^/]+\/SKILL\.md|\.users\/context\/.+|\.users\/skills\/.+)$/;
 
+// 시연판(공개 웹)에 싣는 묶음. 번들 JSON 은 누구나 받을 수 있으므로 화면 숨김이 아니라 빌드에서 거른다.
+// 앱 규칙 해설(.agents/context, .users)은 그대로 두고, 저장소 맨 위 AGENTS.md·CLAUDE.md·GEMINI.md·README.md 는
+// 지나가 실제로 읽는 시연용 AGENTS.md 와 겹치지 않게 naia-adk-reference/ 아래로 옮긴다.
+export const KIOSK_ADK_REFERENCE_DIR = "naia-adk-reference";
+const KIOSK_ADK_ALLOW = [
+	/^(AGENTS|CLAUDE|GEMINI|README)\.md$/,
+	/^\.agents\/context\/(agents-rules\.json|ai-work-index\.yaml|project-index\.yaml|terminology\.yaml|skills-index\.yaml|harness\.yaml|repo-structure-standard\.yaml|philosophy\.yaml|contributing\.yaml|writing-style\.json|request-contract\.json)$/,
+	/^\.users\/(commands|hooks|skills|workflows)-list\.md$/,
+	/^\.users\/context\/(en\/)?[^/]+\.md$/,
+];
+// 운영·비밀 냄새가 나는 이름은 허용 목록에 들어 있어도 뺀다.
+const KIOSK_ADK_DENY = /discord|credential|secret|token|ssh|azure|internal|\.env|private|gstack|llm-config|development-model-routing/i;
+const KIOSK_ADK_SECRET_CONTENT =
+	/AKIA[0-9A-Z]{16}|\bsk-[A-Za-z0-9_-]{20,}|\bghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[abp]-[A-Za-z0-9-]{10,}/;
+
+export function kioskAdkBundlePath(p) {
+	if (KIOSK_ADK_DENY.test(p)) return null;
+	if (!KIOSK_ADK_ALLOW.some((re) => re.test(p))) return null;
+	return /^[A-Z]+\.md$/.test(p) ? `${KIOSK_ADK_REFERENCE_DIR}/${p}` : p;
+}
+
 export function resolveWebAdkRepo(env = process.env) {
 	const repo = env?.NAIA_WEB_ADK_REPO;
 	if (!repo || typeof repo !== "string" || !path.isAbsolute(repo)) {
@@ -67,7 +88,8 @@ export function buildWebAdkBundle(options = {}) {
 		const [meta, p] = line.split("\t");
 		if (!meta || !p) continue;
 		const [, type, id, sizeStr] = meta.trim().split(/\s+/);
-		if (type === "blob" && ADK_TARGET_RE.test(p)) {
+		const outPath = options.kiosk ? kioskAdkBundlePath(p) : p;
+		if (type === "blob" && (options.kiosk ? outPath : ADK_TARGET_RE.test(p))) {
 			let contentBuffer;
 			try {
 				contentBuffer = execFileSync("git", ["-C", repo, "cat-file", "blob", id], {
@@ -78,8 +100,11 @@ export function buildWebAdkBundle(options = {}) {
 					`파일 내용을 읽을 수 없습니다: ${p} (${err instanceof Error ? err.message : String(err)})`,
 				);
 			}
+			if (options.kiosk && KIOSK_ADK_SECRET_CONTENT.test(contentBuffer.toString("utf8"))) {
+				throw new Error(`시연판 ADK 묶음에 비밀 문자열이 있습니다: ${p}`);
+			}
 			files.push({
-				path: p,
+				path: outPath,
 				size: Number(sizeStr),
 				sha1: id,
 				base64: contentBuffer.toString("base64"),

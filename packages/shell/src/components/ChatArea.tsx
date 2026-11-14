@@ -1,4 +1,3 @@
-import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	KIOSK_IR_SLIDES_EVIDENCE_FILE,
@@ -14,7 +13,6 @@ import {
 	notifyKioskDemoUnavailable,
 	recordKioskVisitActivity,
 	requestKioskGreeting,
-	resetKioskVisit,
 } from "../lib/kiosk-demo/entry";
 import {
 	KIOSK_DEMO_LLM_PROVIDER,
@@ -2235,9 +2233,6 @@ export function ChatArea({
 		};
 	}, []);
 
-	const [kioskResetting, setKioskResetting] = useState(false);
-	const [kioskResetFailed, setKioskResetFailed] = useState(false);
-	const kioskResetPending = useRef(false);
 	const [kioskLocalAnswer, setKioskLocalAnswer] = useState(() =>
 		isKioskLocalAnswerEnabled(),
 	);
@@ -2260,7 +2255,7 @@ export function ChatArea({
 	}, []);
 
 	async function handleKioskLocalAnswerToggle() {
-		if (!isKioskDemo() || kioskResetPending.current) return;
+		if (!isKioskDemo()) return;
 		if (kioskLocalAnswer) {
 			setKioskLocalConfirmOpen(false);
 			setKioskLocalAnswerEnabled(false);
@@ -2291,7 +2286,7 @@ export function ChatArea({
 	}
 
 	async function handleConfirmKioskLocalAnswer() {
-		if (!isKioskDemo() || kioskResetPending.current) return;
+		if (!isKioskDemo()) return;
 		setKioskLocalConfirmOpen(false);
 		const gpu = readNavigatorGpu();
 		const gpuResult = await checkWebGpu(gpu);
@@ -2343,27 +2338,6 @@ export function ChatArea({
 	function handleOpenKioskEvidenceFile(filePath: string) {
 		useAppStore.getState().setActiveApp("workspace");
 		openWebWorkspaceFile(filePath);
-	}
-
-	async function handleKioskReset() {
-		if (!isKioskDemo() || kioskResetPending.current) return;
-		kioskResetPending.current = true;
-		setKioskResetting(true);
-		setKioskResetFailed(false);
-		Logger.debug("ChatArea", "kiosk reset requested");
-		try {
-			await resetKioskVisit({
-				cancel: handleCancelStreaming,
-				resetMemory: resetKioskMemory,
-				newConversation: () => useChatStore.getState().newConversation(),
-				reload: () => window.location.reload(),
-			});
-		} catch {
-			Logger.debug("ChatArea", "kiosk reset failed");
-			setKioskResetFailed(true);
-			kioskResetPending.current = false;
-			setKioskResetting(false);
-		}
 	}
 
 	useEffect(() => {
@@ -5464,12 +5438,6 @@ export function ChatArea({
 					</div>
 					{headerControls}
 					<div className="chat-header-right">
-						{isKioskDemo() && (
-							<button type="button" className="settings-icon-btn kiosk-chat-reset" onClick={handleKioskReset} disabled={kioskResetting}>
-								처음으로
-							</button>
-						)}
-
 						{totalSessionCost > 0 &&
 							!isKioskDemo() &&
 							provider !== "ollama" &&
@@ -5515,7 +5483,6 @@ export function ChatArea({
 								onClick={() => {
 									if (kioskLocalAnswer) void handleKioskLocalAnswerToggle();
 								}}
-								disabled={kioskResetting}
 							>
 								나이아 서버
 							</button>
@@ -5530,13 +5497,8 @@ export function ChatArea({
 								onClick={() => {
 									if (!kioskLocalAnswer) void handleKioskLocalAnswerToggle();
 								}}
-								disabled={kioskResetting}
 							>
 								<span className="kiosk-local-answer-label-prefix">내 기기(웹GPU)</span>
-								<span className="kiosk-local-answer-label-suffix">
-									{" "}
-									에서 대답하기
-								</span>
 							</button>
 						</div>
 						{kioskLocalAnswer && isStreaming ? (
@@ -5612,8 +5574,6 @@ export function ChatArea({
 						</button>
 					</div>
 				)}
-				{isKioskDemo() && kioskResetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
-				{isKioskDemo() && kioskResetFailed && <p role="alert">기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.</p>}
 				<Suspense fallback={null}>
 					{/* Progress tab */}
 					{activeTab === "progress" && <WorkProgressArea />}

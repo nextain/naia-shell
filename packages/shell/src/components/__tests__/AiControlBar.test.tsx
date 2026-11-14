@@ -108,7 +108,7 @@ describe("AiControlBar proactive cost control", () => {
 		});
 		render(<AiControlBar />);
 		const button = await screen.findByRole("button", {
-			name: /requires a profile/i, // #510 — TTS 는 더 이상 게이트가 아니다
+			name: /Jina talks first. Not available/i, // #510 — TTS 는 더 이상 게이트가 아니다
 		});
 		expect(button).toHaveAttribute("data-proactive-state", "blocked");
 		expect(button).toHaveAttribute("aria-pressed", "false");
@@ -127,7 +127,7 @@ describe("AiControlBar proactive cost control", () => {
 		});
 		render(<AiControlBar />);
 		const button = await screen.findByRole("button", {
-			name: /Allow proactive speech/i,
+			name: /Turn on proactive speech/i,
 		});
 		// TTS 꺼짐은 발화만 생략(텍스트 도착) — 버튼을 잠그지 않는다.
 		expect(button).toHaveAttribute("data-proactive-state", "off");
@@ -137,7 +137,7 @@ describe("AiControlBar proactive cost control", () => {
 		mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
 		render(<AiControlBar />);
 		const button = await screen.findByRole("button", {
-			name: /Allow proactive speech/i,
+			name: /Turn on proactive speech/i,
 		});
 		expect(button).toHaveAttribute("aria-pressed", "false");
 		expect(button).toHaveAttribute("data-proactive-state", "off");
@@ -156,7 +156,7 @@ describe("AiControlBar proactive cost control", () => {
 		});
 		render(<AiControlBar />);
 		const button = await screen.findByRole("button", {
-			name: /Allow proactive speech/i,
+			name: /Turn on proactive speech/i,
 		});
 		fireEvent.click(button);
 		await waitFor(() => expect(mockWriteNaiaUiConfig).toHaveBeenCalled());
@@ -169,7 +169,7 @@ describe("AiControlBar proactive cost control", () => {
 			proactiveSpeechPermitted: true,
 		});
 		render(<AiControlBar />);
-		await screen.findByRole("button", { name: /Stop proactive speech/i });
+		await screen.findByRole("button", { name: /Turn off proactive speech/i });
 		act(() =>
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
@@ -178,7 +178,7 @@ describe("AiControlBar proactive cost control", () => {
 			),
 		);
 		expect(
-			screen.getByRole("button", { name: /Stop proactive speech/i }),
+			screen.getByRole("button", { name: /Turn off proactive speech/i }),
 		).toHaveAttribute("data-proactive-state", "active");
 	});
 

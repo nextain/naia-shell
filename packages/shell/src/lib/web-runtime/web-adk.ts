@@ -1,19 +1,12 @@
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import { webAdkOpfsPath } from "./web-adk-path";
+import { isKioskReadableParts } from "./web-adk-policy";
 
-function isKioskInternalAdkPath(relPath: string): boolean {
-	const top = relPath.split("/")[0] ?? "";
-	return (
-		top.startsWith(".") ||
-		top === "AGENTS.md" ||
-		top === "CLAUDE.md" ||
-		top === "GEMINI.md" ||
-		top === "README.md" ||
-		top === "OPENCODE.md" ||
-		top === "CODEX.md" ||
-		/agents-rules/i.test(relPath)
-	);
+/** 시연판은 번들에서 읽기 허용 목록 밖의 파일을 쓰지 않는다(번들 자체도 빌드에서 이미 거른다). */
+function isKioskAllowedAdkPath(relPath: string): boolean {
+	if (relPath === "conversations") return true;
+	return isKioskReadableParts(relPath.split("/"));
 }
 import {
 	WEB_ADK_COMMIT,
@@ -57,6 +50,10 @@ export interface ProvisionWebAdkDeps {
 	}>;
 	baseUrl?: string;
 	onProgress?: (done: number, total: number) => void;
+	/** 이미 있는 파일도 번들 원본으로 덮어쓴다(방문 초기화·되돌리기). */
+	force?: boolean;
+	/** 지정하면 이 경로들만 처리한다. */
+	only?: readonly string[];
 }
 
 export type ProvisionWebAdkResult =
@@ -111,14 +108,17 @@ export async function provisionWebAdk(
 		const kioskDemo = isKioskDemo();
 		if (Array.isArray(bundle.dirs)) {
 			for (const dir of bundle.dirs) {
-				if (kioskDemo && isKioskInternalAdkPath(dir)) continue;
+				if (kioskDemo && !isKioskAllowedAdkPath(dir)) continue;
 				await deps.fs.ensureDir(webAdkOpfsPath(dir));
 			}
 		}
 
-		const filesToWrite = kioskDemo
-			? bundle.files.filter((file) => !isKioskInternalAdkPath(file.path))
-			: bundle.files;
+		const onlySet = deps.only ? new Set(deps.only) : null;
+		const filesToWrite = (
+			kioskDemo
+				? bundle.files.filter((file) => isKioskAllowedAdkPath(file.path))
+				: bundle.files
+		).filter((file) => !onlySet || onlySet.has(file.path));
 		const total = filesToWrite.length;
 		let done = 0;
 		deps.onProgress?.(0, total);
@@ -128,7 +128,7 @@ export async function provisionWebAdk(
 		for (const file of filesToWrite) {
 			const targetPath = webAdkOpfsPath(file.path);
 			const exists = await deps.fs.exists(targetPath);
-			if (exists) {
+			if (exists && !deps.force) {
 				done++;
 				deps.onProgress?.(done, total);
 				continue;
@@ -179,7 +179,7 @@ export async function provisionWebAdk(
 			commit: bundle.commit,
 			fileCount: bundle.files.length,
 		};
-		await deps.fs.writeBytes(markerPath, JSON.stringify(markerData, null, 2));
+		if (!onlySet) await deps.fs.writeBytes(markerPath, JSON.stringify(markerData, null, 2));
 		return { ok: true, written };
 	} catch (e) {
 		const message = e instanceof Error ? e.message : String(e);

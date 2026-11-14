@@ -8,6 +8,7 @@ import {
 	KIOSK_VISIT_ACTIVE_SESSION_KEY,
 	KIOSK_VISIT_LAST_ACTIVE_KEY,
 	recordKioskVisitActivity,
+	resetKioskPageLoadCheckForTest,
 	resetKioskVisit,
 	shouldResetKioskVisitOnEnter,
 } from "./entry";
@@ -109,4 +110,12 @@ it("distinguishes active same-tab reload from new tab or idle-expired visit", ()
 	recordKioskVisitActivity(50_000);
 	sessionStorage.removeItem(KIOSK_VISIT_ACTIVE_SESSION_KEY);
 	expect(shouldResetKioskVisitOnEnter(55_000, 60_000)).toBe(true);
+});
+
+it("resets the visit on the first check after a page load even within the idle timeout (reload = fresh visit)", () => {
+	resetKioskPageLoadCheckForTest();
+	recordKioskVisitActivity(10_000);
+	expect(shouldResetKioskVisitOnEnter(12_000, 60_000)).toBe(true);
+	// 같은 페이지 안의 다음 판정은 기존 규칙(무응답 시간 안이면 유지).
+	expect(shouldResetKioskVisitOnEnter(13_000, 60_000)).toBe(false);
 });

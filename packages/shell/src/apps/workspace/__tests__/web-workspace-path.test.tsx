@@ -40,17 +40,13 @@ describe("web workspace path", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 
 		for (const hidden of [
-			".agents",
-			".users",
 			"naia-settings",
 			"projects",
 			"CLAUDE.md",
 			"GEMINI.md",
 			"README.md",
 			"agents-rules-detail.json",
-			"AGENTS.md",
 			"persona",
-			"rules",
 			"conversations",
 			"kiosk-demo",
 			".bundle",
@@ -59,7 +55,15 @@ describe("web workspace path", () => {
 				false,
 			);
 		}
-		for (const allowedRoot of ["memory", "knowledge", "slides"]) {
+		for (const allowedRoot of [
+			"AGENTS.md",
+			"rules",
+			"memory",
+			"knowledge",
+			".agents",
+			".users",
+			"slides",
+		]) {
 			expect(
 				isVisibleWebWorkspaceEntry(allowedRoot, "opfs://naia-adk", true),
 			).toBe(true);
@@ -83,10 +87,13 @@ describe("web workspace path", () => {
 		).rejects.toThrow("web_workspace_invalid_path");
 
 		await expect(
-			getWebWorkspaceFile("opfs://naia-adk/.agents/context/agents-rules-detail.json"),
+			getWebWorkspaceFile("opfs://naia-adk/.agents/skills/manage-discord-sessions/SKILL.md"),
 		).rejects.toThrow("web_workspace_invalid_path");
 		await expect(
 			getWebWorkspaceFile("opfs://naia-adk/CLAUDE.md"),
+		).rejects.toThrow("web_workspace_invalid_path");
+		await expect(
+			getWebWorkspaceFile("opfs://naia-adk/knowledge/../naia-settings/x.json"),
 		).rejects.toThrow("web_workspace_invalid_path");
 
 		render(<WebWorkspace />);
@@ -99,13 +106,13 @@ describe("web workspace path", () => {
 		expect(screen.queryByTestId("web-workspace-tab-knowledge")).toBeNull();
 		expect(screen.queryByTestId("web-workspace-knowledge-list")).toBeNull();
 
-		// the guest memory is open by default in the viewer when WebWorkspace mounts in kiosk mode
+		// AGENTS.md (지나가 실제로 읽는 글) is open by default in the viewer when WebWorkspace mounts in kiosk mode
 		expect(screen.getByTestId("web-workspace-resizer")).toBeInTheDocument();
 		const viewer = screen.getByTestId("web-workspace-viewer");
 		const barCode = viewer.querySelector(".web-workspace-viewer-bar code");
-		expect(barCode?.textContent).toBe("guest-memory.md");
+		expect(barCode?.textContent).toBe("AGENTS.md");
 		expect(barCode?.getAttribute("title")).toBe(
-			"opfs://naia-adk/memory/guest-memory.md",
+			"opfs://naia-adk/AGENTS.md",
 		);
 	});
 

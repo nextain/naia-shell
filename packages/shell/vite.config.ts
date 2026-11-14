@@ -92,11 +92,11 @@ function webAdkPlugin(): Plugin {
 
 	function getBundleData() {
 		if (bundleJson && commit) return { bundleJson, commit };
-		const bundle = buildWebAdkBundle();
+		// 시연판은 공개 번들 중 허용 목록(.agents/context, .users, 참고 원본)만 싣는다. 걸러내기는 빌드에서 한다.
+		const bundle = buildWebAdkBundle({
+			kiosk: process.env.VITE_NAIA_KIOSK_DEMO === "1",
+		});
 		if (process.env.VITE_NAIA_KIOSK_DEMO === "1") {
-			// FR-WEB-KIOSK-R3.6: 시연 판에서는 .agents, .users, AGENTS.md, CLAUDE.md, GEMINI.md,
-			// agents-rules-detail.json 등 내부 규칙·운영 설정 키 설명 파일을 번들에서 완전히 제외한다.
-			bundle.files = [];
 			bundle.dirs = ["knowledge", "conversations"];
 		}
 		commit = bundle.commit;

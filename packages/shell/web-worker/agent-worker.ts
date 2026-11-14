@@ -12,6 +12,11 @@ import {
 import type { DiagnosticLog, ProviderPort } from "@naia-agent/ports/uc1.js";
 import { isKioskDemo } from "../src/lib/kiosk-demo/flag";
 import { SKILL_YOUTUBE_BGM } from "../src/lib/bgm-skill-spec";
+import {
+	WEATHER_TOOL_NAME,
+	WEATHER_TOOL_SPEC,
+	executeWeatherTool,
+} from "./weather-tool";
 import { WEB_ADK_PATH } from "../src/lib/web-runtime/web-adk-path";
 import {
 	WEB_LLM_MODEL_ID,
@@ -228,6 +233,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 					...BROWSER_READ_TOOL_NAMES,
 					...kioskSpecs.map((s) => s.name),
 					SKILL_YOUTUBE_BGM.name,
+					WEATHER_TOOL_NAME,
 				]
 			: [...BROWSER_READ_TOOL_NAMES, SKILL_YOUTUBE_BGM.name];
 
@@ -342,7 +348,9 @@ self.addEventListener("message", (event: MessageEvent) => {
 			(call, opts) =>
 				call.name === SKILL_YOUTUBE_BGM.name
 					? executeWebBgmTool(call, opts)
-					: execute(call, opts);
+					: isKioskDemo() && call.name === WEATHER_TOOL_NAME
+						? executeWeatherTool(call.args, { signal: opts.signal })
+						: execute(call, opts);
 
 		const toolExecutor = isKioskDemo()
 			? {
@@ -350,6 +358,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 						...baseToolExecutor.specs(),
 						...kioskSpecs,
 						webBgmToolSpec,
+						WEATHER_TOOL_SPEC,
 					],
 					execute: withWebBgm(async (...args) =>
 						(await kiosk!).executor.execute(...args),

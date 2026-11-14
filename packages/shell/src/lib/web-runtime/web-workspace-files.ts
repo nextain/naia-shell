@@ -1,41 +1,13 @@
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { WEB_ADK_PATH } from "./web-adk-path";
-
-const KIOSK_HIDDEN_ROOT_NAMES = new Set([
-	".agents",
-	".users",
-	"naia-settings",
-	"projects",
-	"CLAUDE.md",
-	"GEMINI.md",
-	"README.md",
-	"OPENCODE.md",
-	"CODEX.md",
-]);
-
-function isKioskBlockedWorkspaceParts(parts: string[]): boolean {
-	if (!isKioskDemo()) return false;
-	if (parts.length === 0) return true;
-	if (KIOSK_HIDDEN_ROOT_NAMES.has(parts[0])) return true;
-	return parts.some(
-		(part) =>
-			part.startsWith(".") ||
-			/^agents-rules/i.test(part) ||
-			/^(CLAUDE|GEMINI|OPENCODE|CODEX)\.md$/i.test(part),
-	);
-}
+import { isKioskReadableParts, splitWebAdkPath } from "./web-adk-policy";
 
 /** Resolve only files inside this browser's ADK directory. */
 export async function getWebWorkspaceFile(path: string): Promise<File> {
 	if (!path.startsWith(`${WEB_ADK_PATH}/`))
 		throw new Error("web_workspace_invalid_path");
-	const parts = path.slice(WEB_ADK_PATH.length + 1).split("/");
-	if (
-		parts.some(
-			(part) => !part || part === "." || part === ".." || part.includes("\\"),
-		) ||
-		isKioskBlockedWorkspaceParts(parts)
-	) {
+	const parts = splitWebAdkPath(path);
+	if (!parts || (isKioskDemo() && !isKioskReadableParts(parts))) {
 		throw new Error("web_workspace_invalid_path");
 	}
 	let dir = await navigator.storage.getDirectory();

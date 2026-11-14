@@ -83,31 +83,6 @@
 	opacity: 0.55;
 	cursor: default;
 }
-.kiosk-entry__actions .kiosk-entry__reset {
-	min-height: 44px;
-	background: transparent;
-	color: #d4dbea;
-	border-color: transparent;
-	font-size: 14px;
-	padding: 8px;
-}
-
-.kiosk-chat-reset {
-	flex-shrink: 0;
-	min-height: 32px;
-	padding: 6px;
-	font-size: 13px;
-	white-space: nowrap;
-}
-.kiosk-chat-reset:disabled {
-	opacity: 0.55;
-	cursor: default;
-}
-.kiosk-chat-reset:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 2px;
-}
-
 .app-root[data-kiosk-demo="true"] .naia-chat-wrapper {
 	background: rgba(20, 24, 34, 0.94);
 	backdrop-filter: blur(24px) saturate(110%);
@@ -191,14 +166,7 @@
 		display: none;
 	}
 
-	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
-		.chat-header
-		.kiosk-local-answer-label-suffix {
-		display: none;
-	}
-
-	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-toggle,
-	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-chat-reset {
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-toggle {
 		flex-shrink: 0;
 		font-size: 11px;
 		padding: 2px 6px;
@@ -261,8 +229,7 @@
 		display: none;
 	}
 
-	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-toggle,
-	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .kiosk-chat-reset {
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-toggle {
 		font-size: 10.5px;
 		padding: 2px 6px;
 		min-height: 22px;
@@ -336,4 +303,15 @@
 }
 .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .naia-chat-area > .kiosk-voice-notice {
 	max-width: calc(50% - 40px);
+}
+
+/* 15판: AI참견·말하기·능동발화와 사람 아이콘은 대화창 머리의 "+" 바로 옆에 붙인다(대표님 11/14). */
+.app-root[data-kiosk-demo="true"] .chat-header {
+	justify-content: flex-start;
+}
+.app-root[data-kiosk-demo="true"] .chat-header .ai-control-bar {
+	margin-left: auto !important;
+}
+.app-root[data-kiosk-demo="true"] .chat-header .chat-header-right {
+	flex: 0 0 auto !important;
 }

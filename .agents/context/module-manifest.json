@@ -955,6 +955,27 @@
         "UC-WEB-KIOSK-PW"
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-passcode.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-edit.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3"
+      ],
+      "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-policy.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3"
+      ],
+      "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+    },
+    "packages/shell/web-worker/weather-tool.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3"
+      ],
+      "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
     }
   },
   "scan_dirs": [

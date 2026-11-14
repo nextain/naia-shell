@@ -202,6 +202,27 @@ export function AppMainContent(props: AppMainContentProps) {
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
 	const kioskDemo = isKioskDemo();
+	const [kioskExtNotice, setKioskExtNotice] = useState<string | null>(null);
+	const avatarCornerTrigger = (
+		<button
+			type="button"
+			data-testid="avatar-controls-toggle"
+			className={`naia-chat-mode naia-avatar-corner-trigger${avatarCornerOpen ? " naia-chat-mode--active" : ""}`}
+			aria-expanded={avatarCornerOpen}
+			aria-label="아바타 화면 조절"
+			title="아바타 화면 조절"
+			onClick={() => setAvatarCornerOpen((open) => !open)}
+		>
+			<svg
+				className="naia-avatar-corner-trigger__icon"
+				viewBox="0 0 24 24"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="8" r="4" />
+				<path d="M5 20c0-3.87 3.13-7 7-7s7 3.13 7 7" />
+			</svg>
+		</button>
+	);
 	const [avatarRotateActive, setAvatarRotateActive] = useState(false);
 	const avatarRotateRef = useRef(false);
 	const [avatarPanActive, setAvatarPanActive] = useState(false);
@@ -561,11 +582,40 @@ export function AppMainContent(props: AppMainContentProps) {
 								role="group"
 								aria-label="아바타 및 대화창 조절"
 							>
-								{/* 시연판: AI참견·말하기·능동발화를 아바타 마크 옆, 대화창 위에 둔다(대표님 11/13 "버튼 4개로 해줘"). */}
 								{kioskDemo && (
-									<Suspense fallback={null}>
-										<AiControlBar showCameraControls={false} />
-									</Suspense>
+									<>
+										{kioskExtNotice && (
+											<span
+												className="kiosk-ext-notice"
+												data-testid="kiosk-ext-notice"
+												role="status"
+											>
+												{kioskExtNotice}
+											</span>
+										)}
+										{(
+											[
+												["appstore", "앱스토어", "🛍️"],
+												["skills", "스킬", "🧩"],
+											] as const
+										).map(([id, label, icon]) => (
+											<button
+												key={id}
+												type="button"
+												data-testid={`kiosk-ext-${id}`}
+												className="naia-chat-mode"
+												aria-label={label}
+												title={label}
+												onClick={() =>
+													setKioskExtNotice(
+														`${label}: 현재 앱에서는 되고 웹버전 통합 진행중입니다.`,
+													)
+												}
+											>
+												<span aria-hidden="true">{icon}</span>
+											</button>
+										))}
+									</>
 								)}
 								{avatarCornerOpen && (
 									<div
@@ -715,24 +765,7 @@ export function AppMainContent(props: AppMainContentProps) {
 										)}
 									</div>
 								)}
-								<button
-									type="button"
-									data-testid="avatar-controls-toggle"
-									className={`naia-chat-mode naia-avatar-corner-trigger${avatarCornerOpen ? " naia-chat-mode--active" : ""}`}
-									aria-expanded={avatarCornerOpen}
-									aria-label="아바타 화면 조절"
-									title="아바타 화면 조절"
-									onClick={() => setAvatarCornerOpen((open) => !open)}
-								>
-									<svg
-										className="naia-avatar-corner-trigger__icon"
-										viewBox="0 0 24 24"
-										aria-hidden="true"
-									>
-										<circle cx="12" cy="8" r="4" />
-										<path d="M5 20c0-3.87 3.13-7 7-7s7 3.13 7 7" />
-									</svg>
-								</button>
+								{!kioskDemo && avatarCornerTrigger}
 							</div>
 							{kioskDemo && <KioskVoiceNotice />}
 							<div
@@ -747,11 +780,12 @@ export function AppMainContent(props: AppMainContentProps) {
 								<DeferredChatArea
 									variant={chatVariant}
 									headerControls={
-										kioskDemo ? undefined : (
+										<>
 											<Suspense fallback={null}>
 												<AiControlBar showCameraControls={false} />
 											</Suspense>
-										)
+											{kioskDemo && avatarCornerTrigger}
+										</>
 									}
 								/>
 							</div>

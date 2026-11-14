@@ -17,6 +17,15 @@ import {
 } from "../../lib/kiosk-demo/knowledge";
 import { seedKioskSlidesWorkspace } from "../../lib/kiosk-demo/slides";
 import { WEB_ADK_PATH } from "../../lib/web-runtime/web-adk-path";
+import {
+	KIOSK_ADK_ROOT_ORDER,
+	isKioskEditableWebAdkPath,
+	isKioskVisibleEntry,
+} from "../../lib/web-runtime/web-adk-policy";
+import {
+	ensureKioskAdkBundle,
+	revertKioskAdkFile,
+} from "../../lib/web-runtime/web-adk-edit";
 import { getWebFs } from "../../lib/web-runtime/web-fs";
 import { getWebWorkspaceFile } from "../../lib/web-runtime/web-workspace-files";
 import {
@@ -56,10 +65,9 @@ export function openWebWorkspaceFile(rawPath: string): void {
 	}
 }
 
-const KIOSK_ROOT_ORDER = ["memory", "knowledge", "slides"] as const;
-const KIOSK_DEFAULT_FILE = `${WEB_ADK_PATH}/memory/guest-memory.md`;
-
-const KIOSK_ALLOWED_ROOT_ENTRIES = new Set<string>(KIOSK_ROOT_ORDER);
+// 지나가 실제로 읽는 AGENTS.md 가 탐색기 맨 위·기본 선택이다.
+const KIOSK_ROOT_ORDER = KIOSK_ADK_ROOT_ORDER;
+const KIOSK_DEFAULT_FILE = `${WEB_ADK_PATH}/AGENTS.md`;
 
 export function isVisibleWebWorkspaceEntry(
 	name: string,
@@ -67,19 +75,7 @@ export function isVisibleWebWorkspaceEntry(
 	kiosk: boolean = isKioskDemo(),
 ): boolean {
 	if (!kiosk) return true;
-	if (!name || name.startsWith(".")) return false;
-	if (/^agents-rules/i.test(name)) return false;
-	if (/^(CLAUDE|GEMINI|README|OPENCODE|CODEX)\.md$/i.test(name)) {
-		return false;
-	}
-	if (name === "naia-settings" || name === "projects") return false;
-	if (parentPath === WEB_ADK_PATH) {
-		return KIOSK_ALLOWED_ROOT_ENTRIES.has(name);
-	}
-	if (/^AGENTS\.md$/i.test(name)) {
-		return false;
-	}
-	return true;
+	return isKioskVisibleEntry(name, parentPath);
 }
 
 export function sortWebWorkspaceEntries(
@@ -90,9 +86,7 @@ export function sortWebWorkspaceEntries(
 	const copy = [...entries];
 	if (kiosk && parentPath === WEB_ADK_PATH) {
 		const rank = (name: string): number => {
-			const idx = KIOSK_ROOT_ORDER.indexOf(
-				name as (typeof KIOSK_ROOT_ORDER)[number],
-			);
+			const idx = (KIOSK_ROOT_ORDER as readonly string[]).indexOf(name);
 			return idx === -1 ? KIOSK_ROOT_ORDER.length : idx;
 		};
 		return copy.sort((a, b) => {
@@ -262,6 +256,9 @@ export default function WebWorkspace() {
 		}
 		return isKioskDemo() ? KIOSK_DEFAULT_FILE : "";
 	});
+	const [editorRevision, setEditorRevision] = useState(0);
+	const [revertNotice, setRevertNotice] = useState("");
+	const editable = Boolean(file) && isKioskEditableWebAdkPath(file);
 	const [treeWidth, setTreeWidth] = useState(() => (isKioskDemo() ? 236 : 180));
 	const workspaceRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
@@ -300,6 +297,7 @@ export default function WebWorkspace() {
 					const fs = getWebFs();
 					await seedKioskKnowledge(fs).catch(() => {});
 					await seedKioskAdkWorkspace(fs).catch(() => {});
+					await ensureKioskAdkBundle(fs).catch(() => {});
 					await seedKioskSlidesWorkspace(fs).catch(() => {});
 				}
 				return navigator.storage.getDirectory();
@@ -334,6 +332,16 @@ export default function WebWorkspace() {
 		};
 		window.addEventListener("mousemove", onMove);
 		window.addEventListener("mouseup", onUp);
+	}
+	async function revertToOriginal() {
+		setRevertNotice("");
+		try {
+			await revertKioskAdkFile(file);
+			setEditorRevision((n) => n + 1);
+			setRevertNotice("원본으로 되돌렸어요.");
+		} catch {
+			setRevertNotice("원본으로 되돌리지 못했어요.");
+		}
 	}
 	async function download() {
 		try {
@@ -399,7 +407,10 @@ export default function WebWorkspace() {
 							key={status.phase}
 							dir={root}
 							path={WEB_ADK_PATH}
-							onOpen={setFile}
+							onOpen={(next) => {
+								setRevertNotice("");
+								setFile(next);
+							}}
 							activeFile={file}
 						/>
 					)}
@@ -432,6 +443,15 @@ export default function WebWorkspace() {
 							<code title={file}>
 								{file.split("/").filter(Boolean).pop() ?? file}
 							</code>
+							{editable && (
+								<button
+									type="button"
+									data-testid="web-workspace-revert"
+									onClick={() => void revertToOriginal()}
+								>
+									원본으로 되돌리기
+								</button>
+							)}
 							<button type="button" onClick={() => void download()}>
 								{t("webExplorer.download")}
 							</button>
@@ -443,8 +463,19 @@ export default function WebWorkspace() {
 								✕
 							</button>
 						</div>
+						{editable && (
+							<p className="web-workspace-edit-hint" role="status">
+								{revertNotice ||
+									"고치면 바로 저장되고, 지나의 다음 대답부터 반영돼요. 새로고침하면 원본으로 돌아갑니다."}
+							</p>
+						)}
 						<Suspense fallback={null}>
-							<Editor filePath={file} readOnly workspaceRoot={WEB_ADK_PATH} />
+							<Editor
+								key={`${file}#${editorRevision}`}
+								filePath={file}
+								readOnly={!editable}
+								workspaceRoot={WEB_ADK_PATH}
+							/>
 						</Suspense>
 					</main>
 				</>

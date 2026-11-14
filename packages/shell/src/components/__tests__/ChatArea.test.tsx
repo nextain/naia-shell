@@ -337,25 +337,12 @@ describe("ChatArea", () => {
 		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
 	});
 
-	it("kiosk reset blocks duplicates and offers retry after safe storage failure", async () => {
+	it("kiosk chat has no 처음으로 button (reload resets the visit)", () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		let rejectReset!: (error: Error) => void;
-		mockResetKioskMemory.mockImplementationOnce(() => new Promise<void>((_, reject) => { rejectReset = reject; }));
 		render(<ChatArea />);
-		const reset = screen.getByRole("button", { name: "처음으로" });
-		fireEvent.click(reset);
-		await waitFor(() => expect(mockResetKioskMemory).toHaveBeenCalledOnce());
-		expect((reset as HTMLButtonElement).disabled).toBe(true);
-		fireEvent.click(reset);
-		expect(mockResetKioskMemory).toHaveBeenCalledOnce();
-		await act(async () => rejectReset(new Error("private storage detail")));
-		expect((await screen.findByText(/기억을 초기화하지 못했어요/)).getAttribute("role")).toBe("alert");
-		expect(screen.queryByText(/private storage detail/)).toBeNull();
-		expect((reset as HTMLButtonElement).disabled).toBe(false);
-		mockResetKioskMemory.mockRejectedValueOnce(new Error("still unavailable"));
-		fireEvent.click(reset);
-		await waitFor(() => expect(mockResetKioskMemory).toHaveBeenCalledTimes(2));
+		expect(screen.queryByRole("button", { name: "처음으로" })).toBeNull();
+		expect(mockResetKioskMemory).not.toHaveBeenCalled();
 	});
 
 	it("S5: kiosk demo greeting respects config ttsProvider (nextain gateway) in web mode", async () => {
@@ -4206,7 +4193,7 @@ describe("ChatArea", () => {
 				render(<ChatArea />);
 
 				const toggleBtn = screen.getByTestId("kiosk-local-answer-toggle");
-				expect(toggleBtn).toHaveTextContent("내 기기(웹GPU) 에서 대답하기");
+				expect(toggleBtn).toHaveTextContent("내 기기(웹GPU)");
 				expect(toggleBtn).toHaveAttribute("aria-pressed", "false");
 				expect(
 					screen.getByTestId("kiosk-answer-source-gateway"),
@@ -4754,7 +4741,7 @@ describe("ChatArea", () => {
 		}
 	});
 
-	it("renders compactable local-answer toggle label and prevents overlap with '처음으로' across 1440x900 desktop card (368px), 412x915 mobile, and 360px widths (fix7f)", async () => {
+	it("renders the local-answer toggle as plain \"내 기기(웹GPU)\" without 처음으로 (r15)", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "naia_test_kiosk_fixture_123456");
@@ -4765,26 +4752,13 @@ describe("ChatArea", () => {
 			render(<ChatArea />);
 			const headerWrap = screen.getByTestId("kiosk-local-answer-header");
 			const toggleBtn = screen.getByTestId("kiosk-local-answer-toggle");
-			const resetBtn = screen.getByRole("button", { name: "처음으로" });
+			expect(screen.queryByRole("button", { name: "처음으로" })).toBeNull();
 
 			expect(toggleBtn).toHaveAttribute("aria-label", "내 기기(웹GPU)에서 대답하기");
 			expect(toggleBtn.getAttribute("title")).toContain("내 기기(웹GPU)에서 대답하기");
-			expect(toggleBtn.textContent).toBe("내 기기(웹GPU) 에서 대답하기");
-
-			const prefix = toggleBtn.querySelector(
-				".kiosk-local-answer-label-prefix",
-			);
-			const suffix = toggleBtn.querySelector(
-				".kiosk-local-answer-label-suffix",
-			);
-			expect(prefix?.textContent).toBe("내 기기(웹GPU)");
-			expect(suffix?.textContent).toBe(" 에서 대답하기");
-			// The answer-source row sits below the chat header, so the compact
-			// header only holds "처음으로" and "+" (r11).
+			expect(toggleBtn.textContent).toBe("내 기기(웹GPU)");
+			expect(toggleBtn.querySelector(".kiosk-local-answer-label-suffix")).toBeNull();
 			expect(headerWrap.closest(".chat-header")).toBeNull();
-			expect(headerWrap.compareDocumentPosition(resetBtn)).toBe(
-				Node.DOCUMENT_POSITION_PRECEDING,
-			);
 
 			const webModeCss = readFileSync(
 				resolve(__dirname, "../../styles/web-mode.css"),
@@ -4794,36 +4768,9 @@ describe("ChatArea", () => {
 				resolve(__dirname, "../KioskDemoGate.css"),
 				"utf8",
 			);
-			expect(webModeCss).toContain("min-width: max-content;");
-			expect(webModeCss).toContain(
-				'[data-naia-web="true"][data-naia-mobile="true"] .chat-header .kiosk-local-answer-label-suffix',
-			);
-			expect(kioskCss).toContain(
-				'.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-hint',
-			);
-			expect(kioskCss).toContain(
-				'.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])\n\t\t.chat-header\n\t\t.kiosk-local-answer-label-suffix',
-			);
-
-			// Verify single-row non-overlap budget across widths: 360px (narrow mobile), 368px (1440x900 desktop card), 412px (mobile portrait)
-			for (const headerWidth of [360, 368, 412]) {
-				const horizontalPad = headerWidth === 368 ? 20 : 12;
-				const tabsWidth = 104;
-				const aiControlWidth = 56;
-				const compactToggleWidth = 42; // "내 PC" compact pill
-				const resetWidth = 54; // "처음으로"
-				const newChatWidth = 24; // "+"
-				const gaps = headerWidth === 368 ? 24 : 15;
-				const rightGroupStart =
-					headerWidth -
-					horizontalPad / 2 -
-					(compactToggleWidth + resetWidth + newChatWidth + 8);
-				const leftGroupEnd =
-					horizontalPad / 2 + tabsWidth + aiControlWidth + gaps;
-				const toggleRight = rightGroupStart + compactToggleWidth;
-				const resetLeft = toggleRight + 4;
-				expect(leftGroupEnd).toBeLessThanOrEqual(rightGroupStart);
-				expect(toggleRight).toBeLessThanOrEqual(resetLeft);
+			for (const css of [webModeCss, kioskCss]) {
+				expect(css).not.toContain("kiosk-local-answer-label-suffix");
+				expect(css).not.toContain("kiosk-chat-reset");
 			}
 		} finally {
 			vi.unstubAllEnvs();

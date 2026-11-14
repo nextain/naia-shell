@@ -75,6 +75,18 @@ export async function routeCommand(
 				? file.text()
 				: Array.from(new Uint8Array(await file.arrayBuffer()));
 		}
+		if (cmd === "workspace_write_file") {
+			// 시연판 탐색기의 허용 목록 파일만 OPFS 에 저장한다(경로·크기 검사는 writeKioskAdkFile).
+			const { path, content } = (args ?? {}) as {
+				path?: unknown;
+				content?: unknown;
+			};
+			if (typeof path !== "string" || typeof content !== "string")
+				throw new Error("web_workspace_invalid_path");
+			const { writeKioskAdkFile } = await import("./web-adk-edit");
+			await writeKioskAdkFile(path, content);
+			return null;
+		}
 		if (cmd === "plugin:event|listen") {
 			return handleEventListen(
 				args as { event: string; target?: unknown; handler: number },
