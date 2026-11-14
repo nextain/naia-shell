@@ -353,4 +353,22 @@ describe("AdkSetupScreen operation locking", () => {
 		expect(onComplete).not.toHaveBeenCalled();
 		expect(localStorage.getItem("naia-remote-key")).toBeNull();
 	});
+
+	it("uses the native NAIA_HOME-aware default_adk_path instead of the OS profile homeDir", async () => {
+		mocks.invoke.mockImplementation((command: string) => {
+			if (command === "workspace_detect_adk_root") return Promise.resolve("");
+			if (command === "default_adk_path")
+				return Promise.resolve("C:\\test-naia-home\\naia-adk");
+			return Promise.resolve(undefined);
+		});
+		const onComplete = vi.fn();
+		const { container } = render(<AdkSetupScreen onComplete={onComplete} />);
+		await openNewSetup(container);
+
+		const input =
+			container.querySelector<HTMLInputElement>(".adk-setup-input")!;
+		await waitFor(() =>
+			expect(input.value).toBe("C:\\test-naia-home\\naia-adk"),
+		);
+	});
 });

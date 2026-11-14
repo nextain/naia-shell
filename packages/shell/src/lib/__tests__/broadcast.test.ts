@@ -11,17 +11,38 @@ import {
 	canStartBroadcastWithConfig,
 	checkYoutubeBgmAllowedDuringBroadcast,
 	classifyBrainProvider,
+	clearBroadcastError,
 	computeBroadcastSessionMetrics,
 	formatBroadcastElapsed,
+	formatBroadcastStartError,
+	getBroadcastConfirmationPreview,
 	int16ToBase64,
 	maskStreamKeyForDisplay,
 	PcmStereoFrameBundler,
 	packStereoFloat32ToS16le,
 	redactFfmpegArgs,
 	redactStreamKey,
+	requiresBroadcastConfirmation,
 	resolveBroadcastBrainKind,
 } from "../broadcast-client";
-import { setLocale, t } from "../i18n";
+import { type Locale, setLocale, t } from "../i18n";
+
+const ALL_LOCALES: readonly Locale[] = [
+	"ko",
+	"en",
+	"ja",
+	"zh",
+	"es",
+	"fr",
+	"de",
+	"pt",
+	"ru",
+	"vi",
+	"id",
+	"hi",
+	"ar",
+	"bn",
+];
 
 describe("UC-BROADCAST-STREAM-026: broadcast presets and stream key redaction", () => {
 	it("configures platform keyframe intervals (-g 60 vs -g 30) and default bitrates (6M vs 8M)", () => {
@@ -191,5 +212,60 @@ describe("UC-BROADCAST-STREAM-026: broadcast session log calculation and YouTube
 		expect(guardWhenIdle.allowed).toBe(true);
 		expect(guardWhenIdle.forcedMode).toBe("youtube");
 		expect(guardWhenIdle.noticeKey).toBeNull();
+	});
+
+	it("formats broadcast_start errors across all 14 locales, maps os error 216 / placeholder ffmpeg to broadcast.errorFfmpegInvalid, and redacts stream keys", async () => {
+		expect(ALL_LOCALES).toHaveLength(14);
+		for (const loc of ALL_LOCALES) {
+			await setLocale(loc);
+			const placeholderMsg = formatBroadcastStartError(
+				"ffmpeg execution failed: #!naia-ffmpeg-dev-placeholder (os error 216)",
+				"secret-key-999",
+			);
+			expect(placeholderMsg).toContain(t("broadcast.errorFfmpegInvalid"));
+			expect(placeholderMsg).not.toContain("secret-key-999");
+
+			const genericMsg = formatBroadcastStartError(
+				new Error("rtmps://a.rtmp.youtube.com/live2/secret-key-999 refused"),
+				"secret-key-999",
+			);
+			expect(genericMsg).toContain("***");
+			expect(genericMsg).not.toContain("secret-key-999");
+			expect(t("broadcast.clearKeyBtn").length).toBeGreaterThan(0);
+			expect(t("broadcast.keyCleared").length).toBeGreaterThan(0);
+			expect(t("broadcast.confirmTitle").length).toBeGreaterThan(0);
+			expect(t("broadcast.confirmStartBtn").length).toBeGreaterThan(0);
+		}
+		await setLocale("ko");
+		setBroadcastBridgeSnapshot({ lastError: "오류 발생" });
+		clearBroadcastError();
+		expect(getBroadcastBridgeSnapshot().lastError).toBeNull();
+	});
+
+	it("requires pre-broadcast confirmation on Windows (gdigrab) but keeps Linux portal flow direct", async () => {
+		await setLocale("ko");
+		expect(
+			requiresBroadcastConfirmation(
+				"Win32 Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+			),
+		).toBe(true);
+		expect(
+			requiresBroadcastConfirmation(
+				"Linux x86_64 Mozilla/5.0 (X11; Linux x86_64)",
+			),
+		).toBe(false);
+
+		const preview = getBroadcastConfirmationPreview({
+			broadcastPlatform: "youtube",
+			broadcastServerUrl: "rtmps://a.rtmp.youtube.com/live2",
+			broadcastStreamKey: "my-secret-stream-key",
+		});
+		expect(preview.serverUrl).toBe("rtmps://a.rtmp.youtube.com/live2");
+		expect(preview.maskedStreamKey).toBe("••••••••");
+		expect(preview.destinationDisplay).toBe(
+			"rtmps://a.rtmp.youtube.com/live2/••••••••",
+		);
+		expect(preview.destinationDisplay).not.toContain("my-secret-stream-key");
+		expect(preview.captureTarget).toBe("Naia 창");
 	});
 });

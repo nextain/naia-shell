@@ -58,17 +58,27 @@ function preserveWorkspaceRoot(
 	};
 }
 
-async function getDefaultAdkPath(): Promise<string> {
-	const detected = await invoke<string>("workspace_detect_adk_root").catch(
+async function getHomeDefaultAdkPath(): Promise<string> {
+	const nativeDefault = await invoke<string>("default_adk_path").catch(
 		() => "",
 	);
-	if (detected) return detected;
+	if (typeof nativeDefault === "string" && nativeDefault.trim()) {
+		return nativeDefault.trim();
+	}
 	try {
 		const home = await homeDir();
 		return await join(home, "naia-adk");
 	} catch {
 		return "naia-adk";
 	}
+}
+
+async function getDefaultAdkPath(): Promise<string> {
+	const detected = await invoke<string>("workspace_detect_adk_root").catch(
+		() => "",
+	);
+	if (detected) return detected;
+	return getHomeDefaultAdkPath();
 }
 
 export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
@@ -105,8 +115,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 
 	useEffect(() => {
 		getDefaultAdkPath().then(setDefaultPath);
-		homeDir()
-			.then((home) => join(home, "naia-adk"))
+		getHomeDefaultAdkPath()
 			.then(setNewDefaultPath)
 			.catch(() => {});
 	}, []);

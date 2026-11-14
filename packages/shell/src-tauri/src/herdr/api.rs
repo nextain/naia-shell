@@ -1,6 +1,8 @@
 use tauri::AppHandle;
 
-use super::config::{herdr_command, set_herdr_theme, validate_herdr, write_embedded_herdr_config};
+use super::config::{
+    herdr_command, run_herdr_output, set_herdr_theme, validate_herdr, write_embedded_herdr_config,
+};
 
 /// PATH Herdr 0.9.1 speaks snapshot protocol 22. Older fixtures and
 /// staged 0.8.x still speak 19. Accept the range; do not pin a single
@@ -31,10 +33,9 @@ pub(super) fn herdr_api_output(
     config_path: &std::path::Path,
     args: &[&str],
 ) -> Result<String, String> {
-    let output = herdr_command()
-        .env("HERDR_CONFIG_PATH", config_path)
-        .args(args)
-        .output()
+    let mut cmd = herdr_command();
+    cmd.env("HERDR_CONFIG_PATH", config_path).args(args);
+    let output = run_herdr_output(&mut cmd, "herdr_api_output")
         .map_err(|e| format!("Herdr API unavailable: {e}"))?;
     if !output.status.success() {
         let reason = String::from_utf8_lossy(&output.stderr).trim().to_string();
