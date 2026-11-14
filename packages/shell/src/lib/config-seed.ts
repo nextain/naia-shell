@@ -236,7 +236,10 @@ function readStoredNaiaWidthForSeed(): number | null {
 	}
 }
 
-export function resolveInitialShellChatLayout(viewportHeight: number): {
+export function resolveInitialShellChatLayout(
+	viewportHeight: number,
+	viewportWidth?: number,
+): {
 	naiaWidth: number;
 	chatHeight: number;
 } {
@@ -244,6 +247,10 @@ export function resolveInitialShellChatLayout(viewportHeight: number): {
 		Number.isFinite(viewportHeight) && viewportHeight > 0
 			? viewportHeight
 			: 800;
+	const safeWidth =
+		Number.isFinite(viewportWidth) && (viewportWidth as number) > 0
+			? (viewportWidth as number)
+			: null;
 	const storedRatio = readStoredChatHeightRatioForSeed();
 	const storedWidth = readStoredNaiaWidthForSeed();
 	if (isKioskDemo()) {
@@ -259,8 +266,16 @@ export function resolveInitialShellChatLayout(viewportHeight: number): {
 							maxUnclippedHeight,
 							Math.max(KIOSK_SHELL_CHAT_HEIGHT_MIN, rawHeight),
 						);
+		// 손님이 저장한 폭이 없을 때 대화창은 가로 40%에 맞춘다(채팅창 = 폭 - 32).
+		// 저장된 폭·너비 미전달(옛 호출)은 예전 고정값을 유지한다.
+		const proportionalWidth =
+			safeWidth === null
+				? KIOSK_SHELL_NAIA_WIDTH
+				: Math.round(
+						Math.min(820, Math.max(520, safeWidth * 0.4 + 32)),
+					);
 		return {
-			naiaWidth: storedWidth ?? KIOSK_SHELL_NAIA_WIDTH,
+			naiaWidth: storedWidth ?? proportionalWidth,
 			chatHeight,
 		};
 	}
@@ -302,9 +317,11 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 			b2cNvaThemes: [KIOSK_JINA_THEME],
 			b2cGreetingAutoplay: true,
 		},
-		// 능동 발화 버튼이 잠기지 않게 프로필을 미리 정해 둔다. 웹판 지나가 실제로 하는 능동 발화는 라디오 DJ 뿐이다.
-		// 허용(proactiveSpeechPermitted)은 손님이 버튼을 누르거나 "라디오 DJ 시작해줘" 라고 할 때만 켜진다.
+		// 능동 발화 버튼이 잠기지 않게 프로필과 허용을 미리 정해 둔다. 아래쪽은
+		// config.proactiveSpeechPermitted === true 로 엄격히 비교하므로 빠지면
+		// 첫 화면부터 꺼진 채 시작한다. 웹판 지나가 실제로 하는 능동 발화는 라디오 DJ 뿐이다.
 		proactiveSpeechProfile: "personal_radio_dj",
+		proactiveSpeechPermitted: true,
 		provider: KIOSK_DEMO_LLM_PROVIDER,
 		model,
 		enableTools: KIOSK_DEMO_ENABLE_TOOLS,

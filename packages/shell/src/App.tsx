@@ -323,21 +323,27 @@ export function App() {
 	useAgentAuthSync(showAdkSetup, showOnboarding, configHydrated);
 	const [naiaVisible, setNaiaVisible] = useState(true);
 	const [naiaWidth, setNaiaWidth] = useState(
-		() => resolveInitialShellChatLayout(window.innerHeight).naiaWidth,
+		() =>
+			resolveInitialShellChatLayout(window.innerHeight, window.innerWidth)
+				.naiaWidth,
 	);
 	const [appTitle, setAppTitle] = useState(
 		() => loadConfig()?.agentName?.trim() || "Naia",
 	);
 	const [chatVisible, setChatVisible] = useState(true);
 	const [chatHeight, setChatHeight] = useState(
-		() => resolveInitialShellChatLayout(window.innerHeight).chatHeight,
+		() =>
+			resolveInitialShellChatLayout(window.innerHeight, window.innerWidth)
+				.chatHeight,
 	);
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		const syncLayoutOnResize = () => {
-			setChatHeight(
-				resolveInitialShellChatLayout(window.innerHeight).chatHeight,
+			const next = resolveInitialShellChatLayout(
+				window.innerHeight,
+				window.innerWidth,
 			);
+			setChatHeight(next.chatHeight);
 		};
 		window.addEventListener("resize", syncLayoutOnResize);
 		return () => window.removeEventListener("resize", syncLayoutOnResize);

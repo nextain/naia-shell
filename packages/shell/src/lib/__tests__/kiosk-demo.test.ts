@@ -396,6 +396,18 @@ describe("S3 kiosk isolation", () => {
 			chatHeight: 320,
 		});
 	});
+	it("sizes the kiosk chat to 40% of the viewport width when nothing is stored", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		resetUiPreferencesForTests();
+		// 1440 → 1440*0.4+32 = 608 (chat 576 = 40%). 1920 → 800 capped (chat 768).
+		expect(resolveInitialShellChatLayout(900, 1440).naiaWidth).toBe(608);
+		expect(resolveInitialShellChatLayout(900, 1920).naiaWidth).toBe(800);
+		// Stored width still wins over the proportional default.
+		setStoredNaiaWidth(700);
+		expect(resolveInitialShellChatLayout(900, 1440).naiaWidth).toBe(700);
+		resetUiPreferencesForTests();
+	});
 	it("registers WebLLM while keeping cloud (nextain) as default until kiosk local answer is explicitly toggled ON", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
 		registerWebLlmProvider();

@@ -72,6 +72,17 @@ describe("config-seed (FR-VOICE.15)", () => {
 		}
 	});
 
+	it("turns proactive speech on by default in the kiosk seed (strict === true check downstream)", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const seed = buildKioskDemoConfigSeed();
+		expect(seed.proactiveSpeechProfile).toBe("personal_radio_dj");
+		expect(seed.proactiveSpeechPermitted).toBe(true);
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		expect(buildKioskDemoConfigSeed()).toEqual({});
+	});
+
 	it("pins environmentAwareness to off and environmentTerminalInput to false in kiosk seed and applyKioskDemoMainModel while preserving them when kiosk is off", () => {
 		expect(KIOSK_DEMO_ENVIRONMENT_AWARENESS).toBe("off");
 		expect(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT).toBe(false);

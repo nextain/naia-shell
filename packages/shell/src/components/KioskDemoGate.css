@@ -193,7 +193,7 @@
 	}
 
 	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
-		.app-layout:not(:has(.right-content--onboarding)),
+		.app-layout:has(.content-app__slot--active),
 	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
 		.app-layout:has(.content-app__slot--active .web-workspace),
 	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
