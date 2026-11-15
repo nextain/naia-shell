@@ -541,10 +541,10 @@ export const WEB_YOUTUBE_CATALOG: readonly WebCatalogEntry[] = [
 		],
 	},
 	{
-		id: "xgJ13Dt9F14",
-		title: "Whiplash (English Version)",
-		channel: "aespa - Topic",
-		duration: "3:04",
+		id: "gdZLi9oWNZg",
+		title: "방탄소년단 'Dynamite' Official MV",
+		channel: "HYBE LABELS",
+		duration: "3:44",
 		keywords: [
 			"kpop",
 			"k-pop",
