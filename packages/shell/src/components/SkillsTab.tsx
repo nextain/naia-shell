@@ -38,12 +38,6 @@ const KIOSK_WEB_SKILLS: readonly WebBuiltInSkill[] = [
 		description: "저장된 지식 베이스 검색·질의",
 		tools: "skill_knowledge_search · skill_knowledge_ask",
 	},
-	{
-		id: "memory",
-		name: "기억",
-		description: "대화 중 장기 기억 저장·회상",
-		tools: "skill_memory_save · skill_memory_recall",
-	},
 ];
 
 const COMMON_WEB_SKILLS: readonly WebBuiltInSkill[] = [

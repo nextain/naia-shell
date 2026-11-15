@@ -14,6 +14,7 @@ import { getAdkPath } from "./adk-store";
 import { type BgmLibraryState, loadBgmLibrary } from "./bgm-library";
 import { loadConfig, saveConfig } from "./config";
 import { Logger } from "./logger";
+import { isWebMode } from "./web-runtime/web-assets";
 
 const APP_ID = "land.naia.shell";
 const LIBRARY_PATH = "bgm/library.json";
@@ -52,6 +53,17 @@ function rawUpdatedAt(raw: unknown): number {
 export async function loadBgmLibraryFromSandbox(
 	legacyYoutubeLikes: readonly unknown[] = [],
 ): Promise<BgmLibraryState> {
+	if (isWebMode()) {
+		const cfg = loadConfig();
+		const configRaw =
+			cfg?.bgmLibrary && typeof cfg.bgmLibrary === "object"
+				? (cfg.bgmLibrary as unknown)
+				: null;
+		const loaded = loadBgmLibrary(configRaw, legacyYoutubeLikes);
+		cache = loaded;
+		await persistBgmLibrary(loaded);
+		return loaded;
+	}
 	let sandboxRaw: unknown = null;
 	try {
 		const bytes = await readAppSandboxFile(APP_ID, LIBRARY_PATH);
@@ -90,6 +102,25 @@ export async function loadBgmLibraryFromSandbox(
  */
 export function persistBgmLibrary(state: BgmLibraryState): Promise<boolean> {
 	cache = state;
+	if (isWebMode()) {
+		const webWrite = persistQueue.then(async () => {
+			try {
+				const cfg = loadConfig();
+				if (cfg) saveConfig({ ...cfg, bgmLibrary: state });
+				return true;
+			} catch (error) {
+				Logger.warn("BgmLibraryStore", "web config persist failed", {
+					error: String(error),
+				});
+				return false;
+			}
+		});
+		persistQueue = webWrite.then(
+			() => undefined,
+			() => undefined,
+		);
+		return webWrite;
+	}
 	const capturedAdkPath = currentAdkPath();
 	const bytes = Array.from(new TextEncoder().encode(JSON.stringify(state)));
 	const write = persistQueue.then(async () => {

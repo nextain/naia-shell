@@ -1,3 +1,5 @@
+import { UI_PREFERENCE_KEYS, patchUiPreferences } from "../ui-preferences";
+
 /**
  * 아바타 이동/회전 액션 브리지 — AiControlBar(⊕회전 / ✥이동 / ⌂리셋)가 **현재 활성 아바타**를
  * 조작하도록 하는 경량 싱글턴.
@@ -7,9 +9,12 @@
  * 싱글턴에 등록하고, 언마운트 시 no-op 으로 되돌린다. AiControlBar 는 어느 아바타가 붙어있든
  * 동일하게 `getCameraActions().pan(...)` 만 호출한다.
  *
- * 별도 모듈로 분리한 이유: VideoAvatarCanvas 가 이 브리지 하나 때문에 three.js 를 끌어오는
- * AvatarCanvas 를 import 하지 않도록(번들 분리).
+ * 별도 모듈로 분리한 이유: VideoAvatarCanvas · SettingsTab 이 이 브리지/카메라 초기화 하나 때문에
+ * three.js 를 끌어오는 AvatarCanvas 를 정적 import 하지 않도록(번들 분리).
  */
+export function clearSavedCamera(): void {
+	void patchUiPreferences({ [UI_PREFERENCE_KEYS.avatarCamera]: undefined });
+}
 export type CameraActions = {
 	rotate: (dx: number, dy: number) => void;
 	pan: (dx: number, dy: number) => void;

@@ -38,7 +38,6 @@ import {
 	makeWebTimeExecutor,
 	withWebAppTools,
 } from "./web-app-tools";
-import { startKioskBrowserAgent } from "./kiosk-browser-agent";
 import { makeOpenAICompatProvider } from "./openai-compat-provider";
 import { makeOpfsReadFs } from "./opfs-read-fs";
 
@@ -419,10 +418,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 			fs: snapshotFs,
 			adkPath: WEB_ADK_PATH,
 		});
-		const startAgent = isKioskDemo()
-			? startKioskBrowserAgent
-			: startBrowserAgent;
-		startAgent({
+		startBrowserAgent({
 			port: channel.port2,
 			diag,
 			provider,

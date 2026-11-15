@@ -36,7 +36,7 @@ import {
 import { applyLocalRefAudio } from "../voice/ref-audio-api";
 import { resolveEdgeVoice } from "./edge-tts";
 import { emitKioskVoiceState } from "./kiosk-voice-gate";
-import { isMobileWebRuntime } from "../web-runtime/web-assets";
+import { isNarrowPortraitScreen } from "../web-runtime/web-assets";
 
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
 // webview can't do the MS WebSocket handshake (it can't set the required
@@ -297,7 +297,7 @@ async function requestKioskSpeech(
 	opts: SynthesizeOpts,
 	voice: string,
 ): Promise<SynthesizeResult> {
-	const timeoutMs = isMobileWebRuntime()
+	const timeoutMs = isNarrowPortraitScreen()
 		? 45_000
 		: KIOSK_VOICE_REQUEST_TIMEOUT_MS;
 	const timeout = AbortSignal.timeout(timeoutMs);
@@ -376,7 +376,7 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 				err instanceof NextainSpeechError &&
 				(err.status === 503 || err.status === 429);
 			const isMobileTransient =
-				isMobileWebRuntime() && !(err instanceof NextainSpeechError);
+				isNarrowPortraitScreen() && !(err instanceof NextainSpeechError);
 			if (!isBusy && !isMobileTransient) throw err;
 			const delayMs = isBusy ? kioskRetryDelayMs(err.retryAfter) : 500;
 			if (isBusy) {

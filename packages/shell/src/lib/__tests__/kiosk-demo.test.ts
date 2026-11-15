@@ -383,6 +383,34 @@ describe("S3 kiosk isolation", () => {
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "jina",
 		});
+		expect(
+			resolveShellAvatarSelection({
+				provider: "nextain",
+				model: "glm-5.1",
+				apiKey: "",
+				locale: "ko",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+				uiPreferences: { b2cActiveCardId: "card-kiosk-jina" },
+			}),
+		).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: WEB_DEFAULT_NVA,
+		});
+		expect(
+			resolveShellAvatarSelection({
+				provider: "nextain",
+				model: "glm-5.1",
+				apiKey: "",
+				locale: "ko",
+				avatarProvider: "vrm",
+				vrmModel: "/avatars/03-OL_Woman.vrm",
+				uiPreferences: { b2cActiveCardId: "card-kiosk-jina" },
+			}),
+		).toEqual({
+			avatarProvider: "vrm",
+			nvaModel: "",
+		});
 		const kioskLayout = resolveInitialShellChatLayout(900);
 		expect(kioskLayout.naiaWidth).toBe(KIOSK_SHELL_NAIA_WIDTH);
 		expect(kioskLayout.naiaWidth).toBeGreaterThan(DEFAULT_SHELL_NAIA_WIDTH);
@@ -873,9 +901,7 @@ describe("S3 kiosk isolation", () => {
 		expect(memory.get("naia-adk/rules/response-rules.md")).toContain(
 			"대답 글에 파일 이름·근거 줄을 쓰지 않습니다",
 		);
-		expect(memory.get("naia-adk/memory/guest-memory.md")).toContain(
-			"사용자 호칭은 게스트님이다.",
-		);
+		expect(memory.get("naia-adk/memory/guest-memory.md")).toBeUndefined();
 		expect(memory.get("naia-adk/knowledge/naia.md")).toContain("나이아");
 	});
 

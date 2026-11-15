@@ -11,17 +11,6 @@
   },
   "regions": [
     {
-      "name": "kiosk-memory-s2",
-      "language": "typescript-exports",
-      "header": "docs/user-scenarios.md",
-      "source": "packages/shell/src/lib/kiosk-demo/memory.ts",
-      "expect": [
-        "createKioskMemory",
-        "handleKioskMemoryCommand",
-        "resetKioskMemory"
-      ]
-    },
-    {
       "name": "kiosk-knowledge-s1",
       "language": "typescript-exports",
       "header": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-knowledge-s1.md",

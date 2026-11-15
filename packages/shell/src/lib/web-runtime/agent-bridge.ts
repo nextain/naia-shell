@@ -4,7 +4,7 @@ import { getStoredLocalSessionId, useChatStore } from "../../stores/chat";
 import { bgmPlayback } from "../bgm-playback";
 import { Logger } from "../logger";
 import { emitWebEvent } from "./event-bus";
-import { isMobileWebRuntime } from "./web-assets";
+import { isNarrowPortraitScreen } from "./web-assets";
 import { type WebFs, getWebFs } from "./web-fs";
 import {
 	errorKindFromEngineErrorName,
@@ -79,7 +79,7 @@ export function createAgentBridge(deps: {
 				generate: generateDjLineViaChat,
 				isChatBusy: () =>
 					useChatStore.getState().isStreaming ||
-					(isMobileWebRuntime() && useAvatarStore.getState().isSpeaking),
+					(isNarrowPortraitScreen() && useAvatarStore.getState().isSpeaking),
 			}));
 	function ackSpeechProfileLine(line: string): boolean {
 		let parsed: { type?: unknown; requestId?: unknown; profile?: unknown };

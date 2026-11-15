@@ -159,7 +159,7 @@ describe("SkillsTab checkbox model", () => {
 		);
 	});
 
-	it("includes Knowledge and Memory web built-ins alongside Weather and Radio DJ in kiosk demo", () => {
+	it("includes Knowledge web built-in alongside Weather and Radio DJ without demo Memory in kiosk demo", () => {
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
@@ -175,10 +175,10 @@ describe("SkillsTab checkbox model", () => {
 			"향후 앱과 동일하게 지원 예정",
 		);
 		expect(document.querySelector('[data-skill-id="knowledge"]')).not.toBeNull();
-		expect(document.querySelector('[data-skill-id="memory"]')).not.toBeNull();
+		expect(document.querySelector('[data-skill-id="memory"]')).toBeNull();
 		expect(document.querySelector('[data-skill-id="weather"]')).not.toBeNull();
 		expect(screen.getByText(/skill_knowledge_search/)).toBeDefined();
-		expect(screen.getByText(/skill_memory_save/)).toBeDefined();
+		expect(screen.queryByText(/skill_memory_save/)).toBeNull();
 		expect(screen.getByText(/get_weather/)).toBeDefined();
 		expect(screen.getByTestId("gesture-enable-youtube")).toBeDefined();
 		expect(screen.getByTestId("radio-dj-order")).toBeDefined();

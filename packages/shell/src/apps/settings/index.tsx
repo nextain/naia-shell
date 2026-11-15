@@ -3,7 +3,7 @@ import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { appRegistry } from "../../lib/app-registry";
 import { getLocale, t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
-import { isMobileWebRuntime } from "../../lib/web-runtime/web-assets";
+import { isNarrowPortraitScreen } from "../../lib/web-runtime/web-assets";
 import { useAppStore } from "../../stores/app";
 
 type SettingsComponent = typeof import("../../components/SettingsTab")["SettingsTab"];
@@ -20,9 +20,9 @@ function loadSettingsTabModule(): Promise<{ default: SettingsComponent }> {
 }
 
 if (typeof window !== "undefined") {
-	// 모바일 웹에서는 메뉴에서 설정을 열었을 때 빈 화면으로 멈추지 않도록 유휴 시점에 청크를 미리 받아 둔다.
+	// 좁은 세로 화면(모바일 웹·모바일 앱 공통)에서는 메뉴에서 설정을 열었을 때 빈 화면으로 멈추지 않도록 유휴 시점에 청크를 미리 받아 둔다.
 	const schedulePreload = () => {
-		if (!isMobileWebRuntime()) return;
+		if (!isNarrowPortraitScreen()) return;
 		const idle = (
 			window as Window & {
 				requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;

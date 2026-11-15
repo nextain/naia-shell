@@ -36,6 +36,7 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "../../lib/ui-preferences";
+import { isNarrowPortraitScreen } from "../../lib/web-runtime/web-assets";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { AUTOSAVE_DEBOUNCE_MS } from "./constants";
 import {
@@ -860,7 +861,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					<button
 						type="button"
 						className="workspace-editor__view-btn"
-						onClick={() => setViewMode("split")}
+						onClick={() =>
+							setViewMode(isNarrowPortraitScreen() ? "editor" : "split")
+						}
 						title="편집 모드로 전환"
 					>
 						편집

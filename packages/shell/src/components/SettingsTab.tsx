@@ -57,6 +57,7 @@ import {
 	isWebMode,
 	WEB_BACKGROUND_ASSETS,
 	WEB_DEFAULT_BACKGROUND,
+	WEB_DEFAULT_VRM,
 	WEB_NVA_ASSETS,
 } from "../lib/web-runtime/web-assets";
 import {
@@ -264,7 +265,7 @@ import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
-import { clearSavedCamera } from "./AvatarCanvas";
+import { clearSavedCamera } from "../lib/avatar/camera-actions";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -2972,7 +2973,7 @@ export function SettingsTab() {
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	useEffect(() => {
-		if (isWebMode() && !isKioskDemo()) return;
+		if (isWebMode()) return;
 		let alive = true;
 		const refresh = async () => {
 			try {
@@ -5059,9 +5060,18 @@ export function SettingsTab() {
 								if (next === "naia-video-avatar") {
 									persistVideoAvatarSelection(nextNva);
 								} else {
+									const nextVrm =
+										vrmModel ||
+										(isWebMode() ? WEB_DEFAULT_VRM : (naiaVrms[0] ?? ""));
+									if (!vrmModel && nextVrm) {
+										setVrmModel(nextVrm);
+										setAvatarModelPath(nextVrm);
+										setSavedVrmModel(nextVrm);
+									}
 									persistConfig({
 										avatarProvider: next,
 										nvaModel: undefined,
+										...(nextVrm ? { vrmModel: nextVrm } : {}),
 									});
 								}
 							}}
@@ -7992,7 +8002,16 @@ export function SettingsTab() {
 					</div>
 				</>
 			)}
-			{activeSettingsTab === "memory" && (
+			{activeSettingsTab === "memory" &&
+				(isWebMode() ? (
+					<div
+						role="status"
+						className="settings-coming-soon-banner"
+						data-testid="memory-web-notice"
+					>
+						나이아 메모리(naia-memory) 향후 통합 예정
+					</div>
+				) : (
 				<>
 					<div className="settings-section-divider">
 						<span>{t("settings.modelsEmbedding")}</span>
@@ -8252,7 +8271,7 @@ export function SettingsTab() {
 						</button>
 					</div>
 				</>
-			)}
+				))}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
 			{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
@@ -8264,7 +8283,7 @@ export function SettingsTab() {
 					</SkillsTab>
 				</Suspense>
 			)}
-			{activeSettingsTab === "memory" && (
+			{activeSettingsTab === "memory" && !isWebMode() && (
 				<>
 					<div>
 						<div className="settings-section-divider">

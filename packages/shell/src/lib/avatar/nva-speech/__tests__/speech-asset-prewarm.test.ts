@@ -76,8 +76,8 @@ describe("speech asset prewarm (kiosk entry screen)", () => {
 		await expect(prewarmWebSpeechAssets(undefined)).resolves.toBeUndefined();
 	});
 
-	it("skips heavy speech asset prewarm on mobile web runtime", async () => {
-		document.documentElement.setAttribute("data-naia-web", "true");
+	it("skips heavy speech asset prewarm on narrow portrait screen even without data-naia-web", async () => {
+		document.documentElement.removeAttribute("data-naia-web");
 		document.documentElement.setAttribute("data-naia-mobile", "true");
 		const fetchSpy = vi.fn();
 		vi.stubGlobal("fetch", fetchSpy);

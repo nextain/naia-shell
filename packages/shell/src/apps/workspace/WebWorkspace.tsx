@@ -457,6 +457,7 @@ export default function WebWorkspace() {
 							</button>
 							<button
 								type="button"
+								className="web-workspace-file-close"
 								onClick={() => setFile("")}
 								aria-label={t("webExplorer.close")}
 							>

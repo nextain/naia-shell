@@ -16,13 +16,26 @@ export function isWebMode(): boolean {
 	return import.meta.env.MODE === "web";
 }
 
-/** 휴대폰 웹 레이아웃(`data-naia-web="true"` + `data-naia-mobile="true"`)인가. 데스크톱 동작과 분리할 때만 쓴다. */
+/** 좁은 세로 화면(휴대폰 `data-naia-mobile="true"` 또는 폭 ≤ 600px 세로 뷰포트)인가. 웹·모바일 앱 공통 화면 규칙에 쓴다. */
+export function isNarrowPortraitScreen(): boolean {
+	if (
+		typeof document !== "undefined" &&
+		document.documentElement?.getAttribute("data-naia-mobile") === "true"
+	) {
+		return (
+			document.documentElement.getAttribute("data-layout-orientation") !==
+			"landscape"
+		);
+	}
+	if (typeof window === "undefined") return false;
+	const width = window.innerWidth;
+	const height = window.innerHeight;
+	return width > 0 && width <= 600 && height > width;
+}
+
+/** 호환 별칭: 웹 전용 `[data-naia-web="true"]` 결합을 제거하고 공통 좁은 세로 화면 규칙(`isNarrowPortraitScreen`)을 따른다. */
 export function isMobileWebRuntime(): boolean {
-	if (typeof document === "undefined" || !document.documentElement) return false;
-	return (
-		document.documentElement.getAttribute("data-naia-web") === "true" &&
-		document.documentElement.getAttribute("data-naia-mobile") === "true"
-	);
+	return isNarrowPortraitScreen();
 }
 
 /** Phone detection uses the physical screen because desktop-site mode reports a wide viewport. */
@@ -35,13 +48,6 @@ let mobileListenersInstalled = false;
 function syncMobileWebLayout(): void {
  if (typeof window === "undefined" || typeof document === "undefined" || !document.documentElement) return;
  const root = document.documentElement;
- if (!isWebMode()) {
-  root.removeAttribute("data-naia-mobile");
-  root.style.removeProperty("zoom");
-  root.style.removeProperty("--naia-vh");
-  root.style.removeProperty("--naia-vw");
-  return;
- }
  const matches = (query: string) => typeof window.matchMedia === "function" && window.matchMedia(query).matches;
  const { mobile, zoom } = mobileWebLayout(matches("(pointer: coarse)"), screen.width, screen.height, matches("(orientation: portrait)"), window.innerWidth);
  if (mobile) root.setAttribute("data-naia-mobile", "true");

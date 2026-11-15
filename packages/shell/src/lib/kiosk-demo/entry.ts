@@ -171,7 +171,7 @@ async function resetKioskSettingsToSeed(): Promise<void> {
 				ttsEnabled: true,
 			}),
 		);
-		await seedKioskAdkWorkspace(fs, { overwriteMemory: true });
+		await seedKioskAdkWorkspace(fs);
 		// 손님이 고친 ADK 파일(AGENTS.md·규칙·지식·.agents·.users)을 원본으로 되돌린다.
 		await restoreKioskAdkOriginals(fs);
 	} catch {
@@ -182,14 +182,16 @@ async function resetKioskSettingsToSeed(): Promise<void> {
 /** Wait for cancellation and durable memory/conversation reset before discarding the session. */
 export async function resetKioskVisit(actions: {
 	cancel: () => void | Promise<void>;
-	resetMemory: () => Promise<void>;
+	resetMemory?: () => Promise<void>;
 	clearConversations?: () => Promise<void>;
 	newConversation: () => void;
 	reload: () => void;
 }): Promise<void> {
 	Logger.debug("KioskDemo", "reset visit");
 	await actions.cancel();
-	await actions.resetMemory();
+	if (actions.resetMemory) {
+		await actions.resetMemory();
+	}
 	await (actions.clearConversations ?? clearWebConversations)();
 	await resetKioskSettingsToSeed();
 	// 시연 전용 열쇠(naia-remote-key)는 다음 방문자도 같은 시연 계정을 써야 하므로 지우지 않는다.

@@ -11,6 +11,8 @@ import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
 import type { AppInstallRequest } from "../lib/app-store-client";
 import { getCameraActions } from "../lib/avatar/camera-actions";
+import { loadConfig } from "../lib/config";
+import { usePaymentLinksHidden } from "../lib/distribution";
 import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
@@ -198,7 +200,12 @@ export function AppMainContent(props: AppMainContentProps) {
 		}
 	}, [hasMessages]);
 	const ttsEnabled = useAppStore((state) => state.ttsEnabled);
+	const aiInterferenceEnabled = useAppStore(
+		(state) => state.aiInterferenceEnabled,
+	);
+	const paymentLinksHidden = usePaymentLinksHidden();
 	const layoutOrientation = useEffectiveLayoutOrientation();
+	const showNarrowMobileChrome = webMode || layoutOrientation === "portrait";
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
 	const kioskDemo = isKioskDemo();
@@ -233,7 +240,7 @@ export function AppMainContent(props: AppMainContentProps) {
 	);
 	const setActiveApp = useAppStore((state) => state.setActiveApp);
 	useEffect(() => {
-		if (!webMode || !window.visualViewport) return;
+		if (!window.visualViewport) return;
 		const viewport = window.visualViewport;
 		const update = () =>
 			document.documentElement.style.setProperty(
@@ -248,7 +255,7 @@ export function AppMainContent(props: AppMainContentProps) {
 			viewport.removeEventListener("scroll", update);
 			document.documentElement.style.removeProperty("--mobile-viewport-bottom");
 		};
-	}, [webMode]);
+	}, []);
 	syncWebModeRootAttribute();
 	syncLayoutOrientationAttribute(layoutOrientation);
 
@@ -327,7 +334,7 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			{naiaVisible && (
 				<>
-					{webMode &&
+					{showNarrowMobileChrome &&
 						(activeApp === "workspace" ||
 							activeApp === "settings" ||
 							activeApp === "land.naia.slides") && (
@@ -340,7 +347,7 @@ export function AppMainContent(props: AppMainContentProps) {
 								✕
 							</button>
 						)}
-					{webMode && !showOnboarding && (
+					{showNarrowMobileChrome && !showOnboarding && (
 						<div className="web-mobile-menu">
 							<button
 								type="button"
@@ -356,15 +363,19 @@ export function AppMainContent(props: AppMainContentProps) {
 									<button
 										type="button"
 										onClick={() => {
-											document
-												.querySelector<HTMLButtonElement>(
-													".ai-control-bar button",
-												)
-												?.click();
+											const btn = document.querySelector<HTMLButtonElement>(
+												'[data-testid="ai-bar-interference-btn"], .ai-control-bar button',
+											);
+											if (btn) btn.click();
+											else useAppStore.getState().toggleAiInterferenceEnabled();
 											setMobileMenu(false);
 										}}
 									>
-										AI
+										{t(
+											aiInterferenceEnabled
+												? "ai.interferenceOn"
+												: "ai.interferenceOff",
+										).replace(/\s*\([^)]*\)$/, "")}
 									</button>
 									<button
 										type="button"
@@ -378,6 +389,28 @@ export function AppMainContent(props: AppMainContentProps) {
 										}}
 									>
 										{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											document
+												.querySelector<HTMLButtonElement>(
+													'[data-testid="ai-bar-proactive-btn"]',
+												)
+												?.click();
+											setMobileMenu(false);
+										}}
+									>
+										{t(
+											document
+												.querySelector<HTMLButtonElement>(
+													'[data-testid="ai-bar-proactive-btn"]',
+												)
+												?.getAttribute("aria-pressed") === "true" ||
+												loadConfig()?.proactiveSpeechPermitted === true
+												? "ai.proactiveStop"
+												: "ai.proactiveStart",
+										).split(":")[0]}
 									</button>
 
 									{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map(
@@ -417,6 +450,21 @@ export function AppMainContent(props: AppMainContentProps) {
 									>
 										📁 {t("appbar.workspace")}
 									</button>
+									{(!paymentLinksHidden || kioskDemo) && (
+										<button
+											type="button"
+											onClick={() => {
+												document
+													.querySelector<HTMLButtonElement>(
+														".app-bar-tab--utility",
+													)
+													?.click();
+												setMobileMenu(false);
+											}}
+										>
+											🛍 {t("appbar.appStore")}
+										</button>
+									)}
 									{isKioskDemo() && (
 										<button
 											type="button"

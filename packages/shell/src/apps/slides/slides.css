@@ -624,3 +624,57 @@
 	line-height: 1.48;
 }
 
+/* 좁은 세로 화면 공통(모바일 웹·모바일 앱·세로 배치): 16:9 슬라이드 상단 배치 + 발표문 잔여 영역 확장으로 438px 빈 여백 해소 */
+:is([data-naia-mobile="true"]:not([data-layout-orientation="landscape"]), [data-layout-orientation="portrait"])
+	:is(.slides-app__workspace, .app-root[data-kiosk-demo="true"] .slides-app__workspace) {
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: auto minmax(0, 1fr);
+}
+:is([data-naia-mobile="true"]:not([data-layout-orientation="landscape"]), [data-layout-orientation="portrait"])
+	:is(.slides-app__viewer, .app-root[data-kiosk-demo="true"] .slides-app__viewer) {
+	container-type: normal;
+	flex: 0 0 auto;
+	align-items: flex-start;
+	min-height: 0;
+}
+:is([data-naia-mobile="true"]:not([data-layout-orientation="landscape"]), [data-layout-orientation="portrait"])
+	:is(.slides-app__stage, .app-root[data-kiosk-demo="true"] .slides-app__stage) {
+	width: 100%;
+	height: auto;
+	aspect-ratio: 16 / 9;
+	min-height: 0;
+}
+:is([data-naia-mobile="true"]:not([data-layout-orientation="landscape"]), [data-layout-orientation="portrait"])
+	:is(.slides-app__notes, .app-root[data-kiosk-demo="true"] .slides-app__notes) {
+	max-height: none;
+	min-height: 0;
+	overflow-y: auto;
+}
+@media (max-width: 768px) and (orientation: portrait) {
+	:root:not([data-layout-orientation="landscape"]) .slides-app__workspace,
+	:root:not([data-layout-orientation="landscape"]) .app-root[data-kiosk-demo="true"] .slides-app__workspace {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+	}
+	:root:not([data-layout-orientation="landscape"]) .slides-app__viewer,
+	:root:not([data-layout-orientation="landscape"]) .app-root[data-kiosk-demo="true"] .slides-app__viewer {
+		container-type: normal;
+		flex: 0 0 auto;
+		align-items: flex-start;
+		min-height: 0;
+	}
+	:root:not([data-layout-orientation="landscape"]) .slides-app__stage,
+	:root:not([data-layout-orientation="landscape"]) .app-root[data-kiosk-demo="true"] .slides-app__stage {
+		width: 100%;
+		height: auto;
+		aspect-ratio: 16 / 9;
+		min-height: 0;
+	}
+	:root:not([data-layout-orientation="landscape"]) .slides-app__notes,
+	:root:not([data-layout-orientation="landscape"]) .app-root[data-kiosk-demo="true"] .slides-app__notes {
+		max-height: none;
+		min-height: 0;
+		overflow-y: auto;
+	}
+}
+

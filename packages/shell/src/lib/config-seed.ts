@@ -1,3 +1,4 @@
+import { isLegacyBundledVrmModel } from "./avatar-presets";
 import { effectiveAvatarProviderFromConfig } from "./avatar/nva-gate";
 import {
 	KIOSK_JINA_CARD_ID,
@@ -191,7 +192,19 @@ export function resolveShellAvatarSelection(
 			typeof config?.uiPreferences?.b2cActiveCardId === "string"
 				? config.uiPreferences.b2cActiveCardId
 				: "";
-		if (activeCardId && activeCardId !== KIOSK_JINA_CARD_ID && saved) {
+		if (
+			activeCardId &&
+			config?.avatarProvider === "vrm" &&
+			typeof config.vrmModel === "string" &&
+			config.vrmModel.trim().length > 0 &&
+			!isLegacyBundledVrmModel(config.vrmModel)
+		) {
+			return {
+				avatarProvider: "vrm",
+				nvaModel: "",
+			};
+		}
+		if (activeCardId && saved) {
 			return {
 				avatarProvider: "naia-video-avatar",
 				nvaModel: saved,

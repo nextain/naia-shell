@@ -106,7 +106,7 @@ export async function readAdkSnapshot(
 
 	const personaText: string | null = null;
 	const rulesText = await readNestedText("rules", "response-rules.md");
-	const memoryText = await readNestedText("memory", "guest-memory.md");
+	const memoryText: string | null = null;
 
 	let projects: { name: string; isDir: boolean }[] | null = null;
 	try {

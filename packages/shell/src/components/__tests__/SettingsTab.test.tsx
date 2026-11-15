@@ -6243,7 +6243,10 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			/\.settings-actions\s*\{[^}]*position:\s*fixed;/s,
 		);
 		expect(webModeCss).toMatch(
-			/\[data-naia-web="true"\]\s*\.settings-tab-bar\s*\{[^}]*margin-right:\s*44px;/s,
+			/\.settings-tab-bar\s*\{[^}]*margin-right:\s*(?:44|52)px;/s,
+		);
+		expect(webModeCss).not.toMatch(
+			/\[data-naia-web="true"\]\s*\.settings-tab-bar/s,
 		);
 
 		vi.unstubAllEnvs();
@@ -6354,14 +6357,13 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it("R8: unlocks Memory and Skills tabs in kiosk demo, keeps Radio DJ + web skills without CLI detection, and routes Memory IPCs without read error", async () => {
-		const { routeCommand, resetWarnedCommands } = await import(
+	it("R8: unlocks Memory and Skills tabs in kiosk demo, keeps Radio DJ + web skills without CLI detection, and shows naia-memory integration banner on Memory tab with options and apply buttons hidden", async () => {
+		const { resetWarnedCommands } = await import(
 			"../../lib/web-runtime/router"
 		);
 		const { createMemoryWebFs, setWebFsForTests } = await import(
 			"../../lib/web-runtime/web-fs"
 		);
-		const { createKioskMemory } = await import("../../lib/kiosk-demo/memory");
 
 		resetWarnedCommands();
 		const fs = createMemoryWebFs();
@@ -6371,17 +6373,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 
 		try {
-			await createKioskMemory(fs).save(
-				"저는 아이스 아메리카노를 좋아합니다 기억해 줘",
-				"네, 기억해 두겠습니다.",
-			);
-
-			mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-				if (cmd.startsWith("memory_")) {
-					return routeCommand(cmd, args as Record<string, unknown> | undefined);
-				}
-				return [];
-			});
+			mockInvoke.mockImplementation(async () => []);
 
 			localStorage.setItem(
 				"naia-config",
@@ -6411,7 +6403,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 				"향후 앱과 동일하게 지원 예정",
 			);
 			expect(document.querySelector('[data-skill-id="knowledge"]')).not.toBeNull();
-			expect(document.querySelector('[data-skill-id="memory"]')).not.toBeNull();
+			expect(document.querySelector('[data-skill-id="memory"]')).toBeNull();
 			expect(document.querySelector('[data-skill-id="weather"]')).not.toBeNull();
 			expect(screen.getByTestId("gesture-enable-youtube")).toBeInTheDocument();
 			expect(
@@ -6425,18 +6417,24 @@ describe("web mode backgrounds and NVA (r7)", () => {
 				expect.anything(),
 			);
 
-			// R8''': Memory tab loads facts & pending count via kiosk router with zero read error
+			// R8''': Memory tab shows ONLY "나이아 메모리(naia-memory) 향후 통합 예정" banner (choices & save/apply buttons hidden, zero memory_* IPC)
 			gotoSettingsTab("memory");
-			await waitFor(() => {
-				expect(screen.getByTestId("memory-pending")).toHaveTextContent(/0/);
-				expect(screen.getByText(/아이스 아메리카노/)).toBeInTheDocument();
-			});
+			const memoryBanner = screen.getByTestId("memory-web-notice");
+			expect(memoryBanner).toHaveClass("settings-coming-soon-banner");
+			expect(memoryBanner.textContent).toBe(
+				"나이아 메모리(naia-memory) 향후 통합 예정",
+			);
 			expect(
-				screen.queryByText(/memoryReadFailed|기억을 불러오/),
+				document.querySelector('input[name="memory-embedding"]'),
 			).toBeNull();
 			expect(
 				document.querySelector('input[name="memory-adapter"]'),
-			).not.toBeNull();
+			).toBeNull();
+			expect(document.querySelector(".settings-save-btn")).toBeNull();
+			expect(screen.queryByTestId("memory-pending")).toBeNull();
+			expect(
+				mockInvoke.mock.calls.some(([cmd]) => String(cmd).startsWith("memory_")),
+			).toBe(false);
 		} finally {
 			setWebFsForTests(null);
 			setWebAssetsModeForTests(null);

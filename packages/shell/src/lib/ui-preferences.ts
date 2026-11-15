@@ -399,7 +399,9 @@ export function setStoredNaiaWidth(width: number | null): void {
 
 export function detectViewportLayoutOrientation(): LayoutOrientation {
 	if (typeof window === "undefined") return "landscape";
-	return (typeof document !== "undefined" && document.documentElement.dataset.naiaWeb === "true" && document.documentElement.dataset.naiaMobile === "true") || window.innerWidth <= 600 && window.innerHeight > window.innerWidth
+	return (typeof document !== "undefined" &&
+		document.documentElement.dataset.naiaMobile === "true") ||
+		(window.innerWidth <= 600 && window.innerHeight > window.innerWidth)
 		? "portrait"
 		: "landscape";
 }
@@ -416,7 +418,11 @@ export function getStoredLayoutOrientation(): LayoutOrientation | null {
 }
 
 export function resolveEffectiveLayoutOrientation(): LayoutOrientation {
-	if (typeof document !== "undefined" && document.documentElement.dataset.naiaWeb === "true")
+	if (
+		typeof document !== "undefined" &&
+		(document.documentElement.dataset.naiaWeb === "true" ||
+			document.documentElement.dataset.naiaMobile === "true")
+	)
 		return detectViewportLayoutOrientation();
 	return getStoredLayoutOrientation() ?? detectViewportLayoutOrientation();
 }

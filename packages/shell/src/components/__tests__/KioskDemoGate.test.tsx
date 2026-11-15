@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
 	boot: vi.fn(),
 	greeting: vi.fn(),
 	install: vi.fn(),
-	resetMemory: vi.fn(),
 	clearConversations: vi.fn(),
 	restoreOriginals: vi.fn(),
 }));
@@ -51,9 +50,6 @@ vi.mock("../../lib/web-runtime/web-adk-edit", () => ({
 vi.mock("../../lib/kiosk-demo/entry", async () => ({
 	...(await vi.importActual("../../lib/kiosk-demo/entry")),
 	requestKioskGreeting: mocks.greeting,
-}));
-vi.mock("../../lib/kiosk-demo/memory", () => ({
-	resetKioskMemory: mocks.resetMemory,
 }));
 beforeEach(() => {
 	localStorage.clear();
@@ -231,7 +227,6 @@ it("cleans up previous visitor memory and conversations when previous visit was 
 			false,
 		),
 	);
-	expect(mocks.resetMemory).toHaveBeenCalledOnce();
 	expect(mocks.clearConversations).toHaveBeenCalledOnce();
 	expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
 		agentName: "지나",

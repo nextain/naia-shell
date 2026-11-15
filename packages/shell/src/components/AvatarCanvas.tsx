@@ -19,7 +19,7 @@ import { randFloat } from "three/src/math/MathUtils.js";
 import { getAdkPath } from "../lib/adk-store";
 import { normalizeTauriAssetUrl } from "../lib/asset-url";
 import { avatarEmptyNotice } from "../lib/avatar-notice";
-import { getCameraActions } from "../lib/avatar/camera-actions";
+import { clearSavedCamera, getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
 import {
 	UI_PREFERENCE_KEYS,
@@ -98,9 +98,7 @@ function cameraStateSignature(camera: SavedCamera | null): string {
 		: "default";
 }
 
-export function clearSavedCamera(): void {
-	void patchUiPreferences({ [UI_PREFERENCE_KEYS.avatarCamera]: undefined });
-}
+export { clearSavedCamera } from "../lib/avatar/camera-actions";
 
 function saveCameraState(camera: PerspectiveCamera, target: Vector3): void {
 	const state: SavedCamera = {

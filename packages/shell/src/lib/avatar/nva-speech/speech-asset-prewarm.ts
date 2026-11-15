@@ -1,6 +1,6 @@
 import { Logger } from "../../logger";
 import type { NvaManifest } from "../../nva";
-import { isMobileWebRuntime } from "../../web-runtime/web-assets";
+import { isNarrowPortraitScreen } from "../../web-runtime/web-assets";
 
 /**
  * Speech asset bytes fetched before the avatar renderer exists (kiosk entry
@@ -45,9 +45,9 @@ export async function takePrewarmedSpeechAsset(
 export async function prewarmWebSpeechAssets(
 	nvaModel: string | undefined,
 ): Promise<void> {
-	// 모바일 웹에서는 64MB atlas.bin 등 대용량 선발 로드가 HTTP/1.1 연결 풀(6개)과 LTE 대역을
+	// 좁은 세로 화면(모바일 웹·모바일 앱 공통)에서는 64MB atlas.bin 등 대용량 선발 로드가 연결 풀·메모리를
 	// 점유해 아바타 기본 클립·음성 합성·설정 청크를 막으므로 건너뛴다.
-	if (isMobileWebRuntime()) {
+	if (isNarrowPortraitScreen()) {
 		Logger.debug("SpeechAssetPrewarm", "speech asset prewarm skipped on mobile");
 		return;
 	}

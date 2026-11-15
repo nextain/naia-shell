@@ -421,13 +421,11 @@ describe("synthesizeTts — nextain (gateway)", () => {
 			},
 		);
 
-		it("retries jina once on mobile transient network failure", async () => {
+		it("retries jina once on narrow portrait transient network failure without data-naia-web", async () => {
 			vi.stubGlobal("document", {
 				documentElement: {
 					getAttribute: (name: string) =>
-						name === "data-naia-web" || name === "data-naia-mobile"
-							? "true"
-							: null,
+						name === "data-naia-mobile" ? "true" : null,
 				},
 			});
 			const fetchMock = vi

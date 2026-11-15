@@ -211,7 +211,7 @@ import {
 	isWebSpeechAvailable,
 } from "../lib/stt";
 import {
-	isMobileWebRuntime,
+	isNarrowPortraitScreen,
 	isWebMode,
 } from "../lib/web-runtime/web-assets";
 import { estimateSttCost } from "../lib/tts/cost";
@@ -1679,7 +1679,7 @@ export function ChatArea({
 
 	// Warm canonical speech assets (speech/atlas.bin, etc.) immediately when the avatar renderer is ready.
 	useEffect(() => {
-		if (isMobileWebRuntime()) return;
+		if (isNarrowPortraitScreen()) return;
 		let speechWarmed = false;
 		const runWarmSpeechAssets = (
 			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
@@ -1764,7 +1764,7 @@ export function ChatArea({
 			});
 			return greetingWave;
 		};
-		const greetingPieces = isMobileWebRuntime()
+		const greetingPieces = isNarrowPortraitScreen()
 			? splitSlideNarration(greeting)
 			: [greeting];
 		for (let i = 0; i < greetingPieces.length; i++) {

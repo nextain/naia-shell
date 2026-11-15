@@ -29,7 +29,7 @@ import {
 	resolveNvaAssetPath,
 } from "../lib/nva";
 import {
-	isMobileWebRuntime,
+	isNarrowPortraitScreen,
 	isWebMode,
 } from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
@@ -411,6 +411,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			{/* biome-ignore lint/a11y/useMediaCaption: speech text is already rendered in the chat transcript. */}
 			<video
 				ref={setVideo}
+				muted
 				playsInline
 				style={{
 					position: "absolute",
@@ -437,7 +438,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				<output data-video-avatar-status={mode} aria-live="polite">
 					{mode === "loading"
 						? t("avatar.videoLoading")
-						: isMobileWebRuntime()
+						: isNarrowPortraitScreen()
 							? getLocale() === "ko"
 								? "아바타 영상을 불러오지 못했습니다. 배경 화면으로 대화를 계속할 수 있습니다."
 								: "Could not load the avatar video. You can continue chatting on the background screen."

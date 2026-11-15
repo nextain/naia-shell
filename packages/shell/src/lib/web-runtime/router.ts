@@ -1,6 +1,4 @@
 import { isKioskDemo } from "../kiosk-demo/flag";
-
-import { handleKioskMemoryCommand } from "../kiosk-demo/memory";
 import { handleKioskSlidesCommand } from "../kiosk-demo/slides";
 import { Logger } from "../logger";
 import { getAgentBridge } from "./agent-bridge";
@@ -47,19 +45,6 @@ export async function routeCommand(
 		return [];
 	}
 	const classification = COMMAND_TABLE[cmd];
-	if (
-		isKioskDemo() &&
-		[
-			"memory_get_all_facts",
-			"memory_pending_count",
-			"memory_export_backup",
-			"memory_import_backup",
-			"memory_delete_fact",
-		].includes(cmd)
-	) {
-		Logger.debug("KioskMemory", "command", { cmd });
-		return handleKioskMemoryCommand(cmd, args);
-	}
 
 	if (classification === "web") {
 		if (

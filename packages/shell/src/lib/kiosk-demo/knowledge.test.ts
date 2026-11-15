@@ -388,12 +388,12 @@ describe("kiosk web capability guidance (AGENTS.md)", () => {
 		for (const tool of [
 			"skill_knowledge_search",
 			"skill_knowledge_ask",
-			"skill_memory_save",
-			"skill_memory_recall",
 			"skill_youtube_bgm",
 		]) {
 			expect(KIOSK_AGENTS_MD).toContain(tool);
 		}
+		expect(KIOSK_AGENTS_MD).not.toContain("skill_memory_save");
+		expect(KIOSK_AGENTS_MD).not.toContain("skill_memory_recall");
 		expect(KIOSK_AGENTS_MD).toContain(
 			"웹판에서는 웹 검색과 브라우저 열기를 할 수 없다",
 		);

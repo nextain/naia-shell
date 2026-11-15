@@ -69,7 +69,6 @@ const ttsSyncMocks = vi.hoisted(() => ({
 	},
 }));
 const mockSendAppSkills = vi.hoisted(() => vi.fn().mockResolvedValue(true));
-const mockResetKioskMemory = vi.hoisted(() => vi.fn());
 
 // 비공개 장(숫자가 든 장)의 원고는 저장소 밖에 있다. 시험은 기록된 쪽 번호·그림 이름에 시험용 원고를 붙여 쓴다.
 vi.mock("../../lib/kiosk-demo/slides/private-deck", async (importOriginal) => {
@@ -87,9 +86,6 @@ vi.mock("../../lib/kiosk-demo/slides/private-deck", async (importOriginal) => {
 		),
 	};
 });
-
-vi.mock("../../lib/kiosk-demo/memory", () => ({ resetKioskMemory: mockResetKioskMemory }));
-
 
 vi.mock("../../lib/tts/synthesize", () => ({
 	synthesizeTts: ttsSyncMocks.synthesizeTts,
@@ -342,7 +338,6 @@ describe("ChatArea", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		render(<ChatArea />);
 		expect(screen.queryByRole("button", { name: "처음으로" })).toBeNull();
-		expect(mockResetKioskMemory).not.toHaveBeenCalled();
 	});
 
 	it("S5: kiosk demo greeting respects config ttsProvider (nextain gateway) in web mode", async () => {

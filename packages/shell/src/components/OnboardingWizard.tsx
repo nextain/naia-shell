@@ -1121,7 +1121,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				: {
 						ttsEnabled: snapshot.ttsEnabled,
 						ttsProvider: snapshot.ttsEnabled
-							? ("browser" as const)
+							? !snapshot.webVoiceURI && base.ttsProvider === "nextain"
+								? ("nextain" as const)
+								: ("browser" as const)
 							: base.ttsProvider,
 						...(snapshot.ttsEnabled && snapshot.webVoiceURI
 							? { ttsVoice: snapshot.webVoiceURI }

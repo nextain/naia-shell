@@ -2808,7 +2808,8 @@ body.resizing-row {
 .settings-tab > .settings-section-divider,
 .settings-tab > .settings-danger-zone,
 .settings-tab > .settings-actions,
-.settings-tab > .skills-tab {
+.settings-tab > .skills-tab,
+.settings-tab > .settings-coming-soon-banner {
 	grid-column: 1 / -1;
 }
 

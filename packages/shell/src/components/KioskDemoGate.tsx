@@ -1,4 +1,3 @@
-import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { unlockAudioContext } from "../lib/voice/audio-queue";
 import { useAppStore } from "../stores/app";
 import { useChatStore } from "../stores/chat";
@@ -41,7 +40,6 @@ async function cleanupExpiredPreviousVisit(): Promise<void> {
 	if (!shouldResetKioskVisitOnEnter()) return;
 	await resetKioskVisit({
 		cancel: () => undefined,
-		resetMemory: resetKioskMemory,
 		clearConversations: clearWebConversations,
 		newConversation: () => useChatStore.getState().newConversation(),
 		reload: () => undefined,
@@ -230,7 +228,6 @@ export function KioskDemoGate({
 				resetPending.current = true;
 				void resetKioskVisit({
 					cancel: () => undefined,
-					resetMemory: resetKioskMemory,
 					newConversation: () => useChatStore.getState().newConversation(),
 					reload: () => window.location.reload(),
 				}).catch(() => {
