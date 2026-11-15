@@ -186,7 +186,13 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 	const ui = JSON.parse((await fs.readText(uiPath)) || "{}");
 	// Older versions also put persona/provider/avatar fields in UI config; remove
 	// those overrides so kiosk mode always renders Jina while retaining voice and layout selections.
-	for (const key of Object.keys(seed)) delete ui[key];
+	// proactiveSpeechPermitted is a visitor's per-visit choice, not a persona default:
+	// a manual off survives reloads within the visit; a fresh visit is restored to
+	// the seed ON by resetKioskVisit, which rewrites ui-config wholesale.
+	for (const key of Object.keys(seed)) {
+		if (key === "proactiveSpeechPermitted") continue;
+		delete ui[key];
+	}
 	delete ui.vrmModel;
 	ui.naiaKey = undefined;
 	ui.naiaUserId = undefined;

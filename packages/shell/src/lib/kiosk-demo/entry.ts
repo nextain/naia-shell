@@ -83,17 +83,10 @@ export function isKioskVisitExpired(
 	}
 }
 
-let pageLoadVisitChecked = false;
-
-/** 시험용: 페이지를 새로 연 것처럼 되돌린다. */
-export function resetKioskPageLoadCheckForTest(): void {
-	pageLoadVisitChecked = false;
-}
-
 /**
- * 페이지가 새로 열릴 때(새 탭·새로고침 모두)는 이전 방문 기록이 있으면 항상 초기화한다.
- * 앞 손님의 기억·대화·고친 ADK 파일을 다음 화면에 남기지 않기 위해서다.
- * 같은 페이지 안에서 다시 판정할 때는 새 탭이거나 무응답 기준 시간이 지난 경우만 초기화한다.
+ * 새 탭이거나 무응답 기준 시간이 지났을 때만 초기화한다. 같은 탭 안의
+ * 새로고침은 같은 방문으로 보고 손님의 선택(예: 직접 끈 능동 발화)을 살린다.
+ * 앞 손님의 흔적은 새 탭·무응답 때의 초기화가 시드로 되돌린다.
  */
 export function shouldResetKioskVisitOnEnter(
 	now: number = Date.now(),
@@ -102,10 +95,7 @@ export function shouldResetKioskVisitOnEnter(
 	try {
 		if (typeof localStorage === "undefined") return false;
 		const raw = localStorage.getItem(KIOSK_VISIT_LAST_ACTIVE_KEY);
-		const firstCheckOfPageLoad = !pageLoadVisitChecked;
-		pageLoadVisitChecked = true;
 		if (!raw) return false;
-		if (firstCheckOfPageLoad) return true;
 		const sameTabActive =
 			typeof sessionStorage !== "undefined" &&
 			sessionStorage.getItem(KIOSK_VISIT_ACTIVE_SESSION_KEY) === "1";

@@ -220,6 +220,20 @@ describe("S3 kiosk isolation", () => {
 			"test-kiosk-fixture-only",
 		);
 	});
+	it("keeps a visitor's manual proactive-speech off in ui-config while stripping other stale seed overrides", async () => {
+		setWebAssetsModeForTests(true);
+		memory.set(
+			"naia-adk/naia-settings/ui-config.json",
+			JSON.stringify({
+				agentName: "Stale",
+				proactiveSpeechPermitted: false,
+			}),
+		);
+		await prepareKioskDemoOnboarding();
+		const ui = JSON.parse(memory.get("naia-adk/naia-settings/ui-config.json")!);
+		expect(ui.agentName).toBeUndefined();
+		expect(ui.proactiveSpeechPermitted).toBe(false);
+	});
 	it("keeps a visitor's manual proactive-speech off across reloads while defaulting fresh visits to on", async () => {
 		setWebAssetsModeForTests(true);
 		await prepareKioskDemoOnboarding();
