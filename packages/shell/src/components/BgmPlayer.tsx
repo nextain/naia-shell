@@ -276,6 +276,8 @@ function localLibraryTrack(path: string, title: string): BgmLibraryTrack {
 }
 
 const YT_APP_H_KEY = "yt-app-height";
+// YouTube IFrame 치명 onError: 프레임 확정 전이라도 현 세대 것이면 곧장 넘긴다.
+const FATAL_YOUTUBE_ERROR_CODES = new Set(["2", "5", "100", "101", "150"]);
 const YT_APP_H_DEFAULT = 360;
 const YT_APP_H_MIN = 200;
 const YT_APP_H_MAX = 700;
@@ -1481,6 +1483,12 @@ export function BgmPlayer({ naia }: Props) {
 							!msgVideoId &&
 							(!eventPlaybackId || eventPlaybackId === current.playbackId)
 						) {
+							// 치명 onError(2/5/100/101/150)는 프레임 확정 전이라도 현 세대 것이면
+							// 곧장 다음 곡으로 넘긴다. 대기만 하면 상단 바가 currentTime 0에 고착된다.
+							if (FATAL_YOUTUBE_ERROR_CODES.has(reason)) {
+								handleObservedTrackError(eventPlaybackId, reason);
+								return;
+							}
 							pendTerminalForCurrentGeneration(
 								current.playbackId,
 								eventPlaybackId,

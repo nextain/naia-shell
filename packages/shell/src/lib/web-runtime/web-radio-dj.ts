@@ -13,12 +13,14 @@ import type { BgmPlaybackSnapshot } from "../bgm-playback";
 
 export const WEB_DJ_END_GRACE_MS = 4_000;
 export const WEB_DJ_POLL_MS = 1_000;
+export const WEB_DJ_OPENING_GRACE_MS = 8_000;
 export const WEB_DJ_MAX_CHAT_WAIT_MS = 30_000;
 
 export type WebDjMoment =
 	| { kind: "intro"; title: string }
 	| { kind: "transition"; prevTitle: string; title: string }
-	| { kind: "outro"; prevTitle: string; nextTitle?: string };
+	| { kind: "outro"; prevTitle: string; nextTitle?: string }
+	| { kind: "opening" };
 
 export interface WebRadioDjDeps {
 	emit: (event: string, payload: string) => void;
@@ -38,6 +40,8 @@ export interface WebRadioDjDeps {
 export function djPrompt(m: WebDjMoment): string {
 	const base =
 		"너는 개인 라디오 DJ다. 한국어로 따뜻하고 가볍게, 1~2문장만 말한다. 이모지·따옴표·목록 없이 입말로만 답한다. ";
+	if (m.kind === "opening")
+		return `${base}라디오 DJ를 시작한다. 아직 고른 곡이 없으니 첫 곡을 고르는 동안 짧게 인사해라.`;
 	if (m.kind === "intro")
 		return `${base}지금 막 시작한 곡의 제목은 "${m.title}"이다. 곡을 짧게 소개해라.`;
 	if (m.kind === "transition")
@@ -48,6 +52,7 @@ export function djPrompt(m: WebDjMoment): string {
 }
 
 export function djFallbackLine(m: WebDjMoment): string {
+	if (m.kind === "opening") return "라디오 DJ를 시작할게요. 첫 곡을 준비하고 있어요.";
 	if (m.kind === "intro") return `지금 들려드릴 곡은 ${m.title}입니다.`;
 	if (m.kind === "transition")
 		return `${m.prevTitle}, 잘 들으셨나요? 이어서 ${m.title} 들려드릴게요.`;
@@ -79,6 +84,8 @@ export function createWebRadioDj(deps: WebRadioDjDeps): WebRadioDj {
 	let token = 0;
 	let seq = 0;
 	let introducedId: string | null = null;
+	let startedAt = -1;
+	let openingSpoken = false;
 	let pendingEnd: { id: string; title: string; at: number } | null = null;
 	let busy = false;
 
@@ -119,7 +126,14 @@ export function createWebRadioDj(deps: WebRadioDjDeps): WebRadioDj {
 	function tick(): void {
 		if (timer === null || busy) return;
 		const snap = deps.getPlayback();
-		if (!snap) return;
+		if (!snap) {
+			// 아직 고른 곡이 없어도 시작 멘트는 나간다. 새 방문·새 대화의 첫인사다.
+			if (!openingSpoken && startedAt >= 0 && now() - startedAt >= WEB_DJ_OPENING_GRACE_MS) {
+				openingSpoken = true;
+				void speak({ kind: "opening" }, token);
+			}
+			return;
+		}
 		const id = snap.playbackId;
 		const title = snap.selected.title;
 		if (snap.status === "playing" && introducedId !== id) {
@@ -164,6 +178,8 @@ export function createWebRadioDj(deps: WebRadioDjDeps): WebRadioDj {
 			introducedId = null;
 			pendingEnd = null;
 			busy = false;
+			startedAt = now();
+			openingSpoken = false;
 			if (timer !== null) clearTimer(timer);
 			timer = setTimer(tick, deps.pollMs ?? WEB_DJ_POLL_MS);
 		},
@@ -171,6 +187,7 @@ export function createWebRadioDj(deps: WebRadioDjDeps): WebRadioDj {
 			token += 1;
 			busy = false;
 			pendingEnd = null;
+			startedAt = -1;
 			if (timer !== null) clearTimer(timer);
 			timer = null;
 		},

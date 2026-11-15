@@ -273,6 +273,8 @@ export function KioskDemoGate({
 							나이아와 넥스테인이 궁금하신가요?
 							<br />
 							게스트님을 따뜻하게 안내해 드릴게요.
+							<br />
+							실시간 인터넷 검색과 외부 브라우저 열기는 지원하지 않아요.
 						</p>
 						{phase === "missing-key" ? (
 							<p role="alert">시연 열쇠 없음</p>

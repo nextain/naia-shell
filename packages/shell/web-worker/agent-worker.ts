@@ -35,9 +35,7 @@ import { webGatewayBaseUrl } from "./gateway-url";
 import {
 	WEB_APP_TOOL_NAMES,
 	WEB_TIME_TOOL_NAME,
-	WEB_WEATHER_TOOL_NAME,
 	makeWebTimeExecutor,
-	makeWebWeatherExecutor,
 	withWebAppTools,
 } from "./web-app-tools";
 import { startKioskBrowserAgent } from "./kiosk-browser-agent";
@@ -236,7 +234,6 @@ self.addEventListener("message", (event: MessageEvent) => {
 					...BROWSER_READ_TOOL_NAMES,
 					...kioskSpecs.map((s) => s.name),
 					SKILL_YOUTUBE_BGM.name,
-					WEB_WEATHER_TOOL_NAME,
 					WEB_TIME_TOOL_NAME,
 				]
 			: [
@@ -356,7 +353,6 @@ self.addEventListener("message", (event: MessageEvent) => {
 			});
 			return true;
 		}
-		const kioskWeather = makeWebWeatherExecutor();
 		const kioskTime = makeWebTimeExecutor();
 		const withWebBgm = (
 			execute: typeof baseToolExecutor.execute,
@@ -366,8 +362,6 @@ self.addEventListener("message", (event: MessageEvent) => {
 					? executeWebBgmTool(call, opts)
 					: isKioskDemo() && call.name === WEB_TIME_TOOL_NAME
 						? kioskTime.execute(call, opts)
-					: isKioskDemo() && call.name === WEB_WEATHER_TOOL_NAME
-						? kioskWeather.execute(call, opts)
 						: execute(call, opts);
 
 		const toolExecutor = isKioskDemo()
@@ -376,7 +370,6 @@ self.addEventListener("message", (event: MessageEvent) => {
 						...baseToolExecutor.specs(),
 						...kioskSpecs,
 						webBgmToolSpec,
-						...kioskWeather.specs(),
 						...kioskTime.specs(),
 					],
 					execute: withWebBgm(async (...args) =>

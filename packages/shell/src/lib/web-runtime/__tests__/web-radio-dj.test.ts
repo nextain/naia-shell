@@ -76,6 +76,26 @@ describe("web radio dj", () => {
 		});
 	});
 
+	it("greets once when the DJ starts with an empty queue", async () => {
+		const h = setup(async () => "");
+		h.dj.start({ subscriptionEpoch: 7 });
+		h.dj.tick();
+		await flush();
+		// Grace period: no ment yet.
+		expect(h.out).toHaveLength(0);
+		h.advance(9_000);
+		h.dj.tick();
+		for (let i = 0; i < 5; i++) await flush();
+		expect(h.out).toHaveLength(1);
+		expect(h.out[0]).toMatchObject({
+			type: "text",
+			subscriptionEpoch: 7,
+		});
+		h.dj.tick();
+		await flush();
+		expect(h.out).toHaveLength(1);
+	});
+
 	it("holds the intro until the user's chat turn finishes", async () => {
 		let chatBusy = true;
 		const h = setup(async () => "멘트", () => chatBusy);

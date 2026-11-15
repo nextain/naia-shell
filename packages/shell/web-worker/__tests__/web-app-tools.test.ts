@@ -62,16 +62,16 @@ function make(root = fakeRoot()) {
 describe.skipIf(!mod)("web app tools", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
-	it("lists the app names only (get_weather included, base kept)", () => {
+	it("lists the app names only (get_weather excluded, base kept)", () => {
 		const names = make()
 			.ex.specs()
 			.map((s) => s.name);
 		for (const n of WEB_APP_TOOL_NAMES) expect(names).toContain(n);
 		expect(names).toContain("read_file");
-		expect(names).toContain("get_weather");
+		expect(names).not.toContain("get_weather");
 	});
 
-	it("get_weather is the app's builtin: {latitude, longitude} in, open-meteo current out", async () => {
+	it("get_weather answers with the integration notice instead of calling out", async () => {
 		const fetchMock = vi.fn(async () => ({
 			ok: true,
 			status: 200,
@@ -84,12 +84,8 @@ describe.skipIf(!mod)("web app tools", () => {
 			call("get_weather", { latitude: 37.5665, longitude: 126.978 }),
 			{},
 		);
-		expect(r.output).toBe("기온 12.3°C, 코드 3");
-		const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
-		expect(url).toContain("https://api.open-meteo.com/v1/forecast?");
-		expect(url).toContain("current=temperature_2m,weather_code");
-		const bad = await make().ex.execute(call("get_weather", { city: "서울" }), {});
-		expect(bad.isError).toBe(true);
+		expect(r.output).toBe(WEB_PC_ONLY_NOTICE);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("get_time answers with the clock", async () => {

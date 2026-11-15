@@ -19,6 +19,8 @@ import {
 	generateDjLineViaChat,
 } from "./web-radio-dj";
 import { isWebLlmModelId } from "./webllm-model";
+import { executeBgmSkill } from "../bgm-skill";
+import { isKioskDemo } from "../kiosk-demo/flag";
 
 export interface WorkerLike {
 	postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -102,6 +104,24 @@ export function createAgentBridge(deps: {
 		if (profileKind === "personal_radio_dj") {
 			radioDj ??= makeRadioDj();
 			radioDj.start({ subscriptionEpoch });
+			// DJ를 켰는데 고른 곡이 없으면 첫 곡을 바로 튼다. 모델이 곧 틀면 그쪽이
+			// 먼저 잡혀 이쪽은 건너뛴다. 시연판에서만 자동으로 튼다.
+			if (isKioskDemo() && !bgmPlayback.current()) {
+				const epochAtSchedule = subscriptionEpoch;
+				setTimeout(() => {
+					if (radioDj?.running && epochAtSchedule === subscriptionEpoch && !bgmPlayback.current()) {
+						void executeBgmSkill({
+							action: "play",
+							mode: "radio_dj",
+							category: "jazz",
+						}).catch((err: unknown) => {
+							Logger.warn("AgentBridge", "radio DJ autostart failed", {
+								err: String(err),
+							});
+						});
+					}
+				}, 5_000);
+			}
 		} else {
 			radioDj?.stop();
 		}

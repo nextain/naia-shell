@@ -432,10 +432,10 @@ interface WebCatalogEntry {
 
 export const WEB_YOUTUBE_CATALOG: readonly WebCatalogEntry[] = [
 	{
-		id: "jfKfPfyJRdk",
-		title: "Lofi Girl - Cozy Study Session Beats (Official Audio)",
-		channel: "Lofi Girl",
-		duration: "3:42",
+		id: "8XmoPmtBi-I",
+		title: "Lofi Chill (Guitar & Piano) \u2728 Midnight Solitude [Beat / Instrumental]",
+		channel: "HSN 41 Beats",
+		duration: "3:48",
 		keywords: [
 			"lofi",
 			"lo-fi",
@@ -457,10 +457,10 @@ export const WEB_YOUTUBE_CATALOG: readonly WebCatalogEntry[] = [
 		],
 	},
 	{
-		id: "DWcJFNfaw9c",
-		title: "ChilledCow - Midnight Coffee Lofi (Official Audio)",
-		channel: "Lofi Girl",
-		duration: "3:18",
+		id: "4tZ969oc-yI",
+		title: "Billie Eilish - Billie Bossa Nova (Official Lyric Video)",
+		channel: "BillieEilishVEVO",
+		duration: "3:17",
 		keywords: ["lofi", "로파이", "chill", "coffee", "카페", "밤", "새벽"],
 	},
 	{
@@ -541,10 +541,10 @@ export const WEB_YOUTUBE_CATALOG: readonly WebCatalogEntry[] = [
 		],
 	},
 	{
-		id: "GdU6G7b8tqg",
-		title: "Seoul Starlight - K-Pop Upbeat Drive (Official Audio)",
-		channel: "K-Pop Studio",
-		duration: "3:26",
+		id: "jWQx2f-CErU",
+		title: "aespa \uc5d0\uc2a4 'Whiplash' MV",
+		channel: "SMTOWN",
+		duration: "3:11",
 		keywords: [
 			"kpop",
 			"k-pop",

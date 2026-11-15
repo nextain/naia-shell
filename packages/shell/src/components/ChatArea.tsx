@@ -2470,6 +2470,13 @@ export function ChatArea({
 		try {
 			output = await executeBgmSkill(bgmArgs);
 			ok = !output.startsWith("Error:");
+			if (ok) {
+				try {
+					if ((JSON.parse(output) as { ok?: unknown }).ok === false) ok = false;
+				} catch {
+					// Plain-text outputs are success messages.
+				}
+			}
 		} catch (err) {
 			output = `Error: ${String(err)}`;
 			ok = false;
@@ -3538,12 +3545,20 @@ export function ChatArea({
 				)
 				.then((result) => {
 					Logger.info("ChatArea", "bgm skill result", { result });
+					let ok = !result.startsWith("Error:");
+					if (ok) {
+						try {
+							if ((JSON.parse(result) as { ok?: unknown }).ok === false) ok = false;
+						} catch {
+							// Plain-text results are successes already.
+						}
+					}
 					if (!req.activityId) {
 						useChatStore
 							.getState()
 							.updateStreamingToolResult(
 								req.toolCallId,
-								!result.startsWith("Error:"),
+								ok,
 								result,
 							);
 					}

@@ -685,6 +685,21 @@ describe("BgmPlayer YouTube playback state machine", () => {
  * 끝났다. 관측 경로가 로그를 남기지 않아 재현될 때마다 원인을 다시 추측해야
  * 했다. 실패했을 때 어느 관문에서 끊겼는지가 로그 한 줄로 나와야 한다.
  */
+	it("skips to the next candidate immediately on a fatal iframe error before frame confirmation", async () => {
+		render(<BgmPlayer />);
+		await startTrack("v1", "Blocked Song");
+		attachIframeForCurrentPlayback();
+		await enqueueTrack("v2", "Next Song");
+		// No confirmCurrentFrame: the frame is still unconfirmed.
+		// A fatal onError (150 = embedding blocked) must advance right away
+		// instead of only pending a terminal.
+		postYtMessage({ event: "onError", info: 150 });
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v2");
+	});
+
 describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 	beforeEach(() => {
 		bgmPlayback.reset();
