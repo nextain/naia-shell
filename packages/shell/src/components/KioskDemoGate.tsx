@@ -24,6 +24,7 @@ import {
 } from "../lib/kiosk-demo/passcode";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
+import { restoreKioskAdkOriginals } from "../lib/web-runtime/web-adk-edit";
 import { resolveEffectiveLayoutOrientation } from "../lib/ui-preferences";
 import { bootWebRuntimeAndModel } from "../lib/web-runtime/auto-install";
 import { installWebRuntime } from "../lib/web-runtime/install";
@@ -77,6 +78,8 @@ async function prepare(refused: () => AccessRefusal | null): Promise<Phase> {
 		installWebRuntime();
 		await cleanupExpiredPreviousVisit();
 		await prepareKioskDemoOnboarding();
+		// R3: 부팅 때마다 시연 ADK 원본(AGENTS.md 등)을 되돌려 안내와 일치시킨다.
+		await restoreKioskAdkOriginals();
 		// A refusal already known skips the model; a later one closes the gate.
 		const refusal = refused();
 		if (refusal) return refusal;

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
 	install: vi.fn(),
 	resetMemory: vi.fn(),
 	clearConversations: vi.fn(),
+	restoreOriginals: vi.fn(),
 }));
 vi.mock("../../lib/web-runtime/web-auth", () => ({
 	seedKioskDemoWebAuth: mocks.auth,
@@ -44,6 +45,9 @@ vi.mock("../../lib/web-runtime/auto-install", () => ({
 vi.mock("../../lib/web-runtime/install", () => ({
 	installWebRuntime: mocks.install,
 }));
+vi.mock("../../lib/web-runtime/web-adk-edit", () => ({
+	restoreKioskAdkOriginals: mocks.restoreOriginals,
+}));
 vi.mock("../../lib/kiosk-demo/entry", async () => ({
 	...(await vi.importActual("../../lib/kiosk-demo/entry")),
 	requestKioskGreeting: mocks.greeting,
@@ -63,6 +67,7 @@ beforeEach(() => {
 	mocks.verifyAuth.mockResolvedValue({ ok: true, credits: 100 });
 	mocks.prep.mockResolvedValue(undefined);
 	mocks.clearConversations.mockResolvedValue(undefined);
+	mocks.restoreOriginals.mockResolvedValue(undefined);
 });
 afterEach(() => {
 	cleanup();
@@ -122,6 +127,8 @@ it("waits for preparation and opens once only after a gesture", async () => {
 	expect(mocks.greeting).toHaveBeenCalledOnce();
 	expect(mocks.prep).toHaveBeenCalledOnce();
 	expect(mocks.boot).toHaveBeenCalledOnce();
+	// R3: 부팅 준비 때 시연 ADK 원본을 되돌린다.
+	expect(mocks.restoreOriginals).toHaveBeenCalledOnce();
 });
 it("unlocks AudioContext and speechSynthesis synchronously inside the entry click gesture", async () => {
 	const resumeAudio = vi.fn(() => Promise.resolve());

@@ -541,10 +541,10 @@ export const WEB_YOUTUBE_CATALOG: readonly WebCatalogEntry[] = [
 		],
 	},
 	{
-		id: "jWQx2f-CErU",
-		title: "aespa \uc5d0\uc2a4 'Whiplash' MV",
-		channel: "SMTOWN",
-		duration: "3:11",
+		id: "xgJ13Dt9F14",
+		title: "Whiplash (English Version)",
+		channel: "aespa - Topic",
+		duration: "3:04",
 		keywords: [
 			"kpop",
 			"k-pop",

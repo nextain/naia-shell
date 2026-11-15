@@ -425,45 +425,28 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								<AppStoreIcon />
 							</span>
 						</button>
-						{isKioskDemo() && kioskStoreNotice && (
+{isKioskDemo() &&
+						kioskStoreNotice &&
+						createPortal(
 							<div
+								className="app-bar-url-dialog-overlay"
 								role="dialog"
 								aria-modal="true"
 								aria-label={t("appbar.appStore")}
-								style={{
-									position: "fixed",
-									inset: 0,
-									zIndex: 60,
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "center",
-									background: "rgba(8, 12, 24, 0.6)",
-								}}
 								onClick={() => setKioskStoreNotice(false)}
 							>
 								<div
+									className="app-bar-url-dialog"
 									role="document"
-									style={{
-										maxWidth: "min(420px, 90vw)",
-										padding: "20px 22px",
-										borderRadius: "12px",
-										background: "#172136",
-										color: "#fff",
-										textAlign: "center",
-									}}
 									onClick={(e) => e.stopPropagation()}
 								>
-									<p style={{ margin: "0 0 14px" }}>
-										앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.
-									</p>
-									<button
-										type="button"
-										onClick={() => setKioskStoreNotice(false)}
-									>
+									<p>앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.</p>
+									<button type="button" onClick={() => setKioskStoreNotice(false)}>
 										닫기
 									</button>
 								</div>
-							</div>
+							</div>,
+							document.body,
 						)}
 					</>
 				)}
