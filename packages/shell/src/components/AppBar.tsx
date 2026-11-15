@@ -69,6 +69,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	} = useAppStore();
 
 	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
+	const [kioskStoreNotice, setKioskStoreNotice] = useState(false);
 	const [ctxMenu, setCtxMenu] = useState<{
 		x: number;
 		y: number;
@@ -406,23 +407,65 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				</button>
 				{/* External utility, not a switchable/removable app-registry entry. */}
 				{(!paymentLinksHidden || isKioskDemo()) && (
-					<button
-						type="button"
-						className="app-bar-tab app-bar-tab--utility"
-						aria-label={t("appbar.appStore")}
-						title={t("appbar.appStore")}
-						onClick={() => {
-							if (isKioskDemo() && onAddApp) {
-								onAddApp();
-								return;
-							}
-							void openAppStore();
-						}}
-					>
-						<span className="app-bar-tab-icon app-bar-tab-icon--svg">
-							<AppStoreIcon />
-						</span>
-					</button>
+					<>
+						<button
+							type="button"
+							className="app-bar-tab app-bar-tab--utility"
+							aria-label={t("appbar.appStore")}
+							title={t("appbar.appStore")}
+							onClick={() => {
+								if (isKioskDemo()) {
+									setKioskStoreNotice(true);
+									return;
+								}
+								void openAppStore();
+							}}
+						>
+							<span className="app-bar-tab-icon app-bar-tab-icon--svg">
+								<AppStoreIcon />
+							</span>
+						</button>
+						{isKioskDemo() && kioskStoreNotice && (
+							<div
+								role="dialog"
+								aria-modal="true"
+								aria-label={t("appbar.appStore")}
+								style={{
+									position: "fixed",
+									inset: 0,
+									zIndex: 60,
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									background: "rgba(8, 12, 24, 0.6)",
+								}}
+								onClick={() => setKioskStoreNotice(false)}
+							>
+								<div
+									role="document"
+									style={{
+										maxWidth: "min(420px, 90vw)",
+										padding: "20px 22px",
+										borderRadius: "12px",
+										background: "#172136",
+										color: "#fff",
+										textAlign: "center",
+									}}
+									onClick={(e) => e.stopPropagation()}
+								>
+									<p style={{ margin: "0 0 14px" }}>
+										앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.
+									</p>
+									<button
+										type="button"
+										onClick={() => setKioskStoreNotice(false)}
+									>
+										닫기
+									</button>
+								</div>
+							</div>
+						)}
+					</>
 				)}
 				{modes.map((mode) => (
 					<div

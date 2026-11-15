@@ -222,7 +222,7 @@ describe("AppBar — add dialog", () => {
 		expect(appStore).not.toHaveAttribute("data-app-id");
 	});
 
-	it("opens the same app-add screen from the fixed App Store action in kiosk demo", async () => {
+	it("opens a closable notice dialog from the fixed App Store action in kiosk demo", async () => {
 		channel.value = "unknown";
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
@@ -234,11 +234,18 @@ describe("AppBar — add dialog", () => {
 				name: "appbar.appStore",
 			});
 			fireEvent.click(appStore);
-			expect(onAddApp).toHaveBeenCalledTimes(1);
+			expect(
+				await screen.findByRole("dialog", { name: "appbar.appStore" }),
+			).toHaveTextContent("웹버전 통합 진행중");
+			expect(onAddApp).not.toHaveBeenCalled();
 			expect(mockInvoke).not.toHaveBeenCalledWith(
 				"focus_or_create_app_store_window",
 				expect.anything(),
 			);
+			fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+			expect(
+				screen.queryByRole("dialog", { name: "appbar.appStore" }),
+			).toBeNull();
 		} finally {
 			vi.unstubAllEnvs();
 		}

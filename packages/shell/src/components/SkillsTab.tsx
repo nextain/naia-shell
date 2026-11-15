@@ -28,6 +28,7 @@ interface WebBuiltInSkill {
 	name: string;
 	description: string;
 	tools: string;
+	badge?: string;
 }
 
 const KIOSK_WEB_SKILLS: readonly WebBuiltInSkill[] = [
@@ -51,6 +52,7 @@ const COMMON_WEB_SKILLS: readonly WebBuiltInSkill[] = [
 		name: "날씨",
 		description: "날씨 정보 조회",
 		tools: "get_weather",
+		badge: "지원 예정",
 	},
 ];
 
@@ -86,7 +88,7 @@ function WebBuiltInSkillList({ kioskDemo }: { kioskDemo: boolean }) {
 							</div>
 							<div className="skill-card-badges">
 								<span className="skill-badge built-in">
-									{t("skills.builtIn")}
+									{skill.badge ?? t("skills.builtIn")}
 								</span>
 							</div>
 						</div>
