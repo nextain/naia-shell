@@ -10,6 +10,7 @@ import {
 	PRIVATE_SLIDES_SOURCE_ENV,
 	ensureWebKioskPrivateSlides,
 } from "./scripts/web-kiosk-private-slides.mjs";
+import { stampBuiltServiceWorker } from "./scripts/web-sw-version.mjs";
 import { WEB_CSP } from "./src/lib/web-runtime/csp";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -170,6 +171,31 @@ function webCspPlugin(): Plugin {
 	};
 }
 
+function webServiceWorkerPlugin(revision: string): Plugin {
+	let outputDirectory = "";
+	let buildFailed = false;
+	return {
+		name: "web-service-worker",
+		apply: "build",
+		configResolved(config) {
+			outputDirectory = path.resolve(config.root, config.build.outDir);
+		},
+		buildEnd(error) {
+			if (error) buildFailed = true;
+		},
+		renderError() {
+			buildFailed = true;
+		},
+		closeBundle(error) {
+			if (buildFailed || error) return;
+			stampBuiltServiceWorker({
+				outDir: outputDirectory,
+				revision,
+			});
+		},
+	};
+}
+
 function readPositiveIntegerEnv(
 	name: string,
 	fallback: number,
@@ -225,7 +251,7 @@ export default defineConfig(async ({ mode, command }) => {
 			...(command === "build" && !isWeb ? [desktopPublicAssetsPlugin()] : []),
 			virtualAgentWorkerPlugin(mode),
 			kioskPrivateSlidesPlugin(mode, command),
-			...(isWeb ? [webCspPlugin(), webAdkPlugin(), kioskSlidesAssetsPlugin()] : []),
+			...(isWeb ? [webCspPlugin(), webAdkPlugin(), kioskSlidesAssetsPlugin(), webServiceWorkerPlugin(revision)] : []),
 		],
 		build: {
 			// Bundle-budget verification uses this graph to prove that large optional
