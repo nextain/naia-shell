@@ -69,6 +69,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	} = useAppStore();
 
 	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
+	const [kioskStoreNotice, setKioskStoreNotice] = useState(false);
 	const [ctxMenu, setCtxMenu] = useState<{
 		x: number;
 		y: number;
@@ -405,18 +406,31 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					<span className="app-bar-tab-icon">📁</span>
 				</button>
 				{/* External utility, not a switchable/removable app-registry entry. */}
-				{!paymentLinksHidden && (
-					<button
-						type="button"
-						className="app-bar-tab app-bar-tab--utility"
-						aria-label={t("appbar.appStore")}
-						title={t("appbar.appStore")}
-						onClick={() => void openAppStore()}
-					>
-						<span className="app-bar-tab-icon app-bar-tab-icon--svg">
-							<AppStoreIcon />
-						</span>
-					</button>
+				{(!paymentLinksHidden || isKioskDemo()) && (
+					<>
+						<button
+							type="button"
+							className="app-bar-tab app-bar-tab--utility"
+							aria-label={t("appbar.appStore")}
+							title={t("appbar.appStore")}
+							onClick={() => {
+								if (isKioskDemo()) {
+									setKioskStoreNotice(true);
+									return;
+								}
+								void openAppStore();
+							}}
+						>
+							<span className="app-bar-tab-icon app-bar-tab-icon--svg">
+								<AppStoreIcon />
+							</span>
+						</button>
+						{isKioskDemo() && kioskStoreNotice && (
+							<span role="status" className="app-bar-kiosk-notice">
+								앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.
+							</span>
+						)}
+					</>
 				)}
 				{modes.map((mode) => (
 					<div

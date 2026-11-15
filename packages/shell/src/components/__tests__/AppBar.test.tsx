@@ -222,6 +222,29 @@ describe("AppBar — add dialog", () => {
 		expect(appStore).not.toHaveAttribute("data-app-id");
 	});
 
+	it("shows the fixed App Store action in kiosk demo with an integration notice instead of opening", async () => {
+		channel.value = "unknown";
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		try {
+			resetDistributionChannelForTests();
+			render(<AppBar />);
+			const appStore = await screen.findByRole("button", {
+				name: "appbar.appStore",
+			});
+			fireEvent.click(appStore);
+			expect(await screen.findByRole("status")).toHaveTextContent(
+				"웹버전 통합 진행중",
+			);
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"focus_or_create_app_store_window",
+				expect.anything(),
+			);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
 	it("shows a built-in app registered after the first render and keeps the first tabs", async () => {
 		const { useAppStore } = await import("../../stores/app");
 		const { rerender } = render(<AppBar />);
