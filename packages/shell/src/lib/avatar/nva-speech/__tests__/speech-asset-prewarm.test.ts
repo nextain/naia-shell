@@ -19,6 +19,8 @@ const manifestText = readFileSync(
 describe("speech asset prewarm (kiosk entry screen)", () => {
 	afterEach(() => {
 		resetSpeechAssetPrewarmForTests();
+		document.documentElement.removeAttribute("data-naia-web");
+		document.documentElement.removeAttribute("data-naia-mobile");
 		vi.unstubAllGlobals();
 	});
 
@@ -72,5 +74,14 @@ describe("speech asset prewarm (kiosk entry screen)", () => {
 		expect(await takePrewarmedSpeechAsset(url)).toBeNull();
 		await expect(prewarmWebSpeechAssets("../etc")).resolves.toBeUndefined();
 		await expect(prewarmWebSpeechAssets(undefined)).resolves.toBeUndefined();
+	});
+
+	it("skips heavy speech asset prewarm on mobile web runtime", async () => {
+		document.documentElement.setAttribute("data-naia-web", "true");
+		document.documentElement.setAttribute("data-naia-mobile", "true");
+		const fetchSpy = vi.fn();
+		vi.stubGlobal("fetch", fetchSpy);
+		await prewarmWebSpeechAssets("jina");
+		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 });

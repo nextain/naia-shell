@@ -36,6 +36,7 @@ import {
 import { applyLocalRefAudio } from "../voice/ref-audio-api";
 import { resolveEdgeVoice } from "./edge-tts";
 import { emitKioskVoiceState } from "./kiosk-voice-gate";
+import { isMobileWebRuntime } from "../web-runtime/web-assets";
 
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
 // webview can't do the MS WebSocket handshake (it can't set the required
@@ -296,7 +297,10 @@ async function requestKioskSpeech(
 	opts: SynthesizeOpts,
 	voice: string,
 ): Promise<SynthesizeResult> {
-	const timeout = AbortSignal.timeout(KIOSK_VOICE_REQUEST_TIMEOUT_MS);
+	const timeoutMs = isMobileWebRuntime()
+		? 45_000
+		: KIOSK_VOICE_REQUEST_TIMEOUT_MS;
+	const timeout = AbortSignal.timeout(timeoutMs);
 	try {
 		return await requestNextainSpeech(
 			base,
@@ -368,17 +372,24 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			);
 		} catch (err) {
 			if (opts.signal?.aborted || isAbortError(err)) throw err;
-			if (
-				!(err instanceof NextainSpeechError) ||
-				(err.status !== 503 && err.status !== 429)
-			)
-				throw err;
-			const delayMs = kioskRetryDelayMs(err.retryAfter);
-			emitKioskVoiceState("busy");
-			Logger.info("tts", "kiosk voice busy; retrying jina once", {
-				status: err.status,
-				delayMs,
-			});
+			const isBusy =
+				err instanceof NextainSpeechError &&
+				(err.status === 503 || err.status === 429);
+			const isMobileTransient =
+				isMobileWebRuntime() && !(err instanceof NextainSpeechError);
+			if (!isBusy && !isMobileTransient) throw err;
+			const delayMs = isBusy ? kioskRetryDelayMs(err.retryAfter) : 500;
+			if (isBusy) {
+				emitKioskVoiceState("busy");
+				Logger.info("tts", "kiosk voice busy; retrying jina once", {
+					status: err.status,
+					delayMs,
+				});
+			} else {
+				Logger.info("tts", "mobile kiosk voice transient failure; retrying jina once", {
+					delayMs,
+				});
+			}
 			await waitForKioskRetry(delayMs, opts.signal);
 			result = await requestKioskSpeech(
 				base,

@@ -1,19 +1,58 @@
-import { Suspense, lazy, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { appRegistry } from "../../lib/app-registry";
-
-import { useAppStore } from "../../stores/app";
-import { t } from "../../lib/i18n";
+import { getLocale, t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
+import { isMobileWebRuntime } from "../../lib/web-runtime/web-assets";
+import { useAppStore } from "../../stores/app";
 
-const SettingsTab = lazy(() =>
-	import("../../components/SettingsTab").then(({ SettingsTab }) => ({
-		default: SettingsTab,
-	})),
-);
+type SettingsComponent = typeof import("../../components/SettingsTab")["SettingsTab"];
+let settingsModulePromise: Promise<{ default: SettingsComponent }> | null = null;
+
+function loadSettingsTabModule(): Promise<{ default: SettingsComponent }> {
+	settingsModulePromise ??= import("../../components/SettingsTab")
+		.then(({ SettingsTab }) => ({ default: SettingsTab }))
+		.catch((error) => {
+			settingsModulePromise = null;
+			throw error;
+		});
+	return settingsModulePromise;
+}
+
+if (typeof window !== "undefined") {
+	// 모바일 웹에서는 메뉴에서 설정을 열었을 때 빈 화면으로 멈추지 않도록 유휴 시점에 청크를 미리 받아 둔다.
+	const schedulePreload = () => {
+		if (!isMobileWebRuntime()) return;
+		const idle = (
+			window as Window & {
+				requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+			}
+		).requestIdleCallback;
+		if (typeof idle === "function") {
+			idle(() => void loadSettingsTabModule().catch(() => {}), { timeout: 3000 });
+		} else {
+			window.setTimeout(() => void loadSettingsTabModule().catch(() => {}), 1500);
+		}
+	};
+	if (document.readyState === "complete") {
+		schedulePreload();
+	} else {
+		window.addEventListener("load", schedulePreload, { once: true });
+	}
+}
 
 function SettingsCenterArea() {
 	const rootRef = useRef<HTMLDivElement>(null);
 	const active = useAppStore((state) => state.activeApp === "settings");
+	const [attempt, setAttempt] = useState(0);
+	const SettingsTab = useMemo(
+		() =>
+			lazy(() => {
+				void attempt;
+				return loadSettingsTabModule();
+			}),
+		[attempt],
+	);
 	useEffect(() => {
 		if (!active) return;
 		const root = rootRef.current!;
@@ -77,9 +116,63 @@ function SettingsCenterArea() {
 				overflow: "hidden",
 			}}
 		>
-			<Suspense fallback={null}>
-				<SettingsTab />
-			</Suspense>
+			<ErrorBoundary
+				scope="SettingsCenterArea"
+				resetKey={attempt}
+				fallback={
+					<div
+						role="alert"
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							alignItems: "center",
+							justifyContent: "center",
+							gap: 12,
+							height: "100%",
+							padding: 24,
+							color: "#e2e8f0",
+							textAlign: "center",
+						}}
+					>
+						<p style={{ margin: 0 }}>
+							{getLocale() === "ko"
+								? "설정 화면을 불러오지 못했습니다."
+								: "Could not load settings."}
+						</p>
+						<button
+							type="button"
+							className="settings-icon-btn"
+							onClick={() => {
+								settingsModulePromise = null;
+								setAttempt((prev) => prev + 1);
+							}}
+						>
+							{t("common.retry")}
+						</button>
+					</div>
+				}
+			>
+				<Suspense
+					fallback={
+						<output
+							aria-live="polite"
+							style={{
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								height: "100%",
+								padding: 24,
+								color: "#cbd5e1",
+								fontSize: 14,
+							}}
+						>
+							{t("progress.loading")}
+						</output>
+					}
+				>
+					<SettingsTab />
+				</Suspense>
+			</ErrorBoundary>
 		</div>
 	);
 }

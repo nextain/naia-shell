@@ -2083,6 +2083,7 @@ export function BgmPlayer({ naia }: Props) {
 					// iframe 이벤트가 늦거나 누락돼도 버튼이 다시 재생 상태로
 					// 즉시 바뀌도록 사용자 의도를 낙관적으로 반영한다.
 					setPlaying(false);
+					setVideoLive(false);
 					observePlayback("paused");
 				}
 			} else {

@@ -28,7 +28,10 @@ import {
 	parseNvaManifest,
 	resolveNvaAssetPath,
 } from "../lib/nva";
-import { isWebMode } from "../lib/web-runtime/web-assets";
+import {
+	isMobileWebRuntime,
+	isWebMode,
+} from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -434,7 +437,11 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				<output data-video-avatar-status={mode} aria-live="polite">
 					{mode === "loading"
 						? t("avatar.videoLoading")
-						: t("avatar.videoFailed")}
+						: isMobileWebRuntime()
+							? getLocale() === "ko"
+								? "아바타 영상을 불러오지 못했습니다. 배경 화면으로 대화를 계속할 수 있습니다."
+								: "Could not load the avatar video. You can continue chatting on the background screen."
+							: t("avatar.videoFailed")}
 				</output>
 			)}
 		</div>

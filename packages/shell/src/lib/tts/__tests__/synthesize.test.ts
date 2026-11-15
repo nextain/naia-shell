@@ -421,6 +421,29 @@ describe("synthesizeTts — nextain (gateway)", () => {
 			},
 		);
 
+		it("retries jina once on mobile transient network failure", async () => {
+			vi.stubGlobal("document", {
+				documentElement: {
+					getAttribute: (name: string) =>
+						name === "data-naia-web" || name === "data-naia-mobile"
+							? "true"
+							: null,
+				},
+			});
+			const fetchMock = vi
+				.fn()
+				.mockRejectedValueOnce(new TypeError("network"))
+				.mockResolvedValueOnce(jsonResponse({ audio_content: WAV_BASE64 }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(500);
+			expect((await result).audioBase64).toBe(WAV_BASE64);
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"naia-voice:tpl-jina",
+			]);
+		});
+
 		it.each([
 			["5", 2000],
 			[undefined, 1000],

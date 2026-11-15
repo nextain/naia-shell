@@ -210,7 +210,10 @@ import {
 	getSttProvider,
 	isWebSpeechAvailable,
 } from "../lib/stt";
-import { isWebMode } from "../lib/web-runtime/web-assets";
+import {
+	isMobileWebRuntime,
+	isWebMode,
+} from "../lib/web-runtime/web-assets";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
@@ -1676,6 +1679,7 @@ export function ChatArea({
 
 	// Warm canonical speech assets (speech/atlas.bin, etc.) immediately when the avatar renderer is ready.
 	useEffect(() => {
+		if (isMobileWebRuntime()) return;
 		let speechWarmed = false;
 		const runWarmSpeechAssets = (
 			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
@@ -1760,16 +1764,26 @@ export function ChatArea({
 			});
 			return greetingWave;
 		};
-		sentencePipelineRef.current?.sendSentence(greeting, {
-			beforePlayback: async ({ speechPlanReady }) => {
-				const waved = playGreetingWave();
-				if (await speechPlanReady) await waved;
-			},
-			onPlaybackStarted: () => void playGreetingWave(),
-			onSentenceSettled: (outcome) => {
-				if (outcome !== "cancelled") void playGreetingWave();
-			},
-		});
+		const greetingPieces = isMobileWebRuntime()
+			? splitSlideNarration(greeting)
+			: [greeting];
+		for (let i = 0; i < greetingPieces.length; i++) {
+			sentencePipelineRef.current?.sendSentence(
+				greetingPieces[i]!,
+				i === 0
+					? {
+							beforePlayback: async ({ speechPlanReady }) => {
+								const waved = playGreetingWave();
+								if (await speechPlanReady) await waved;
+							},
+							onPlaybackStarted: () => void playGreetingWave(),
+							onSentenceSettled: (outcome) => {
+								if (outcome !== "cancelled") void playGreetingWave();
+							},
+						}
+					: undefined,
+			);
+		}
 		finishLocalVoicePrebuffer();
 		return () => {
 			if (sentencePipelineRef.current?.hasActiveRequests()) {

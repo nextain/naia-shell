@@ -16,6 +16,15 @@ export function isWebMode(): boolean {
 	return import.meta.env.MODE === "web";
 }
 
+/** 휴대폰 웹 레이아웃(`data-naia-web="true"` + `data-naia-mobile="true"`)인가. 데스크톱 동작과 분리할 때만 쓴다. */
+export function isMobileWebRuntime(): boolean {
+	if (typeof document === "undefined" || !document.documentElement) return false;
+	return (
+		document.documentElement.getAttribute("data-naia-web") === "true" &&
+		document.documentElement.getAttribute("data-naia-mobile") === "true"
+	);
+}
+
 /** Phone detection uses the physical screen because desktop-site mode reports a wide viewport. */
 export function mobileWebLayout(coarse: boolean, width: number, height: number, portrait: boolean, viewportWidth: number): { mobile: boolean; zoom: number } {
  const mobile = coarse && Math.min(width, height) > 0 && Math.min(width, height) <= 600 && (height > width || portrait);

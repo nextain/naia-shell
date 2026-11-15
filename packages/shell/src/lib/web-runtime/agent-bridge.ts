@@ -1,8 +1,10 @@
 import { createAgentWorker } from "virtual:naia-agent-worker";
+import { useAvatarStore } from "../../stores/avatar";
 import { getStoredLocalSessionId, useChatStore } from "../../stores/chat";
 import { bgmPlayback } from "../bgm-playback";
 import { Logger } from "../logger";
 import { emitWebEvent } from "./event-bus";
+import { isMobileWebRuntime } from "./web-assets";
 import { type WebFs, getWebFs } from "./web-fs";
 import {
 	errorKindFromEngineErrorName,
@@ -75,7 +77,9 @@ export function createAgentBridge(deps: {
 				getPlayback: () => bgmPlayback.current(),
 				getNextTitle: () => bgmPlayback.queue()[0]?.selected.title,
 				generate: generateDjLineViaChat,
-				isChatBusy: () => useChatStore.getState().isStreaming,
+				isChatBusy: () =>
+					useChatStore.getState().isStreaming ||
+					(isMobileWebRuntime() && useAvatarStore.getState().isSpeaking),
 			}));
 	function ackSpeechProfileLine(line: string): boolean {
 		let parsed: { type?: unknown; requestId?: unknown; profile?: unknown };

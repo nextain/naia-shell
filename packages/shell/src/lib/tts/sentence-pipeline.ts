@@ -586,7 +586,12 @@ export function createSentenceTtsPipeline(
 		seq: number | string,
 	): Promise<AlignedPlanResolution | null> | null {
 		const source = alignedSource();
-		if (!renderer?.playSpeechTiming || !source) return null;
+		if (
+			!renderer?.playSpeechTiming ||
+			renderer.canPlaySpeechPlans?.() === false ||
+			!source
+		)
+			return null;
 		const explicitOnlyAligned = hasExplicitAlignedSource();
 		const requestedAt = Date.now();
 		return source(request)
@@ -641,7 +646,11 @@ export function createSentenceTtsPipeline(
 		beforePlayback?: () => Promise<unknown>;
 		start: (playback?: AudioPlaybackClock, onPromoted?: () => void) => void;
 	} | null {
-		if (!renderer?.playSpeechTiming) return null;
+		if (
+			!renderer?.playSpeechTiming ||
+			renderer.canPlaySpeechPlans?.() === false
+		)
+			return null;
 		const planResult =
 			prefetchedPlan ?? requestAlignedPlanResult(renderer, request, seq);
 		if (!planResult) return null;

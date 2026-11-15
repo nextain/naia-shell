@@ -20,6 +20,7 @@ import {
 	WEB_VRM_ASSETS,
 	isRetiredWebBackground,
 	isLegacyWebNaiaSelection,
+	isMobileWebRuntime,
 	isWebBundledAssetUrl,
 	isWebMode,
 	mobileWebLayout,
@@ -312,6 +313,7 @@ describe("web phone layout", () => {
   vi.stubGlobal("matchMedia", match);
   setWebAssetsModeForTests(true);
   expect(document.documentElement.dataset.naiaMobile).toBe("true");
+  expect(isMobileWebRuntime()).toBe(true);
   expect(Number(document.documentElement.style.zoom)).toBeCloseTo(980 / 412);
   expect(parseFloat(document.documentElement.style.getPropertyValue("--naia-vh"))).toBeCloseTo(2120 / (980 / 412) / 100);
   expect(parseFloat(document.documentElement.style.getPropertyValue("--naia-vw"))).toBeCloseTo(4.12);
@@ -322,6 +324,7 @@ describe("web phone layout", () => {
   match.mockImplementation(() => ({ matches: false }) as MediaQueryList);
   window.dispatchEvent(new Event("orientationchange"));
   expect(document.documentElement.dataset.naiaMobile).toBeUndefined();
+  expect(isMobileWebRuntime()).toBe(false);
   expect(document.documentElement.style.zoom).toBe("");
   expect(document.documentElement.style.getPropertyValue("--naia-vh")).toBe("");
   expect(document.documentElement.style.getPropertyValue("--naia-vw")).toBe("");

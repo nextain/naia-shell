@@ -715,10 +715,33 @@
 }
 @media (max-width: 600px) {
 	.bgm-web-now-playing {
-		top: 52px;
-		left: 12px;
-		right: 12px;
-		max-width: none;
+		top: max(8px, env(safe-area-inset-top));
+		right: 54px;
+		left: auto;
+		width: auto;
+		max-width: min(236px, calc(100vw - 62px));
+		height: 40px;
+		padding: 4px 8px;
+		gap: 6px;
+		border-radius: 10px;
+		box-sizing: border-box;
+		z-index: 14;
+	}
+	.bgm-web-now-playing__preview,
+	.bgm-web-now-playing__sub {
+		display: none;
+	}
+	.bgm-web-now-playing__title {
+		font-size: 11.5px;
+	}
+	.bgm-web-now-playing__actions {
+		gap: 4px;
+	}
+	.bgm-web-now-playing__btn {
+		width: 26px;
+		height: 26px;
+		border-radius: 6px;
+		font-size: 11px;
 	}
 }
 
@@ -1203,18 +1226,48 @@
 	color: #ffffff;
 }
 
-	[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing {
-		top: 52px;
-		left: 12px;
-		right: 12px;
-		max-width: none;
-	}
-
+[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing,
 [data-naia-web="true"][data-layout-orientation="portrait"] .bgm-web-now-playing {
-	top: 52px;
-	left: 12px;
-	right: 12px;
-	max-width: none;
+	top: max(8px, env(safe-area-inset-top));
+	right: 54px;
+	left: auto;
+	width: auto;
+	max-width: min(236px, calc(100vw - 62px));
+	height: 40px;
+	padding: 4px 8px;
+	gap: 6px;
+	border-radius: 10px;
+	box-sizing: border-box;
+	z-index: 14;
+}
+[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing__preview,
+[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing__sub,
+[data-naia-web="true"][data-layout-orientation="portrait"] .bgm-web-now-playing__preview,
+[data-naia-web="true"][data-layout-orientation="portrait"] .bgm-web-now-playing__sub {
+	display: none;
+}
+[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing__title,
+[data-naia-web="true"][data-layout-orientation="portrait"] .bgm-web-now-playing__title {
+	font-size: 11.5px;
+}
+[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing__actions,
+[data-naia-web="true"][data-layout-orientation="portrait"] .bgm-web-now-playing__actions {
+	gap: 4px;
+}
+[data-naia-web="true"][data-naia-mobile="true"] .bgm-web-now-playing__btn,
+[data-naia-web="true"][data-layout-orientation="portrait"] .bgm-web-now-playing__btn {
+	width: 26px;
+	height: 26px;
+	border-radius: 6px;
+	font-size: 11px;
+}
+[data-naia-web="true"][data-naia-mobile="true"] .app-bg-iframe,
+[data-naia-web="true"][data-layout-orientation="portrait"] .app-bg-iframe {
+	width: 1px !important;
+	height: 1px !important;
+	inset: auto auto 0 0 !important;
+	opacity: 0 !important;
+	pointer-events: none !important;
 }
 
 /* Web chat follows the body font; code remains monospaced. */

@@ -25,6 +25,7 @@ import type {
 import { takePrewarmedSpeechAsset } from "./nva-speech/speech-asset-prewarm";
 import { isStackedAlphaClipUrl } from "./nva-stacked-alpha";
 import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
+import { isMobileWebRuntime } from "../web-runtime/web-assets";
 
 export interface StackedAlphaCompositorLike {
 	readonly canvas: HTMLCanvasElement;
@@ -457,6 +458,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	/** Play one aligned or browser-timed plan through the canonical player. */
 	async playSpeechTiming(timing: AvatarSpeechTiming): Promise<boolean> {
+		if (isMobileWebRuntime()) return false;
 		const stage = this.speechStage;
 		if (!stage || this.disposed) return false;
 		if (this.activeGesture) {
@@ -474,17 +476,19 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	/** True when this avatar carries the canonical speech set. */
 	canPlaySpeechPlans(): boolean {
+		if (isMobileWebRuntime()) return false;
 		return Boolean(this.speechStage) && !this.disposed;
 	}
 
 	/** Pre-fetch canonical speech assets (`speech/atlas.bin`, etc.) in the background after greeting. */
 	async warmSpeechAssets(): Promise<void> {
-		if (!this.speechStage || this.disposed) return;
+		if (isMobileWebRuntime() || !this.speechStage || this.disposed) return;
 		await this.speechStage.warmAssets();
 	}
 
 	/** Load a plan ahead of its sound; play(clock) once the sound starts. */
 	async prepareSpeechTiming(plan: SpeechPlan): Promise<PreparedSpeech | null> {
+		if (isMobileWebRuntime()) return null;
 		const stage = this.speechStage;
 		if (!stage || this.disposed) return null;
 		this.speechKeyColor = this.keyColorFor(
@@ -499,6 +503,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	 * invisible until the matching audio starts and its PreparedSpeech is used.
 	 */
 	async prefetchSpeechTiming(plan: SpeechPlan): Promise<PreparedSpeech | null> {
+		if (isMobileWebRuntime()) return null;
 		const host = this.mountedVideo;
 		if (!this.speechStage || !host || this.disposed) return null;
 		this.cancelPrefetchedSpeechTiming();
@@ -687,7 +692,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 							expectedGeneration !== this.generation)
 							? cancel()
 							: finish("NVA playback start timeout"),
-					8000,
+					isMobileWebRuntime() ? 25_000 : 8000,
 				);
 				// The loop start is cancelled through playbackTimers, not
 				// cancelOneShot: a pending loop must not defer an idle switch.
@@ -714,6 +719,18 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				video.removeEventListener("ended", ended);
 				video.removeEventListener("error", failed);
 				if (this.cancelOneShot === cancel) this.cancelOneShot = null;
+				// 모바일 크롬은 720x2560 하드웨어 디코더 동시 보유 개수가 제한되므로 일회성 제스처 클립은 끝난 뒤 디코더를 반환한다.
+				if (isMobileWebRuntime() && video !== this.mountedVideo) {
+					this.clipVideos.delete(url);
+					try {
+						video.pause();
+						video.removeAttribute("src");
+						video.load();
+						video.remove();
+					} catch {
+						// ignore decoder cleanup errors
+					}
+				}
 			};
 			const cancel = () => {
 				cleanup();
