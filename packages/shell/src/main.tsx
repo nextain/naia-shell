@@ -16,18 +16,31 @@ import "./styles/web-mode.css";
 syncWebModeRootAttribute();
 
 if (import.meta.env.MODE === "web" && "serviceWorker" in navigator) {
-	void navigator.serviceWorker.register("/sw.js").then(async () => {
-		const registration = await navigator.serviceWorker.ready;
-		const cacheAssets = (entries: PerformanceEntry[]) => {
-			registration.active?.postMessage({ type: "CACHE_PUBLIC_ASSETS", urls: entries.map((entry) => entry.name) });
-		};
-		cacheAssets(performance.getEntriesByType("resource"));
-		if (typeof PerformanceObserver !== "undefined") {
-			new PerformanceObserver((list) => cacheAssets(list.getEntries())).observe({ type: "resource" });
-		}
-	}).catch((error: unknown) => {
-		Logger.warn("PWA", "Service worker registration failed", { error: String(error) });
-	});
+	void navigator.serviceWorker
+		.register("/sw.js", { updateViaCache: "none" })
+		.then(async (reg) => {
+			await reg.update().catch(() => {});
+			await navigator.serviceWorker.ready;
+			const cacheAssets = (entries: PerformanceEntry[]) => {
+				if (reg.installing || reg.waiting) return;
+				const worker = navigator.serviceWorker.controller;
+				if (!worker || worker.state !== "activated") return;
+				worker.postMessage({
+					type: "CACHE_PUBLIC_ASSETS",
+					urls: entries.map((entry) => entry.name),
+				});
+			};
+			const flushEntries = () =>
+				cacheAssets(performance.getEntriesByType("resource"));
+			flushEntries();
+			navigator.serviceWorker.addEventListener("controllerchange", flushEntries);
+			if (typeof PerformanceObserver !== "undefined") {
+				new PerformanceObserver((list) => cacheAssets(list.getEntries())).observe({ type: "resource" });
+			}
+		})
+		.catch((error: unknown) => {
+			Logger.warn("PWA", "Service worker registration failed", { error: String(error) });
+		});
 }
 
 if (
