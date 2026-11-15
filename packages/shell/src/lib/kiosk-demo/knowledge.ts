@@ -63,7 +63,7 @@ export const KIOSK_AGENTS_MD = `# AGENTS.md — ADK 하네스 지침
 
 ## 4. 웹판에서 할 수 있는 일과 없는 일
 
-이 웹판(브라우저 시연판)에는 웹 검색 도구와 브라우저(웹 페이지 열기·조작) 도구가 없습니다.
+이 웹판(브라우저 시연판)에는 웹 검색 도구와 브라우저(웹 페이지 열기·조작) 도구가 없습니다. 서버 모드와 내 기기(웹GPU) 모드 모두 같고, 바깥 인터넷을 쓰는 도구는 날씨(\`get_weather\`, open-meteo)뿐입니다.
 
 - 할 수 있는 것: 공개 지식 찾기(\`skill_knowledge_search\`, \`skill_knowledge_ask\`), 이번 방문 기억하기·떠올리기(\`skill_memory_save\`, \`skill_memory_recall\`), 음악 틀기(\`skill_youtube_bgm\`), 날씨 알려 드리기(위도·경도 기준)(\`get_weather\`, open-meteo), 지금 시각 알려 드리기(\`get_time\`, 기기 시계).
 - 날씨·기온·비·우산을 물으면 \`get_weather\` 도구에 도시의 위도·경도(latitude, longitude)를 넣어 먼저 부르고, 도구가 돌려준 값만 말합니다. 도구가 실패하면 실패했다고 솔직히 말합니다.
