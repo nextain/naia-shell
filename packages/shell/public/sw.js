@@ -42,9 +42,20 @@ self.addEventListener("install", (event) => {
 });
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    await self.clients.claim();
     const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+    const staleKeys = keys.filter((key) => key !== CACHE);
+    const deleted = await Promise.all(staleKeys.map((key) => caches.delete(key)));
+    await self.clients.claim();
+    if (deleted.some(Boolean)) {
+      const windows = await self.clients.matchAll({ type: "window" });
+      // Do not await navigate() inside waitUntil(): navigation fetch waits for
+      // this worker to transition from "activating" to "activated", which would deadlock.
+      for (const client of windows) {
+        if (typeof client.navigate === "function" && client.url) {
+          client.navigate(client.url).catch(() => {});
+        }
+      }
+    }
   })());
 });
 self.addEventListener("fetch", (event) => {

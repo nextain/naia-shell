@@ -27,12 +27,30 @@ afterEach(() => {
 function createFakeSwEnv(
 	swSource: string,
 	fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
+	options: { windowUrls?: string[] } = {},
 ) {
 	const stores = new Map<string, Map<string, Response>>();
 	const listeners = new Map<string, Array<(event: unknown) => void>>();
 	const deletedKeys: string[] = [];
+	const navigatedUrls: string[] = [];
+	const matchAllCalls: Array<{ type?: string }> = [];
+	const eventsOrder: string[] = [];
 	let skipWaitingCount = 0;
 	let claimCount = 0;
+	const windowClients = (
+		options.windowUrls ?? ["https://demo.example.test/"]
+	).map((initialUrl) => {
+		const client = {
+			url: initialUrl,
+			async navigate(targetUrl: string) {
+				eventsOrder.push(`navigate:${targetUrl}`);
+				navigatedUrls.push(targetUrl);
+				client.url = targetUrl;
+				return client;
+			},
+		};
+		return client;
+	});
 
 	const caches = {
 		async open(name: string) {
@@ -57,6 +75,7 @@ function createFakeSwEnv(
 			return [...stores.keys()];
 		},
 		async delete(name: string) {
+			eventsOrder.push(`delete:${name}`);
 			deletedKeys.push(name);
 			return stores.delete(name);
 		},
@@ -65,11 +84,21 @@ function createFakeSwEnv(
 	const selfObj = {
 		location: { origin: "https://demo.example.test" },
 		skipWaiting: async () => {
+			eventsOrder.push("skipWaiting");
 			skipWaitingCount += 1;
 		},
 		clients: {
 			claim: async () => {
+				eventsOrder.push("claim");
 				claimCount += 1;
+			},
+			matchAll: async (query?: { type?: string }) => {
+				eventsOrder.push(`matchAll:${query?.type ?? ""}`);
+				matchAllCalls.push(query ?? {});
+				if (!query?.type || query.type === "window") {
+					return [...windowClients];
+				}
+				return [];
 			},
 		},
 		addEventListener(type: string, cb: (event: unknown) => void) {
@@ -126,6 +155,9 @@ function createFakeSwEnv(
 	return {
 		stores,
 		deletedKeys,
+		navigatedUrls,
+		matchAllCalls,
+		eventsOrder,
 		get skipWaitingCount() {
 			return skipWaitingCount;
 		},
@@ -137,7 +169,11 @@ function createFakeSwEnv(
 	};
 }
 
-function makeBasicResponse(url: string, body: string, contentType = "text/html") {
+function makeBasicResponse(
+	url: string,
+	body: string,
+	contentType = "text/html",
+) {
 	const res = new Response(body, {
 		status: 200,
 		headers: { "content-type": contentType, "cache-control": "no-cache" },
@@ -149,8 +185,10 @@ function makeBasicResponse(url: string, body: string, contentType = "text/html")
 
 describe("web-sw-version & sw.js", () => {
 	it("computes deterministic version from revision and index.html and stamps sw.js", () => {
-		const htmlA = '<html><script src="/assets/index-AAAAAAAA.js"></script></html>';
-		const htmlB = '<html><script src="/assets/index-BBBBBBBB.js"></script></html>';
+		const htmlA =
+			'<html><script src="/assets/index-AAAAAAAA.js"></script></html>';
+		const htmlB =
+			'<html><script src="/assets/index-BBBBBBBB.js"></script></html>';
 		const vA = computeWebSwVersion({
 			revision: "3092bab6",
 			indexHtml: htmlA,
@@ -203,7 +241,11 @@ describe("web-sw-version & sw.js", () => {
 				return makeBasicResponse(url, currentHtml, "text/html");
 			}
 			if (url.endsWith("/assets/index-11111111.js")) {
-				return makeBasicResponse(url, "console.log('asset-1')", "application/javascript");
+				return makeBasicResponse(
+					url,
+					"console.log('asset-1')",
+					"application/javascript",
+				);
 			}
 			throw new Error(`Unexpected fetch: ${url}`);
 		});
@@ -215,7 +257,10 @@ describe("web-sw-version & sw.js", () => {
 			new Map([
 				[
 					"https://demo.example.test/",
-					makeBasicResponse("https://demo.example.test/", "<html>old-14</html>"),
+					makeBasicResponse(
+						"https://demo.example.test/",
+						"<html>old-14</html>",
+					),
 				],
 			]),
 		);
@@ -256,5 +301,104 @@ describe("web-sw-version & sw.js", () => {
 		});
 		expect(offlineNav).toBeDefined();
 		expect(await offlineNav!.text()).toContain("<body>v2</body>");
+	});
+
+	it("navigates each window client once after deleting stale caches and claiming clients, without repeating", async () => {
+		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
+		const stamped = injectServiceWorkerVersion(swTemplate, "r16-nav-once");
+		const html =
+			'<html><script src="/assets/index-AAAAAAAA.js"></script><body>new</body></html>';
+
+		const env = createFakeSwEnv(
+			stamped,
+			async (url) => {
+				if (url === "https://demo.example.test/") {
+					return makeBasicResponse(url, html, "text/html");
+				}
+				if (url.endsWith("/assets/index-AAAAAAAA.js")) {
+					return makeBasicResponse(
+						url,
+						"console.log('new')",
+						"application/javascript",
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			},
+			{
+				windowUrls: [
+					"https://demo.example.test/",
+					"https://demo.example.test/?view=slides",
+				],
+			},
+		);
+
+		env.stores.set(
+			"naia-shell-v1",
+			new Map([
+				[
+					"https://demo.example.test/",
+					makeBasicResponse("https://demo.example.test/", "<html>r15</html>"),
+				],
+			]),
+		);
+
+		await env.dispatchLifecycle("install");
+		expect(env.skipWaitingCount).toBe(1);
+
+		env.eventsOrder.length = 0;
+		await env.dispatchLifecycle("activate");
+
+		expect(env.deletedKeys).toEqual(["naia-shell-v1"]);
+		expect([...env.stores.keys()]).toEqual(["naia-shell-r16-nav-once"]);
+		expect(env.matchAllCalls).toEqual([{ type: "window" }]);
+		expect(env.navigatedUrls).toEqual([
+			"https://demo.example.test/",
+			"https://demo.example.test/?view=slides",
+		]);
+		expect(env.eventsOrder).toEqual([
+			"delete:naia-shell-v1",
+			"claim",
+			"matchAll:window",
+			"navigate:https://demo.example.test/",
+			"navigate:https://demo.example.test/?view=slides",
+		]);
+
+		// Re-running activate after stale caches were removed must NOT navigate again.
+		await env.dispatchLifecycle("activate");
+		expect(env.navigatedUrls).toHaveLength(2);
+	});
+
+	it("does not navigate window clients on first visit when no stale cache exists", async () => {
+		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
+		const stamped = injectServiceWorkerVersion(swTemplate, "r16-first-visit");
+		const html =
+			'<html><script src="/assets/index-BBBBBBBB.js"></script><body>first</body></html>';
+
+		const env = createFakeSwEnv(
+			stamped,
+			async (url) => {
+				if (url === "https://demo.example.test/") {
+					return makeBasicResponse(url, html, "text/html");
+				}
+				if (url.endsWith("/assets/index-BBBBBBBB.js")) {
+					return makeBasicResponse(
+						url,
+						"console.log('first')",
+						"application/javascript",
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			},
+			{ windowUrls: ["https://demo.example.test/"] },
+		);
+
+		await env.dispatchLifecycle("install");
+		expect(env.skipWaitingCount).toBe(1);
+		expect([...env.stores.keys()]).toEqual(["naia-shell-r16-first-visit"]);
+
+		await env.dispatchLifecycle("activate");
+		expect(env.claimCount).toBe(1);
+		expect(env.deletedKeys).toEqual([]);
+		expect(env.navigatedUrls).toEqual([]);
 	});
 });
