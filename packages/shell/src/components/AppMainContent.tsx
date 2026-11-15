@@ -202,7 +202,6 @@ export function AppMainContent(props: AppMainContentProps) {
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
 	const kioskDemo = isKioskDemo();
-	const [kioskExtNotice, setKioskExtNotice] = useState<string | null>(null);
 	const avatarCornerTrigger = (
 		<button
 			type="button"
@@ -582,41 +581,6 @@ export function AppMainContent(props: AppMainContentProps) {
 								role="group"
 								aria-label="아바타 및 대화창 조절"
 							>
-								{kioskDemo && (
-									<>
-										{kioskExtNotice && (
-											<span
-												className="kiosk-ext-notice"
-												data-testid="kiosk-ext-notice"
-												role="status"
-											>
-												{kioskExtNotice}
-											</span>
-										)}
-										{(
-											[
-												["appstore", "앱스토어", "🛍️"],
-												["skills", "스킬", "🧩"],
-											] as const
-										).map(([id, label, icon]) => (
-											<button
-												key={id}
-												type="button"
-												data-testid={`kiosk-ext-${id}`}
-												className="naia-chat-mode"
-												aria-label={label}
-												title={label}
-												onClick={() =>
-													setKioskExtNotice(
-														`${label}: 현재 앱에서는 되고 웹버전 통합 진행중입니다.`,
-													)
-												}
-											>
-												<span aria-hidden="true">{icon}</span>
-											</button>
-										))}
-									</>
-								)}
 								{avatarCornerOpen && (
 									<div
 										className="naia-avatar-corner-panel"
