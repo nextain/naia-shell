@@ -279,6 +279,7 @@ export async function handleKioskMemoryCommand(
 	return serialized(fs, async () => {
 		const s = await read(fs);
 		if (cmd === "memory_get_all_facts") return s.facts;
+		if (cmd === "memory_pending_count") return 0;
 		if (cmd === "memory_delete_fact") {
 			if (typeof a.factId !== "string") throw new Error("Invalid factId");
 			const deleted = s.facts.find((f) => f.id === a.factId);

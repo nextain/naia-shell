@@ -7,6 +7,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { useSkillsStore } from "../../stores/skills";
 
 const mockRefresh = vi.fn();
@@ -76,6 +77,8 @@ describe("SkillsTab checkbox model", () => {
 		mockIsGestureDisabled.mockReset();
 		mockIsGestureDisabled.mockReturnValue(false);
 		useSkillsStore.setState(useSkillsStore.getInitialState());
+		setWebAssetsModeForTests(null);
+		vi.unstubAllEnvs();
 		localStorage.clear();
 	});
 
@@ -127,5 +130,60 @@ describe("SkillsTab checkbox model", () => {
 		);
 		await waitFor(() => screen.getByTestId("gesture-enable-youtube"));
 		expect(screen.getByTestId("radio-dj-order")).toBeDefined();
+	});
+
+	it("renders web guidance, weather built-in, Radio DJ child, and integration notice without CLI detection in web mode", () => {
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+
+		render(
+			<SkillsTab>
+				<div data-testid="radio-dj-order">Youtube Radio DJ</div>
+			</SkillsTab>,
+		);
+
+		expect(mockRefresh).not.toHaveBeenCalled();
+		expect(screen.queryByTestId("skills-cli-refresh")).toBeNull();
+		expect(screen.getByTestId("skills-web-notice").textContent).toContain(
+			"향후 앱과 동일하게 지원 예정",
+		);
+		expect(screen.getByText("날씨")).toBeDefined();
+		expect(screen.getByText(/get_weather/)).toBeDefined();
+		expect(document.querySelector('[data-skill-id="knowledge"]')).toBeNull();
+		expect(document.querySelector('[data-skill-id="memory"]')).toBeNull();
+		expect(screen.getByTestId("gesture-enable-youtube")).toBeDefined();
+		expect(screen.getByTestId("radio-dj-order")).toBeDefined();
+		expect(screen.getByTestId("skills-web-unavailable").textContent).toContain(
+			"웹버전 통합 진행중",
+		);
+	});
+
+	it("includes Knowledge and Memory web built-ins alongside Weather and Radio DJ in kiosk demo", () => {
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+
+		render(
+			<SkillsTab>
+				<div data-testid="radio-dj-order">Youtube Radio DJ</div>
+			</SkillsTab>,
+		);
+
+		expect(mockRefresh).not.toHaveBeenCalled();
+		expect(screen.getByTestId("skills-web-notice").textContent).toContain(
+			"향후 앱과 동일하게 지원 예정",
+		);
+		expect(document.querySelector('[data-skill-id="knowledge"]')).not.toBeNull();
+		expect(document.querySelector('[data-skill-id="memory"]')).not.toBeNull();
+		expect(document.querySelector('[data-skill-id="weather"]')).not.toBeNull();
+		expect(screen.getByText(/skill_knowledge_search/)).toBeDefined();
+		expect(screen.getByText(/skill_memory_save/)).toBeDefined();
+		expect(screen.getByText(/get_weather/)).toBeDefined();
+		expect(screen.getByTestId("gesture-enable-youtube")).toBeDefined();
+		expect(screen.getByTestId("radio-dj-order")).toBeDefined();
+		expect(screen.getByTestId("skills-web-unavailable").textContent).toContain(
+			"웹버전 통합 진행중",
+		);
 	});
 });

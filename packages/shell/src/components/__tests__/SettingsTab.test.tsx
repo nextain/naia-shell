@@ -6353,4 +6353,94 @@ describe("web mode backgrounds and NVA (r7)", () => {
 
 		vi.unstubAllEnvs();
 	});
+
+	it("R8: unlocks Memory and Skills tabs in kiosk demo, keeps Radio DJ + web skills without CLI detection, and routes Memory IPCs without read error", async () => {
+		const { routeCommand, resetWarnedCommands } = await import(
+			"../../lib/web-runtime/router"
+		);
+		const { createMemoryWebFs, setWebFsForTests } = await import(
+			"../../lib/web-runtime/web-fs"
+		);
+		const { createKioskMemory } = await import("../../lib/kiosk-demo/memory");
+
+		resetWarnedCommands();
+		const fs = createMemoryWebFs();
+		setWebFsForTests(fs);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+
+		try {
+			await createKioskMemory(fs).save(
+				"저는 아이스 아메리카노를 좋아합니다 기억해 줘",
+				"네, 기억해 두겠습니다.",
+			);
+
+			mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+				if (cmd.startsWith("memory_")) {
+					return routeCommand(cmd, args as Record<string, unknown> | undefined);
+				}
+				return [];
+			});
+
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+					apiKey: "",
+				}),
+			);
+
+			render(<SettingsTab />);
+
+			// R8': Memory, Knowledge, and Skills tabs are all present in kiosk demo
+			expect(
+				document.querySelector('[data-settings-tab="memory"]'),
+			).not.toBeNull();
+			expect(
+				document.querySelector('[data-settings-tab="knowledge"]'),
+			).not.toBeNull();
+			expect(
+				document.querySelector('[data-settings-tab="skills"]'),
+			).not.toBeNull();
+
+			// R8'': Skills tab shows web notice, built-in web skills, Radio DJ card, and integration notice without CLI detection
+			gotoSettingsTab("skills");
+			expect(screen.getByTestId("skills-web-notice").textContent).toContain(
+				"향후 앱과 동일하게 지원 예정",
+			);
+			expect(document.querySelector('[data-skill-id="knowledge"]')).not.toBeNull();
+			expect(document.querySelector('[data-skill-id="memory"]')).not.toBeNull();
+			expect(document.querySelector('[data-skill-id="weather"]')).not.toBeNull();
+			expect(screen.getByTestId("gesture-enable-youtube")).toBeInTheDocument();
+			expect(
+				screen.getByTestId("youtube-bgm-skill-settings"),
+			).toBeInTheDocument();
+			expect(screen.getByTestId("skills-web-unavailable").textContent).toContain(
+				"웹버전 통합 진행중",
+			);
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"cli_detect_refresh",
+				expect.anything(),
+			);
+
+			// R8''': Memory tab loads facts & pending count via kiosk router with zero read error
+			gotoSettingsTab("memory");
+			await waitFor(() => {
+				expect(screen.getByTestId("memory-pending")).toHaveTextContent(/0/);
+				expect(screen.getByText(/아이스 아메리카노/)).toBeInTheDocument();
+			});
+			expect(
+				screen.queryByText(/memoryReadFailed|기억을 불러오/),
+			).toBeNull();
+			expect(
+				document.querySelector('input[name="memory-adapter"]'),
+			).not.toBeNull();
+		} finally {
+			setWebFsForTests(null);
+			setWebAssetsModeForTests(null);
+			vi.unstubAllEnvs();
+		}
+	});
 });

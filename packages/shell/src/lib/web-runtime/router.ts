@@ -51,6 +51,7 @@ export async function routeCommand(
 		isKioskDemo() &&
 		[
 			"memory_get_all_facts",
+			"memory_pending_count",
 			"memory_export_backup",
 			"memory_import_backup",
 			"memory_delete_fact",

@@ -197,6 +197,7 @@ describe("S2 kiosk browser memory", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
 		for (const cmd of [
 			"memory_get_all_facts",
+			"memory_pending_count",
 			"memory_export_backup",
 			"memory_import_backup",
 			"memory_delete_fact",
@@ -258,6 +259,14 @@ describe("S2 kiosk browser memory", () => {
 			expect(prompts[1]).toContain("회상된 참고 정보");
 		},
 	);
+
+	it("routes memory_pending_count to 0 in kiosk demo without desktop_only rejection", async () => {
+		const fs = storage().reopen();
+		setWebFsForTests(fs);
+		expect(
+			await routeCommand("memory_pending_count"),
+		).toBe(0);
+	});
 
 	it("desktop mode never enables kiosk even when env flag is 1", () => {
 		vi.stubEnv("MODE", "development");

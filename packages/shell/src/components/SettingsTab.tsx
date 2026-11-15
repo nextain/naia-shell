@@ -2972,6 +2972,7 @@ export function SettingsTab() {
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	useEffect(() => {
+		if (isWebMode() && !isKioskDemo()) return;
 		let alive = true;
 		const refresh = async () => {
 			try {
@@ -4697,7 +4698,7 @@ export function SettingsTab() {
 				>
 					{t("settings.tabPersona")}
 				</button>
-				{import.meta.env.MODE !== "web" && (
+				{(import.meta.env.MODE !== "web" || isKioskDemo()) && (
 					<button
 						type="button"
 						data-settings-tab="memory"
@@ -4717,7 +4718,7 @@ export function SettingsTab() {
 						{t("settings.tabKnowledge")}
 					</button>
 				)}
-				{import.meta.env.MODE !== "web" && (
+				{(import.meta.env.MODE !== "web" || isKioskDemo()) && (
 					<button
 						type="button"
 						data-settings-tab="skills"
