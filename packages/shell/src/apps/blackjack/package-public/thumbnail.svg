@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="블랙잭 수업 / Blackjack Lesson">
+	<title>블랙잭 수업 / Blackjack Lesson</title>
+	<defs>
+		<linearGradient id="bg" x1="0" y1="0" x2="1280" y2="720" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#082217" />
+			<stop offset="0.55" stop-color="#0d3523" />
+			<stop offset="1" stop-color="#071a11" />
+		</linearGradient>
+		<linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0" stop-color="#fcd34d" />
+			<stop offset="1" stop-color="#d97706" />
+		</linearGradient>
+	</defs>
+
+	<rect width="1280" height="720" fill="url(#bg)" />
+	<rect x="36" y="36" width="1208" height="648" rx="28" fill="#0b291b" stroke="#fde68a" stroke-opacity="0.28" stroke-width="3" />
+
+	<!-- Left column: Title and 2 tabs summary -->
+	<g transform="translate(88 96)">
+		<rect width="180" height="42" rx="21" fill="#14532d" stroke="#86efac" stroke-opacity="0.4" />
+		<text x="90" y="28" text-anchor="middle" fill="#bbf7d0" font-family="sans-serif" font-size="20" font-weight="700">21 LESSON</text>
+
+		<text x="0" y="112" fill="#f8fafc" font-family="sans-serif" font-size="56" font-weight="900">블랙잭 수업</text>
+		<text x="0" y="164" fill="#fde68a" font-family="sans-serif" font-size="32" font-weight="700">Blackjack Lesson</text>
+
+		<text x="0" y="232" fill="#cbd5e1" font-family="sans-serif" font-size="24">직접 한 판 해 보고, 다섯 단계 질문과 힌트로</text>
+		<text x="0" y="268" fill="#cbd5e1" font-family="sans-serif" font-size="24">스스로 깨우치며 완성하는 블랙잭 제작 수업</text>
+
+		<g transform="translate(0 320)">
+			<rect width="230" height="64" rx="16" fill="url(#accent)" />
+			<text x="115" y="41" text-anchor="middle" fill="#082217" font-family="sans-serif" font-size="24" font-weight="800">1. 한 판 하기</text>
+
+			<rect x="250" y="0" width="230" height="64" rx="16" fill="#134e35" stroke="#fde68a" stroke-opacity="0.5" stroke-width="2" />
+			<text x="365" y="41" text-anchor="middle" fill="#fef3c7" font-family="sans-serif" font-size="24" font-weight="800">2. 만들어 보기</text>
+		</g>
+
+		<g transform="translate(0 420)" fill="#a7f3d0" font-family="sans-serif" font-size="20" font-weight="600">
+			<text x="0" y="28">• 1단계 규칙 정하기 → 2단계 카드값 계산 → 3단계 딜러 규칙</text>
+			<text x="0" y="64">• 4단계 승패 판정 → 5단계 화면과 단추 (4단계 힌트 사다리)</text>
+		</g>
+	</g>
+
+	<!-- Right column: Table preview card -->
+	<g transform="translate(680 96)">
+		<rect width="504" height="528" rx="24" fill="#071f14" stroke="#34d399" stroke-opacity="0.35" stroke-width="2" />
+
+		<text x="36" y="54" fill="#94a3b8" font-family="sans-serif" font-size="20" font-weight="700">딜러 (Dealer)</text>
+		<!-- Face-down card -->
+		<rect x="36" y="74" width="96" height="136" rx="12" fill="#1e3a8a" stroke="#93c5fd" stroke-width="3" />
+		<text x="84" y="152" text-anchor="middle" fill="#bfdbfe" font-family="sans-serif" font-size="36" font-weight="800">?</text>
+		<!-- Visible dealer card -->
+		<rect x="148" y="74" width="96" height="136" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="3" />
+		<text x="166" y="110" fill="#0f172a" font-family="sans-serif" font-size="24" font-weight="800">7♠</text>
+
+		<text x="36" y="264" fill="#fde68a" font-family="sans-serif" font-size="20" font-weight="700">내 패 (Player) — 21</text>
+		<rect x="36" y="284" width="96" height="136" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="3" />
+		<text x="52" y="320" fill="#0f172a" font-family="sans-serif" font-size="24" font-weight="800">A♠</text>
+		<rect x="148" y="284" width="96" height="136" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="3" />
+		<text x="162" y="320" fill="#dc2626" font-family="sans-serif" font-size="24" font-weight="800">10♥</text>
+
+		<!-- Step card preview -->
+		<rect x="36" y="442" width="432" height="58" rx="12" fill="#113826" stroke="#fcd34d" stroke-opacity="0.45" />
+		<text x="56" y="478" fill="#fef3c7" font-family="sans-serif" font-size="20" font-weight="700">질문 먼저 · 4단계 힌트 보기</text>
+	</g>
+</svg>

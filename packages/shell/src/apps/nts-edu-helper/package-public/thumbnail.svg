@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="52%" stop-color="#3730a3"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1120" cy="120" r="240" fill="#ffffff" fill-opacity="0.06"/>
+  <circle cx="140" cy="640" r="200" fill="#2dd4bf" fill-opacity="0.08"/>
+  <rect x="72" y="72" width="520" height="576" rx="24" fill="#0f172a" fill-opacity="0.72" stroke="#6366f1" stroke-width="2"/>
+  <rect x="96" y="100" width="472" height="270" rx="14" fill="#f8fafc"/>
+  <rect x="120" y="128" width="160" height="22" rx="11" fill="#e0e7ff"/>
+  <rect x="120" y="168" width="380" height="28" rx="6" fill="#1e293b"/>
+  <rect x="120" y="212" width="320" height="18" rx="5" fill="#64748b"/>
+  <rect x="120" y="298" width="140" height="38" rx="10" fill="#4f46e5"/>
+  <rect x="276" y="298" width="140" height="38" rx="10" fill="#0f766e"/>
+  <text x="120" y="424" fill="#e2e8f0" font-family="sans-serif" font-size="26" font-weight="700">7 Sessions · 97 Lecture Slides</text>
+  <text x="120" y="464" fill="#94a3b8" font-family="sans-serif" font-size="20">Naia Voice Presenter + OpenCode Scenes</text>
+  <rect x="120" y="510" width="220" height="50" rx="12" fill="url(#accent)"/>
+  <text x="150" y="542" fill="#042f2e" font-family="sans-serif" font-size="20" font-weight="800">Voice Lecture</text>
+  <rect x="632" y="72" width="576" height="576" rx="24" fill="#ffffff" fill-opacity="0.96"/>
+  <text x="672" y="132" fill="#4338ca" font-family="sans-serif" font-size="22" font-weight="800">PUBLIC-SECTOR AX PLANNING STUDIO v0.2.0</text>
+  <text x="672" y="186" fill="#0f172a" font-family="sans-serif" font-size="40" font-weight="800">공공 AX기획 강의 스튜디오</text>
+  <rect x="672" y="220" width="496" height="92" rx="14" fill="#eef2ff" stroke="#c7d2fe" stroke-width="2"/>
+  <text x="696" y="258" fill="#312e81" font-family="sans-serif" font-size="22" font-weight="700">Stage 1 · 문제정의서 &amp; 공공 AI 6대 체크리스트</text>
+  <text x="696" y="290" fill="#475569" font-family="sans-serif" font-size="18">개인정보 · 보안 · 오류·출처 · 책임 · 사람 개입 · 공정성</text>
+  <rect x="672" y="330" width="496" height="92" rx="14" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="2"/>
+  <text x="696" y="368" fill="#065f46" font-family="sans-serif" font-size="22" font-weight="700">Stage 2 · 상위기획 · 화면기획 2장 맞춤형 작성</text>
+  <text x="696" y="400" fill="#475569" font-family="sans-serif" font-size="18">출처 표기 · [[확인 필요]] 분리 · 사람 승인 지점 명시</text>
+  <rect x="672" y="440" width="496" height="106" rx="14" fill="#fff7ed" stroke="#fed7aa" stroke-width="2"/>
+  <text x="696" y="478" fill="#9a3412" font-family="sans-serif" font-size="22" font-weight="700">Stage 3 · 인터랙티브 HTML 와이어프레임 즉시 생성</text>
+  <text x="696" y="512" fill="#475569" font-family="sans-serif" font-size="18">①~⑦ 화면 프리뷰 · 승인/반려 감사 로그 · 로컬 프로젝트 연동</text>
+</svg>

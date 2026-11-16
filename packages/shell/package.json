@@ -9,6 +9,8 @@
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "build:slides": "vite build --config vite.slides.config.ts",
     "build:charcard": "vite build --config vite.charcard.config.ts",
+    "build:blackjack": "vite build --config vite.blackjack.config.ts",
+    "build:nts-edu-helper": "vite build --config vite.nts-edu-helper.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "node scripts/dev-setup.mjs && node scripts/tauri-with-mode.mjs dev",

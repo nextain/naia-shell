@@ -1,0 +1,56 @@
+{
+	"id": "land.naia.nts-edu-helper",
+	"manifest_version": 2,
+	"name": "Public-Sector AX Planning Studio (NTS)",
+	"names": {
+		"ko": "공공 AX기획 강의(국세청)",
+		"en": "Public-Sector AX Planning Studio (NTS)"
+	},
+	"version": "0.2.0",
+	"icon": "🏛️",
+	"iconUrl": "icon.svg",
+	"permissions": ["speech", "model.ask", "locale", "clipboard.write"],
+	"description": "Unified 7-session (97-slide) public-sector AX planning lecture & workbook studio: listen to Naia's voice presenter, draft your agency's 2-page AI service plan and 6-point checklist, and generate an interactive HTML wireframe.",
+	"descriptions": {
+		"ko": "국세청 7교시(97장) 공공 AX기획 강의 슬라이드와 나이아 음성 발표를 들으면서, 바로 옆 실습장에서 내 기관의 문제정의서·공공 AI 체크리스트·2장 서비스 기획서·인터랙티브 HTML 화면 시안을 완성하는 일체형 AX 기획 스튜디오입니다.",
+		"en": "Unified 7-session (97-slide) public-sector AX planning studio: follow the National Tax Service lecture slides with Naia voice narration while drafting your agency's problem statement, 6-category Public AI Checklist, 2-page service plan, and live HTML wireframe."
+	},
+	"help": {
+		"ko": "왼쪽에서 1~7교시 97장 슬라이드와 나이아 음성 강의를 듣고, 오른쪽 3단계 실습장에서 내 기관·대상 업무를 골라 ① 문제정의서·공공 AI 체크리스트 → ② 상위기획·화면기획 → ③ HTML 화면 와이어프레임 시안을 생성·편집·내려받기 또는 로컬 OpenCode 프로젝트로 세팅하세요.",
+		"en": "Browse the 97 slides across 7 sessions with Naia voice narration on the left, and use the 3-stage workbook on the right to draft (1) Problem Statement & Public AI Checklist, (2) Product & Screen Plans, and (3) a live interactive HTML wireframe ready for download or local OpenCode project provisioning."
+	},
+	"context": "사용자가 공공 AX기획 강의 일체형 실습 스튜디오(7교시 97장 슬라이드 + 3단계 공공 AI 서비스 기획·화면 와이어프레임 생성기)를 실습 중입니다. 모든 제안에서 근거 출처 표기, [[확인 필요]] 분리, 사람 승인 지점 원칙을 지켜 도와주세요.",
+	"keepAlive": true,
+	"tools": [
+		{
+			"name": "skill_ax_lecture_studio",
+			"description": "공공 AX기획 강의 스튜디오의 현재 슬라이드(1~97장)·교시·3단계 기획 실습장(문제정의서·체크리스트·상위/화면기획·HTML 와이어프레임)을 조회하고 제어하는 도구입니다. action: status(현재 슬라이드·실습 상태 조회), goto_slide(1~97 슬라이드 이동), get_workbook(작성 중인 기획서 전체 조회), update_workbook(기관·업무·기획 항목 갱신), generate_wireframe(현재 기획서로 인터랙티브 HTML 화면 시안 생성).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"status",
+							"goto_slide",
+							"get_workbook",
+							"update_workbook",
+							"generate_wireframe"
+						],
+						"description": "수행할 동작: status, goto_slide, get_workbook, update_workbook, generate_wireframe"
+					},
+					"slide": {
+						"type": "number",
+						"description": "이동할 슬라이드 번호 (1~97 정수, goto_slide일 때 사용)"
+					},
+					"patch": {
+						"type": "object",
+						"description": "갱신할 기획서 필드 (agencyName, serviceName, targetUser, sourceDocs, bottleneckRisk, approvalStopRule, purpose, aiRole, humanRole, approvalGate, screenAreas)"
+					}
+				},
+				"required": ["action"]
+			},
+			"tier": 0
+		}
+	]
+}

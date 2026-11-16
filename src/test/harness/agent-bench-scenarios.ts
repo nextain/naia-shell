@@ -194,6 +194,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-FIX-024-",
   // 앱 전체 글자 크기 설정(2026-11-05). 화면 표현 설정이다.
   "UC-UI-FONT-SCALE-20261105",
+  // 일체형 교육 실습 스튜디오 미니앱 2종 및 로컬 스타터 프로젝트 브리지(#871). 앱 표면·교육 콘텐츠 기능이다.
+  "UC-COURSEWARE-STUDIO-871",
 ];
 
 export function ownedByEpic(uc: string): boolean {

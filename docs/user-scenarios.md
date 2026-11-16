@@ -2706,3 +2706,22 @@ Test Coverage Map (P02)
 | UC-UI-FONT-SCALE-20261105 | 설정 › 일반 라디오 그룹·키보드 이동·즉시 저장(`naia-config`) | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — UI font scale (UC-UI-FONT-SCALE-20261105) | `packages/shell/e2e/ui-font-scale.spec.ts` — 작게 선택 후 저장값·CSS 변수 |
 | UC-UI-FONT-SCALE-20261105 | `ui-config.json` 왕복·agent config 제외 | `packages/shell/src/lib/__tests__/adk-store.test.ts` — writes ALL UI settings | — |
 | UC-UI-FONT-SCALE-20261105 | BGM 앱 패널 위치가 화면 안(가장 큰 배율·좁은 창), 상단 막대·설정 탭 줄 겹침 없음 | `packages/shell/src/lib/__tests__/bgm-app-position.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 1280/1920 폭 아주 크게 배치 |
+
+### UC-COURSEWARE-STUDIO-871 — 나이아 블랙잭 0.3.0 · 공공 AX기획 강의 0.2.0 일체형 실습 스튜디오와 로컬 프로젝트 브리지 (#871)
+
+학습자·수강생은 설치된 교육 스튜디오 미니앱 두 종(`land.naia.blackjack` `v0.3.0`, `land.naia.nts-edu-helper` `v0.2.0`)을 열어 한 화면 안에서 이론·음성 강의(`naia-app:speak`), 나이아 맞춤형 질문·생성(`naia-app:ask`), 실시간 결과물 검증(CodeMirror 6 코드 자동 채점 및 실전 블랙잭 테이블 / 3단계 공공 AX 기획서 및 인터랙티브 HTML 와이어프레임 프리뷰), 그리고 선택된 ADK 작업 공간 하위 `{adk}/projects/{project_slug}` 로컬 실습 프로젝트 세팅·동기화(`naia-courseware:*`)까지 끊김 없이 완주한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 블랙잭 스튜디오는 1~5단계 미션·소크라테스 질문·CodeMirror 6 `blackjack-rules.js` 스타터 코드·실시간 테이블·자동 채점기를 표시한다. 공공 AX 스튜디오는 7교시 97장 슬라이드(`#naia-asset-anchor` 상대 자산 해석)와 3단계 기획 실습장(국세청 기준 예시 기본 선택)을 나란히 표시한다. |
+| 빈 목록 | 아직 열지 않은 힌트 목록이나 아직 승인하지 않은 와이어프레임 감사 기록 표는 명확한 안내 문구를 표시하고 조작 단추를 활성화한다. |
+| 진행 | 음성 듣기 중에는 중지 단추가 켜지고, 나이아 튜터 질문·초안 생성 중에는 진행 문구로 중복 제출을 막는다. 블랙잭 플레이어 차례에는 딜러 첫 카드와 합계를 화면·문맥·도구(`skill_blackjack_tutor`) 모두에서 숨긴다. |
+| 성공 | 블랙잭 코드를 고쳐 실행하면 5단계(16개 단위 검증) 통과 배지와 실전 테이블 동작이 즉시 갱신된다. 공공 AX 기획서 Stage 1·2를 채우고 Stage 3 화면 시안 생성을 누르면 ①~⑦ 영역과 승인·반려 감사 기록이 동작하는 `04-화면.html`이 즉시 생성되며 이전 시안으로 1클릭 되돌리기가 가능하다. 로컬 프로젝트 세팅은 `{adk}/projects/{project_slug}`에 기존 편집본을 보존(`overwrite=false`)하거나 동기화하고 프로젝트 앱으로 바로 전환한다. |
+| 오류 | 문법·런타임 오류가 있는 학습자 코드에서도 테이블은 안전 폴백 규칙으로 멈추지 않고 안내 배너를 띄운다. 경로 탈출(`../`)·허용되지 않은 슬러그·심볼릭 링크·ADK 미설정은 거부하고 닫기 단추가 있는 오류 알림과 단독 브라우저용 파일 내려받기 대안을 제공한다. |
+| 좁은 폭 | 390px 좁은 폭에서는 상단 패널 전환 탭으로 가로 넘침 없이 모든 단계·편집기·테이블·슬라이드·와이어프레임을 키보드로 조작한다. 입력칸 포커스 중에는 슬라이드 좌우 화살표 단축키가 글자 커서를 방해하지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 시험 | 컴포넌트·호스트 브리지 통합 시험 |
+|---|---|---|
+| UC-COURSEWARE-STUDIO-871 | `packages/shell/src-tauri/src/courseware_starter.rs`: 슬러그·상대 경로 탈출(`../`)·심볼릭 링크 거절, `overwrite=false` 보존·`overwrite=true` 갱신·읽기 왕복; `packages/shell/src/apps/blackjack/__tests__/domain-grader.test.ts`: 5단계 16개 자동 채점·문법 오류 폴백·실전 판 진행; `packages/shell/src/apps/blackjack/__tests__/tools.test.ts`: `skill_blackjack_tutor` 딜러 덮인 첫 카드 비노출·단계 이동·힌트·채점; `packages/shell/src/apps/nts-edu-helper/__tests__/workbook-wireframe.test.ts`: `#naia-asset-anchor` 슬라이드 주소 계산·2장 마크다운 합성·XSS 이스케이프된 ①~⑦ 와이어프레임 생성; `packages/shell/src/apps/nts-edu-helper/__tests__/tools.test.ts`: `skill_ax_lecture_studio` 슬라이드·기획서·와이어프레임 도구 계약 | `packages/shell/src/apps/generic-installed/__tests__/courseware-host-bridge.test.ts`: 허용 앱 ID·출처·프레임 검증, 로컬 프로젝트 세팅·동기화·읽기·프로젝트 앱 전환 및 `GenericInstalledApp` 동적 로드; `packages/shell/src/apps/blackjack/__tests__/BlackjackStudioApp.test.tsx`: CodeMirror 6·힌트 사다리·음성/질문·5/5 채점·딜러 카드 숨김·로컬 동기화·한/영 전환; `packages/shell/src/apps/nts-edu-helper/__tests__/AxLectureStudioApp.test.tsx`: 97장 슬라이드·오픈코드 필터·연속 낭독·Stage 1~3 AI 생성·되돌리기·로컬 패키지 세팅 |

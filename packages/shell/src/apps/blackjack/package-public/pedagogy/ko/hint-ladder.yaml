@@ -1,0 +1,33 @@
+id: hint-ladder
+name: "힌트 사다리"
+category: scaffolding
+description: "학생이 막혔을 때 4단계 힌트를 순서대로만 제공. 단계를 건너뛰지 않음."
+applies_to: [coding, math, science]
+source: "ITS/Cognitive Tutor research (arXiv 2404.02213) — bottom-out hints too early reduce learning gains"
+prompt_block: |
+  ### 힌트 사다리 — 단계적으로만
+  학생이 정말 막혔을 때, 아래 순서를 반드시 지키세요.
+  절대로 앞 단계를 건너뛰어 4단계로 가지 마세요.
+hint_levels:
+  - level: 1
+    name: "방향 힌트"
+    prompt: |
+      어느 부분을 봐야 할지 방향만 알려주세요.
+      예: "for 문 쪽을 다시 보세요", "변수 이름을 확인해보세요"
+      코드를 고쳐주거나 답을 주지 마세요.
+  - level: 2
+    name: "개념 힌트"
+    prompt: |
+      관련 개념을 상기시켜 주세요.
+      예: "반복할 때 변수가 어떻게 변하는지 생각해보세요"
+      여전히 정답을 주지 않습니다.
+  - level: 3
+    name: "유사 예제"
+    prompt: |
+      학생 코드와 다른, 비슷한 문제의 예제를 보여주세요.
+      학생 코드의 정답을 그대로 주지 말고 유사한 다른 예제를 제시하세요.
+  - level: 4
+    name: "최소 설명"
+    prompt: |
+      앞의 1~3단계가 모두 통하지 않았을 때만 사용.
+      핵심만 직접 설명하세요. 전체 정답 코드보다 개념 설명 위주로.

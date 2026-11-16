@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="블랙잭 수업 / Blackjack Lesson">
+	<title>블랙잭 수업 / Blackjack Lesson</title>
+	<defs>
+		<linearGradient id="tableBg" x1="40" y1="24" x2="472" y2="488" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#0f3d28" />
+			<stop offset="0.55" stop-color="#0b2e1f" />
+			<stop offset="1" stop-color="#071e14" />
+		</linearGradient>
+		<linearGradient id="goldBorder" x1="80" y1="80" x2="432" y2="432" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#fde68a" />
+			<stop offset="1" stop-color="#d97706" />
+		</linearGradient>
+	</defs>
+	<rect width="512" height="512" rx="112" fill="url(#tableBg)" />
+	<rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="url(#goldBorder)" stroke-width="6" stroke-opacity="0.55" />
+
+	<!-- Back card (King of Hearts / 10) -->
+	<g transform="translate(132 108) rotate(-11 90 130)">
+		<rect width="180" height="256" rx="22" fill="#f8fafc" stroke="#cbd5e1" stroke-width="5" />
+		<text x="24" y="52" fill="#dc2626" font-family="sans-serif" font-size="36" font-weight="800">10</text>
+		<path d="M90 112 C90 96 66 88 56 102 C46 116 58 134 90 158 C122 134 134 116 124 102 C114 88 90 96 90 112 Z" fill="#dc2626" />
+	</g>
+
+	<!-- Front card (Ace of Spades) -->
+	<g transform="translate(208 128) rotate(9 90 130)">
+		<rect width="180" height="256" rx="22" fill="#ffffff" stroke="#e2e8f0" stroke-width="5" />
+		<text x="24" y="54" fill="#0f172a" font-family="sans-serif" font-size="38" font-weight="800">A</text>
+		<path d="M90 88 C68 118 52 134 52 152 C52 167 64 176 77 174 C83 173 87 169 89 165 L82 192 L98 192 L91 165 C93 169 97 173 103 174 C116 176 128 167 128 152 C128 134 112 118 90 88 Z" fill="#0f172a" />
+	</g>
+
+	<!-- 21 Lesson badge -->
+	<rect x="156" y="388" width="200" height="58" rx="29" fill="#f59e0b" />
+	<text x="256" y="427" text-anchor="middle" fill="#0b2e1f" font-family="sans-serif" font-size="32" font-weight="900">21 ? STEP</text>
+</svg>

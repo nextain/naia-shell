@@ -7,6 +7,7 @@ import {
 } from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 import { normalizeTauriAssetUrl } from "../../lib/asset-url";
+import { Logger } from "../../lib/logger";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
@@ -74,6 +75,44 @@ export function createGenericInstalledApp(
 				disposeContextBridge();
 			};
 		}, [htmlEntry, frameSrc, appId, permissions]);
+
+		useEffect(() => {
+			if (
+				!iframeRef.current ||
+				!htmlEntry ||
+				!frameSrc ||
+				(appId !== "land.naia.blackjack" &&
+					appId !== "land.naia.nts-edu-helper")
+			) {
+				return;
+			}
+			const frame = iframeRef.current;
+			let disposed = false;
+			let disposeCoursewareBridge: (() => void) | undefined;
+			void import("./courseware-host-bridge")
+				.then(({ installCoursewareHostBridge }) => {
+					if (disposed) return;
+					disposeCoursewareBridge = installCoursewareHostBridge(
+						frame,
+						frameSrc,
+						appId,
+					);
+				})
+				.catch((error) => {
+					Logger.warn(
+						"GenericInstalledApp",
+						"failed to load courseware host bridge",
+						{
+							appId,
+							error: String(error),
+						},
+					);
+				});
+			return () => {
+				disposed = true;
+				disposeCoursewareBridge?.();
+			};
+		}, [htmlEntry, frameSrc, appId]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {
