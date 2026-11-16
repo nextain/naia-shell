@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Merge the following permissions and deep-link `<intent-filter>` entries into
+  `android/app/src/main/AndroidManifest.xml` after running `npx cap add android`.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+	<!-- Network, Microphone, Audio Routing, Push Notifications, and Background Voice Session -->
+	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="android.permission.RECORD_AUDIO" />
+	<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+	<uses-permission android:name="android.permission.WAKE_LOCK" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+	<uses-permission android:name="com.android.vending.BILLING" />
+
+	<application>
+		<activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
+			<!-- Custom Scheme Deep Link: naia://chat, naia://onboarding, naia://auth -->
+			<intent-filter>
+				<action android:name="android.intent.action.VIEW" />
+				<category android:name="android.intent.category.DEFAULT" />
+				<category android:name="android.intent.category.BROWSABLE" />
+				<data android:scheme="naia" />
+			</intent-filter>
+
+			<!-- Verified Android App Links for Naia Radio / Web-to-App Deferred Onboarding -->
+			<intent-filter android:autoVerify="true">
+				<action android:name="android.intent.action.VIEW" />
+				<category android:name="android.intent.category.DEFAULT" />
+				<category android:name="android.intent.category.BROWSABLE" />
+				<data android:scheme="https" android:host="www.naia.land" android:pathPrefix="/s/" />
+			</intent-filter>
+		</activity>
+	</application>
+</manifest>
