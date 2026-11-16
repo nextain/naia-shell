@@ -16,6 +16,7 @@ import {
 import {
 	isStackedAlphaClipUrl,
 	isStackedAlphaVideoElement,
+	isWebKitWithoutVp9Alpha,
 	markVideoStackedAlpha,
 	shouldUseStackedAlpha,
 } from "./nva-stacked-alpha";
@@ -388,18 +389,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 			try {
 				if (loop) {
-					const onAsyncMediaError = () => {
-						if (this.video === video && !this.disposed) {
-							this.reportPlaybackFailure(
-								video.error?.message || `Media decode error (${effectivePath})`,
-							);
-						}
-					};
-					video.addEventListener("error", onAsyncMediaError, { once: true });
-					this.cancelLoopErrorWatcher = () => {
-						video.removeEventListener("error", onAsyncMediaError);
-						this.cancelLoopErrorWatcher = null;
-					};
+					if (isWebKitWithoutVp9Alpha()) {
+						const onAsyncMediaError = () => {
+							if (this.video === video && !this.disposed) {
+								this.reportPlaybackFailure(
+									video.error?.message ||
+										`Media decode error (${effectivePath})`,
+								);
+							}
+						};
+						video.addEventListener("error", onAsyncMediaError, { once: true });
+						this.cancelLoopErrorWatcher = () => {
+							video.removeEventListener("error", onAsyncMediaError);
+							this.cancelLoopErrorWatcher = null;
+						};
+					}
 					await video.play();
 					return;
 				}
