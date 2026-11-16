@@ -13,6 +13,7 @@ import {
 	saveConfig,
 } from "../lib/config";
 import { t } from "../lib/i18n";
+import { formatShortcutTextForPlatform } from "../lib/platform-shortcuts";
 import {
 	UI_PREFERENCE_KEYS,
 	patchUiPreferences,
@@ -151,6 +152,10 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 		</>
 	);
 
+	const interferenceLabel = formatShortcutTextForPlatform(
+		aiInterferenceEnabled ? t("ai.interferenceOn") : t("ai.interferenceOff"),
+	);
+
 	return (
 		<div className="ai-control-bar">
 			<button
@@ -158,17 +163,9 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
 				data-usage-event="ai-control-bar.toggle-ai-interference-enabled-1.click"
 				onClick={toggleAiInterferenceEnabled}
-				aria-label={
-					aiInterferenceEnabled
-						? t("ai.interferenceOn")
-						: t("ai.interferenceOff")
-				}
+				aria-label={interferenceLabel}
 				aria-pressed={aiInterferenceEnabled}
-				title={
-					aiInterferenceEnabled
-						? t("ai.interferenceOn")
-						: t("ai.interferenceOff")
-				}
+				title={interferenceLabel}
 			>
 				<svg
 					className="bgm-ai-toggle__icon"
@@ -261,7 +258,8 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 						? t("broadcast.keyRequiredHint")
 						: t("broadcast.btnLabel")
 				}
-				data-usage-event="ai-control-bar.main-merge-1.click" onClick={() => {
+				data-usage-event="ai-control-bar.main-merge-1.click"
+				onClick={() => {
 					void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
 						toggleBroadcast().catch(() => {}),
 					);
@@ -294,7 +292,8 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 				title={t("ai.avatarControls")}
 				aria-expanded={controlsExpanded}
 				aria-controls="avatar-camera-controls"
-				data-usage-event="ai-control-bar.main-merge-2.click" onClick={() =>
+				data-usage-event="ai-control-bar.main-merge-2.click"
+				onClick={() =>
 					void patchUiPreferences({
 						[UI_PREFERENCE_KEYS.avatarControlsExpanded]: !controlsExpanded,
 					})

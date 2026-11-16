@@ -1,14 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { getAdkPath, toLocalBlobUrl } from "../lib/adk-store";
+import { getAdkPath, readLocalBlob, toLocalBlobUrl } from "../lib/adk-store";
 import {
 	clearCameraActions,
 	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
 import {
+	createDesktopNvaAssetBlobLoader,
 	isStackedAlphaClipUrl,
 	isWebKitWithoutVp9Alpha,
+	probeBundledPublicNvaUrl,
 	resolveNvaClipCandidates,
 	shouldUseStackedAlpha,
 } from "../lib/avatar/nva-stacked-alpha";
@@ -71,32 +73,6 @@ function base64ToBlobUrl(base64: string, mimeType: string): string {
 		bytes[i] = raw.charCodeAt(i);
 	}
 	return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-}
-
-async function tryProbeBundledPublicClipUrl(
-	bundleName: string,
-	relativePath: string,
-): Promise<string | null> {
-	if (
-		!bundleName ||
-		!/^[a-z0-9-]+$/i.test(bundleName) ||
-		typeof fetch !== "function"
-	) {
-		return null;
-	}
-	const cleanRel = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
-	if (!cleanRel || cleanRel.includes("..")) return null;
-	const publicUrl = `/nva/${bundleName}/${cleanRel}`;
-	try {
-		const res = await fetch(publicUrl, { method: "HEAD" });
-		if (!res.ok) return null;
-		const contentType = (res.headers?.get("content-type") ?? "").toLowerCase();
-		// Reject Vite/SPA index.html fallback responses when the file does not exist.
-		if (contentType.includes("text/html")) return null;
-		return publicUrl;
-	} catch {
-		return null;
-	}
 }
 
 /** GPU 없는 pre-baked NVA player. retired server-side avatar/cascade를 시작하지 않는다. */
@@ -247,7 +223,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		const preferStacked = shouldUseStackedAlpha();
 		const webmUnsupported = isWebKitWithoutVp9Alpha();
 
-		const resolveDirectLocalUrl = async (relativePath: string): Promise<string> => {
+		const resolveDirectLocalUrl = async (
+			relativePath: string,
+		): Promise<string> => {
 			const cached = urls.get(relativePath);
 			if (cached) return cached;
 			const url = await toLocalBlobUrl(
@@ -278,7 +256,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					// Not in ADK workspace; probe bundled public fallback next.
 				}
 			}
-			const bundledUrl = await tryProbeBundledPublicClipUrl(
+			const bundledUrl = await probeBundledPublicNvaUrl(
 				bundleName,
 				relativePath,
 			);
@@ -289,10 +267,20 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			return null;
 		};
 
+		const loadAssetBlob = createDesktopNvaAssetBlobLoader({
+			manifest,
+			bundleName,
+			readLocalAssetBlob: (relativePath) =>
+				readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath), adkPath),
+			preferStackedAlpha: preferStacked,
+			webmUnsupported,
+		});
+
 		const renderer = new PrebakedAvatarRenderer({
 			manifest,
 			locale: getLocale(),
 			resolveAssetUrl: resolveDirectLocalUrl,
+			loadAssetBlob,
 			resolveClipCandidates: async (
 				relativePath: string,
 			): Promise<ResolvedNvaClipSource[]> => {

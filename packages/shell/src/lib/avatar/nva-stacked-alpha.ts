@@ -35,7 +35,10 @@ function defaultSearch(): string {
 
 function defaultUserAgent(): string {
 	try {
-		if (typeof navigator !== "undefined" && typeof navigator.userAgent === "string") {
+		if (
+			typeof navigator !== "undefined" &&
+			typeof navigator.userAgent === "string"
+		) {
 			return navigator.userAgent;
 		}
 	} catch {
@@ -120,7 +123,9 @@ export function isStackedAlphaVideoElement(
 	) {
 		return true;
 	}
-	return isStackedAlphaClipUrl(fallbackUrlOrPath || video.dataset.naiaClipUrl || video.src || "");
+	return isStackedAlphaClipUrl(
+		fallbackUrlOrPath || video.dataset.naiaClipUrl || video.src || "",
+	);
 }
 
 /**
@@ -191,4 +196,214 @@ export function resolveNvaClipCandidates(
 	}
 
 	return candidates;
+}
+
+/**
+ * Resolves the chroma-key color for a resolved clip source:
+ * - `stacked_alpha` clips carry an explicit bottom-half alpha plane -> `undefined`
+ * - non-stacked `.webm` clips carry native VP9 alpha unless `manifest.chroma_key` is set
+ * - non-stacked `.mp4` / other opaque containers use `manifest.chroma_key ?? manifest.background?.color`
+ */
+export function resolveNvaClipKeyColor(
+	manifest: NvaManifest,
+	effectivePath: string,
+	stackedAlpha: boolean,
+): string | undefined {
+	if (stackedAlpha) return undefined;
+	return (
+		manifest.chroma_key ??
+		(/\.webm$/i.test(effectivePath) ? undefined : manifest.background?.color)
+	);
+}
+
+function normalizeBundledPublicNvaUrl(
+	bundleName: string,
+	relativePath: string,
+): string | null {
+	if (!bundleName || !/^[a-z0-9-]+$/i.test(bundleName)) return null;
+	const cleanRel = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+	if (!cleanRel || cleanRel.split("/").some((part) => part === "..")) {
+		return null;
+	}
+	return `/nva/${bundleName}/${cleanRel}`;
+}
+
+/**
+ * Probes whether `/nva/<bundleName>/<relativePath>` is shipped in desktop
+ * `public/nva`, rejecting SPA `index.html` fallback responses.
+ */
+export async function probeBundledPublicNvaUrl(
+	bundleName: string,
+	relativePath: string,
+	fetchImpl: typeof fetch | undefined = typeof fetch === "function"
+		? fetch
+		: undefined,
+): Promise<string | null> {
+	const publicUrl = normalizeBundledPublicNvaUrl(bundleName, relativePath);
+	if (!publicUrl || !fetchImpl) return null;
+	try {
+		const res = await fetchImpl(publicUrl, { method: "HEAD" });
+		if (!res.ok) return null;
+		const contentType = (res.headers?.get("content-type") ?? "").toLowerCase();
+		if (contentType.includes("text/html")) return null;
+		return publicUrl;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Reads `/nva/<bundleName>/<relativePath>` as a `Blob` when bundled in desktop
+ * `public/nva`, rejecting SPA `index.html` fallback responses.
+ */
+export async function fetchBundledPublicNvaBlob(
+	bundleName: string,
+	relativePath: string,
+	fetchImpl: typeof fetch | undefined = typeof fetch === "function"
+		? fetch
+		: undefined,
+): Promise<Blob | null> {
+	const publicUrl = normalizeBundledPublicNvaUrl(bundleName, relativePath);
+	if (!publicUrl || !fetchImpl) return null;
+	try {
+		const res = await fetchImpl(publicUrl);
+		if (!res.ok) return null;
+		const contentType = (res.headers?.get("content-type") ?? "").toLowerCase();
+		if (contentType.includes("text/html")) return null;
+		return await res.blob();
+	} catch {
+		return null;
+	}
+}
+
+export interface DesktopNvaResolvedAssetBlob {
+	blob: Blob;
+	resolvedPath: string;
+	stackedAlpha: boolean;
+	keyColor?: string;
+	source: "adk" | "bundled";
+}
+
+export interface DesktopNvaAssetLoaderOptions {
+	manifest: NvaManifest;
+	bundleName: string;
+	/** Reads a relative path inside the ADK NVA bundle directory as a `Blob`. */
+	readLocalAssetBlob: (relativePath: string) => Promise<Blob>;
+	fetchImpl?: typeof fetch;
+	preferStackedAlpha?: boolean;
+	webmUnsupported?: boolean;
+}
+
+function isVideoClipAssetPath(relativePath: string): boolean {
+	return /\.(webm|mp4|mov)$/i.test(relativePath.split(/[?#]/)[0] ?? "");
+}
+
+/**
+ * Resolves a bundle-relative NVA asset as a `Blob` for desktop `PrebakedAvatarRenderer`
+ * and `0.2.6` `CanonicalSpeechStage` (`loadAssetBlob` / `loadAsset`):
+ * - For video clips (e.g. `clips/talking.webm` requested by `CanonicalSpeechStage`),
+ *   evaluates `resolveNvaClipCandidates` so macOS `WKWebView` transparently receives
+ *   the H.264 `.stacked.mp4` (decoded via `CanonicalSpeechStage.isStackedBodyFrame` +
+ *   `NvaStackedAlphaGL`) or chroma-key `.mp4` `Blob` from ADK or bundled `/nva/<bundle>/`.
+ * - For non-video assets (`speech/atlas.bin`, `speech/atlas-index.json`,
+ *   `speech/neutral-head.png`, etc.), reads from ADK first and falls back to bundled
+ *   `/nva/<bundle>/` when missing locally.
+ */
+export async function resolveDesktopNvaAssetBlob(
+	relativePath: string,
+	options: DesktopNvaAssetLoaderOptions,
+): Promise<DesktopNvaResolvedAssetBlob> {
+	const cleanRel = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+	if (!cleanRel || cleanRel.split("/").some((part) => part === "..")) {
+		throw new Error(`Invalid NVA asset path: ${relativePath}`);
+	}
+
+	if (!isVideoClipAssetPath(cleanRel)) {
+		try {
+			const blob = await options.readLocalAssetBlob(cleanRel);
+			return {
+				blob,
+				resolvedPath: cleanRel,
+				stackedAlpha: false,
+				source: "adk",
+			};
+		} catch (localErr) {
+			const bundled = await fetchBundledPublicNvaBlob(
+				options.bundleName,
+				cleanRel,
+				options.fetchImpl,
+			);
+			if (bundled) {
+				return {
+					blob: bundled,
+					resolvedPath: cleanRel,
+					stackedAlpha: false,
+					source: "bundled",
+				};
+			}
+			throw localErr;
+		}
+	}
+
+	const preferStackedAlpha =
+		options.preferStackedAlpha ?? shouldUseStackedAlpha();
+	const webmUnsupported = options.webmUnsupported ?? isWebKitWithoutVp9Alpha();
+	const candidates = resolveNvaClipCandidates(options.manifest, cleanRel, {
+		preferStackedAlpha,
+		webmUnsupported,
+	});
+
+	let lastError: unknown = new Error(`NVA clip asset unavailable: ${cleanRel}`);
+	for (const candidate of candidates) {
+		try {
+			const blob = await options.readLocalAssetBlob(candidate.path);
+			return {
+				blob,
+				resolvedPath: candidate.path,
+				stackedAlpha: candidate.stackedAlpha,
+				keyColor: resolveNvaClipKeyColor(
+					options.manifest,
+					candidate.path,
+					candidate.stackedAlpha,
+				),
+				source: "adk",
+			};
+		} catch (err) {
+			lastError = err;
+		}
+
+		const bundled = await fetchBundledPublicNvaBlob(
+			options.bundleName,
+			candidate.path,
+			options.fetchImpl,
+		);
+		if (bundled) {
+			return {
+				blob: bundled,
+				resolvedPath: candidate.path,
+				stackedAlpha: candidate.stackedAlpha,
+				keyColor: resolveNvaClipKeyColor(
+					options.manifest,
+					candidate.path,
+					candidate.stackedAlpha,
+				),
+				source: "bundled",
+			};
+		}
+	}
+
+	throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+/**
+ * Convenience adapter matching `PrebakedAvatarRenderer` `loadAssetBlob` /
+ * `CanonicalSpeechStage` `loadAsset: (path: string) => Promise<Blob>`.
+ */
+export function createDesktopNvaAssetBlobLoader(
+	options: DesktopNvaAssetLoaderOptions,
+): (relativePath: string) => Promise<Blob> {
+	return async (relativePath: string) => {
+		const resolved = await resolveDesktopNvaAssetBlob(relativePath, options);
+		return resolved.blob;
+	};
 }

@@ -20,13 +20,10 @@ export function shouldIncludeDesktopPublicAsset(
 		if (isDirectory) {
 			return segments.length <= 3;
 		}
-		if (
-			normalized.endsWith("/manifest.json") ||
-			normalized === "nva/manifest.json"
-		) {
+		if (/\.json$/i.test(normalized)) {
 			return true;
 		}
-		if (/\.stacked\.mp4$/i.test(normalized)) {
+		if (/\.mp4$/i.test(normalized)) {
 			return true;
 		}
 		if (/\/(idle\.webp|neutral-head\.png)$/i.test(normalized)) {

@@ -975,7 +975,11 @@ export function App() {
 				e.preventDefault();
 				toggleNaia();
 			}
-			if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "a") {
+			if (
+				(e.ctrlKey || e.metaKey) &&
+				e.altKey &&
+				(e.code === "KeyA" || e.key.toLowerCase() === "a")
+			) {
 				e.preventDefault();
 				toggleAiInterferenceEnabled();
 			}

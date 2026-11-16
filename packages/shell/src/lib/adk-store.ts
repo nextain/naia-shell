@@ -162,16 +162,45 @@ const LOCAL_MIME_TYPES: Record<string, string> = {
 	wav: "audio/wav",
 	aac: "audio/aac",
 	flac: "audio/flac",
+	m4a: "audio/mp4",
 	png: "image/png",
 	jpg: "image/jpeg",
 	jpeg: "image/jpeg",
 	webp: "image/webp",
 	gif: "image/gif",
+	bmp: "image/bmp",
+	avif: "image/avif",
 	mp4: "video/mp4",
 	webm: "video/webm",
 	mov: "video/quicktime",
 };
 const BLOB_URL_EXTS = new Set(Object.keys(LOCAL_MIME_TYPES));
+const EXTRA_BLOB_MIME_TYPES: Record<string, string> = {
+	json: "application/json",
+	bin: "application/octet-stream",
+};
+
+/**
+ * Read a local bundle/workspace file via Rust as a typed `Blob` (base64 IPC).
+ * Used directly by desktop NVA / `CanonicalSpeechStage` `loadAssetBlob` and by
+ * `toLocalBlobUrl`.
+ */
+export async function readLocalBlob(
+	filePath: string,
+	allowedBase = getAdkPath() ?? "",
+): Promise<Blob> {
+	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	const mimeType = LOCAL_MIME_TYPES[ext] ?? EXTRA_BLOB_MIME_TYPES[ext] ?? "";
+	// Rust returns base64 to avoid JSON number-array OOM (14 MB file → ~200 MB JS heap).
+	const b64 = await invoke<string>("read_local_binary", {
+		path: filePath,
+		allowedBase,
+	});
+	const raw = atob(b64);
+	const bytes = new Uint8Array(raw.length);
+	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+	return new Blob([bytes], { type: mimeType });
+}
 
 /**
  * Read a local file via Rust and return a blob: URL.
@@ -184,17 +213,8 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 		// Video or unknown — asset URL (may fail on Windows, no workaround without streaming)
 		return convertFileSrc(filePath);
 	}
-	const mimeType = LOCAL_MIME_TYPES[ext];
 	try {
-		// Rust returns base64 to avoid JSON number-array OOM (14 MB file → ~200 MB JS heap).
-		const b64 = await invoke<string>("read_local_binary", {
-			path: filePath,
-			allowedBase: getAdkPath() ?? "",
-		});
-		const raw = atob(b64);
-		const bytes = new Uint8Array(raw.length);
-		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-		const blob = new Blob([bytes], { type: mimeType });
+		const blob = await readLocalBlob(filePath);
 		return URL.createObjectURL(blob);
 	} catch {
 		return convertFileSrc(filePath);
