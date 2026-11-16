@@ -239,6 +239,31 @@ where
     None
 }
 
+fn split_any_sep_parent_and_name(raw: &str) -> Option<(&str, &str)> {
+    let trimmed = raw.trim_end_matches(['\\', '/']);
+    let idx = trimmed.rfind(['\\', '/'])?;
+    let parent = if idx == 0 {
+        &trimmed[..1]
+    } else {
+        &trimmed[..idx]
+    };
+    let name = &trimmed[idx + 1..];
+    if name.is_empty() {
+        return None;
+    }
+    Some((parent, name))
+}
+
+fn join_matching_sep(base: &str, segments: &[&str]) -> String {
+    let sep = if base.contains('\\') { '\\' } else { '/' };
+    let mut out = base.trim_end_matches(['\\', '/']).to_string();
+    for seg in segments {
+        out.push(sep);
+        out.push_str(seg);
+    }
+    out
+}
+
 /// Build the stdio MCP launch command matching `pblsketch/ieumoffice/packages/cli/src/mcp-launch.ts`.
 ///
 /// On Windows packaged installs (`IeumOffice.exe` + `resources/cli/genoffice.cjs`),
@@ -253,37 +278,33 @@ where
     F: FnMut(&Path) -> bool,
 {
     if os == "windows" {
-        let file_name = detected
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if file_name == "ieumoffice.exe" {
-            if let Some(install_dir) = detected.parent() {
-                let bundle = install_dir.join("resources").join("cli").join("genoffice.cjs");
-                if file_exists(&bundle) {
+        let detected_raw = detected.to_string_lossy();
+        if let Some((parent_dir, raw_name)) = split_any_sep_parent_and_name(&detected_raw) {
+            if raw_name.eq_ignore_ascii_case("ieumoffice.exe") {
+                let bundle = join_matching_sep(parent_dir, &["resources", "cli", "genoffice.cjs"]);
+                if file_exists(Path::new(&bundle)) {
                     let mut env = BTreeMap::new();
                     env.insert("ELECTRON_RUN_AS_NODE".to_string(), "1".to_string());
                     return IeumOfficeMcpLaunch {
-                        command: detected.to_string_lossy().into_owned(),
-                        args: vec![bundle.to_string_lossy().into_owned(), "mcp".to_string()],
+                        command: detected_raw.into_owned(),
+                        args: vec![bundle, "mcp".to_string()],
                         env,
                     };
                 }
-            }
-        } else if let Some(cli_dir) = detected.parent() {
-            // `<InstallDir>/resources/cli/ieumoffice.cmd`
-            if let Some(install_dir) = cli_dir.parent().and_then(Path::parent) {
-                let app_exe = install_dir.join("IeumOffice.exe");
-                let bundle = cli_dir.join("genoffice.cjs");
-                if file_exists(&app_exe) && file_exists(&bundle) {
-                    let mut env = BTreeMap::new();
-                    env.insert("ELECTRON_RUN_AS_NODE".to_string(), "1".to_string());
-                    return IeumOfficeMcpLaunch {
-                        command: app_exe.to_string_lossy().into_owned(),
-                        args: vec![bundle.to_string_lossy().into_owned(), "mcp".to_string()],
-                        env,
-                    };
+            } else if let Some((resources_dir, _)) = split_any_sep_parent_and_name(parent_dir) {
+                // `<InstallDir>/resources/cli/ieumoffice.cmd`
+                if let Some((install_dir, _)) = split_any_sep_parent_and_name(resources_dir) {
+                    let app_exe = join_matching_sep(install_dir, &["IeumOffice.exe"]);
+                    let bundle = join_matching_sep(parent_dir, &["genoffice.cjs"]);
+                    if file_exists(Path::new(&app_exe)) && file_exists(Path::new(&bundle)) {
+                        let mut env = BTreeMap::new();
+                        env.insert("ELECTRON_RUN_AS_NODE".to_string(), "1".to_string());
+                        return IeumOfficeMcpLaunch {
+                            command: app_exe,
+                            args: vec![bundle, "mcp".to_string()],
+                            env,
+                        };
+                    }
                 }
             }
         }
@@ -591,18 +612,17 @@ pub fn compute_agent_mcp_spawn_env(status: &IeumOfficeStatus) -> Option<AgentMcp
 
     // Fallback when installation directory contains spaces: expose binary parent via PATH if args are space-free.
     if launch.args.iter().all(|a| !has_ws(a)) {
-        let cmd_path = Path::new(&launch.command);
-        let file_name = cmd_path.file_name()?.to_str()?;
-        if !has_ws(file_name) {
-            let parent = cmd_path.parent()?.to_path_buf();
-            let mut parts = vec![file_name.to_string()];
-            parts.extend(launch.args.iter().cloned());
-            return Some(AgentMcpSpawnEnv {
-                mcp_name: IEUMOFFICE_MCP_SERVER_NAME.to_string(),
-                mcp_cmd: parts.join(" "),
-                extra_path_dir: Some(parent),
-                electron_run_as_node,
-            });
+        if let Some((parent, file_name)) = split_any_sep_parent_and_name(&launch.command) {
+            if !has_ws(file_name) {
+                let mut parts = vec![file_name.to_string()];
+                parts.extend(launch.args.iter().cloned());
+                return Some(AgentMcpSpawnEnv {
+                    mcp_name: IEUMOFFICE_MCP_SERVER_NAME.to_string(),
+                    mcp_cmd: parts.join(" "),
+                    extra_path_dir: Some(PathBuf::from(parent)),
+                    electron_run_as_node,
+                });
+            }
         }
     }
 
@@ -730,6 +750,22 @@ mod tests {
         assert_eq!(launch.args.len(), 2);
         assert!(launch.args[0].ends_with("genoffice.cjs"));
         assert_eq!(launch.args[1], "mcp");
+
+        let cmd_wrapper =
+            PathBuf::from(r"C:\Program Files\IeumOffice\resources\cli\ieumoffice.cmd");
+        let cmd_launch = build_mcp_launch_with(&cmd_wrapper, "windows", |p| {
+            let norm = p.to_string_lossy().replace('\\', "/");
+            norm.ends_with("IeumOffice/IeumOffice.exe")
+                || norm.ends_with("IeumOffice/resources/cli/genoffice.cjs")
+        });
+        assert_eq!(
+            cmd_launch.env.get("ELECTRON_RUN_AS_NODE").map(String::as_str),
+            Some("1")
+        );
+        assert!(cmd_launch.command.ends_with("IeumOffice.exe"));
+        assert_eq!(cmd_launch.args.len(), 2);
+        assert!(cmd_launch.args[0].ends_with("genoffice.cjs"));
+        assert_eq!(cmd_launch.args[1], "mcp");
     }
 
     #[test]
