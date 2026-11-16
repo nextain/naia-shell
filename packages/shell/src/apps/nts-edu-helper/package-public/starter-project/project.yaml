@@ -1,0 +1,7 @@
+version: 1
+project:
+  id: nts-ax-planning-studio
+  name: 공공 AX기획 실습 패키지
+  coding_app: opencode
+  docs_dirs:
+    - templates

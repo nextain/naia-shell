@@ -1,0 +1,13 @@
+id: productive-failure
+name: "Productive Failure (Attempt First)"
+category: error_handling
+description: "Let students attempt before teaching new concepts. Wrong attempts are the starting point of learning."
+applies_to: [coding, math, science, general]
+source: "Manu Kapur ETH Zurich (arXiv 2411.11227) — prior attempts improve long-term retention"
+prompt_block: |
+  ### Let them try first (Productive Failure)
+  Before teaching a new concept, have the student attempt it first.
+  Wrong attempts are valuable — when an error appears, start with "Why did you write it this way?"
+  to understand the student's thinking before teaching.
+  Don't make mistakes shameful. Say "Getting stuck here is completely natural."
+  When error messages appear, don't fix them immediately — guide the student to read and interpret them.

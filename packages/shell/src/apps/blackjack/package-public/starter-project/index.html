@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>나이아 블랙잭 로컬 테스트 테이블</title>
+  <style>
+    body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; background: #0b1720; color: #f1f5f9; }
+    .card-box { max-width: 720px; margin: 0 auto; background: #13293d; border-radius: 16px; padding: 20px; border: 1px solid #25445e; }
+    button { font: inherit; font-weight: 700; padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer; margin-right: 8px; background: #10b981; color: #052e16; }
+    pre { background: #09131c; padding: 14px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="card-box">
+    <h1>🃏 나이아 블랙잭 로컬 실행 확인</h1>
+    <p><code>blackjack-rules.js</code>를 수정한 뒤 새로고침하거나 아래 단추를 눌러 결과를 확인하세요.</p>
+    <button type="button" id="run">규칙 점검 실행</button>
+    <pre id="out">준비됨</pre>
+  </div>
+  <script src="./blackjack-rules.js"></script>
+  <script>
+    document.getElementById("run").onclick = function () {
+      var r = window.BlackjackRules;
+      var deck = r.createDeck();
+      var aceHand = r.handValue([{ suit: "♠", rank: "A" }, { suit: "♥", rank: "9" }, { suit: "♦", rank: "5" }]);
+      var out = [
+        "1) createDeck 장수: " + (Array.isArray(deck) ? deck.length : "오류") + "장 (목표: 52장)",
+        "2) handValue([A, 9, 5]): " + aceHand + "점 (목표: 15점)",
+        "3) shouldDealerHit([10, 6]): " + r.shouldDealerHit([{ suit: "♠", rank: "10" }, { suit: "♥", rank: "6" }]) + " (목표: true)",
+        "4) judgeOutcome([A, K], [10, 9]): " + r.judgeOutcome([{ suit: "♠", rank: "A" }, { suit: "♥", rank: "K" }], [{ suit: "♣", rank: "10" }, { suit: "♦", rank: "9" }]) + " (목표: blackjack)",
+        "5) settleChips(100, 'blackjack'): " + r.settleChips(100, "blackjack") + "칩 (목표: 250칩)"
+      ];
+      document.getElementById("out").textContent = out.join("\n");
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+{
+	"id": "land.naia.blackjack",
+	"manifest_version": 2,
+	"name": "Naia Blackjack",
+	"names": {
+		"ko": "나이아 블랙잭",
+		"en": "Naia Blackjack"
+	},
+	"version": "0.3.0",
+	"icon": "🃏",
+	"iconUrl": "icon.svg",
+	"permissions": ["speech", "model.ask", "locale", "clipboard.write"],
+	"description": "Interactive Blackjack coding studio: write JavaScript rules in CodeMirror, grade 5 mission steps automatically, play your live table, and learn with Naia's Socratic voice and tutor.",
+	"descriptions": {
+		"ko": "한 화면에서 5단계 블랙잭 규칙을 직접 코딩하고 자동 채점으로 점검하며, 내가 짠 코드가 즉시 돌아가는 실전 카드 테이블과 나이아의 소크라테스식 음성·질문 튜터로 배우는 일체형 실습 스튜디오입니다.",
+		"en": "Unified interactive Blackjack coding studio: edit JavaScript rules in CodeMirror, verify 5 mission steps with the auto-grader, play your live card table immediately, and learn with Naia's Socratic voice and tutor."
+	},
+	"help": {
+		"ko": "왼쪽에서 1~5단계 미션과 3단계 힌트 사다리·나이아 질문하기를 활용하고, 가운데 코드 편집기에서 blackjack-rules.js를 고친 뒤 코드 실행 & 자동 채점을 누르세요. 오른쪽 테이블에서 내 코드로 바로 블랙잭 한 판을 즐기거나 로컬 실습 프로젝트로 내보내 OpenCode와 이어서 실습할 수 있습니다.",
+		"en": "Explore Steps 1-5, the 3-level Hint Ladder, and Ask Naia on the left, edit blackjack-rules.js in the center CodeMirror editor, click Run & Auto-Grade, and test your code on the live Blackjack table on the right or provision a local project for OpenCode."
+	},
+	"context": "사용자가 나이아 블랙잭 일체형 실습 스튜디오(5단계 JS 코딩·자동채점·실전 테이블)를 실습 중입니다. 정답 코드를 바로 주지 말고 질문 먼저(소크라테스식), 힌트는 한 단계씩 열어 스스로 원리를 깨닫게 이끌어 주세요.",
+	"keepAlive": true,
+	"tools": [
+		{
+			"name": "skill_blackjack_tutor",
+			"description": "나이아 블랙잭 실습 스튜디오의 현재 판 상태·5단계 미션·자동 채점 결과를 다루는 소크라테스식 튜터 도구입니다. 정답을 바로 주지 말고 질문으로 먼저 이끌며, 플레이어 차례 동안 덮인 딜러 첫 카드는 절대 노출하지 않습니다. action: status(판 상태·현재 단계·통과 단계 조회), lesson(현재 단계 질문·미션 조회), goto(1~5 단계 이동), hint(현재 단계 다음 힌트 한 단계 열기), grade(현재 에디터 코드 자동 채점 실행).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": ["status", "lesson", "goto", "hint", "grade"],
+						"description": "수행할 동작: status(상태 조회), lesson(단계 설명), goto(1~5 단계 이동), hint(다음 힌트 열기), grade(코드 자동 채점)"
+					},
+					"step": {
+						"type": "number",
+						"description": "이동할 단계 번호 (1~5 정수, action이 goto일 때 사용)"
+					}
+				},
+				"required": ["action"]
+			},
+			"tier": 0
+		}
+	]
+}

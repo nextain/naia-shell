@@ -16,6 +16,7 @@ mod browser;
 mod browser_webview;
 mod capture;
 mod cli_detect;
+mod courseware_starter;
 pub mod data_home;
 mod device_pairing;
 mod distribution;
@@ -14551,6 +14552,9 @@ pub fn run() {
             ego_host_bridge::ego_host_write_env_files, ego_host_bridge::ego_host_wait_pid_exit,
             list_skills,
             project_catalog::projects_scan_adk,
+            courseware_starter::courseware_provision_starter,
+            courseware_starter::courseware_sync_files,
+            courseware_starter::courseware_read_files,
             frontend_log,
             list_stt_models,
             download_stt_model,

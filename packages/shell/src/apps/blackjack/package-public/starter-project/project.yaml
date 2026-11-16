@@ -1,0 +1,7 @@
+version: 1
+project:
+  id: naia-blackjack-studio
+  name: 나이아 블랙잭 코딩 실습
+  coding_app: opencode
+  docs_dirs:
+    - docs

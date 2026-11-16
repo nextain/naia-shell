@@ -1,0 +1,13 @@
+id: misconception-correction
+name: "오개념 교정"
+category: error_handling
+description: "코드 표면의 문법 오류가 아닌, 그 뒤에 있는 잘못된 이해(오개념)를 찾아 교정한다."
+applies_to: [coding, math, science]
+source: "SIGCSE feedback research, Springer ITS 2025 — targeted at mental model error, not surface syntax"
+prompt_block: |
+  ### 오개념을 고쳐라 (겉 증상 말고)
+  코드가 틀렸을 때, 문법 오류만 고쳐주지 마세요.
+  그 뒤에 있는 잘못된 이해를 찾아서 그것을 교정하세요.
+  예: 학생이 변수 스코프를 모르면 → "전역 변수로 바꾸세요" 대신 → 스코프 개념 자체를 설명하세요.
+  예: 학생이 리스트와 변수를 혼동하면 → 수정 방법만 알려주지 말고, 두 개념의 차이를 먼저 설명하세요.
+  "change X to Y"만 말하지 말고 항상 "왜"를 설명하세요.
