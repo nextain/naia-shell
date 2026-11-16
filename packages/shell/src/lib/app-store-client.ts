@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getPlatformAppStoreAdapter } from "./app-store-adapter";
 import { LAB_GATEWAY_URL } from "./config";
+import { isWebMode } from "./web-runtime/web-assets";
 
 export interface AppInstallRequest {
 	appId: string;
@@ -9,7 +11,10 @@ export interface AppInstallRequest {
 }
 
 function httpGatewayUrl(raw: string): string {
-	return raw.replace(/^ws:/, "http:").replace(/^wss:/, "https:").replace(/\/+$/, "");
+	return raw
+		.replace(/^ws:/, "http:")
+		.replace(/^wss:/, "https:")
+		.replace(/\/+$/, "");
 }
 
 export function getStoreGatewayUrl(): string {
@@ -24,7 +29,13 @@ export function getStoreGatewayUrl(): string {
 }
 
 export function hasStoreEntitlement(appId: string): Promise<boolean> {
-	return invoke<boolean>("app_store_has_entitlement", { appId, gatewayUrl: getStoreGatewayUrl() });
+	if (isWebMode()) {
+		return getPlatformAppStoreAdapter().checkEntitlement(appId);
+	}
+	return invoke<boolean>("app_store_has_entitlement", {
+		appId,
+		gatewayUrl: getStoreGatewayUrl(),
+	});
 }
 
 interface StoreProductsResponse {
@@ -34,10 +45,17 @@ interface StoreProductsResponse {
 	}>;
 }
 
-export async function getStoreProductName(appId: string): Promise<string | null> {
+export async function getStoreProductName(
+	appId: string,
+): Promise<string | null> {
 	const response = await fetch(`${getStoreGatewayUrl()}/v1/apps/products`);
 	if (!response.ok) return null;
 	const body = (await response.json()) as StoreProductsResponse;
 	const product = body.data?.find((item) => item.app_id === appId);
-	return product?.manifest?.nameKo || product?.manifest?.name || product?.manifest?.nameEn || null;
+	return (
+		product?.manifest?.nameKo ||
+		product?.manifest?.name ||
+		product?.manifest?.nameEn ||
+		null
+	);
 }

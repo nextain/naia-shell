@@ -17,7 +17,7 @@ import { isWebMode } from "./web-assets";
 export const WEB_OAUTH_STATE_STORAGE_KEY = "naia-web-oauth-state";
 export const WEB_REMOTE_KEY_STORAGE_KEY = "naia-remote-key";
 export const WEB_REMOTE_USER_ID_STORAGE_KEY = "naia-remote-user-id";
-export const DEFAULT_WEB_LOGIN_BASE_URL = "https://dev.naia.land";
+export const DEFAULT_WEB_LOGIN_BASE_URL = "https://naia.land";
 
 let webLoginRequiredOverride: boolean | null = null;
 
@@ -27,15 +27,22 @@ export function setWebLoginRequiredForTests(value: boolean | null): void {
 }
 
 /**
- * 웹판 로그인 기준 주소. 기본값은 개발 서버(`https://dev.naia.land`)이며
- * `VITE_NAIA_WEB_LOGIN_BASE` 빌드 변수로 덮어쓸 수 있다.
+ * 웹판 로그인 기준 주소.
+ * 우선순위: `envOverride` → `VITE_NAIA_WEB_LOGIN_BASE` → `VITE_NAIA_WEB_BASE_URL` → 정식 서비스 기본값(`https://naia.land`).
  */
 export function getWebLoginBaseUrl(envOverride?: string): string {
-	const raw =
-		envOverride ??
-		(import.meta.env.VITE_NAIA_WEB_LOGIN_BASE as string | undefined);
-	const trimmed = raw?.trim().replace(/\/+$/, "");
-	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_WEB_LOGIN_BASE_URL;
+	const candidates = [
+		envOverride,
+		import.meta.env.VITE_NAIA_WEB_LOGIN_BASE as string | undefined,
+		import.meta.env.VITE_NAIA_WEB_BASE_URL as string | undefined,
+	];
+	for (const candidate of candidates) {
+		const trimmed = candidate?.trim().replace(/\/+$/, "");
+		if (trimmed && trimmed.length > 0) {
+			return trimmed;
+		}
+	}
+	return DEFAULT_WEB_LOGIN_BASE_URL;
 }
 
 /**
@@ -151,6 +158,71 @@ export function startWebLoginRedirect(opts?: {
 	return built;
 }
 
+export interface CompleteWebNaiaLoginOptions {
+	/**
+	 * 서버 OAuth 콜백(`onboarding_complete` / `new_user`)이나 호출자가 명시한 온보딩 완료 여부.
+	 * 생략되면 기존 사용자 설정 및 키오스크 모드를 바탕으로 판정한다.
+	 */
+	onboardingComplete?: boolean;
+}
+
+function parseCallbackBooleanFlag(raw: string): boolean | undefined {
+	const normalized = raw.trim().toLowerCase();
+	if (normalized === "1" || normalized === "true") return true;
+	if (normalized === "0" || normalized === "false") return false;
+	return undefined;
+}
+
+/**
+ * 정식 웹 로그인 완료 시 `onboardingComplete` 값을 결정한다.
+ * - 키오스크 시연(`isKioskDemo()`)에서는 항상 `true`를 유지한다.
+ * - 서버/호출자가 `onboardingComplete` 불리언을 명시하면 그 값을 따른다.
+ * - 동일 사용자가 재로그인했고, 미로그인 초기 OPFS 자동 시드(`webAutoDefaultModel && !naiaUserId && !userName`)가 아닌
+ *   실제 사용자 설정(`onboardingComplete: boolean`)이 이미 저장되어 있으면 그 값을 보존한다.
+ * - 그 외 신규 가입자 첫 로그인 또는 다른 계정으로 전환된 경우에는 `false`를 반환해 정식 웹 온보딩 플로우로 진입시킨다.
+ */
+export function resolveWebLoginOnboardingComplete(input: {
+	existing?: {
+		onboardingComplete?: boolean;
+		naiaUserId?: string;
+		userName?: string;
+		webAutoDefaultModel?: boolean;
+	} | null;
+	previousUserId?: string;
+	nextUserId?: string;
+	explicitOnboardingComplete?: boolean;
+}): boolean {
+	if (isKioskDemo()) {
+		return true;
+	}
+	if (typeof input.explicitOnboardingComplete === "boolean") {
+		return input.explicitOnboardingComplete;
+	}
+	const existing = input.existing;
+	const effectivePrevUser =
+		input.previousUserId?.trim() || existing?.naiaUserId?.trim() || undefined;
+	const effectiveNextUser = input.nextUserId?.trim() || undefined;
+	const switchedAccount = Boolean(
+		effectivePrevUser &&
+			effectiveNextUser &&
+			effectivePrevUser !== effectiveNextUser,
+	);
+	if (switchedAccount) {
+		return false;
+	}
+	if (typeof existing?.onboardingComplete === "boolean") {
+		const isUnauthenticatedAutoSeed =
+			existing.onboardingComplete === true &&
+			existing.webAutoDefaultModel === true &&
+			!existing.naiaUserId &&
+			!existing.userName;
+		if (!isUnauthenticatedAutoSeed) {
+			return existing.onboardingComplete;
+		}
+	}
+	return false;
+}
+
 /**
  * 데스크톱 `AdkSetupScreen.tsx` / `OnboardingWizard.tsx` 와 동일하게
  * `onboarding-core` 의 `onNaiaAuthCallback` 을 거쳐 키를 저장하고 로그인 상태를 확정한다.
@@ -158,6 +230,7 @@ export function startWebLoginRedirect(opts?: {
 export async function completeWebNaiaLogin(
 	naiaKey: string,
 	naiaUserId?: string,
+	opts?: CompleteWebNaiaLoginOptions,
 ): Promise<void> {
 	if (!isValidWebAuthKey(naiaKey)) {
 		throw new Error("invalid_naia_key");
@@ -181,13 +254,19 @@ export async function completeWebNaiaLogin(
 	}
 
 	const existing = loadConfig();
+	const onboardingComplete = resolveWebLoginOnboardingComplete({
+		existing,
+		previousUserId,
+		nextUserId,
+		explicitOnboardingComplete: opts?.onboardingComplete,
+	});
 	saveConfig({
 		provider: existing?.provider || "nextain",
 		model: existing?.model || getDefaultLlmModel("nextain"),
 		apiKey: existing?.apiKey ?? "",
 		...(existing ?? {}),
 		naiaUserId: nextUserId,
-		onboardingComplete: true,
+		onboardingComplete,
 	});
 
 	if (previousUserId !== nextUserId) {
@@ -242,7 +321,14 @@ export async function consumeWebAuthCallbackFromLocation(
 		(currentLoc.hash ?? "").replace(/^#/, ""),
 	);
 	const queryParams = new URLSearchParams(currentLoc.search);
-	const callbackParamNames = ["state", "key", "code", "user_id"] as const;
+	const callbackParamNames = [
+		"state",
+		"key",
+		"code",
+		"user_id",
+		"onboarding_complete",
+		"new_user",
+	] as const;
 	const hasAnyHashParam = callbackParamNames.some((name) =>
 		hashParams.has(name),
 	);
@@ -302,7 +388,19 @@ export async function consumeWebAuthCallbackFromLocation(
 	}
 
 	const userId = getCallbackParam("user_id") || undefined;
-	await completeWebNaiaLogin(rawKey, userId);
+	const explicitOnboardingFlag = parseCallbackBooleanFlag(
+		getCallbackParam("onboarding_complete"),
+	);
+	const explicitNewUserFlag = parseCallbackBooleanFlag(
+		getCallbackParam("new_user"),
+	);
+	const onboardingComplete =
+		explicitOnboardingFlag !== undefined
+			? explicitOnboardingFlag
+			: explicitNewUserFlag !== undefined
+				? !explicitNewUserFlag
+				: undefined;
+	await completeWebNaiaLogin(rawKey, userId, { onboardingComplete });
 	return {
 		handled: true,
 		ok: true,
@@ -388,9 +486,7 @@ export async function verifyKioskDemoWebAuth(opts?: {
 	gatewayUrl?: string;
 	fetchBalance?: (gatewayUrl: string, naiaKey: string) => Promise<unknown>;
 }): Promise<KioskDemoAuthVerification> {
-	const envKey = import.meta.env.VITE_NAIA_KIOSK_DEMO_KEY as
-		| string
-		| undefined;
+	const envKey = import.meta.env.VITE_NAIA_KIOSK_DEMO_KEY as string | undefined;
 	if (envKey !== undefined && !seedKioskDemoWebAuth()) {
 		return { ok: false, reason: "missing-key" };
 	}
