@@ -195,8 +195,9 @@ describe("macOS WKWebView NVA detection and stacked-alpha routing", () => {
 			expect(video.dataset.naiaStackedAlpha).toBe("true");
 		});
 		expect(video.dataset.naiaResolvedPath).toBe("clips/idle.stacked.mp4");
-		expect(rafCallbacks.length).toBeGreaterThan(0);
-		rafCallbacks[0]?.(16);
+		const firstRaf = rafCallbacks.shift();
+		expect(firstRaf).toBeTypeOf("function");
+		firstRaf?.(16);
 
 		expect(drawSpy).toHaveBeenCalledWith(video);
 		// 720 x (2560 / 2 = 1280) fits 720 x 1280 exactly without 2x vertical letterboxing!
