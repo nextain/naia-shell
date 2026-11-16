@@ -529,6 +529,8 @@ export interface AppConfig {
 	voice?: string;
 	/** App IDs that the user has explicitly deleted (build-time apps only). */
 	deletedApps?: string[];
+	/** Store app IDs pinned/installed in Official Web SaaS mode. */
+	installedWebApps?: string[];
 	/** Workspace root directory override. Defaults to the compile-time WORKSPACE_ROOT constant if not set. */
 	workspaceRoot?: string;
 	/** Filename of the selected background video inside naia-settings/background/ */

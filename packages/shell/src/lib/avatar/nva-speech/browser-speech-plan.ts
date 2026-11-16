@@ -11,7 +11,7 @@ import {
 const LOG_NS = "NvaSpeech";
 const CANONICAL_SPEECH_UNITS = new Set<string>(SPEECH_UNITS);
 
-// Moved from naia-land-footer: src/features/studio-v2/live/engine/nva-speech/browser-speech-plan.ts
+// Moved from naia-land-footer src/features/studio-v2/live/engine/nva-speech/browser-speech-plan.ts
 // (naia.land commit 8d5f3725a2facfc9db39212a893f90d389f4ec26).
 
 export interface SpeechPlanUnitsWord {

@@ -253,6 +253,7 @@
         "isWebLoginGateDisabled",
         "isWebLoginRequired",
         "logoutWebSession",
+        "resolveWebLoginOnboardingComplete",
         "seedKioskDemoWebAuth",
         "setWebLoginRequiredForTests",
         "startWebLoginRedirect",
