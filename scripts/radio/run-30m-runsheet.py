@@ -37,16 +37,25 @@ OUT_DIR = os.environ.get("RADIO_OUT_DIR") or (os.path.join(BASE_DIR, "rtmp", "re
 SHOW_TAG = os.environ.get("RADIO_SHOW_TAG") or "show2-20261109"
 RUNSHEET_LOG = f"{OUT_DIR}/radio-{SHOW_TAG}-runsheet.log"
 TRAINING_JSONL = f"{OUT_DIR}/training-{SHOW_TAG}.jsonl"
+SUMMARY_JSON = f"{OUT_DIR}/radio-{SHOW_TAG}-summary.json"
 NODE = os.environ.get("RADIO_NODE") or "node"
 WK_SCRIPT = os.environ.get("RADIO_WK_SCRIPT") or os.path.join(BASE_DIR, "wk.mjs")
 SEND_SCRIPT = os.environ.get("RADIO_SEND_SCRIPT") or os.path.join(BASE_DIR, "jun-send-nz.sh")
 BGM_DIR = os.environ.get("RADIO_BGM_DIR") or os.path.join(BASE_DIR, "home", "naia-adk", "naia-settings", "bgm-musics")
 PULSE_UID = os.environ.get("RADIO_PULSE_UID") or str(os.getuid())
+RUNSHEET_MODE = (os.environ.get("RADIO_RUNSHEET_MODE") or "v1").strip().lower()
+MUSIC_MODE = (
+    os.environ.get("RADIO_MUSIC_MODE") or ("none" if RUNSHEET_MODE == "v2" else "full")
+).strip().lower()
 SONG_FILES = (
     "naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
     "naia-radio-its-okay-to-turn-off-the-light-en.mp3",
     "Afternoon Whispers.mp3",
     "Shattered Reflection.mp3",
+)
+INTERNAL_SONG_FILES = (
+    "naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
+    "naia-radio-its-okay-to-turn-off-the-light-en.mp3",
 )
 
 # Token budget constants for vLLM max_model_len=8192
@@ -275,9 +284,22 @@ def set_bgm_volume(vol):
     log(f"BGM volume set to {vol} (actual={out})")
 
 
+def required_song_files(music_mode: str = None):
+    mode = (music_mode if music_mode is not None else MUSIC_MODE).strip().lower()
+    if mode == "none":
+        return ()
+    if mode == "internal-ko-en":
+        return INTERNAL_SONG_FILES
+    return SONG_FILES
+
+
 def preflight(which_fn=shutil.which, exists_fn=os.path.isfile):
     """Return a list of missing dependencies (empty when the runner can start)."""
     missing = []
+    if RUNSHEET_MODE not in ("v1", "v2"):
+        missing.append(f"invalid RADIO_RUNSHEET_MODE: {RUNSHEET_MODE} (expected v1 or v2)")
+    if MUSIC_MODE not in ("none", "internal-ko-en", "full"):
+        missing.append(f"invalid RADIO_MUSIC_MODE: {MUSIC_MODE} (expected none, internal-ko-en, or full)")
     if not BASE_DIR:
         missing.append("RADIO_BASE_DIR is not set")
     if not which_fn(NODE):
@@ -289,7 +311,7 @@ def preflight(which_fn=shutil.which, exists_fn=os.path.isfile):
             missing.append(f"file not found: {path}")
     if exists_fn(SEND_SCRIPT) and not os.access(SEND_SCRIPT, os.X_OK):
         missing.append(f"not executable: {SEND_SCRIPT}")
-    for name in SONG_FILES:
+    for name in required_song_files():
         path = os.path.join(BGM_DIR, name)
         if not exists_fn(path):
             missing.append(f"song not found: {path}")
@@ -645,12 +667,467 @@ def check_health(tag):
     log(f"HEALTH [{tag}]: http400={http400} nva_timeouts={timeouts} startup_fallbacks={fallbacks} state={a_state}")
 
 
+V2_HOST_BRIDGE_LINES = (
+    "다음 이야기도 함께 나눠 볼게요.",
+    "잠시 뒤에 다음 이야기를 들려드릴게요.",
+)
+
+V2_FOLLOWUP_PROMPTS = (
+    "방금 이야기에서 가장 마음에 남는 말을 하나 골라 짧게 답해 줘.",
+    "같은 이야기를 듣는 사람에게 따뜻한 말 한마디를 더 건네줘.",
+    "오늘 나눈 이야기와 어울리는 짧은 질문을 하나 해 줘. 없는 사연은 만들지 마.",
+)
+
+# 30 1-minute slots from docs/common/naia/radio-runsheet-v2-20261114.md:
+# (slot_idx, window_label, situation, trigger, prompt_text, required)
+RUNSHEET_V2_SLOTS = (
+    (
+        0,
+        "00:00–01:00",
+        "오프닝",
+        "00:00 무음 인사",
+        "“안녕하세요, 나이아 라디오예요. 오늘은 3090 안에서 듣는 30분 시험입니다.”라고 인사하고 오늘 나눌 안부와 사연을 짧게 알려 줘.",
+        True,
+    ),
+    (
+        1,
+        "01:00–02:00",
+        "날씨·안부",
+        "01:00 하루 안부",
+        "오늘 하루를 마치거나 아직 일하는 분께 짧게 안부를 물어봐 줘.",
+        False,
+    ),
+    (
+        2,
+        "02:00–03:00",
+        "코너 ① 오늘의 질문",
+        "02:00 오늘의 질문",
+        "오늘의 질문은 “오늘 하루에 잠깐 쉬고 싶었던 순간은 언제였나요?”야. 질문을 하고 한두 문장으로 이야기해 줘.",
+        True,
+    ),
+    (
+        3,
+        "03:00–04:00",
+        "날씨·안부",
+        "03:00 저녁 안부",
+        "날씨는 확인하지 못했어. 날씨를 짐작하지 말고 저녁 안부만 물어봐 줘.",
+        False,
+    ),
+    (
+        4,
+        "04:00–05:00",
+        "코너 ① 오늘의 질문",
+        "04:00 시험 답글",
+        "[시험 답글] 회의가 연달아 끝난 뒤 창밖을 보며 물 한 모금 마시고 싶었어요. 시험 답글이라고 밝히고 짧게 답해 줘.",
+        True,
+    ),
+    (
+        5,
+        "05:00–06:00",
+        "날씨·안부",
+        "05:00 쉬어 가는 이야기",
+        "지금은 노래 대신 쉬어 가는 이야기를 나눌게. 오늘 쉬어도 되는 순간에 대해 두세 문장으로 말해 줘.",
+        False,
+    ),
+    (
+        6,
+        "06:00–07:00",
+        "날씨·안부",
+        "06:00 스스로에게 다정한 말",
+        "잠깐 쉬는 동안 스스로에게 건넬 수 있는 다정한 말을 하나 들려줘.",
+        False,
+    ),
+    (
+        7,
+        "07:00–08:00",
+        "코너 ② 사연",
+        "07:00 시험 사연",
+        "다음은 시험 사연이야. “오늘의 사연을 읽어 볼게요.”라고 시작하고 시험 사연임을 밝혀 줘. [시험 사연] 입사 넉 달째예요. 팀장님이 “이거 인공지능한테 시키면 금방이지?” 하셔서 하루 종일 답을 고치느라 제 일은 못 했어요. 퇴근 지하철에서 이 글을 써요.",
+        True,
+    ),
+    (
+        8,
+        "08:00–09:00",
+        "코너 ② 사연",
+        "08:00 사연 위로",
+        "방금 시험 사연을 듣고 떠오른 위로를 두 문장으로 건네줘.",
+        False,
+    ),
+    (
+        9,
+        "09:00–10:00",
+        "코너 ② 사연",
+        "09:00 답 다시 살피기 공감",
+        "만들어진 답을 사람이 다시 살필 때 어떤 점이 힘들 수 있는지 짧게 이야기해 줘.",
+        False,
+    ),
+    (
+        10,
+        "10:00–11:00",
+        "코너 ② 사연",
+        "10:00 퇴근길 인사",
+        "퇴근길에 잠깐 마음을 놓을 수 있도록 짧게 인사해 줘.",
+        False,
+    ),
+    (
+        11,
+        "11:00–12:00",
+        "코너 ② 사연",
+        "11:00 사연 대목 되짚기",
+        "오늘의 시험 사연에서 기억에 남은 대목 하나를 짚어 줘. 없는 일은 더하지 마.",
+        False,
+    ),
+    (
+        12,
+        "12:00–13:00",
+        "날씨·안부",
+        "12:00 하루 마무리 이야기",
+        "오늘은 두 번째 노래 대신 하루를 마치는 이야기를 더 나눌게. 바쁜 날을 보낸 사람에게 짧게 말을 건네줘.",
+        False,
+    ),
+    (
+        13,
+        "13:00–14:00",
+        "코너 ③ 청취자 채팅",
+        "13:00 시험 글 1",
+        "[시험 글] 집에 가는 길에 아무 생각 없이 앉아 있고 싶어요. 시험 글임을 밝히고 짧게 답해 줘.",
+        True,
+    ),
+    (
+        14,
+        "14:00–15:00",
+        "코너 ③ 청취자 채팅",
+        "14:00 시험 글 2",
+        "[시험 글] 나이아는 어떤 저녁 이야기를 함께 나누고 싶어요? 시험 글임을 밝히고 짧게 답해 줘.",
+        True,
+    ),
+    (
+        15,
+        "15:00–16:00",
+        "코너 ③ 청취자 채팅",
+        "15:00 시험 글 3",
+        "[시험 글] 오늘 시험을 하면서 어떤 이야기가 기억에 남았어요? 시험 글임을 밝히고, 실제 나온 이야기만 말해 줘.",
+        True,
+    ),
+    (
+        16,
+        "16:00–17:00",
+        "코너 ③ 청취자 채팅",
+        "16:00 저녁 이야기",
+        "노래가 없어도 함께 나눌 수 있는 저녁 이야기를 한 가지 꺼내 줘.",
+        False,
+    ),
+    (
+        17,
+        "17:00–18:00",
+        "코너 ③ 청취자 채팅",
+        "17:00 시험 글 되짚기",
+        "지금까지 나온 시험 글 가운데 하나를 골라 짧게 답해 줘. 시험 글임을 다시 밝혀 줘.",
+        False,
+    ),
+    (
+        18,
+        "18:00–19:00",
+        "질문지",
+        "Q1",
+        "이제 기억을 살필게. 실제 기억이 없거나 확실하지 않으면 모른다고 말해 줘. 지난 방송에서 어떤 곡 틀었어?",
+        True,
+    ),
+    (
+        19,
+        "19:00–20:00",
+        "질문지",
+        "Q2",
+        "실제 기억이 없거나 확실하지 않으면 모른다고 말해 줘. 내가 어떤 노래 좋아한다고 했지?",
+        True,
+    ),
+    (
+        20,
+        "20:00–21:00",
+        "질문지",
+        "Q3",
+        "실제 기억이 없거나 확실하지 않으면 모른다고 말해 줘. 지난번에 내가 고쳐 달라고 한 거 기억나?",
+        True,
+    ),
+    (
+        21,
+        "21:00–22:00",
+        "질문지",
+        "Q4",
+        "오늘 방송 어땠어? 지금까지 실제로 나눈 이야기를 바탕으로 한 줄로 말해 줘.",
+        True,
+    ),
+    (
+        22,
+        "22:00–23:00",
+        "질문지",
+        "Q5",
+        "다음 방송에 뭐 틀고 싶어? 실제로 확인된 취향이 없으면 그 점을 밝혀 줘.",
+        True,
+    ),
+    (
+        23,
+        "23:00–24:00",
+        "코너 ② 사연",
+        "23:00 일과 쉼",
+        "오늘 나온 시험 사연을 떠올리며 일과 쉼 사이에 필요한 것을 짧게 말해 줘.",
+        False,
+    ),
+    (
+        24,
+        "24:00–25:00",
+        "코너 ③ 청취자 채팅",
+        "24:00 함께한 감사",
+        "시험에 함께한 분들께 오늘 나눈 이야기 하나를 짚으며 고마움을 전해 줘.",
+        False,
+    ),
+    (
+        25,
+        "25:00–26:00",
+        "날씨·안부",
+        "25:00 편안한 밤 인사",
+        "하루가 끝나 가는 분들께 편안한 밤을 바라는 말을 건네줘.",
+        False,
+    ),
+    (
+        26,
+        "26:00–27:00",
+        "코너 ② 사연",
+        "26:00 시험 사연 한 문장",
+        "오늘의 시험 사연을 꾸며 내지 말고 한 문장으로 되짚어 줘.",
+        False,
+    ),
+    (
+        27,
+        "27:00–28:00",
+        "default",
+        "27:00 마무리 예고",
+        "오늘 함께 나눈 안부를 짧게 되돌아보고 곧 마친다고 알려 줘.",
+        False,
+    ),
+    (
+        28,
+        "28:00–29:00",
+        "클로징",
+        "28:00 클로징 및 크레딧",
+        "오늘 실제 나온 이야기 하나에 짧게 반응하고 “첫 시험 방송에 함께해 주셔서 고맙습니다. 나이아 라디오였습니다.”라고 인사해 줘. 이어서 “투자 및 승인 넥스테인·루크, 피디 알파, 작가 지나, 방송 진행 나이아, 기술 지원 민호.”라고 읽어 줘.",
+        True,
+    ),
+    (
+        29,
+        "29:00–30:00",
+        "클로징",
+        "29:00 음성 끝인사",
+        "함께해 줘서 고마워요. 모두 편안히 쉬세요. 안녕히 계세요. 이 뜻으로 짧게 끝인사해 줘.",
+        False,
+    ),
+)
+
+
+def _persist_summary(summary: dict):
+    if not OUT_DIR:
+        return
+    summary_path = f"{OUT_DIR}/radio-{SHOW_TAG}-summary.json"
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+    except Exception:
+        pass
+
+
+def run_broadcast_v2():
+    """
+    Run the 30-slot v2 internal rehearsal runsheet (docs/common/naia/radio-runsheet-v2-20261114.md).
+    - Default music_mode='none': silent opening, BGM volume 0.0, talk-only 30 slots, voice closing.
+    - Optional music_mode='internal-ko-en': plays the two Nextain original tracks at 05:00 and 12:00.
+    - Dispatches the next cue (or a non-repeating follow-up when ahead of schedule) immediately
+      after speech ends without a fixed 5-second sleep.
+    """
+    global START_TS
+    START_TS = int(os.environ.get("RADIO_START_TS") or time.time())
+    effective_music = (MUSIC_MODE or "none").strip().lower()
+    sliding_new_chat = os.environ.get("RADIO_V2_SLIDING_NEW_CHAT", "0").strip().lower() in ("1", "true", "yes")
+    initial_new_chat = os.environ.get("RADIO_V2_INITIAL_NEW_CHAT", "0").strip().lower() in ("1", "true", "yes")
+    hw = HISTORY_WINDOW if sliding_new_chat else SlidingHistoryWindow(
+        max_input_tokens=100_000,
+        overhead_tokens=0,
+        max_turns=10_000,
+    )
+
+    log(f"=== Runsheet runner v2 (30-slot talk runsheet, music_mode={effective_music}) started ===")
+    set_bgm_volume(0.0 if effective_music == "none" else 0.25)
+    check_health("v2-start")
+
+    song_outcomes = []
+    chat_outcomes = []
+    followup_cursor = 0
+    skipped_slots = []
+
+    def run_song(mp3_path, label, end_elapsed_sec, **kwargs):
+        ok = bool(play_song_until(mp3_path, label, end_elapsed_sec, **kwargs))
+        song_outcomes.append((label, ok))
+        return ok
+
+    def dispatch_chat(situation, trigger, prompt_text, wait_sec=18, new_chat=False):
+        out = send_chat(
+            situation,
+            trigger,
+            prompt_text,
+            wait_sec=wait_sec,
+            new_chat=new_chat,
+            history_window=hw,
+        )
+        chat_outcomes.append(out)
+        return out
+
+    def dispatch_followup(situation, prefix_label):
+        nonlocal followup_cursor
+        prompt_text = V2_FOLLOWUP_PROMPTS[followup_cursor % len(V2_FOLLOWUP_PROMPTS)]
+        followup_cursor += 1
+        dispatch_chat(
+            situation,
+            f"{prefix_label} 이어묻기 #{followup_cursor}",
+            prompt_text,
+            wait_sec=18,
+            new_chat=False,
+        )
+
+    for slot_idx, window_label, situation, trigger, prompt_text, required in RUNSHEET_V2_SLOTS[:28]:
+        elapsed = time.time() - START_TS
+        # If running past 28:00, drop optional filler slots so 28:00 closing+credits runs on time.
+        if elapsed >= 1680 and not required:
+            skipped_slots.append(window_label)
+            continue
+
+        if effective_music == "internal-ko-en" and slot_idx == 5:
+            dispatch_chat(
+                "선곡 ①",
+                "05:00 첫 곡 소개",
+                "지금 들을 한국어 곡 「불을 꺼도 돼요」를 짧게 소개해 줘. 꼭 “첫 곡은 나이아 라디오의 ‘불을 꺼도 돼요’입니다.”를 포함해 줘.",
+                wait_sec=18,
+                new_chat=False,
+            )
+            run_song(
+                f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
+                "M1 불을 꺼도 돼요 (한국어, 2:38)",
+                420,
+            )
+            check_health("after-v2-M1")
+            continue
+
+        if effective_music == "internal-ko-en" and slot_idx == 6 and (time.time() - START_TS) >= 400:
+            skipped_slots.append(window_label)
+            continue
+
+        if effective_music == "internal-ko-en" and slot_idx == 12:
+            dispatch_chat(
+                "선곡 ②",
+                "12:00 영어 곡 소개",
+                "같은 사연에서 만든 영어 곡 「It's Okay to Turn Off the Light」를 소개해 줘. 한국어 곡의 동일한 멜로디 번역판이라고 말하지 마. 꼭 “이번에는 같은 사연으로 만든 영어 곡을 들어볼게요.”를 포함해 줘.",
+                wait_sec=18,
+                new_chat=False,
+            )
+            run_song(
+                f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+                "M2 It's Okay to Turn Off the Light (영어, 3:02)",
+                780,
+            )
+            check_health("after-v2-M2")
+            continue
+
+        dispatch_chat(
+            situation,
+            trigger,
+            prompt_text,
+            wait_sec=18,
+            new_chat=(initial_new_chat if slot_idx == 0 else False),
+        )
+        if slot_idx in (6, 17, 22):
+            check_health(f"after-slot-{slot_idx + 1:02d}")
+
+        next_nominal = (slot_idx + 1) * 60
+        while (next_nominal - (time.time() - START_TS)) >= 20 and (time.time() - START_TS) < 1660:
+            dispatch_followup(situation, window_label[:5])
+
+    # Keep gap <= 9s before 28:00 closing+credits without inserting dead air.
+    while (1680 - (time.time() - START_TS)) > 9:
+        dispatch_followup("default", "27:30")
+    if 0 < (1680 - (time.time() - START_TS)) <= 9:
+        wait_for_next_cue(1680)
+
+    # Slot 29 (idx 28): 28:00–29:00 closing & credits (mandatory)
+    _, _, close_sit, close_trig, close_prompt, _ = RUNSHEET_V2_SLOTS[28]
+    dispatch_chat(close_sit, close_trig, close_prompt, wait_sec=20, new_chat=False)
+    check_health("after-v2-closing")
+
+    # Slot 30 (idx 29): 29:00–30:00 voice goodbye (skip if 28:00 closing ran past 29:40)
+    _, bye_window, bye_sit, bye_trig, bye_prompt, _ = RUNSHEET_V2_SLOTS[29]
+    if (time.time() - START_TS) <= SHOW_END_SEC - 20:
+        while (1740 - (time.time() - START_TS)) > 9:
+            dispatch_followup("클로징", "28:30")
+        if 0 < (1740 - (time.time() - START_TS)) <= 9:
+            wait_for_next_cue(1740)
+        dispatch_chat(bye_sit, bye_trig, bye_prompt, wait_sec=18, new_chat=False)
+    else:
+        skipped_slots.append(bye_window)
+        log("Skipping 29:00 extra closing cue because 28:00 closing ran late")
+
+    wait_for_next_cue(SHOW_END_SEC)
+
+    failed_songs = [label for label, ok in song_outcomes if not ok]
+    song_total = len(song_outcomes)
+    song_failures = len(failed_songs)
+    chat_fallbacks = sum(1 for out in chat_outcomes if str(out or "").startswith("[FALLBACK]"))
+    summary = {
+        "show_tag": SHOW_TAG,
+        "runsheet_mode": "v2",
+        "music_mode": effective_music,
+        "elapsed_sec": int(time.time() - START_TS),
+        "cues_sent": len(chat_outcomes),
+        "followup_count": followup_cursor,
+        "skipped_slots": skipped_slots,
+        "chat_fallbacks": chat_fallbacks,
+        "song_total": song_total,
+        "song_failures": song_failures,
+        "failed_songs": failed_songs,
+        "status": "CLEAN" if (song_failures == 0 and chat_fallbacks == 0) else (
+            "SONG_PLAYBACK_FAILED" if song_failures > 0 else "CHAT_FALLBACK_USED"
+        ),
+    }
+    log(f"SUMMARY: {json.dumps(summary, ensure_ascii=False)}")
+    if song_failures == 0 and chat_fallbacks == 0:
+        log(
+            f"=== All 30-min v2 runsheet cues completed cleanly! "
+            f"(cues={len(chat_outcomes)}, followups={followup_cursor}, "
+            f"songs={song_total}, song_failures=0) ==="
+        )
+    else:
+        log(
+            f"=== 30-min v2 runsheet finished with issues "
+            f"(cues={len(chat_outcomes)}, chat_fallbacks={chat_fallbacks}, "
+            f"song_failures={song_failures}/{song_total}) ==="
+        )
+    _persist_summary(summary)
+    return summary
+
+
 def run_broadcast():
+    if RUNSHEET_MODE == "v2":
+        return run_broadcast_v2()
     global START_TS
     START_TS = int(os.environ.get("RADIO_START_TS") or time.time())
     log("=== Runsheet runner v3 (Show 2: 6000-token sliding window guard + clock-timed cues) started ===")
     set_bgm_volume(0.35)
     check_health("show2-start")
+
+    song_outcomes = []
+
+    def run_song(mp3_path, label, end_elapsed_sec, **kwargs):
+        ok = bool(play_song_until(mp3_path, label, end_elapsed_sec, **kwargs))
+        song_outcomes.append((label, ok))
+        return ok
 
     # Cue 1: 00:00 오프닝
     send_chat(
@@ -691,7 +1168,7 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
         "M1 불을 꺼도 돼요 (한국어, 2:38)",
         480,
@@ -744,7 +1221,7 @@ def run_broadcast():
         wait_sec=18,
         new_chat=False,
     )
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
         "M2 It's Okay to Turn Off the Light (영어, 3:02)",
         1170,
@@ -789,7 +1266,7 @@ def run_broadcast():
     check_health("after-corner3")
 
     # 감성 충전 인터루드 트랙 (무음 대기 대신 음악 송출로 방송 밀도 유지)
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/Afternoon Whispers.mp3",
         "M3 Afternoon Whispers (로파이 인터루드)",
         1440,
@@ -851,7 +1328,7 @@ def run_broadcast():
     check_health("after-Q1-Q5")
 
     # 클로징 전 앙코르 곡 & 브릿지 토크 (30분 풀 런타임 중 무음 구간 0건 유지)
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/Shattered Reflection.mp3",
         "M4 Shattered Reflection (클로징 전 감성 선곡)",
         1650,
@@ -877,7 +1354,7 @@ def run_broadcast():
     check_health("after-closing")
 
     # 30:00 (1800s) 녹화 종료까지 앙코르 송출. 곡이 짧아도 반복해 30:00 에 끝난다.
-    play_song_until(
+    run_song(
         f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
         "Closing Encore 불을 꺼도 돼요 (아웃트로 BGM)",
         SHOW_END_SEC,
@@ -885,7 +1362,30 @@ def run_broadcast():
         min_sec=1,
     )
     wait_for_next_cue(SHOW_END_SEC)
-    log("=== All 30-min Show 2 runsheet cues completed cleanly! ===")
+    failed_songs = [label for label, ok in song_outcomes if not ok]
+    song_total = len(song_outcomes)
+    song_failures = len(failed_songs)
+    summary = {
+        "show_tag": SHOW_TAG,
+        "elapsed_sec": int(time.time() - START_TS),
+        "song_total": song_total,
+        "song_failures": song_failures,
+        "failed_songs": failed_songs,
+        "status": "CLEAN" if song_failures == 0 else "SONG_PLAYBACK_FAILED",
+    }
+    log(f"SUMMARY: {json.dumps(summary, ensure_ascii=False)}")
+    if song_failures == 0:
+        log(
+            f"=== All 30-min Show 2 runsheet cues completed cleanly! "
+            f"(songs={song_total - song_failures}/{song_total}, song_failures=0) ==="
+        )
+    else:
+        log(
+            f"=== 30-min Show 2 runsheet finished with {song_failures}/{song_total} song failure(s): "
+            f"{', '.join(failed_songs)} ==="
+        )
+    _persist_summary(summary)
+    return summary
 
 
 if __name__ == "__main__":
