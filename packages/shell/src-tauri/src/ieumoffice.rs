@@ -564,7 +564,7 @@ pub fn set_mcp_enabled_for_adk(
 ///
 /// `naia-agent`'s `compose-agent-deps.mjs` splits `NAIA_MCP_CMD` on whitespace (`split(/\s+/)`).
 /// When `launch.command` has no whitespace (and `args` have no whitespace), we pass the full path;
-/// when `launch.command` lives in a directory containing spaces (e.g. `C:\Users\Jane Doe\...`) and
+/// when `launch.command` lives in a directory containing spaces (e.g. `C:\Program Files\Ieum Office\...`) and
 /// `args` are bare `["mcp"]`, we prepend the parent directory to `PATH` and invoke the bare binary name.
 pub fn compute_agent_mcp_spawn_env(status: &IeumOfficeStatus) -> Option<AgentMcpSpawnEnv> {
     if !status.installed || !status.mcp_enabled {
@@ -691,7 +691,7 @@ mod tests {
         let mac = DetectionEnv {
             os: "macos".to_string(),
             path_dirs: vec![],
-            user_home: Some(PathBuf::from("/Users/tester")),
+            user_home: Some(PathBuf::from("/tmp/fake-mac-home")),
             local_app_data: None,
             program_files: None,
             xdg_bin_home: None,
@@ -701,7 +701,7 @@ mod tests {
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
         assert!(mac_paths.contains(&"/Applications/IeumOffice.app/Contents/Resources/cli/ieumoffice".to_string()));
-        assert!(mac_paths.contains(&"/Users/tester/.local/bin/ieumoffice".to_string()));
+        assert!(mac_paths.contains(&"/tmp/fake-mac-home/.local/bin/ieumoffice".to_string()));
 
         let linux = DetectionEnv {
             os: "linux".to_string(),

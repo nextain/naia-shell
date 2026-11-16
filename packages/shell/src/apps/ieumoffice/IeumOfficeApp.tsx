@@ -561,7 +561,7 @@ export function IeumOfficeApp(): React.ReactElement {
 						role="tab"
 						aria-selected={activeTab === tabId}
 						className={`ieum-tab ${activeTab === tabId ? "on" : ""}`}
-						onClick={() => setActiveTab(tabId)}
+						data-usage-event="ieumoffice-app.ctrl-1.click" onClick={() => setActiveTab(tabId)}
 					>
 						{tabId === "studio"
 							? t("ieum.tabStudio")
@@ -578,7 +578,7 @@ export function IeumOfficeApp(): React.ReactElement {
 					<button
 						type="button"
 						className="ieum-btn ghost sm"
-						onClick={() => setStatusMessage(null)}
+						data-usage-event="ieumoffice-app.ctrl-2.click" onClick={() => setStatusMessage(null)}
 					>
 						{t("ieum.dismissNotice")}
 					</button>
@@ -604,7 +604,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									type="button"
 									data-testid={`format-${kind}`}
 									className={`ieum-format-btn ${doc.kind === kind ? "on" : ""}`}
-									onClick={() => handleSelectDocKind(kind)}
+									data-usage-event="ieumoffice-app.ctrl-3.click" onClick={() => handleSelectDocKind(kind)}
 								>
 									{t(labelKey)}
 								</button>
@@ -634,7 +634,7 @@ export function IeumOfficeApp(): React.ReactElement {
 							<button
 								type="button"
 								className="ieum-btn ghost full"
-								onClick={() => fileInputRef.current?.click()}
+								data-usage-event="ieumoffice-app.ctrl-4.click" onClick={() => fileInputRef.current?.click()}
 							>
 								{t("ieum.openFile")}
 							</button>
@@ -642,7 +642,7 @@ export function IeumOfficeApp(): React.ReactElement {
 								type="button"
 								className="ieum-btn full"
 								data-testid="export-doc-btn"
-								onClick={handleExportCurrent}
+								data-usage-event="ieumoffice-app.ctrl-5.click" onClick={handleExportCurrent}
 							>
 								{t("ieum.exportFile")}
 							</button>
@@ -650,7 +650,7 @@ export function IeumOfficeApp(): React.ReactElement {
 								<button
 									type="button"
 									className="ieum-btn ghost full"
-									onClick={() =>
+									data-usage-event="ieumoffice-app.ctrl-6.click" onClick={() =>
 										triggerDownload(
 											buildCsvText(doc.sheet),
 											`${doc.fileName || "sheet"}.csv`,
@@ -664,7 +664,7 @@ export function IeumOfficeApp(): React.ReactElement {
 							<button
 								type="button"
 								className="ieum-btn ghost full"
-								onClick={() =>
+								data-usage-event="ieumoffice-app.ctrl-7.click" onClick={() =>
 									setDoc((prev) => ({
 										...createSampleStudioDocument(locale),
 										kind: prev.kind,
@@ -683,7 +683,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-8.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												docxBlocks: [
@@ -702,7 +702,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-9.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												docxBlocks: [
@@ -721,7 +721,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-10.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												docxBlocks: [
@@ -746,7 +746,7 @@ export function IeumOfficeApp(): React.ReactElement {
 												aria-label="Block style"
 												className="ieum-select-sm"
 												value={block.kind}
-												onChange={(e) => {
+												data-usage-event="ieumoffice-app.ctrl-11.select" onChange={(e) => {
 													const nextKind = e.target.value as DocxBlock["kind"];
 													setDoc((prev) => ({
 														...prev,
@@ -785,7 +785,7 @@ export function IeumOfficeApp(): React.ReactElement {
 												<button
 													type="button"
 													className="ieum-btn ghost xs"
-													onClick={() =>
+													data-usage-event="ieumoffice-app.ctrl-12.click" onClick={() =>
 														setDoc((prev) => ({
 															...prev,
 															docxBlocks: prev.docxBlocks.filter(
@@ -809,7 +809,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-13.click" onClick={() =>
 											setDoc((prev) => {
 												const cols = prev.sheet.rows[0]?.length || 4;
 												return {
@@ -830,7 +830,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-14.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												sheet: {
@@ -912,7 +912,7 @@ export function IeumOfficeApp(): React.ReactElement {
 											key={s.id}
 											type="button"
 											className={`ieum-btn ${idx === activeSlideIdx ? "" : "ghost"} sm`}
-											onClick={() => setActiveSlideIdx(idx)}
+											data-usage-event="ieumoffice-app.ctrl-15.click" onClick={() => setActiveSlideIdx(idx)}
 										>
 											#{idx + 1}
 										</button>
@@ -920,7 +920,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() => {
+										data-usage-event="ieumoffice-app.ctrl-16.click" onClick={() => {
 											const nextIdx = doc.slides.length;
 											setDoc((prev) => ({
 												...prev,
@@ -1019,7 +1019,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-17.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												hwpxParagraphs: [...prev.hwpxParagraphs, ""],
@@ -1058,7 +1058,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-18.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												mindmap: {
@@ -1081,7 +1081,7 @@ export function IeumOfficeApp(): React.ReactElement {
 										type="button"
 										className="ieum-btn sm"
 										data-testid="mindmap-to-pptx-btn"
-										onClick={() => {
+										data-usage-event="ieumoffice-app.ctrl-19.click" onClick={() => {
 											setActiveSlideIdx(0);
 											setDoc((prev) => ({
 												...prev,
@@ -1096,7 +1096,7 @@ export function IeumOfficeApp(): React.ReactElement {
 										type="button"
 										className="ieum-btn ghost sm"
 										data-testid="mindmap-to-docx-btn"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-20.click" onClick={() =>
 											setDoc((prev) => ({
 												...prev,
 												kind: "docx",
@@ -1145,7 +1145,7 @@ export function IeumOfficeApp(): React.ReactElement {
 													<button
 														type="button"
 														className="ieum-btn ghost xs"
-														onClick={() =>
+														data-usage-event="ieumoffice-app.ctrl-21.click" onClick={() =>
 															setDoc((prev) => ({
 																...prev,
 																mindmap: {
@@ -1258,7 +1258,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									type="button"
 									className="ieum-chip-btn"
 									disabled={aiBusy}
-									onClick={() => askNaiaToEdit(t(chipKey))}
+									data-usage-event="ieumoffice-app.ctrl-22.click" onClick={() => askNaiaToEdit(t(chipKey))}
 								>
 									{t(chipKey)}
 								</button>
@@ -1279,14 +1279,14 @@ export function IeumOfficeApp(): React.ReactElement {
 								className="ieum-btn full"
 								data-testid="ask-naia-edit-btn"
 								disabled={aiBusy || !aiPrompt.trim()}
-								onClick={() => askNaiaToEdit()}
+								data-usage-event="ieumoffice-app.ctrl-23.click" onClick={() => askNaiaToEdit()}
 							>
 								{aiBusy ? t("ieum.aiAsking") : t("ieum.aiAskBtn")}
 							</button>
 							<button
 								type="button"
 								className="ieum-btn ghost full"
-								onClick={handleToggleSpeak}
+								data-usage-event="ieumoffice-app.ctrl-24.click" onClick={handleToggleSpeak}
 							>
 								{speakingId ? t("ieum.aiStopSpeakBtn") : t("ieum.aiSpeakBtn")}
 							</button>
@@ -1295,7 +1295,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									type="button"
 									className="ieum-btn ghost full"
 									data-testid="undo-ai-edit-btn"
-									onClick={() => {
+									data-usage-event="ieumoffice-app.ctrl-25.click" onClick={() => {
 										setDoc(undoSnapshot);
 										setUndoSnapshot(null);
 									}}
@@ -1314,14 +1314,14 @@ export function IeumOfficeApp(): React.ReactElement {
 										type="button"
 										className="ieum-btn sm"
 										data-testid="apply-ai-edit-btn"
-										onClick={handleApplyProposedEdit}
+										data-usage-event="ieumoffice-app.ctrl-26.click" onClick={handleApplyProposedEdit}
 									>
 										{t("ieum.diffApply")}
 									</button>
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() => setProposedEdit(null)}
+										data-usage-event="ieumoffice-app.ctrl-27.click" onClick={() => setProposedEdit(null)}
 									>
 										{t("ieum.diffDiscard")}
 									</button>
@@ -1341,7 +1341,7 @@ export function IeumOfficeApp(): React.ReactElement {
 								type="button"
 								className="ieum-btn ghost sm"
 								disabled={checkingHost}
-								onClick={() => void refreshHostStatus()}
+								data-usage-event="ieumoffice-app.ctrl-28.click" onClick={() => void refreshHostStatus()}
 							>
 								{t("ieum.recheckBtn")}
 							</button>
@@ -1390,7 +1390,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									className="ieum-btn"
 									data-testid="toggle-mcp-btn"
 									disabled={checkingHost}
-									onClick={() => void handleToggleMcp()}
+									data-usage-event="ieumoffice-app.ctrl-29.click" onClick={() => void handleToggleMcp()}
 								>
 									{hostStatus.mcpEnabled
 										? t("ieum.mcpToggleOff")
@@ -1403,7 +1403,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									className="ieum-btn ghost"
 									data-testid="register-coding-agents-btn"
 									disabled={checkingHost}
-									onClick={() => void handleRegisterCodingAgents()}
+									data-usage-event="ieumoffice-app.ctrl-30.click" onClick={() => void handleRegisterCodingAgents()}
 								>
 									{t("ieum.codingAgentsBtn")}
 								</button>
@@ -1440,7 +1440,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-31.click" onClick={() =>
 											void copyText("cloud-url", preset.cloudBaseUrl)
 										}
 									>
@@ -1457,7 +1457,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-32.click" onClick={() =>
 											void copyText("cloud-model", preset.cloudModel)
 										}
 									>
@@ -1478,7 +1478,7 @@ export function IeumOfficeApp(): React.ReactElement {
 									<button
 										type="button"
 										className="ieum-btn ghost sm"
-										onClick={() =>
+										data-usage-event="ieumoffice-app.ctrl-33.click" onClick={() =>
 											void copyText("local-url", preset.localBaseUrl)
 										}
 									>
@@ -1514,7 +1514,7 @@ export function IeumOfficeApp(): React.ReactElement {
 								<button
 									type="button"
 									className="ieum-btn sm"
-									onClick={() =>
+									data-usage-event="ieumoffice-app.ctrl-34.click" onClick={() =>
 										void copyText("releases", preset.officialReleasesUrl)
 									}
 								>
@@ -1532,7 +1532,7 @@ export function IeumOfficeApp(): React.ReactElement {
 								<button
 									type="button"
 									className="ieum-btn ghost sm"
-									onClick={() => void copyText("repo", preset.officialRepoUrl)}
+									data-usage-event="ieumoffice-app.ctrl-35.click" onClick={() => void copyText("repo", preset.officialRepoUrl)}
 								>
 									{t("ieum.copyBtn")}
 								</button>
@@ -1552,7 +1552,7 @@ export function IeumOfficeApp(): React.ReactElement {
 								<button
 									type="button"
 									className="ieum-btn ghost sm"
-									onClick={() => void copyText("site", preset.officialSiteUrl)}
+									data-usage-event="ieumoffice-app.ctrl-36.click" onClick={() => void copyText("site", preset.officialSiteUrl)}
 								>
 									{t("ieum.copyBtn")}
 								</button>
