@@ -227,7 +227,7 @@ describe("AiControlBar proactive cost control", () => {
 			broadcastStreamKey: "win-stream-secret-key",
 		});
 
-		render(<AiControlBar avatarProvider="naia-video-avatar" />);
+		render(<AiControlBar showCameraControls={false} />);
 		const toggleBtn = await screen.findByTestId("ai-bar-broadcast-btn");
 		await waitFor(() => expect(toggleBtn).not.toBeDisabled());
 
@@ -273,7 +273,7 @@ describe("AiControlBar proactive cost control", () => {
 			broadcastStreamKey: "linux-stream-secret",
 		});
 
-		render(<AiControlBar avatarProvider="naia-video-avatar" />);
+		render(<AiControlBar showCameraControls={false} />);
 		const toggleBtn = await screen.findByTestId("ai-bar-broadcast-btn");
 		await waitFor(() => expect(toggleBtn).not.toBeDisabled());
 		fireEvent.click(toggleBtn);
