@@ -32,10 +32,10 @@ button:focus-visible {
 	position: absolute;
 	inset: 0;
 	display: grid;
-	grid-template-rows: 48px minmax(0, 1fr) 72px;
+	grid-template-rows: 42px minmax(0, 1fr) 52px;
 }
 .table-screen:has(.summary) {
-	grid-template-rows: 48px minmax(0, 1fr) 120px;
+	grid-template-rows: 42px minmax(0, 1fr) 108px;
 }
 .table-header {
 	background: #08090a99;
@@ -78,17 +78,13 @@ button:focus-visible {
 }
 .table-area {
 	position: relative;
-	margin: 12px 16px;
+	margin: 4px 10px;
 	min-height: 0;
 }
 .spread-board {
 	position: relative;
 	width: 100%;
 	height: 100%;
-	transition: width 0.25s ease;
-}
-.table-area.with-spotlight .spread-board {
-	width: calc(100% - min(372px, 42%));
 }
 .deck {
 	height: 45%;
@@ -128,7 +124,7 @@ button:focus-visible {
 	left: auto;
 	top: auto;
 	transform: none;
-	height: min(26vh, 148px);
+	height: min(36vh, 224px);
 	flex-shrink: 0;
 }
 .spread-picker {
@@ -213,14 +209,14 @@ button:focus-visible {
 	color: #d7cabd;
 }
 .celtic {
-	--card-h: calc(100% / 4.25);
+	--card-h: min(30.5%, calc((100vw - 24px) / 7.1 * 1.79));
 }
 .one {
-	--card-h: min(68%, 340px);
+	--card-h: min(84%, 560px, calc((100vw - 36px) * 1.45));
 }
 .one .card-1 {
 	left: 50%;
-	top: 48%;
+	top: 47%;
 }
 .card-place {
 	position: absolute;
@@ -229,10 +225,18 @@ button:focus-visible {
 	text-align: center;
 }
 .card-place span {
-	display: block;
-	font-size: 12px;
+	position: absolute;
+	left: 50%;
+	top: calc(100% + 2px);
+	transform: translateX(-50%);
+	padding: 1px 6px;
+	border-radius: 999px;
+	background: rgba(8, 7, 9, 0.76);
+	font-size: 11px;
+	line-height: 1.25;
 	text-shadow: 0 1px 3px #000;
 	white-space: nowrap;
+	pointer-events: none;
 }
 .card {
 	height: 100%;
@@ -240,94 +244,105 @@ button:focus-visible {
 	padding: 0;
 	background: none;
 	border: 0;
-	border-radius: 4px;
-	box-shadow: 0 3px 8px #0009;
-	transition: transform 0.3s, box-shadow 0.2s;
+	border-radius: 6px;
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.68);
+	transition: transform 0.22s ease, box-shadow 0.2s ease;
 }
 .card img {
 	display: block;
 	width: 100%;
 	height: 100%;
-	border-radius: 4px;
+	border-radius: 6px;
 }
 .card img.reversed {
 	transform: rotate(180deg);
 }
 .card.flipped {
+	cursor: zoom-in;
 	animation: flip 0.4s;
+}
+.card.flipped:hover {
+	transform: translateY(-4px) scale(1.05);
+	box-shadow: 0 10px 24px rgba(0, 0, 0, 0.8), 0 0 14px rgba(235, 198, 94, 0.5);
 }
 .card.current {
 	outline: 3px solid #ebc65e;
-	box-shadow: 0 0 16px #f2c95d;
+	box-shadow: 0 0 18px #f2c95d;
 }
 .card.selected-card {
 	outline: 3px solid #7dd3fc;
 	box-shadow: 0 0 18px rgba(125, 211, 252, 0.75);
 }
 .card-1 {
-	left: 32.5%;
-	top: 50%;
+	left: 32%;
+	top: 48.5%;
 }
 .card-2 {
-	left: 32.5%;
-	top: 50%;
+	left: 32%;
+	top: 48.5%;
 	z-index: 2;
 }
 .card-2 .card {
 	transform: rotate(90deg);
 }
+.card-2 .card.flipped:hover {
+	transform: rotate(90deg) scale(1.05);
+}
 .card-2 span {
 	display: none;
 }
 .card-3 {
-	left: 32.5%;
-	top: 79%;
+	left: 32%;
+	top: 81%;
 }
 .card-4 {
-	left: 16%;
-	top: 50%;
+	left: 12%;
+	top: 48.5%;
 }
 .card-5 {
-	left: 32.5%;
-	top: 21%;
+	left: 32%;
+	top: 16%;
 }
 .card-6 {
-	left: 49%;
-	top: 50%;
+	left: 52%;
+	top: 48.5%;
 }
 .card-7 {
-	left: 84%;
-	top: 87%;
+	left: 73%;
+	top: 81%;
 }
 .card-8 {
-	left: 84%;
-	top: 63%;
+	left: 90%;
+	top: 60%;
 }
 .card-9 {
-	left: 84%;
-	top: 39%;
+	left: 73%;
+	top: 38.5%;
 }
 .card-10 {
-	left: 84%;
-	top: 15%;
+	left: 90%;
+	top: 17%;
 }
 .three {
-	--card-h: 60%;
+	--card-h: min(78%, calc((100vw - 36px) / 3.25 * 1.79));
 }
 .three .card-1 {
-	left: 25%;
-	top: 50%;
+	left: 20%;
+	top: 47%;
 }
 .three .card-2 {
 	left: 50%;
-	top: 50%;
+	top: 47%;
 }
 .three .card-3 {
-	left: 75%;
-	top: 50%;
+	left: 80%;
+	top: 47%;
 }
 .three .card-2 .card {
 	transform: none;
+}
+.three .card-2 .card.flipped:hover {
+	transform: translateY(-4px) scale(1.05);
 }
 .three .card-2 span {
 	display: block;
@@ -402,41 +417,36 @@ button:focus-visible {
 }
 .meaning-overlay {
 	position: absolute;
-	z-index: 5;
-	inset: 48px 0 72px;
-}
-.meaning-overlay.docked {
-	pointer-events: none;
-	display: flex;
-	align-items: stretch;
-	justify-content: flex-end;
-	padding: 12px 16px 12px 0;
+	z-index: 20;
+	inset: 0;
 }
 .meaning-overlay.modal {
-	background: rgba(0, 0, 0, 0.62);
+	background: rgba(6, 5, 8, 0.78);
+	backdrop-filter: blur(6px);
+	-webkit-backdrop-filter: blur(6px);
 	display: grid;
 	place-items: center;
-	padding: 12px;
+	padding: 14px;
 }
 .meaning.tarot-spotlight {
 	pointer-events: auto;
 	position: relative;
-	width: min(364px, 42vw);
-	max-height: 100%;
+	width: min(760px, 94vw);
+	max-height: 92vh;
 	overflow: auto;
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	background: rgba(27, 22, 25, 0.96);
-	border: 1px solid #d4af6a;
-	border-radius: 14px;
-	padding: 12px 14px;
-	box-shadow: 0 14px 36px rgba(0, 0, 0, 0.72);
-	font-size: 13px;
+	gap: 12px;
+	background: rgba(25, 20, 23, 0.97);
+	border: 1px solid #e2be74;
+	border-radius: 16px;
+	padding: 14px 18px;
+	box-shadow: 0 20px 52px rgba(0, 0, 0, 0.82);
+	font-size: 13.5px;
 }
-.meaning.tarot-spotlight.zoomed {
-	width: min(680px, 94vw);
-	max-height: 100%;
+.meaning.tarot-spotlight.art-only {
+	width: auto;
+	max-width: 94vw;
 }
 .spotlight-topbar {
 	display: flex;
@@ -459,7 +469,7 @@ button:focus-visible {
 	gap: 6px;
 }
 .spotlight-zoom-btn {
-	padding: 3px 9px;
+	padding: 4px 10px;
 	border-radius: 6px;
 	border: 1px solid rgba(255, 255, 255, 0.25);
 	background: #332b2f;
@@ -467,13 +477,13 @@ button:focus-visible {
 	font-size: 12px;
 }
 .meaning-close {
-	width: 28px;
-	height: 28px;
+	width: 30px;
+	height: 30px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	background: rgba(255, 255, 255, 0.08);
-	border: 1px solid rgba(255, 255, 255, 0.18);
+	background: rgba(255, 255, 255, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.22);
 	border-radius: 50%;
 	color: white;
 	font-size: 18px;
@@ -481,33 +491,39 @@ button:focus-visible {
 }
 .spotlight-body {
 	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 12px;
-}
-.meaning.tarot-spotlight.zoomed .spotlight-body {
 	flex-direction: row;
-	align-items: flex-start;
-	gap: 18px;
+	align-items: center;
+	gap: 20px;
+}
+.meaning.tarot-spotlight.art-only .spotlight-body {
+	justify-content: center;
 }
 .spotlight-art {
 	display: flex;
 	justify-content: center;
 	flex-shrink: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	cursor: zoom-in;
+}
+.meaning.tarot-spotlight.art-only .spotlight-art {
+	cursor: zoom-out;
 }
 .spotlight-art img {
-	width: min(186px, 44vw);
+	height: min(68vh, 520px);
+	width: auto;
+	max-width: min(310px, 44vw);
 	aspect-ratio: 1 / 1.79;
-	height: auto;
-	max-height: 40vh;
 	object-fit: contain;
-	border-radius: 8px;
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
-	border: 1px solid rgba(235, 198, 94, 0.45);
+	border-radius: 10px;
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75);
+	border: 1px solid rgba(235, 198, 94, 0.55);
+	transition: height 0.2s ease, max-width 0.2s ease;
 }
-.meaning.tarot-spotlight.zoomed .spotlight-art img {
-	width: min(260px, 46vw);
-	max-height: 58vh;
+.meaning.tarot-spotlight.art-only .spotlight-art img {
+	height: min(78vh, 640px);
+	max-width: min(400px, 86vw);
 }
 .spotlight-art img.reversed {
 	transform: rotate(180deg);
@@ -594,24 +610,29 @@ button:focus-visible {
 	opacity: 0.35;
 	cursor: default;
 }
-@media (max-width: 679px) {
+@media (max-width: 639px) {
 	.spread-options {
 		grid-template-columns: 1fr;
 		gap: 7px;
 	}
 	.setup-deck {
-		height: 92px;
+		height: 124px;
 	}
 	.spread-picker {
 		padding: 10px 12px;
 	}
 	.meaning.tarot-spotlight {
-		width: min(352px, 92vw);
-		max-height: 82%;
+		width: min(440px, 95vw);
+		max-height: 92vh;
+		padding: 12px 14px;
+	}
+	.spotlight-body {
+		flex-direction: column;
+		gap: 12px;
 	}
 	.spotlight-art img {
-		width: 148px;
-		max-height: 32vh;
+		height: min(54vh, 400px);
+		max-width: min(250px, 74vw);
 	}
 }
 .book-layer {
@@ -738,21 +759,21 @@ button:focus-visible {
 		transform: rotateY(0);
 	}
 }
-@media (max-width: 719px) {
+@media (max-width: 559px) {
 	.table-screen {
-		grid-template-rows: 48px minmax(0, 1fr) 88px;
+		grid-template-rows: 42px minmax(0, 1fr) 68px;
 	}
 	.table-screen:has(.summary) {
-		grid-template-rows: 48px minmax(0, 1fr) 132px;
+		grid-template-rows: 42px minmax(0, 1fr) 120px;
 	}
 	.deck {
-		height: 40%;
+		height: 44%;
 	}
 	.table-footer small {
 		max-width: 300px;
 	}
 	.celtic {
-		--card-h: calc((100vw - 32px) / 5 * 1.79);
+		--card-h: min(26.5%, calc((100vw - 20px) / 4.25 * 1.79));
 	}
 	.celtic .card-place span {
 		display: none;
@@ -764,18 +785,18 @@ button:focus-visible {
 	}
 	.celtic .card-3 {
 		left: 50%;
-		top: 62%;
+		top: 63%;
 	}
 	.celtic .card-4 {
-		left: 22%;
+		left: 20%;
 		top: 37%;
 	}
 	.celtic .card-5 {
 		left: 50%;
-		top: 12%;
+		top: 11%;
 	}
 	.celtic .card-6 {
-		left: 78%;
+		left: 80%;
 		top: 37%;
 	}
 	.celtic .card-7 {
@@ -795,7 +816,7 @@ button:focus-visible {
 		top: 87%;
 	}
 	.three {
-		--card-h: calc(28vw * 1.79);
+		--card-h: min(72%, calc((100vw - 24px) / 3.1 * 1.79));
 	}
 	.three .card-1 {
 		left: 17%;
@@ -805,28 +826,6 @@ button:focus-visible {
 	}
 	.three .card-3 {
 		left: 83%;
-	}
-	.meaning-overlay {
-		inset: 0;
-		display: flex;
-		align-items: end;
-	}
-	.meaning {
-		width: 100%;
-		height: 50%;
-		max-height: none;
-		border-radius: 16px 16px 0 0;
-		padding: 30px 20px;
-	}
-	.meaning:before {
-		content: "";
-		position: absolute;
-		top: 10px;
-		left: 45%;
-		width: 10%;
-		height: 4px;
-		background: #aaa;
-		border-radius: 2px;
 	}
 	.book-toolbar {
 		overflow-x: auto;

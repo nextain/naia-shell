@@ -63,8 +63,7 @@ export function TarotApp() {
 	screenRef.current = screen;
 	const [finished, setFinished] = useState(false);
 	const [spotlightIndex, setSpotlightIndex] = useState<number | null>(null);
-	const [spotlightZoomed, setSpotlightZoomed] = useState(false);
-	const [isWide, setIsWide] = useState(() => window.innerWidth >= 680);
+	const [artFullscreen, setArtFullscreen] = useState(false);
 	const meaningDrag = useRef<number | null>(null);
 	const [notice, setNotice] = useState("");
 	const [muted, setMuted] = useState(false);
@@ -72,12 +71,6 @@ export function TarotApp() {
 	const audio = useRef<TarotAudioController | null>(null);
 	const ko = locale === "ko";
 	const t = (a: string, b: string) => (ko ? a : b);
-
-	useEffect(() => {
-		const onResize = () => setIsWide(window.innerWidth >= 680);
-		window.addEventListener("resize", onResize);
-		return () => window.removeEventListener("resize", onResize);
-	}, []);
 
 	function store(r: TarotReading | null) {
 		readingRef.current = r;
@@ -93,9 +86,21 @@ export function TarotApp() {
 		store(null);
 		setFinished(false);
 		setSpotlightIndex(null);
-		setSpotlightZoomed(false);
+		setArtFullscreen(false);
 		setScreen("table");
 	}
+
+	useEffect(() => {
+		if (spotlightIndex === null) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				setArtFullscreen(false);
+				setSpotlightIndex(null);
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [spotlightIndex]);
 
 	function showNotice(s: string) {
 		setNotice(s);
@@ -158,15 +163,10 @@ export function TarotApp() {
 			setFinished(false);
 			setScreen("table");
 			setSpotlightIndex(null);
-			setSpotlightZoomed(false);
 			return r;
 		},
 		setReading: (next) => {
 			store(next);
-			const flippedCount = next.cards.filter((c) => c.isFlipped).length;
-			if (flippedCount > 0 && window.innerWidth >= 680) {
-				setSpotlightIndex(flippedCount - 1);
-			}
 		},
 		onReveal: () => {
 			void audio.current?.playFlip();
@@ -270,7 +270,6 @@ export function TarotApp() {
 			: reading?.spread === "three"
 				? "three"
 				: "celtic";
-	const sideSpotlightOpen = Boolean(reading && selected && isWide && !spotlightZoomed);
 
 	return (
 		<main
@@ -324,7 +323,7 @@ export function TarotApp() {
 					</div>
 				</header>
 				<section
-					className={`table-area ${reading ? spreadClass : "setup"} ${sideSpotlightOpen ? "with-spotlight" : ""}`}
+					className={`table-area ${reading ? spreadClass : "setup"}`}
 					aria-label={ui(locale, "table")}
 				>
 					{!reading ? (
@@ -391,6 +390,7 @@ export function TarotApp() {
 											aria-label={`${position(c)}: ${c.isFlipped ? displayName(c) : ui(locale, "faceDown")}`}
 											onClick={() => {
 												if (c.isFlipped) {
+													setArtFullscreen(false);
 													setSpotlightIndex(i);
 												} else {
 													showNotice(ui(locale, "nextHint"));
@@ -484,28 +484,19 @@ export function TarotApp() {
 				</footer>
 				{selected && (
 					<div
-						className={`meaning-overlay ${isWide && !spotlightZoomed ? "docked" : "modal"}`}
+						className="meaning-overlay modal"
 						onClick={() => {
-							if (!isWide || spotlightZoomed) {
-								setSpotlightZoomed(false);
-								setSpotlightIndex(null);
-							}
+							setArtFullscreen(false);
+							setSpotlightIndex(null);
 						}}
 					>
 						<section
 							role="dialog"
 							aria-label={displayName(selected)}
-							className={`meaning tarot-spotlight ${spotlightZoomed ? "zoomed" : ""}`}
+							className={`meaning tarot-spotlight zoomed ${artFullscreen ? "art-only" : ""}`}
 							onClick={(e) => e.stopPropagation()}
-							onKeyDown={(e) => {
-								if (e.key === "Escape") {
-									setSpotlightZoomed(false);
-									setSpotlightIndex(null);
-								}
-							}}
 							onPointerDown={(e) => {
 								if (
-									!isWide &&
 									e.clientY - e.currentTarget.getBoundingClientRect().top < 36
 								) {
 									meaningDrag.current = e.clientY;
@@ -517,7 +508,7 @@ export function TarotApp() {
 									meaningDrag.current !== null &&
 									e.clientY - meaningDrag.current > 40
 								) {
-									setSpotlightZoomed(false);
+									setArtFullscreen(false);
 									setSpotlightIndex(null);
 								}
 								meaningDrag.current = null;
@@ -528,22 +519,20 @@ export function TarotApp() {
 									{selectedFlippedOrder + 1} / {last} · {position(selected)}
 								</span>
 								<div className="spotlight-controls">
-									{isWide && (
-										<button
-											type="button"
-											className="spotlight-zoom-btn"
-											onClick={() => setSpotlightZoomed((z) => !z)}
-										>
-											{spotlightZoomed
-												? ui(locale, "shrinkCard")
-												: ui(locale, "enlargeCard")}
-										</button>
-									)}
+									<button
+										type="button"
+										className="spotlight-zoom-btn"
+										onClick={() => setArtFullscreen((z) => !z)}
+									>
+										{artFullscreen
+											? ui(locale, "shrinkCard")
+											: ui(locale, "enlargeCard")}
+									</button>
 									<button
 										type="button"
 										className="meaning-close"
 										onClick={() => {
-											setSpotlightZoomed(false);
+											setArtFullscreen(false);
 											setSpotlightIndex(null);
 										}}
 										aria-label={ui(locale, "close")}
@@ -553,53 +542,68 @@ export function TarotApp() {
 								</div>
 							</div>
 							<div className="spotlight-body">
-								<div className="spotlight-art">
+								<button
+									type="button"
+									className="spotlight-art"
+									onClick={() => setArtFullscreen((z) => !z)}
+									aria-label={
+										artFullscreen
+											? ui(locale, "shrinkCard")
+											: ui(locale, "enlargeCard")
+									}
+								>
 									<img
 										className={selected.isReversed ? "reversed" : ""}
 										src={assetUrl(selected.card.imagePath)}
 										alt={displayName(selected)}
 									/>
-								</div>
-								<div className="spotlight-meta">
-									<h2>
-										<span>
-											{selected.card.id}. {displayName(selected)}
-										</span>
-										<em
-											className={`orient-badge ${selected.isReversed ? "is-reversed" : "is-upright"}`}
-										>
-											{selected.isReversed
-												? appText(locale, "reversed")
-												: appText(locale, "upright")}
-										</em>
-									</h2>
-									{ko && (
-										<p className="spotlight-pos-desc">
-											{selected.position.description}
+								</button>
+								{!artFullscreen && (
+									<div className="spotlight-meta">
+										<h2>
+											<span>
+												{selected.card.id}. {displayName(selected)}
+											</span>
+											<em
+												className={`orient-badge ${selected.isReversed ? "is-reversed" : "is-upright"}`}
+											>
+												{selected.isReversed
+													? appText(locale, "reversed")
+													: appText(locale, "upright")}
+											</em>
+										</h2>
+										{ko && (
+											<p className="spotlight-pos-desc">
+												{selected.position.description}
+											</p>
+										)}
+										<p className="spotlight-keywords">
+											{selected.card.keywords.join(" · ")}
 										</p>
-									)}
-									<p className="spotlight-keywords">
-										{selected.card.keywords.join(" · ")}
-									</p>
-									<div className="spotlight-meanings">
-										<div
-											className={
-												!selected.isReversed ? "meaning-active" : "meaning-dim"
-											}
-										>
-											<b>{appText(locale, "upright")}</b>
-											<p>{selected.card.upright.join(" · ")}</p>
-										</div>
-										<div
-											className={
-												selected.isReversed ? "meaning-active" : "meaning-dim"
-											}
-										>
-											<b>{appText(locale, "reversed")}</b>
-											<p>{selected.card.reversed.join(" · ")}</p>
+										<div className="spotlight-meanings">
+											<div
+												className={
+													!selected.isReversed
+														? "meaning-active"
+														: "meaning-dim"
+												}
+											>
+												<b>{appText(locale, "upright")}</b>
+												<p>{selected.card.upright.join(" · ")}</p>
+											</div>
+											<div
+												className={
+													selected.isReversed
+														? "meaning-active"
+														: "meaning-dim"
+												}
+											>
+												<b>{appText(locale, "reversed")}</b>
+												<p>{selected.card.reversed.join(" · ")}</p>
+											</div>
 										</div>
 									</div>
-								</div>
+								)}
 							</div>
 							{last > 1 && (
 								<div className="spotlight-nav">

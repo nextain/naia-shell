@@ -100,7 +100,7 @@ describe("Cafe Lua Tarot v0.1.5 spread selector and card spotlight", () => {
 		expect(celticBtn.getAttribute("aria-pressed")).toBe("false");
 	});
 
-	it("auto-opens the large card spotlight on desktop when cards are revealed and supports zoom, navigation, close, and reopen", async () => {
+	it("enlarges any revealed card in one click into the zoomed spotlight modal and supports full-art toggle, navigation, and close", async () => {
 		render(<TarotApp />);
 
 		await act(async () => {
@@ -114,24 +114,43 @@ describe("Cafe Lua Tarot v0.1.5 spread selector and card spotlight", () => {
 		await act(async () => {
 			sendToolCall("t2", { action: "reveal_next" });
 		});
-
-		const dialog1 = screen.getByRole("dialog");
-		expect(dialog1.className).toContain("tarot-spotlight");
-		expect(dialog1.textContent).toContain("1 / 1");
-
 		await act(async () => {
 			sendToolCall("t3", { action: "reveal_next" });
 		});
 
-		const dialog2 = screen.getByRole("dialog");
-		expect(dialog2.textContent).toContain("2 / 2");
+		// Table stays unobstructed until the user clicks a revealed card (or enlarge button)
+		expect(screen.queryByRole("dialog")).toBeNull();
+		const flippedCards = document.querySelectorAll<HTMLButtonElement>(
+			".spread-board .card.flipped",
+		);
+		expect(flippedCards.length).toBe(2);
 
+		// Clicking an unrevealed card shows the hint instead of opening the modal
+		const unflippedCard = document.querySelector<HTMLButtonElement>(
+			".spread-board .card:not(.flipped)",
+		)!;
+		fireEvent.click(unflippedCard);
+		expect(screen.queryByRole("dialog")).toBeNull();
+
+		// Clicking a revealed card immediately opens the large zoomed spotlight modal in one click
+		fireEvent.click(flippedCards[1]!);
+		const dialog = screen.getByRole("dialog");
+		expect(dialog.className).toContain("tarot-spotlight");
+		expect(dialog.className).toContain("zoomed");
+		expect(dialog.textContent).toContain("2 / 2");
+
+		// Navigate to previous revealed card
 		fireEvent.click(screen.getByRole("button", { name: /이전 카드/ }));
 		expect(screen.getByRole("dialog").textContent).toContain("1 / 2");
 
-		fireEvent.click(screen.getByRole("button", { name: "카드 크게 보기" }));
-		expect(screen.getByRole("dialog").className).toContain("zoomed");
+		// Clicking the card artwork toggles extra-large art-only view
+		const artBtn = document.querySelector<HTMLButtonElement>(".spotlight-art")!;
+		fireEvent.click(artBtn);
+		expect(screen.getByRole("dialog").className).toContain("art-only");
+		fireEvent.click(artBtn);
+		expect(screen.getByRole("dialog").className).not.toContain("art-only");
 
+		// Close via close button, then reopen via the floating enlarge button
 		fireEvent.click(screen.getByRole("button", { name: "닫기" }));
 		expect(screen.queryByRole("dialog")).toBeNull();
 
@@ -139,6 +158,10 @@ describe("Cafe Lua Tarot v0.1.5 spread selector and card spotlight", () => {
 			name: /카드 크게 보기/,
 		});
 		fireEvent.click(reopenButtons[0]!);
-		expect(screen.getByRole("dialog")).toBeTruthy();
+		expect(screen.getByRole("dialog").className).toContain("zoomed");
+
+		// Escape closes the modal
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(screen.queryByRole("dialog")).toBeNull();
 	});
 });
