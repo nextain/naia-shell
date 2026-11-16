@@ -96,6 +96,8 @@ pub(crate) fn dummy_child() -> Result<Child, String> {
 }
 
 /// Suppress console window (macOS: no-op).
+pub(crate) fn suppress_error_dialogs() {}
+
 pub(crate) fn hide_console(_cmd: &mut Command) {}
 
 /// Force-terminate a process by PID using SIGKILL.

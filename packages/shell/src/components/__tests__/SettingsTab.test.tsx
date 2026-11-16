@@ -2117,6 +2117,118 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/없음 \(기본\)|None \(Default\)/i)).toBeDefined();
 	});
 
+	it("excludes naia-autumn-office-live.mp4 from Settings background options and normalizes saved backgroundVideo (#026-r2 item 6)", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\naia-test\\rc026\\naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "deepseek-v4-flash",
+				backgroundVideo: "naia-autumn-office-live.mp4",
+			}),
+		);
+		mockInvoke.mockImplementation(
+			(cmd: string, args?: { subdir?: string }) => {
+				if (cmd === "list_naia_assets" && args?.subdir === "background") {
+					return Promise.resolve([
+						"naia-autumn-office-live.mp4",
+						"naia-autumn-office-uhd.webp",
+						"naia-dawn-city-uhd.webp",
+					]);
+				}
+				return Promise.resolve([]);
+			},
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const select = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() =>
+			expect(
+				Array.from(select.options).map((o) => o.textContent),
+			).toContain("naia-autumn-office-uhd"),
+		);
+		const optionLabels = Array.from(select.options).map((o) => o.textContent);
+		expect(optionLabels).not.toContain("naia-autumn-office-live");
+		expect(select.value).toBe(
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background\\naia-autumn-office-uhd.webp",
+		);
+	});
+
+	it("preserves stored broadcastStreamKey when clicking Save with an empty input, clears it only via Clear key button, and displays broadcast errors (#026-r2/r3)", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\naia-test\\rc026\\naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "nextain", model: "test", apiKey: "" }),
+		);
+		nativeSecrets.set("broadcastStreamKey", "existing-stream-secret");
+		mockInvoke.mockResolvedValue([]);
+
+		const { setBroadcastBridgeSnapshot } = await import(
+			"../../lib/broadcast-audio-bridge"
+		);
+		setBroadcastBridgeSnapshot({
+			state: "idle",
+			elapsedSeconds: 0,
+			hasStreamKey: true,
+			lastError: "방송 시작에 실패했어요: ffmpeg spawn error",
+		});
+
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("general");
+
+			const errorAlert = await screen.findByTestId("broadcast-settings-error");
+			expect(errorAlert.textContent).toContain("ffmpeg spawn error");
+
+			const keyInput = (await screen.findByTestId(
+				"broadcast-stream-key-input",
+			)) as HTMLInputElement;
+			await waitFor(() => expect(keyInput.placeholder).toBe("••••••••"));
+
+			// Clicking "Clear key" button deletes broadcastStreamKey from secure-keys.dat and clears ••••••••
+			const clearBtn = await screen.findByTestId("broadcast-clear-key-btn");
+			fireEvent.click(clearBtn);
+
+			await waitFor(() =>
+				expect(nativeSecrets.has("broadcastStreamKey")).toBe(false),
+			);
+			expect(keyInput.placeholder).not.toBe("••••••••");
+			expect(screen.getByTestId("broadcast-key-cleared-notice")).toBeDefined();
+
+			// Save a new key -> input resets to "" and placeholder shows ••••••••
+			fireEvent.change(keyInput, { target: { value: "second-secret" } });
+			fireEvent.click(screen.getByTestId("broadcast-save-btn"));
+			await waitFor(() => expect(keyInput.placeholder).toBe("••••••••"));
+			expect(keyInput.value).toBe("");
+			expect(nativeSecrets.get("broadcastStreamKey")).toBe("second-secret");
+
+			// Clicking Save again while keyInput is empty (or after editing server URL) MUST preserve the stored key (P2-3)
+			const serverUrlInput = screen.getByTestId(
+				"broadcast-server-url-input",
+			) as HTMLInputElement;
+			fireEvent.change(serverUrlInput, {
+				target: { value: "rtmps://a.rtmp.youtube.com/live2" },
+			});
+			fireEvent.click(screen.getByTestId("broadcast-save-btn"));
+			await waitFor(() =>
+				expect(nativeSecrets.get("broadcastStreamKey")).toBe("second-secret"),
+			);
+			expect(keyInput.placeholder).toBe("••••••••");
+			expect(screen.queryByTestId("broadcast-key-cleared-notice")).toBeNull();
+		} finally {
+			setBroadcastBridgeSnapshot({
+				state: "idle",
+				elapsedSeconds: 0,
+				hasStreamKey: false,
+				lastError: null,
+			});
+		}
+	});
+
 	it("renders VRM import file button", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
@@ -5420,6 +5532,43 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			expect(
 				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
 			).toBe("llama3.2:8b");
+		});
+
+		it("shows model selection guidance and does not treat empty vllm/ollama model intermediate state as save failure", async () => {
+			cleanup();
+			localStorage.clear();
+			eventListeners.clear();
+			await setLocale("ko");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					...baseConfig(),
+					provider: "vllm",
+					model: "",
+					llmRoles: { main: { provider: "vllm", model: "" } },
+				}),
+			);
+			mockInvoke.mockImplementation(async (command: string) => {
+				if (command === "reload_agent_settings") {
+					throw new Error(
+						"agent memory settings reload failed (previous memory retained=true): invalid llmRoles(main/incomplete)",
+					);
+				}
+				if (command === "read_naia_config") {
+					return localStorage.getItem("naia-config") ?? "{}";
+				}
+				if (command === "read_naia_ui_config") return "{}";
+				if (command === "detect_gpu_vram") return 8;
+				return [];
+			});
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+
+			expect(
+				await screen.findByTestId("model-select-guidance"),
+			).toHaveTextContent("모델을 고르세요");
+			expect(screen.queryByRole("alert")).toBeNull();
 		});
 	});
 });

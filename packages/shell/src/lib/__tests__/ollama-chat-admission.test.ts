@@ -54,6 +54,30 @@ describe("Ollama chat admission boundary (#758/#759)", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it("admits an already-running external local Ollama server without requiring accelerator selection", async () => {
+		invokeMock.mockResolvedValue({
+			...readyManaged,
+			serverState: "connected_unreserved",
+			ownership: "external_local",
+			reservation: {
+				kind: "local_llm",
+				status: "denied",
+				bytes: null,
+				reasonCode: "device_selection_required",
+			},
+			error: {
+				code: "device_selection_required",
+				stage: "reservation",
+				retryable: false,
+				reasonCode: "device_selection_required",
+			},
+		});
+
+		await expect(
+			assertOllamaChatAdmitted("http://127.0.0.1:11434"),
+		).resolves.toBeUndefined();
+	});
+
 	it("rejects local voice conflicts with the original reason code", async () => {
 		invokeMock.mockResolvedValue({
 			...readyManaged,

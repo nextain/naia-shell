@@ -71,11 +71,21 @@ export async function assertOllamaChatAdmitted(
 	) {
 		return;
 	}
-	throw new OllamaRuntimeAdmissionError(
+	const reasonCode =
 		snapshot.reservation?.reasonCode ??
-			snapshot.error?.reasonCode ??
-			snapshot.error?.code ??
-			snapshot.serverState ??
-			"reservation_denied",
-	);
+		snapshot.error?.reasonCode ??
+		snapshot.error?.code ??
+		snapshot.serverState ??
+		"reservation_denied";
+	if (
+		snapshot.ownership === "external_local" &&
+		(reasonCode === "device_selection_required" ||
+			reasonCode === "device_mapping_unverified" ||
+			reasonCode === "device_not_found" ||
+			reasonCode === "inventory_unavailable" ||
+			reasonCode === "accelerator_inventory_unavailable")
+	) {
+		return;
+	}
+	throw new OllamaRuntimeAdmissionError(reasonCode);
 }

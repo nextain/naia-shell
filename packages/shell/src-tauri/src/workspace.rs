@@ -765,6 +765,13 @@ pub fn workspace_get_pty_agents(pids: Vec<u32>) -> std::collections::HashMap<u32
 }
 
 fn collect_search_candidates() -> Vec<PathBuf> {
+    if let Some(isolated_home) = crate::isolated_naia_home_dir() {
+        return vec![
+            isolated_home.join("projects").join("naia-adk"),
+            isolated_home.join("naia-adk"),
+            isolated_home,
+        ];
+    }
     let mut dirs = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
         for ancestor in cwd.ancestors() {

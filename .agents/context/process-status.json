@@ -19,6 +19,34 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "win_rtx2070_r2_026": {
+      "issue": 792,
+      "last_updated": "2026-11-13T07:40:00+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "pending",
+        "P05": "pending"
+      },
+      "scenario": "docs/user-scenarios.md UC-WIN-RTX2070-R2-026",
+      "requirements": "docs/requirements.md FR-WIN-RTX2070-R2.1~6",
+      "verification": "Round 4 review fixes (P1-1, P2-1, P3-4 1..3, P3-2 doc): targeted Shell Vitest 6 files / 307 passed (8 skipped, 0 failed); Core contract Vitest 2 files / 43 passed (rust-tokens 37, rust-command-list 6); root tsc + pnpm -C packages/shell exec tsc -b (0 errors); check-assembly-coverage S 67 / UC 20 passed. Local Linux host lacks cargo/rustc and Windows hardware, so Rust compile/test and Windows installer/RTX2070 runtime require CI/device verification. P04/P05 pending (2026-11-13, codex review on #838): CI Rust build/test passes on windows/linux/macos, but still missing (1) RTX2070 and RTX4060 device runs of the #838 head (installer, broadcast confirm, key clear) with captures, (2) Playwright/e2e coverage for the broadcast-confirm and key-clearing flows. Mark done only after those land."
+    },
+    "win_rtx2070_r1_026": {
+      "issue": 792,
+      "last_updated": "2026-11-13T07:40:00+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "pending",
+        "P05": "pending"
+      },
+      "scenario": "docs/user-scenarios.md UC-WIN-RTX2070-R1-026",
+      "requirements": "docs/requirements.md FR-WIN-RTX2070-R1.1~4",
+      "verification": "Shell Vitest 261 files / 2,795 tests passed (22 skipped, 0 failed); targeted regression Vitest 4 files / 221 tests passed; Core contract tests (rust-tokens 37, rust-command-list 6, agent-bench 107) passed; tsc + shell vite build + bundle budget passed. P04/P05 pending (2026-11-13, codex review on #838): CI Rust build/test passes on windows/linux/macos, but still missing (1) RTX2070 and RTX4060 device runs of the #838 head (installer, broadcast confirm, key clear) with captures, (2) Playwright/e2e coverage for the broadcast-confirm and key-clearing flows. Mark done only after those land."
+    },
     "b2c_memory_r17": {
       "issue": 792,
       "last_updated": "2026-11-04T06:42:34.198967+00:00",

@@ -7,6 +7,13 @@ import {
 	useBroadcastBridge,
 } from "../lib/broadcast-audio-bridge";
 import {
+	type BroadcastConfirmationPreview,
+	getBroadcastConfirmationPreview,
+	requiresBroadcastConfirmation,
+	startBroadcast,
+	stopBroadcast,
+} from "../lib/broadcast-client";
+import {
 	type AppConfig,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -45,6 +52,8 @@ export function AiControlBar() {
 	});
 	const broadcastBridge = useBroadcastBridge();
 	const broadcastActive = isBroadcastActive(broadcastBridge.state);
+	const [confirmPreview, setConfirmPreview] =
+		useState<BroadcastConfirmationPreview | null>(null);
 
 	useEffect(() => {
 		let disposed = false;
@@ -194,9 +203,28 @@ export function AiControlBar() {
 						: t("broadcast.btnLabel")
 				}
 				onClick={() => {
-					void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
-						toggleBroadcast().catch(() => {}),
-					);
+					if (broadcastActive) {
+						void stopBroadcast().catch(() => {});
+						return;
+					}
+					if (requiresBroadcastConfirmation()) {
+						setConfirmPreview(
+							getBroadcastConfirmationPreview(loadConfig()),
+						);
+						void loadConfigWithSecrets()
+							.then((cfg) => {
+								if (cfg) {
+									setConfirmPreview((prev) =>
+										prev
+											? getBroadcastConfirmationPreview(cfg)
+											: null,
+									);
+								}
+							})
+							.catch(() => {});
+						return;
+					}
+					void startBroadcast().catch(() => {});
 				}}
 			>
 				<span
@@ -319,6 +347,102 @@ export function AiControlBar() {
 			>
 				<span className="bgm-ai-toggle__dot" />⌂
 			</button>
+
+			{broadcastBridge.lastError && (
+				<div
+					role="alert"
+					data-testid="broadcast-error-alert"
+					className="ai-control-bar__broadcast-error"
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 6,
+						padding: "4px 8px",
+						borderRadius: 6,
+						background: "rgba(127, 29, 29, 0.92)",
+						color: "#fecaca",
+						fontSize: 12,
+						maxWidth: 360,
+					}}
+				>
+					<span>{broadcastBridge.lastError}</span>
+					<button
+						type="button"
+						data-testid="broadcast-error-dismiss-btn"
+						aria-label={t("studioNvaApply.close")}
+						style={{
+							background: "transparent",
+							border: "none",
+							color: "inherit",
+							cursor: "pointer",
+							padding: "0 2px",
+						}}
+						onClick={() => setBroadcastBridgeSnapshot({ lastError: null })}
+					>
+						×
+					</button>
+				</div>
+			)}
+
+			{confirmPreview && (
+				<div
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("broadcast.confirmTitle")}
+					data-testid="broadcast-confirm-dialog"
+					className="ai-control-bar__broadcast-confirm"
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						gap: 6,
+						padding: "10px 12px",
+						borderRadius: 8,
+						background: "rgba(15, 23, 42, 0.95)",
+						color: "#f8fafc",
+						fontSize: 12,
+						maxWidth: 360,
+						border: "1px solid rgba(148, 163, 184, 0.35)",
+					}}
+				>
+					<div style={{ fontWeight: 600 }}>
+						{t("broadcast.confirmTitle")}
+					</div>
+					<div>{t("broadcast.confirmDesc")}</div>
+					<div>
+						<strong>{t("broadcast.confirmDestination")}:</strong>{" "}
+						<span data-testid="broadcast-confirm-destination">
+							{confirmPreview.destinationDisplay}
+						</span>
+					</div>
+					<div>
+						<strong>{t("broadcast.confirmTarget")}:</strong>{" "}
+						<span data-testid="broadcast-confirm-target">
+							{confirmPreview.captureTarget}
+						</span>
+					</div>
+					<div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+						<button
+							type="button"
+							data-testid="broadcast-confirm-cancel-btn"
+							className="bgm-ai-toggle"
+							onClick={() => setConfirmPreview(null)}
+						>
+							{t("broadcast.confirmCancelBtn")}
+						</button>
+						<button
+							type="button"
+							data-testid="broadcast-confirm-start-btn"
+							className="bgm-ai-toggle bgm-ai-toggle--active"
+							onClick={() => {
+								setConfirmPreview(null);
+								void startBroadcast().catch(() => {});
+							}}
+						>
+							{t("broadcast.confirmStartBtn")}
+						</button>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

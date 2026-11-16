@@ -453,10 +453,28 @@ pub(crate) fn find_agent_process_by_marker(marker: &str) -> Result<bool, String>
     Ok(false)
 }
 
+/// Suppress modal Windows system error popups (such as 0xc0000142 STATUS_DLL_INIT_FAILED)
+/// on this process and all child processes it spawns (including herdr.exe).
+pub(crate) fn suppress_error_dialogs() {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetErrorMode(uMode: u32) -> u32;
+    }
+    const SEM_FAILCRITICALERRORS: u32 = 0x0001;
+    const SEM_NOGPFAULTERRORBOX: u32 = 0x0002;
+    const SEM_NOOPENFILEERRORBOX: u32 = 0x8000;
+    let flags = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
+    unsafe {
+        let prev = SetErrorMode(flags);
+        SetErrorMode(prev | flags);
+    }
+}
+
 /// Suppress the visible console window that GUI-spawned processes would otherwise show.
 pub(crate) fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+    suppress_error_dialogs();
     cmd.creation_flags(CREATE_NO_WINDOW);
 }
 

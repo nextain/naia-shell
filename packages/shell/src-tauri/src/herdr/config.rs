@@ -1,10 +1,27 @@
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
 use tauri::{AppHandle, Manager};
 
 const HERDR_MIN_VERSION: (u32, u32, u32) = (0, 8, 0);
 static HERDR_CONFIG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static HERDR_CONFIG_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
 static HERDR_BIN: OnceLock<std::ffi::OsString> = OnceLock::new();
+static HERDR_VALIDATED_VERSION: OnceLock<String> = OnceLock::new();
+static HERDR_SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn mark_herdr_shutting_down() {
+    HERDR_SHUTTING_DOWN.store(true, Ordering::SeqCst);
+}
+
+pub(crate) fn reset_herdr_shutting_down() {
+    HERDR_SHUTTING_DOWN.store(false, Ordering::SeqCst);
+}
+
+pub(super) fn is_herdr_shutting_down() -> bool {
+    HERDR_SHUTTING_DOWN.load(Ordering::SeqCst)
+}
 
 /// Resolve the Herdr executable once at startup: the version bundled next to the
 /// app (`resource_dir/herdr/herdr.exe` — staged by stage-herdr.mjs) is preferred
@@ -12,6 +29,7 @@ static HERDR_BIN: OnceLock<std::ffi::OsString> = OnceLock::new();
 /// back to `herdr` on PATH (dev, where resources are not staged). Call once from
 /// the Tauri setup hook.
 pub fn init_herdr_bin(app: &AppHandle) {
+    reset_herdr_shutting_down();
     let resolved = app
         .path()
         .resource_dir()
@@ -23,6 +41,10 @@ pub fn init_herdr_bin(app: &AppHandle) {
         .filter(|path| path.is_file())
         .map(std::ffi::OsString::from)
         .unwrap_or_else(|| std::ffi::OsString::from("herdr"));
+    crate::log_both(&format!(
+        "[Naia][herdr] resolved binary = {}",
+        std::path::Path::new(&resolved).display()
+    ));
     let _ = HERDR_BIN.set(resolved);
 }
 
@@ -105,12 +127,62 @@ fn session_name_for_runtime(runtime: &std::path::Path) -> String {
 /// 얹힌다. `--session` 은 하위 명령보다 **앞**에 와야 하는 전역 옵션이라 여기서
 /// 먼저 넣는다.
 pub(super) fn herdr_command() -> std::process::Command {
-    let mut command = std::process::Command::new(herdr_bin());
+    let bin = herdr_bin();
+    let mut command = std::process::Command::new(&bin);
+    command.stdin(std::process::Stdio::null());
+    if let Some(bin_dir) = std::path::Path::new(&bin)
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty() && dir.is_dir())
+    {
+        command.current_dir(bin_dir);
+        let mut search_paths = vec![bin_dir.to_path_buf()];
+        if let Some(resource_root) = bin_dir.parent().filter(|dir| dir.is_dir()) {
+            search_paths.push(resource_root.to_path_buf());
+        }
+        if let Some(existing_path) = std::env::var_os("PATH") {
+            search_paths.extend(std::env::split_paths(&existing_path));
+        }
+        if let Ok(joined) = std::env::join_paths(search_paths) {
+            command.env("PATH", joined);
+        }
+    }
     if let Some(session) = herdr_session_name() {
         command.arg("--session").arg(session);
     }
     crate::platform::hide_console(&mut command);
     command
+}
+
+pub(super) fn run_herdr_output(
+    command: &mut std::process::Command,
+    context: &str,
+) -> Result<std::process::Output, String> {
+    if is_herdr_shutting_down() {
+        return Err(format!("Herdr command skipped during shutdown ({context})"));
+    }
+    match command.output() {
+        Ok(output) => {
+            if !output.status.success() {
+                let code = output.status.code();
+                let is_dll_init_failed = code == Some(-1073741502)
+                    || code == Some(0xc000_0142_u32 as i32);
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                crate::log_both(&format!(
+                    "[Naia][herdr] {context} exited with status={} dll_init_failed_0xc0000142={} stderr={}",
+                    output.status,
+                    is_dll_init_failed,
+                    if stderr.is_empty() { "<empty>" } else { &stderr }
+                ));
+            }
+            Ok(output)
+        }
+        Err(error) => {
+            crate::log_both(&format!(
+                "[Naia][herdr] {context} spawn failed: {error}"
+            ));
+            Err(format!("Herdr spawn failed ({context}): {error}"))
+        }
+    }
 }
 
 fn parse_herdr_version(raw: &str) -> Option<(u32, u32, u32)> {
@@ -264,14 +336,24 @@ pub(super) fn set_herdr_theme(app: &AppHandle, dark: bool) -> Result<(), String>
     }
     std::fs::rename(&temporary, &path).map_err(|e| format!("herdr theme replace failed: {e}"))?;
     // Hot-reload the running server (no-op error if none is running yet).
-    let _ = herdr_command().args(["server", "reload-config"]).output();
+    if !is_herdr_shutting_down() {
+        let mut cmd = herdr_command();
+        cmd.args(["server", "reload-config"]);
+        let _ = run_herdr_output(&mut cmd, "set_herdr_theme");
+    }
     Ok(())
 }
 
 pub(super) fn validate_herdr() -> Result<String, String> {
-    let output = herdr_command()
-        .arg("--version")
-        .output()
+    if is_herdr_shutting_down() {
+        return Err("Herdr validation skipped during shutdown".to_string());
+    }
+    if let Some(cached) = HERDR_VALIDATED_VERSION.get() {
+        return Ok(cached.clone());
+    }
+    let mut cmd = herdr_command();
+    cmd.arg("--version");
+    let output = run_herdr_output(&mut cmd, "validate_herdr")
         .map_err(|e| format!("Herdr is not installed or not on PATH: {e}"))?;
     if !output.status.success() {
         return Err("Herdr version check failed".to_string());
@@ -282,6 +364,7 @@ pub(super) fn validate_herdr() -> Result<String, String> {
     if version < HERDR_MIN_VERSION {
         return Err(format!("Herdr 0.8.0 or newer is required; found {raw}"));
     }
+    let _ = HERDR_VALIDATED_VERSION.set(raw.clone());
     Ok(raw)
 }
 
@@ -354,5 +437,16 @@ mod tests {
     fn parses_supported_version_shapes() {
         assert_eq!(parse_herdr_version("herdr 0.8.0"), Some((0, 8, 0)));
         assert_eq!(parse_herdr_version("herdr 1.2.3-preview"), Some((1, 2, 3)));
+    }
+
+    #[test]
+    fn shutdown_guard_blocks_herdr_spawn_until_reset() {
+        mark_herdr_shutting_down();
+        assert!(is_herdr_shutting_down());
+        let mut cmd = std::process::Command::new("echo");
+        let err = run_herdr_output(&mut cmd, "test_shutdown_guard").unwrap_err();
+        assert!(err.contains("skipped during shutdown"));
+        reset_herdr_shutting_down();
+        assert!(!is_herdr_shutting_down());
     }
 }

@@ -2669,6 +2669,30 @@ Test Coverage Map (P02)
 | 플랫폼별 키프레임·비트레이트 프리셋, 방송 키 `***` 마스킹, 사이드카 경로 해석, 48kHz 스테레오 PCM 묶음, 방송 종료 `log.jsonl` 기록, 방송 중 유튜브 반주 허용 + 저작권 한 줄 알림 | `packages/shell/src-tauri/src/broadcast.rs` — `platform_presets_match_keyframe_and_bitrate_table`, `stream_key_is_always_redacted_with_asterisks`, `resolve_ffmpeg_path_prefers_sidecar_then_env_then_path`, `append_broadcast_log_writes_single_jsonl_record`, `pack_f32_stereo_to_s16le_interleaves_and_clamps_samples`; `packages/shell/src/lib/__tests__/broadcast.test.ts` | Vitest 및 3090 `cargo test --lib broadcast` |
 | 리눅스 PipeWire 가상 싱크(`naia-broadcast-mix`)·프로세스 트리 오디오 노드 탐색·링크·해제, 포털 ScreenCast(`persist_mode=2`, `restore_token`) 및 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`) 구성 | `packages/shell/src-tauri/src/broadcast.rs` — `linux_gstreamer_pipeline_args_and_redaction`, `pipewire_process_tree_audio_port_matching`, `portal_screencast_restore_token_roundtrip` | 3090 `pw-play` 시험음 + `naia-broadcast-mix.monitor` 5초 녹음 실측; 포털 창 선택은 사람 허용 1회 필요 |
 
+## UC-WIN-RTX2070-R1-026 — 0.2.6 윈도우 실기(rtx2070) 1회차 수정
+
+1. **외부 로컬 Ollama 사용 및 가속기 자동 선택**: 외부에서 이미 실행 중인 로컬 Ollama 서버(`127.0.0.1:11434`)가 감지되면 가속기 선택을 요구하지 않고 그대로 대화를 허용한다. 앱이 직접 Ollama를 실행해야 할 때 가속기가 지정되지 않은 경우 단일 NVIDIA 장치 우선 자동 선택 및 CPU 폴백을 적용한다.
+2. **모델 미선택 중간 상태 안내**: 프로바이더만 바꾸거나 vLLM/OpenAI 호환에서 모델 목록이 비어 모델이 아직 정해지지 않은 중간 상태(`invalid llmRoles(main/incomplete)`)는 저장·재로드 실패로 다루지 않으며 빨간 실패 알림을 띄우지 않고 `"모델을 고르세요"` 안내를 보여 준다.
+3. **재시작 시 `herdr.exe` `0xc0000142` 오류 창 방지**: 윈도우에서 자식 프로세스 DLL 초기화 오류 대화상자(`SetErrorMode`)를 억제하고, 앱 종료·재시작 중 `herdr` 호출 차단, `stdin` null 고정·리소스 디렉토리 작업 경로 및 `PATH` 보강·버전 검증 캐시·진단 로그를 적용한다.
+4. **온보딩 기본 작업 폴더 경로의 `NAIA_HOME` 반영**: 온보딩 화면(`AdkSetupScreen`)의 기본 작업 폴더 경로(`naia-adk`)와 후보 탐색이 시험용 홈 환경 변수(`NAIA_HOME`)를 우선 따른다.
+
+| UC | 테스트 파일 | 확인 내용 |
+|---|---|---|
+| UC-WIN-RTX2070-R1-026 | `packages/shell/src-tauri/src/ollama_runtime.rs`, `packages/shell/src/lib/__tests__/ollama-chat-admission.test.ts`, `packages/shell/src-tauri/src/lib.rs`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src-tauri/src/herdr/config.rs`, `packages/shell/src/components/__tests__/AdkSetupScreen.test.tsx` | 외부 로컬 Ollama 다중 어댑터 환경 대화 허용 및 관리형 자동 선택/CPU 폴백, 프로바이더 변경·빈 모델 중간 상태 무실패 저장과 `"모델을 고르세요"` 안내, `herdr` 종료 가드·`0xc0000142` 방어, 온보딩 기본 경로 `NAIA_HOME` 우선 반영 |
+
+## UC-WIN-RTX2070-R2-026 — 0.2.6 윈도우 실기(rtx2070) 2회차 수정
+
+1. **설치본 `ffmpeg.exe` 자리표시 파일 유입 차단 및 실행 전 검증**: 윈도우 빌드(`stage-runtime.mjs`·`build.rs`·`build-installers.yml`)는 `platform-matrix.json`(`os.win32.ffmpeg`)에 고정된 `ffmpeg` 릴리스(판·크기·SHA256·`minBytes`·`fallbackCandidates`) 또는 로컬 설치본에서 실제 PE 실행 파일(`MZ` 헤더·최소 크기 1MB·자리표시 머리 바이트 부재)인 `ffmpeg.exe`를 스테이징·번들링하고 MSI/NSIS 사후 검증(`--verify-windows-ffmpeg`)에서 고정 SHA256·크기를 재확인하며, 직접 `tauri build`를 실행해도 윈도우 타깃에서는 자리표시(`#!naia-ffmpeg-dev-placeholder`)를 절대 생성하지 않고 빌드를 실패시킨다. 앱 런타임(`broadcast.rs`)도 공유 검증 모듈(`ffmpeg_sidecar.rs`)로 스폰 전에 `ffmpeg` 실행 파일을 검증해 자리표시이거나 실행 불가면 스폰하지 않고 즉시 오류를 반환하여 윈도우 `"지원되지 않는 16비트 응용 프로그램"`(`os error 216`) 창이 뜨지 않게 한다.
+2. **방송 시작 실패의 앱 내 표시(14개 로케일)**: `broadcast_start`가 실패하면 단추만 조용히 꺼지는 대신 `AiControlBar`(오버레이 알림)와 설정 방송 절(`BroadcastSettingsSection`)에 14개 로케일의 쉬운 문구로 실패 원인을 표시한다.
+3. **방송 키 보존 저장 및 명시적 지우기**: 설정 방송 절에서 방송 키가 저장된 뒤 입력란이 비어 있는(`••••••••` 자리표시) 상태에서 `"저장"` 단추를 다시 누르거나 다른 방송 설정을 바꿀 때는 기존 방송 키를 보존하고, 명시적 `"키 지우기"` 단추를 눌렀을 때만 `secure-keys.dat`에서 `broadcastStreamKey`를 삭제하며 화면의 `••••••••` 표시와 `hasStreamKey` 상태를 즉시 지운다.
+4. **윈도우 방송 시작 전 확인 단계**: 윈도우(비리눅스)에서 방송 시작을 누르면 즉시 외부 RTMP 서버로 송출하지 않고, 보낼 서버 주소(방송 키 가림)와 잡을 화면(`Naia` 창)을 보여 주는 확인 단계를 먼저 띄워 `"방송 시작"`을 눌러야 연결한다. 리눅스는 포털 화면 공유 창이 이미 확인 역할을 하므로 기존 흐름을 유지한다.
+5. **작업 공간 `naia-settings\background` 최소 권한 asset protocol scope 허용**: 앱 기동(`read_naia_path_cache`)·경로 설정(`write_naia_path_cache`)·초기화(`init_naia_settings`)·자산 목록 조회(`list_naia_assets`)·번들 복사(`copy_bundled_assets`) 시 `<ADK>/naia-settings` 아래 4개 자산 폴더(`background`, `vrm-files`, `bgm-musics`, `nva-files`)만 윈도우 경로(드라이브 문자·역슬래시·정규화 경로)로 런타임 `asset_protocol_scope`에 등록하고(`<ADK>` 루트·`<ADK>/naia-settings`·맨 드라이브 루트 `C:\` 등록 금지), `data-private`·`data-private/.tmp`·`data-private/secure-keys.dat`는 원본 및 정규화 경로 모두 차단한다.
+6. **배경 미리보기의 아바타 혼입 제거**: 단일 자산 계약(`naia-asset-contract.json`)을 통해 아바타가 영상 안에 구워져 있는 `naia-autumn-office-live.mp4`를 배경 자산 목록·미리보기에서 제외하고, 기존 설정에 해당 파일명이 저장되어 있으면 배경 전용 자산(`naia-autumn-office-uhd.webp`)으로 정규화해 온보딩·설정의 배경 미리보기와 배경에 배경만 보이게 한다.
+
+| UC | 테스트 파일 | 확인 내용 |
+|---|---|---|
+| UC-WIN-RTX2070-R2-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src-tauri/build.rs`, `packages/shell/scripts/stage-runtime.mjs`, `packages/shell/scripts/__tests__/platform-matrix.test.ts`, `packages/shell/src/lib/__tests__/broadcast.test.ts`, `packages/shell/src/components/__tests__/AiControlBar.test.tsx`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/lib/__tests__/config-secrets.test.ts`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/lib/__tests__/asset-protocol-scope.test.ts`, `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx` | 윈도우 `ffmpeg.exe` 스테이징·PE/자리표시 검증 및 런타임 스폰 전 차단(`os error 216` 방지), 14개 로케일 방송 시작 오류 표시, 방송 키 빈 값 저장·`"키 지우기"` 시 `secure-keys.dat` 삭제, 윈도우 방송 확인 단계(서버 주소·키 마스킹·`Naia` 창) 및 리눅스 포털 흐름 유지, 윈도우 역슬래시·드라이브 문자 경로의 `naia-settings\background` asset scope 허용, `naia-autumn-office-live.mp4` 배경 목록·미리보기 제외 및 정규화 |
+
 ## UC-NVA-BROADCAST-HOTFIX — 방송 화면 시험 자산 제거 (#451 후속)
 
 P01: 방송 중 클립 전환·interrupt 이후 이전 재생 시작 타이머가 오류를 만들지 않는다. 실제 로딩 실패에도 시험 VRM 캡처를 표시하지 않고 투명하게 유지하며 기존 상태 안내를 제공한다. 시험용 VRM 프리셋 두 개를 제거한다.

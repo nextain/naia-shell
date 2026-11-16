@@ -572,6 +572,355 @@ function readMatrix() {
 	}
 }
 
+const MATRIX_SNAPSHOT = readMatrix();
+export const WINDOWS_FFMPEG_SPEC = MATRIX_SNAPSHOT.os.win32.ffmpeg;
+export const FFMPEG_DEV_PLACEHOLDER_PREFIX =
+	WINDOWS_FFMPEG_SPEC.placeholderPrefix;
+export const MIN_WINDOWS_FFMPEG_BYTES = WINDOWS_FFMPEG_SPEC.minBytes;
+export const FFMPEG_SIDECAR_SOURCE_ENV = WINDOWS_FFMPEG_SPEC.sourceEnv;
+export const FFMPEG_REQUIRE_REAL_ENV = WINDOWS_FFMPEG_SPEC.requireRealEnv;
+export const WINDOWS_FFMPEG_FALLBACK_CANDIDATES =
+	WINDOWS_FFMPEG_SPEC.fallbackCandidates;
+
+/**
+ * Windows 번들용 ffmpeg.exe 실물 검증.
+ * - 파일 실존
+ * - 개발용 자리표시(#!naia-ffmpeg-dev-placeholder) 차단
+ * - 최소 크기(1MB) 이상
+ * - PE 실행 파일 헤더(MZ: 0x4D 0x5A) 확인 (os error 216 16비트 응용 프로그램 오류 원천 차단)
+ * - 고정 릴리스 다운로드 시 expectedBytes / expectedSha256 일치 확인
+ */
+export function validateWindowsFfmpegBinary(
+	filePath,
+	{ readImpl = readFileSync, expectedBytes, expectedSha256 } = {},
+) {
+	if (!filePath || !existsSync(filePath)) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리가 존재하지 않습니다: ${filePath}`,
+		);
+	}
+	const buf = readImpl(filePath);
+	const prefix = buf
+		.subarray(0, FFMPEG_DEV_PLACEHOLDER_PREFIX.length)
+		.toString("utf8");
+	if (prefix === FFMPEG_DEV_PLACEHOLDER_PREFIX) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리가 개발용 자리표시 파일(${FFMPEG_DEV_PLACEHOLDER_PREFIX})입니다: ${filePath}`,
+		);
+	}
+	if (buf.length < MIN_WINDOWS_FFMPEG_BYTES) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리 크기가 비정상입니다 (${buf.length} bytes < ${MIN_WINDOWS_FFMPEG_BYTES}): ${filePath}`,
+		);
+	}
+	if (buf.length < 2 || buf[0] !== 0x4d || buf[1] !== 0x5a) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리 PE(MZ) 헤더가 유효하지 않습니다: ${filePath}`,
+		);
+	}
+	if (expectedBytes != null && buf.length !== expectedBytes) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리 크기가 고정 해시 계약과 다릅니다 (${buf.length} !== ${expectedBytes}): ${filePath}`,
+		);
+	}
+	if (expectedSha256 != null) {
+		const actualSha = sha256Of(buf);
+		if (actualSha !== expectedSha256.toLowerCase()) {
+			throw new Error(
+				`[stage-runtime] Windows ffmpeg 바이너리 SHA256 불일치: 기대 ${expectedSha256}, 실제 ${actualSha} (${filePath})`,
+			);
+		}
+	}
+	return { filePath, size: buf.length };
+}
+
+/**
+ * MSI/NSIS 번들 사후 검증(--verify-windows-ffmpeg)용:
+ * 자리표시·최소 크기·MZ 헤더뿐 아니라 platform-matrix.json 의 고정 크기(binaryBytes)와
+ * 고정 SHA-256(binarySha256)까지 대조한다.
+ */
+export function verifyPinnedWindowsFfmpegBinary(
+	filePath,
+	{ spec = WINDOWS_FFMPEG_SPEC, readImpl = readFileSync } = {},
+) {
+	if (!spec?.binaryBytes || !spec?.binarySha256) {
+		throw new Error(
+			"[stage-runtime] platform-matrix.json os.win32.ffmpeg 고정 바이너리 크기/SHA256 계약이 누락되었습니다.",
+		);
+	}
+	return validateWindowsFfmpegBinary(resolve(filePath), {
+		readImpl,
+		expectedBytes: spec.binaryBytes,
+		expectedSha256: spec.binarySha256,
+	});
+}
+
+/**
+ * platform-matrix.json 의 os.win32.ffmpeg 고정 릴리스(판·아카이브 크기·SHA256·추출 바이너리 크기·SHA256)를
+ * 내려받아 대조한 뒤 검증된 ffmpeg.exe 경로를 반환한다.
+ */
+export function downloadPinnedWindowsFfmpeg(
+	spec = WINDOWS_FFMPEG_SPEC,
+	{
+		cacheDir,
+		env = process.env,
+		execFileSyncImpl = execFileSync,
+	} = {},
+) {
+	if (!spec?.url || !spec?.archiveSha256 || !spec?.binarySha256) {
+		throw new Error(
+			"[stage-runtime] platform-matrix.json os.win32.ffmpeg 고정 계약이 누락되었습니다.",
+		);
+	}
+	const baseCacheDir =
+		cacheDir ??
+		resolve(
+			env.RUNNER_TEMP || env.TEMP || env.TMP || RESOURCES,
+			"naia-ffmpeg-cache",
+		);
+	mkdirSync(baseCacheDir, { recursive: true });
+	const cachedBinary = resolve(baseCacheDir, `ffmpeg-${spec.version}.exe`);
+	if (existsSync(cachedBinary)) {
+		try {
+			validateWindowsFfmpegBinary(cachedBinary, {
+				expectedBytes: spec.binaryBytes,
+				expectedSha256: spec.binarySha256,
+			});
+			return {
+				source: cachedBinary,
+				origin: `pinned-release-cache(${spec.version})`,
+			};
+		} catch {
+			rmSync(cachedBinary, { force: true });
+		}
+	}
+
+	const tmpDir = resolve(baseCacheDir, `.tmp-ffmpeg-${process.pid}`);
+	rmSync(tmpDir, { recursive: true, force: true });
+	mkdirSync(tmpDir, { recursive: true });
+	try {
+		const archivePath = resolve(tmpDir, spec.file);
+		const curlBin = process.platform === "win32" ? "curl.exe" : "curl";
+		execFileSyncImpl(
+			curlBin,
+			[
+				"--location",
+				"--fail",
+				"--retry",
+				"4",
+				"--retry-all-errors",
+				"--output",
+				archivePath,
+				spec.url,
+			],
+			{ stdio: "inherit", shell: false },
+		);
+		if (!existsSync(archivePath)) {
+			throw new Error(
+				`[stage-runtime] 고정 ffmpeg 아카이브 다운로드 결과 파일이 없습니다: ${archivePath}`,
+			);
+		}
+		const archiveBuf = readFileSync(archivePath);
+		if (
+			spec.archiveBytes != null &&
+			archiveBuf.length !== spec.archiveBytes
+		) {
+			throw new Error(
+				`[stage-runtime] 고정 ffmpeg 아카이브 크기 불일치: 기대 ${spec.archiveBytes}, 실제 ${archiveBuf.length}`,
+			);
+		}
+		const actualArchiveSha = sha256Of(archiveBuf);
+		if (actualArchiveSha !== spec.archiveSha256.toLowerCase()) {
+			throw new Error(
+				`[stage-runtime] 고정 ffmpeg 아카이브 SHA256 불일치: 기대 ${spec.archiveSha256}, 실제 ${actualArchiveSha}`,
+			);
+		}
+		const tarBin =
+			process.platform === "win32"
+				? join(env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+				: "tar";
+		extractArchive(tarBin, archivePath, tmpDir, execFileSyncImpl);
+		const extractedBin = resolve(tmpDir, ...spec.binaryEntry.split("/"));
+		validateWindowsFfmpegBinary(extractedBin, {
+			expectedBytes: spec.binaryBytes,
+			expectedSha256: spec.binarySha256,
+		});
+		copyFileSync(extractedBin, cachedBinary);
+		return {
+			source: cachedBinary,
+			origin: `pinned-release(${spec.version})`,
+		};
+	} finally {
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Windows 설치 빌드용 실제 ffmpeg.exe 원본 탐색:
+ * 1순위: env NAIA_FFMPEG_SIDECAR_SOURCE (지정 시 반드시 유효한 PE 바이너리여야 함)
+ * 2순위: 이미 스테이징된 targetSidecar 가 유효한 실제 바이너리인 경우 (requirePinned=true 이면 고정 SHA256·크기까지 일치해야 함)
+ * 3순위: downloadPinned=true 인 경우 platform-matrix.json 에 고정된 릴리스(판·SHA256 고정) 다운로드 및 검증 (requirePinned=true 이면 실패 시 PATH 폴백 금지)
+ * 4순위: (requirePinned=false 일 때) PATH / where.exe / 표준 설치 경로(Chocolatey 등)
+ */
+export function resolveWindowsFfmpegSource({
+	targetSidecar,
+	env = process.env,
+	execFileSyncImpl = execFileSync,
+	downloadPinned = false,
+	requirePinned = false,
+	spec = WINDOWS_FFMPEG_SPEC,
+	cacheDir,
+} = {}) {
+	const explicitSource = env[FFMPEG_SIDECAR_SOURCE_ENV]?.trim();
+	if (explicitSource) {
+		const resolved = resolve(explicitSource);
+		validateWindowsFfmpegBinary(
+			resolved,
+			requirePinned
+				? {
+						expectedBytes: spec?.binaryBytes,
+						expectedSha256: spec?.binarySha256,
+					}
+				: {},
+		);
+		return { source: resolved, origin: FFMPEG_SIDECAR_SOURCE_ENV };
+	}
+
+	if (targetSidecar && existsSync(targetSidecar)) {
+		try {
+			validateWindowsFfmpegBinary(
+				targetSidecar,
+				requirePinned
+					? {
+							expectedBytes: spec?.binaryBytes,
+							expectedSha256: spec?.binarySha256,
+						}
+					: {},
+			);
+			return { source: resolve(targetSidecar), origin: "staged-sidecar" };
+		} catch {
+			// 기존 파일이 자리표시(#!naia-ffmpeg-dev-placeholder)이거나 고정 해시와 다르면 무시하고 계속 탐색
+		}
+	}
+
+	const searched = [];
+	if (downloadPinned) {
+		try {
+			return downloadPinnedWindowsFfmpeg(spec, {
+				cacheDir,
+				env,
+				execFileSyncImpl,
+			});
+		} catch (err) {
+			searched.push(
+				`pinned-release(${spec?.url ?? "unknown"}: ${err?.message ?? err})`,
+			);
+			if (requirePinned) {
+				throw new Error(
+					`[stage-runtime] Windows 고정 릴리스 ffmpeg(${spec?.version}) 조달 실패 (무결성 고정 필수): ${err?.message ?? err}`,
+				);
+			}
+		}
+	}
+
+	const candidates = [];
+	try {
+		const whereOut = execFileSyncImpl("where.exe", ["ffmpeg.exe"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		for (const line of String(whereOut).split(/\r?\n/)) {
+			const trimmed = line.trim();
+			if (trimmed) candidates.push(trimmed);
+		}
+	} catch {
+		// where.exe 실패 시 PATH 직접 스캔으로 폴백
+	}
+
+	const pathVar = env.PATH ?? env.Path ?? "";
+	for (const entry of String(pathVar).split(";")) {
+		const dir = entry.trim();
+		if (dir) candidates.push(join(dir, "ffmpeg.exe"));
+	}
+	for (const fallback of spec?.fallbackCandidates ??
+		WINDOWS_FFMPEG_FALLBACK_CANDIDATES) {
+		candidates.push(fallback);
+	}
+
+	for (const candidate of candidates) {
+		const resolved = resolve(candidate);
+		if (searched.includes(resolved)) continue;
+		searched.push(resolved);
+		if (!existsSync(resolved)) continue;
+		try {
+			validateWindowsFfmpegBinary(resolved);
+			return { source: resolved, origin: "PATH" };
+		} catch {
+			// 자리표시 또는 비정상 후보는 건너뜀
+		}
+	}
+
+	throw new Error(
+		`[stage-runtime] Windows 설치 번들용 실제 ffmpeg.exe 를 찾지 못했습니다 (자리표시 번들 차단).\n` +
+			`  탐색한 경로: ${searched.length ? searched.join(", ") : "(없음)"}\n` +
+			`  → ${FFMPEG_SIDECAR_SOURCE_ENV} 환경변수로 실제 ffmpeg.exe 경로를 지정하거나 PATH 에 ffmpeg 를 설치하세요.`,
+	);
+}
+
+/**
+ * (win) src-tauri/binaries/ffmpeg-<triple>.exe 에 실제 PE 바이너리를 스테이징하고 검증한다.
+ * 자리표시 파일(#!naia-ffmpeg-dev-placeholder)이 남아 있으면 빌드를 즉시 실패시킨다.
+ */
+export function provisionWindowsFfmpegSidecar(
+	platform,
+	arch = "x64",
+	{
+		srcTauriDir = SRC_TAURI,
+		env = process.env,
+		execFileSyncImpl = execFileSync,
+		downloadPinned = true,
+		requirePinned = false,
+		spec = WINDOWS_FFMPEG_SPEC,
+		cacheDir,
+	} = {},
+) {
+	if (platform !== "win32") return null;
+	const targetTriple =
+		arch === "arm64"
+			? "aarch64-pc-windows-msvc"
+			: "x86_64-pc-windows-msvc";
+	const binariesDir = resolve(srcTauriDir, "binaries");
+	mkdirSync(binariesDir, { recursive: true });
+	const targetSidecar = resolve(binariesDir, `ffmpeg-${targetTriple}.exe`);
+	const resolvedCacheDir =
+		cacheDir ?? resolve(binariesDir, ".ffmpeg-cache");
+	const { source, origin } = resolveWindowsFfmpegSource({
+		targetSidecar,
+		env,
+		execFileSyncImpl,
+		downloadPinned,
+		requirePinned,
+		spec,
+		cacheDir: resolvedCacheDir,
+	});
+	if (resolve(source) !== resolve(targetSidecar)) {
+		copyFileSync(source, targetSidecar);
+	}
+	const verified = validateWindowsFfmpegBinary(
+		targetSidecar,
+		requirePinned
+			? {
+					expectedBytes: spec?.binaryBytes,
+					expectedSha256: spec?.binarySha256,
+				}
+			: {},
+	);
+	console.log(
+		`[stage-runtime] ② Windows ffmpeg sidecar 검증 완료 (${origin}, ${verified.size} bytes) → ${targetSidecar}`,
+	);
+	return { targetSidecar, source, origin, size: verified.size };
+}
+
 /** 증분 빌드에서도 기존 추출물을 신뢰하지 않도록 Vosk build script 재실행을 강제한다. */
 export function invalidateVoskBuildCache(
 	matrix,
@@ -615,6 +964,36 @@ export function invalidateVoskBuildCache(
 }
 
 async function main() {
+	const args = process.argv.slice(2);
+	const verifyIdx = args.indexOf("--verify-windows-ffmpeg");
+	if (verifyIdx !== -1) {
+		const targetPath = args[verifyIdx + 1];
+		if (!targetPath) {
+			throw new Error(
+				"[stage-runtime] --verify-windows-ffmpeg 인자에 검사할 파일 경로가 필요합니다.",
+			);
+		}
+		const verified = verifyPinnedWindowsFfmpegBinary(targetPath);
+		console.log(
+			`[stage-runtime] Windows ffmpeg 고정 해시 검증 통과 (${verified.size} bytes, sha256=${WINDOWS_FFMPEG_SPEC.binarySha256}): ${verified.filePath}`,
+		);
+		return;
+	}
+	if (args.includes("--provision-windows-ffmpeg")) {
+		const staged = provisionWindowsFfmpegSidecar("win32", process.arch, {
+			downloadPinned: true,
+			requirePinned: true,
+		});
+		if (process.env.GITHUB_ENV && staged?.targetSidecar) {
+			writeFileSync(
+				process.env.GITHUB_ENV,
+				`${FFMPEG_SIDECAR_SOURCE_ENV}=${staged.targetSidecar}\n${FFMPEG_REQUIRE_REAL_ENV}=1\n`,
+				{ flag: "a" },
+			);
+		}
+		return;
+	}
+
 	// Installer staging is a product build, so native E2E checkout selectors must
 	// not leak into its paired-agent choice or into child staging commands.
 	const instance = resolveInstallerInstance(process.env.NAIA_INSTALLER_INSTANCE);
@@ -642,6 +1021,7 @@ async function main() {
 	ensureEgoBrowserVendor();
 
 	if (platform === "win32") {
+		provisionWindowsFfmpegSidecar(platform, arch);
 		console.log("[stage-runtime] host voice upgrade regression gate");
 		run(
 			"cargo test --manifest-path src-tauri/Cargo.toml voxcpm2_upgrade_rejects_default_only_payload_control_files --lib",
@@ -768,7 +1148,7 @@ async function main() {
 	// strip하려 들면 제3자 런타임이 변형되거나 외부 아키텍처 ELF에서 실패한다.
 	// 설치 계약은 검증된 런타임 원본을 동봉하는 것이므로 모든 플랫폼에서 보존한다
 	// (NO_STRIP을 소비하는 도구는 linuxdeploy뿐이다).
-	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1", ...linuxBundleEnv(platform) };
+	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1", ...(platform === "win32" ? { [FFMPEG_REQUIRE_REAL_ENV]: "1" } : {}), ...linuxBundleEnv(platform) };
 	// 이전 로컬 빌드의 stale 포맷이 같은 glob으로 업로드되는 것을 구조적으로 차단한다.
 	rmSync(resolve(SHELL, "src-tauri", "target", "release", "bundle"), {
 		recursive: true,

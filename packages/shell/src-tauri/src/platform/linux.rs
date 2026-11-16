@@ -464,6 +464,9 @@ pub(crate) fn dummy_child() -> Result<Child, String> {
         .map_err(|e| format!("Failed to create dummy process: {}", e))
 }
 
+/// Suppress modal OS error dialogs (Unix: no-op).
+pub(crate) fn suppress_error_dialogs() {}
+
 /// Suppress console window (Unix: no-op — Unix processes don't create console windows).
 pub(crate) fn hide_console(_cmd: &mut Command) {}
 

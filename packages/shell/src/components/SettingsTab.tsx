@@ -22,6 +22,7 @@ import {
 	getAdkPath,
 	isNaiaConfigHydrationPending,
 	listNaiaAssets,
+	normalizeBackgroundVideoFilename,
 	resetAdkPathBinding,
 	resetNaiaPersistedSettings,
 	subscribeNaiaConfigHydration,
@@ -47,7 +48,10 @@ import {
 	subscribeOllamaThinkingUnsupportedStatus,
 } from "../lib/ollama-thinking-status";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
-import { setBroadcastBridgeSnapshot } from "../lib/broadcast-audio-bridge";
+import {
+	setBroadcastBridgeSnapshot,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
@@ -847,7 +851,7 @@ export function SettingsTab() {
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
 	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
 		string | undefined
-	>(existing?.backgroundVideo);
+	>(() => normalizeBackgroundVideoFilename(existing?.backgroundVideo));
 	const [customVrms] = useState<string[]>(
 		(existing?.customVrms ?? []).map(normalizeLocalPath),
 	);
@@ -3330,7 +3334,9 @@ export function SettingsTab() {
 			{ provider: id, model: selectedModel },
 		);
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
-		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
+		void writeNaiaConfig(provSel as unknown as Record<string, unknown>).catch(
+			() => {},
+		);
 	}
 
 	async function checkCliReadiness(
@@ -3486,7 +3492,9 @@ export function SettingsTab() {
 
 	// Load background list from naia-settings
 	useEffect(() => {
-		const savedFilename = existing?.backgroundVideo as string | undefined;
+		const savedFilename = normalizeBackgroundVideoFilename(
+			existing?.backgroundVideo as string | undefined,
+		);
 		listNaiaAssets("background").then((paths) => {
 			setNaiaBgs(paths);
 			if (savedFilename) {
@@ -6104,6 +6112,7 @@ export function SettingsTab() {
 									id="model-select"
 									list="ollama-model-options"
 									value={model}
+									placeholder={t("settings.selectModelPrompt")}
 									onChange={(event) => {
 										ollamaPullSelectionRevisionRef.current += 1;
 										setModel(event.target.value);
@@ -6192,6 +6201,10 @@ export function SettingsTab() {
 							>
 								{!hasSelectedModel && model ? (
 									<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+								) : !hasSelectedModel ? (
+									<option value="__custom__">
+										{t("settings.selectModelPrompt")}
+									</option>
 								) : null}
 								{displayedProviderModels
 									.filter((m) => !m.capabilities.includes("asr"))
@@ -6228,6 +6241,10 @@ export function SettingsTab() {
 								</span>
 							) : provider === "nextain" ? (
 								t("settings.pricingUnavailable")
+							) : !model.trim() ? (
+								<span data-testid="model-select-guidance">
+									{t("settings.selectModelPrompt")}
+								</span>
 							) : (
 								(selectedModelMeta?.label ?? model)
 							)}
@@ -8003,6 +8020,7 @@ const BROADCAST_DEFAULT_URLS: Record<
 
 function BroadcastSettingsSection() {
 	const initial = loadConfig();
+	const broadcastBridge = useBroadcastBridge();
 	const [platform, setPlatform] = useState<
 		NonNullable<AppConfig["broadcastPlatform"]>
 	>(initial?.broadcastPlatform ?? "youtube");
@@ -8014,7 +8032,10 @@ function BroadcastSettingsSection() {
 		NonNullable<AppConfig["broadcastResolution"]>
 	>(initial?.broadcastResolution ?? "1080p30");
 	const [streamKeyInput, setStreamKeyInput] = useState<string>("");
-	const [hasStoredStreamKey, setHasStoredStreamKey] = useState<boolean>(false);
+	const [hasStoredStreamKey, setHasStoredStreamKey] = useState<boolean>(
+		broadcastBridge.hasStreamKey,
+	);
+	const [keyClearedNotice, setKeyClearedNotice] = useState<boolean>(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -8043,27 +8064,40 @@ function BroadcastSettingsSection() {
 		serverUrl?: string;
 		resolution?: NonNullable<AppConfig["broadcastResolution"]>;
 		streamKey?: string;
+		clearKey?: boolean;
 	}) => {
-		const current = (await loadConfigWithSecrets()) ?? loadConfig();
-		if (!current) return;
+		const current = (await loadConfigWithSecrets()) ??
+			loadConfig() ?? {
+				provider: "nextain" as const,
+				model: "",
+				apiKey: "",
+			};
 		const nextPlatform = override?.platform ?? platform;
 		const nextServerUrl = (override?.serverUrl ?? serverUrl).trim();
 		const nextResolution = override?.resolution ?? resolution;
 		const typedKey = (override?.streamKey ?? streamKeyInput).trim();
-		const effectiveKey = typedKey || current.broadcastStreamKey?.trim() || "";
+		const clearStoredKey = Boolean(override?.clearKey);
+		const effectiveKey = clearStoredKey
+			? ""
+			: typedKey || current.broadcastStreamKey?.trim() || "";
 		const nextConfig: AppConfig = {
 			...current,
 			broadcastPlatform: nextPlatform,
 			broadcastServerUrl:
 				nextServerUrl || BROADCAST_DEFAULT_URLS[nextPlatform],
 			broadcastResolution: nextResolution,
-			...(effectiveKey ? { broadcastStreamKey: effectiveKey } : {}),
+			...(clearStoredKey
+				? { broadcastStreamKey: "" }
+				: effectiveKey
+					? { broadcastStreamKey: effectiveKey }
+					: {}),
 		};
 		await saveConfigSecure(nextConfig);
 		await writeNaiaUiConfig(nextConfig as unknown as Record<string, unknown>);
 		const hasKey = Boolean(effectiveKey);
 		setHasStoredStreamKey(hasKey);
 		setStreamKeyInput("");
+		setKeyClearedNotice(clearStoredKey);
 		setBroadcastBridgeSnapshot({ hasStreamKey: hasKey });
 	};
 
@@ -8153,7 +8187,10 @@ function BroadcastSettingsSection() {
 							} as React.CSSProperties
 						}
 						value={streamKeyInput}
-						onChange={(e) => setStreamKeyInput(e.target.value)}
+						onChange={(e) => {
+							setStreamKeyInput(e.target.value);
+							if (keyClearedNotice) setKeyClearedNotice(false);
+						}}
 						placeholder={
 							hasStoredStreamKey
 								? "••••••••"
@@ -8168,7 +8205,41 @@ function BroadcastSettingsSection() {
 					>
 						{t("settings.broadcastSave")}
 					</button>
+					{(hasStoredStreamKey || streamKeyInput.length > 0) && (
+						<button
+							type="button"
+							className="voice-preview-btn"
+							data-testid="broadcast-clear-key-btn"
+							onClick={() =>
+								void persistBroadcastSettings({
+									streamKey: "",
+									clearKey: true,
+								})
+							}
+						>
+							{t("broadcast.clearKeyBtn")}
+						</button>
+					)}
 				</div>
+				{keyClearedNotice && (
+					<div
+						data-testid="broadcast-key-cleared-notice"
+						className="settings-hint"
+						style={{ marginTop: 6 }}
+					>
+						{t("broadcast.keyCleared")}
+					</div>
+				)}
+				{broadcastBridge.lastError && (
+					<div
+						role="alert"
+						data-testid="broadcast-settings-error"
+						className="settings-hint"
+						style={{ color: "#ef4444", marginTop: 6 }}
+					>
+						{broadcastBridge.lastError}
+					</div>
+				)}
 			</div>
 		</div>
 	);

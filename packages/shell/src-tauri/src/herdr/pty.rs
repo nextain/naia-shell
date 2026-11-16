@@ -10,7 +10,8 @@ use tauri::{AppHandle, Emitter};
 use crate::pty::{emit_or_buffer_pty_output, PtyCreated, PtyHandle, PtyKind, PtyRegistry};
 
 use super::config::{
-    herdr_bin, herdr_command, herdr_session_name, validate_herdr, write_embedded_herdr_config,
+    herdr_bin, herdr_command, herdr_session_name, is_herdr_shutting_down, run_herdr_output,
+    validate_herdr, write_embedded_herdr_config,
 };
 
 static HERDR_LAUNCH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -18,10 +19,10 @@ const HERDR_SERVER_START_TIMEOUT: Duration = Duration::from_secs(15);
 const HERDR_SERVER_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 
 fn probe_herdr_server(config_path: &Path) -> Result<(), String> {
-    let output = herdr_command()
-        .args(["api", "snapshot"])
-        .env("HERDR_CONFIG_PATH", config_path)
-        .output()
+    let mut cmd = herdr_command();
+    cmd.args(["api", "snapshot"])
+        .env("HERDR_CONFIG_PATH", config_path);
+    let output = run_herdr_output(&mut cmd, "probe_herdr_server")
         .map_err(|error| format!("Herdr server probe failed: {error}"))?;
     if output.status.success() {
         return Ok(());
@@ -67,6 +68,9 @@ fn server_start_failure(reason: &str, log_path: &Path) -> String {
 /// The caller holds HERDR_LAUNCH_LOCK, so concurrent Workspace opens start at
 /// most one server and reuse one that becomes ready during the initial probe.
 fn ensure_herdr_server(config_path: &Path, working_dir: &Path) -> Result<(), String> {
+    if is_herdr_shutting_down() {
+        return Err("Herdr server start skipped during shutdown".to_string());
+    }
     if probe_herdr_server(config_path).is_ok() {
         return Ok(());
     }
@@ -233,14 +237,26 @@ pub async fn herdr_pty_create(
 
         // Inject `naia` CLI interceptor to open files in the GUI viewer
         let wrapper_dir = ensure_naia_wrapper_dir(&config_path);
+        let mut paths = vec![wrapper_dir];
+        let bin = herdr_bin();
+        if let Some(bin_dir) = std::path::Path::new(&bin)
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty() && dir.is_dir())
+        {
+            paths.push(bin_dir.to_path_buf());
+            if let Some(resource_root) = bin_dir.parent().filter(|dir| dir.is_dir()) {
+                paths.push(resource_root.to_path_buf());
+            }
+        }
         let new_path = if let Ok(old_path) = std::env::var("PATH") {
-            let mut paths = vec![wrapper_dir];
             paths.extend(std::env::split_paths(&old_path));
             std::env::join_paths(paths)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| old_path)
         } else {
-            wrapper_dir.to_string_lossy().to_string()
+            std::env::join_paths(paths)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default()
         };
         command.env("PATH", new_path);
         let child = pair

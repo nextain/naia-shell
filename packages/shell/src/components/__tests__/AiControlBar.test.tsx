@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockLoadConfigWithSecrets = vi.fn();
 const mockWriteNaiaUiConfig = vi.fn();
+const mockStartBroadcast = vi.fn();
+const mockStopBroadcast = vi.fn();
+const mockRequiresBroadcastConfirmation = vi.fn();
 
 vi.mock("../../lib/config", async () => {
 	const actual =
@@ -30,10 +33,25 @@ vi.mock("../../lib/adk-store", () => ({
 	writeNaiaUiConfig: (...args: unknown[]) => mockWriteNaiaUiConfig(...args),
 }));
 
+vi.mock("../../lib/broadcast-client", async () => {
+	const actual =
+		await vi.importActual<typeof import("../../lib/broadcast-client")>(
+			"../../lib/broadcast-client",
+		);
+	return {
+		...actual,
+		startBroadcast: (...args: unknown[]) => mockStartBroadcast(...args),
+		stopBroadcast: (...args: unknown[]) => mockStopBroadcast(...args),
+		requiresBroadcastConfirmation: (...args: unknown[]) =>
+			mockRequiresBroadcastConfirmation(...args),
+	};
+});
+
 import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
+import { setBroadcastBridgeSnapshot } from "../../lib/broadcast-audio-bridge";
 import { useAppStore } from "../../stores/app";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { AiControlBar } from "../AiControlBar";
@@ -191,5 +209,100 @@ describe("AiControlBar proactive cost control", () => {
 		render(<AiControlBar />);
 		fireEvent.click(screen.getByRole("button", { name: "TTS" }));
 		expect(states).toEqual([false]);
+	});
+
+	it("shows pre-broadcast confirmation dialog on Windows (destination masked + Naia window) and only connects on confirm", async () => {
+		mockRequiresBroadcastConfirmation.mockReturnValue(true);
+		mockStartBroadcast.mockResolvedValue(undefined);
+		setBroadcastBridgeSnapshot({
+			state: "idle",
+			elapsedSeconds: 0,
+			hasStreamKey: true,
+			lastError: null,
+		});
+		mockLoadConfigWithSecrets.mockResolvedValue({
+			...baseConfig,
+			broadcastPlatform: "youtube",
+			broadcastServerUrl: "rtmps://a.rtmp.youtube.com/live2",
+			broadcastStreamKey: "win-stream-secret-key",
+		});
+
+		render(<AiControlBar />);
+		const toggleBtn = await screen.findByTestId("ai-bar-broadcast-btn");
+		await waitFor(() => expect(toggleBtn).not.toBeDisabled());
+
+		fireEvent.click(toggleBtn);
+		const dialog = await screen.findByTestId("broadcast-confirm-dialog");
+		expect(dialog).toBeVisible();
+		expect(mockStartBroadcast).not.toHaveBeenCalled();
+		await waitFor(() =>
+			expect(
+				screen.getByTestId("broadcast-confirm-destination").textContent,
+			).toBe("rtmps://a.rtmp.youtube.com/live2/••••••••"),
+		);
+		expect(
+			screen.getByTestId("broadcast-confirm-destination").textContent,
+		).not.toContain("win-stream-secret-key");
+		expect(
+			screen.getByTestId("broadcast-confirm-target").textContent,
+		).toMatch(/Naia/);
+
+		fireEvent.click(screen.getByTestId("broadcast-confirm-cancel-btn"));
+		expect(screen.queryByTestId("broadcast-confirm-dialog")).toBeNull();
+		expect(mockStartBroadcast).not.toHaveBeenCalled();
+
+		fireEvent.click(toggleBtn);
+		await screen.findByTestId("broadcast-confirm-dialog");
+		fireEvent.click(screen.getByTestId("broadcast-confirm-start-btn"));
+		await waitFor(() => expect(mockStartBroadcast).toHaveBeenCalledTimes(1));
+	});
+
+	it("starts broadcast directly on Linux without showing the Windows confirmation modal", async () => {
+		mockRequiresBroadcastConfirmation.mockReturnValue(false);
+		mockStartBroadcast.mockResolvedValue(undefined);
+		setBroadcastBridgeSnapshot({
+			state: "idle",
+			elapsedSeconds: 0,
+			hasStreamKey: true,
+			lastError: null,
+		});
+		mockLoadConfigWithSecrets.mockResolvedValue({
+			...baseConfig,
+			broadcastPlatform: "youtube",
+			broadcastServerUrl: "rtmps://a.rtmp.youtube.com/live2",
+			broadcastStreamKey: "linux-stream-secret",
+		});
+
+		render(<AiControlBar />);
+		const toggleBtn = await screen.findByTestId("ai-bar-broadcast-btn");
+		await waitFor(() => expect(toggleBtn).not.toBeDisabled());
+		fireEvent.click(toggleBtn);
+
+		expect(screen.queryByTestId("broadcast-confirm-dialog")).toBeNull();
+		await waitFor(() => expect(mockStartBroadcast).toHaveBeenCalledTimes(1));
+	});
+
+	it("renders broadcast_start failure message visibly in AiControlBar and clears on dismiss", async () => {
+		setBroadcastBridgeSnapshot({
+			state: "idle",
+			elapsedSeconds: 0,
+			hasStreamKey: true,
+			lastError:
+				"방송용 FFmpeg 실행 파일이 올바르지 않아요(설치본 손상 또는 개발용 자리표시 파일).",
+		});
+		mockLoadConfigWithSecrets.mockResolvedValue({
+			...baseConfig,
+			broadcastStreamKey: "configured-key",
+		});
+
+		render(<AiControlBar />);
+		const alert = await screen.findByTestId("broadcast-error-alert");
+		expect(alert).toBeVisible();
+		expect(alert.textContent).toContain("FFmpeg");
+
+		fireEvent.click(screen.getByTestId("broadcast-error-dismiss-btn"));
+		await waitFor(() =>
+			expect(screen.queryByTestId("broadcast-error-alert")).toBeNull(),
+		);
 	});
 });

@@ -104,6 +104,25 @@
 					"vcruntime140_1.dll"
 				]
 			},
+			"ffmpeg": {
+				"$comment": "Windows 방송(gdigrab + h264_nvenc/libx264)용 고정 ffmpeg 사이드카 원본 계약. stage-runtime.mjs 가 PATH/로컬 후보 미발견 시 GyanD 공식 7.1.1 릴리스를 다운로드하여 아카이브/바이너리 크기·SHA256·MZ 헤더를 대조한다.",
+				"version": "7.1.1",
+				"url": "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+				"file": "ffmpeg-7.1.1-essentials_build.zip",
+				"archiveBytes": 92234348,
+				"archiveSha256": "04861d3339c5ebe38b56c19a15cf2c0cc97f5de4fa8910e4d47e5e6404e4a2d4",
+				"binaryEntry": "ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe",
+				"binaryBytes": 87429632,
+				"binarySha256": "b90225987bdd042cca09a1efb5e34e9848f2d1dbf5fbcd388753a44145522997",
+				"minBytes": 1000000,
+				"placeholderPrefix": "#!naia-ffmpeg-dev-placeholder",
+				"sourceEnv": "NAIA_FFMPEG_SIDECAR_SOURCE",
+				"requireRealEnv": "NAIA_REQUIRE_REAL_FFMPEG",
+				"fallbackCandidates": [
+					"C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
+					"C:\\ffmpeg\\bin\\ffmpeg.exe"
+				]
+			},
 			"installer": {
 				"publisher": "Nextain Inc.",
 				"windows": {
