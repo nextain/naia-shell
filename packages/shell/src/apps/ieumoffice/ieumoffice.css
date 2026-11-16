@@ -1,0 +1,604 @@
+:root {
+	--ieum-indigo: #4338ca;
+	--ieum-indigo2: #6366f1;
+	--ieum-amber: #ffb020;
+	--ieum-ink: #1e1b4b;
+	--ieum-text: #334155;
+	--ieum-muted: #64748b;
+	--ieum-line: #e2e8f0;
+	--ieum-bg: #f6f7fb;
+	--ieum-card: #ffffff;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--ieum-bg);
+	color: var(--ieum-text);
+	font-family: "Pretendard", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+}
+
+.ieum-root {
+	max-width: 1280px;
+	margin: 0 auto;
+	padding: 20px 18px 36px;
+}
+
+.ieum-hero {
+	border-radius: 22px;
+	padding: 24px 26px;
+	color: #fff;
+	background: radial-gradient(
+			580px 260px at 100% 0%,
+			rgba(255, 176, 32, 0.32),
+			transparent 60%
+		),
+		linear-gradient(135deg, #312e81, var(--ieum-indigo) 55%, var(--ieum-indigo2));
+}
+
+.ieum-hero-main {
+	display: flex;
+	gap: 20px;
+	align-items: center;
+}
+
+.ieum-hero-icon {
+	width: 76px;
+	height: 76px;
+	border-radius: 18px;
+	flex-shrink: 0;
+	box-shadow: 0 12px 28px rgba(15, 10, 60, 0.4);
+}
+
+.ieum-eyebrow {
+	font-size: 12px;
+	letter-spacing: 0.1em;
+	font-weight: 700;
+	color: #fde3a7;
+}
+
+.ieum-hero h1 {
+	margin: 4px 0 6px;
+	font-size: 24px;
+	line-height: 1.25;
+}
+
+.ieum-hero h1 small {
+	font-size: 13px;
+	opacity: 0.8;
+	font-weight: 600;
+}
+
+.ieum-hero p {
+	margin: 0;
+	font-size: 14px;
+	line-height: 1.55;
+	color: #e0e7ff;
+	max-width: 780px;
+}
+
+.ieum-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.ieum-badge {
+	font-size: 12px;
+	font-weight: 700;
+	padding: 4px 10px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.16);
+	border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.ieum-badge.amber {
+	background: var(--ieum-amber);
+	color: #3b2600;
+	border-color: transparent;
+}
+
+.ieum-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 16px 0;
+	padding: 5px;
+	border-radius: 14px;
+	background: #e9ebf5;
+	width: fit-content;
+	max-width: 100%;
+}
+
+.ieum-tab {
+	border: 0;
+	background: transparent;
+	font: inherit;
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--ieum-muted);
+	padding: 8px 14px;
+	border-radius: 10px;
+	cursor: pointer;
+}
+
+.ieum-tab.on {
+	background: #fff;
+	color: var(--ieum-indigo);
+	box-shadow: 0 2px 6px rgba(30, 27, 75, 0.08);
+}
+
+.ieum-status-banner {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	margin-bottom: 12px;
+	border-radius: 12px;
+	background: #eef2ff;
+	border: 1px solid #c7d2fe;
+	color: var(--ieum-ink);
+	font-size: 13.5px;
+}
+
+.ieum-studio-grid {
+	display: grid;
+	grid-template-columns: 220px minmax(0, 1fr) 300px;
+	gap: 14px;
+	align-items: start;
+}
+
+.ieum-connect-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.ieum-two-col {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 14px;
+}
+
+.ieum-card {
+	background: var(--ieum-card);
+	border: 1px solid var(--ieum-line);
+	border-radius: 16px;
+	padding: 16px;
+}
+
+.ieum-card h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	color: var(--ieum-ink);
+}
+
+.ieum-subhead {
+	margin: 14px 0 6px;
+	font-size: 14px;
+	color: var(--ieum-ink);
+}
+
+.ieum-format-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.ieum-format-btn {
+	text-align: left;
+	border: 1px solid var(--ieum-line);
+	background: #f8fafc;
+	color: var(--ieum-text);
+	font: inherit;
+	font-size: 13.5px;
+	font-weight: 700;
+	padding: 9px 12px;
+	border-radius: 10px;
+	cursor: pointer;
+}
+
+.ieum-format-btn.on {
+	background: #eef2ff;
+	border-color: var(--ieum-indigo2);
+	color: var(--ieum-indigo);
+}
+
+.ieum-file-actions {
+	margin-top: 14px;
+	padding-top: 12px;
+	border-top: 1px solid var(--ieum-line);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.ieum-field-label {
+	display: block;
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--ieum-muted);
+	margin: 6px 0 4px;
+}
+
+.ieum-input,
+.ieum-textarea,
+.ieum-select-sm {
+	width: 100%;
+	font: inherit;
+	font-size: 13.5px;
+	padding: 8px 10px;
+	border-radius: 10px;
+	border: 1px solid #cbd5e1;
+	background: #fff;
+	color: var(--ieum-ink);
+}
+
+.ieum-textarea.mono {
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.ieum-select-sm {
+	width: auto;
+	min-width: 100px;
+	padding: 6px 8px;
+}
+
+.ieum-btn {
+	font: inherit;
+	font-size: 13.5px;
+	font-weight: 700;
+	border: 0;
+	border-radius: 10px;
+	padding: 9px 14px;
+	cursor: pointer;
+	background: var(--ieum-indigo);
+	color: #fff;
+}
+
+.ieum-btn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.ieum-btn.ghost {
+	background: #eef2ff;
+	color: var(--ieum-indigo);
+}
+
+.ieum-btn.sm {
+	padding: 6px 11px;
+	font-size: 12.5px;
+}
+
+.ieum-btn.xs {
+	padding: 4px 8px;
+	font-size: 12px;
+}
+
+.ieum-btn.full {
+	width: 100%;
+}
+
+.ieum-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.ieum-page-sheet {
+	background: #fcfdff;
+	border: 1px solid var(--ieum-line);
+	border-radius: 12px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.ieum-docx-row {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+}
+
+.ieum-docx-input {
+	flex: 1;
+	font: inherit;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	padding: 8px 10px;
+	resize: vertical;
+	color: var(--ieum-ink);
+}
+
+.ieum-docx-input.heading1 {
+	font-size: 18px;
+	font-weight: 800;
+}
+
+.ieum-docx-input.heading2 {
+	font-size: 15.5px;
+	font-weight: 700;
+}
+
+.ieum-sheet-wrap {
+	overflow-x: auto;
+}
+
+.ieum-sheet-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.ieum-sheet-table th,
+.ieum-sheet-table td {
+	border: 1px solid #cbd5e1;
+	padding: 4px;
+}
+
+.ieum-sheet-table th,
+.ieum-row-num {
+	background: #f1f5f9;
+	color: var(--ieum-muted);
+	text-align: center;
+	font-weight: 700;
+}
+
+.ieum-cell-input {
+	width: 100%;
+	min-width: 84px;
+	border: 0;
+	font: inherit;
+	padding: 4px 6px;
+	background: transparent;
+	color: var(--ieum-ink);
+}
+
+.ieum-cell-eval {
+	font-size: 11.5px;
+	font-weight: 700;
+	color: var(--ieum-indigo);
+	padding: 0 6px 2px;
+}
+
+.ieum-slide-canvas {
+	aspect-ratio: 16 / 9;
+	background: linear-gradient(145deg, #1e1b4b, #312e81);
+	color: #fff;
+	border-radius: 14px;
+	padding: 24px 28px;
+	margin-bottom: 12px;
+	overflow-y: auto;
+}
+
+.ieum-slide-canvas h2 {
+	margin: 0 0 12px;
+	font-size: 22px;
+}
+
+.ieum-slide-canvas ul {
+	margin: 0;
+	padding-left: 20px;
+	line-height: 1.7;
+}
+
+.ieum-mindmap-root {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.ieum-input.root-topic {
+	font-size: 17px;
+	font-weight: 800;
+	border-color: var(--ieum-indigo2);
+	background: #eef2ff;
+}
+
+.ieum-mindmap-branches {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 10px;
+}
+
+.ieum-branch-card {
+	border: 1px solid #c7d2fe;
+	background: #f8faff;
+	border-radius: 12px;
+	padding: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.ieum-branch-head {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.ieum-input.leaf {
+	font-size: 12.5px;
+	background: #fff;
+}
+
+.ieum-md-split {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.ieum-md-line {
+	margin: 0 0 6px;
+	font-size: 14px;
+	white-space: pre-wrap;
+}
+
+.ieum-muted-hint {
+	margin: 0 0 10px;
+	font-size: 12.5px;
+	color: var(--ieum-muted);
+	line-height: 1.5;
+}
+
+.ieum-quick-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.ieum-chip-btn {
+	font: inherit;
+	font-size: 12px;
+	font-weight: 600;
+	padding: 5px 10px;
+	border-radius: 999px;
+	border: 1px solid #c7d2fe;
+	background: #f8f9ff;
+	color: var(--ieum-indigo);
+	cursor: pointer;
+}
+
+.ieum-ai-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.ieum-diff-box {
+	margin-top: 12px;
+	padding: 12px;
+	border-radius: 12px;
+	background: #f0fdf4;
+	border: 1px solid #86efac;
+}
+
+.ieum-diff-pre {
+	margin: 8px 0;
+	padding: 8px;
+	border-radius: 8px;
+	background: #fff;
+	font-size: 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+.ieum-diff-btns,
+.ieum-row-gap {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.ieum-row-between {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+}
+
+.ieum-status-strip {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 8px 0 12px;
+}
+
+.ieum-pill-tag {
+	font-size: 12.5px;
+	font-weight: 700;
+	padding: 4px 10px;
+	border-radius: 999px;
+}
+
+.ieum-pill-tag.ok {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.ieum-pill-tag.warn {
+	background: #fef3c7;
+	color: #92400e;
+}
+
+.ieum-pill-tag.neutral {
+	background: #e2e8f0;
+	color: #475569;
+}
+
+.ieum-code-box,
+.ieum-preset-box {
+	margin-top: 10px;
+	padding: 10px 12px;
+	border-radius: 12px;
+	background: #f8fafc;
+	border: 1px solid var(--ieum-line);
+}
+
+.ieum-code-box code,
+.ieum-inline-cmd {
+	display: inline-block;
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+	font-size: 12.5px;
+	background: #eef2ff;
+	color: var(--ieum-ink);
+	padding: 4px 8px;
+	border-radius: 6px;
+	word-break: break-all;
+}
+
+.ieum-copy-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-top: 8px;
+}
+
+.ieum-copied {
+	margin-top: 8px;
+	font-size: 12.5px;
+	font-weight: 700;
+	color: var(--ieum-indigo);
+}
+
+.ieum-warn-card {
+	padding: 14px 16px;
+	border-radius: 14px;
+	background: #fff7e6;
+	border: 1px solid #ffe0a3;
+	color: #5b3b00;
+	font-size: 13.5px;
+	line-height: 1.6;
+}
+
+@media (max-width: 980px) {
+	.ieum-studio-grid,
+	.ieum-two-col,
+	.ieum-md-split {
+		grid-template-columns: 1fr;
+	}
+	.ieum-hero-main {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	.ieum-docx-row,
+	.ieum-copy-row {
+		flex-wrap: wrap;
+	}
+}

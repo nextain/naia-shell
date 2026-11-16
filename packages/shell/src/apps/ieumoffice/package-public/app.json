@@ -1,0 +1,70 @@
+{
+  "id": "land.naia.ieumoffice",
+  "name": "IeumOffice Studio",
+  "names": {
+    "ko": "이음오피스",
+    "en": "IeumOffice Studio"
+  },
+  "icon": "📄",
+  "iconUrl": "icon.svg",
+  "version": "0.2.0",
+  "description": "설치 즉시 열리는 웹 문서 편집기(.docx·.xlsx·.pptx·.hwpx·.xmind·.md)와 내 PC 이음오피스(ieumoffice mcp) 자동 연결 스튜디오",
+  "descriptions": {
+    "ko": "워드(.docx)·엑셀(.xlsx)·파워포인트(.pptx)·한글(.hwpx)·마인드맵(.xmind)·마크다운 문서를 앱 안에서 바로 열고 나이아 AI와 함께 고치며, 내 PC에 설치된 데스크톱 이음오피스(ieumoffice mcp)를 자동 감지해 나이아 에이전트 및 코딩 에이전트에 연결합니다.",
+    "en": "Open and co-edit Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Hangul (.hwpx), Mind Map (.xmind), and Markdown documents right inside Naia with diff review, and automatically connect desktop IeumOffice (`ieumoffice mcp`) to Naia and coding agents."
+  },
+  "help": {
+    "ko": "[웹 문서 편집기] 탭에서 .docx·.xlsx·.pptx·.hwpx·.xmind 문서를 바로 열고 나이아에게 수정을 요청해 변경 전·후를 비교한 뒤 반영해 보세요. [나이아 & MCP 자동 연결] 탭에서는 내 PC에 설치된 이음오피스 CLI를 자동 감지해 ieumoffice mcp와 나이아 AI 게이트웨이를 원클릭으로 연결합니다.",
+    "en": "Use the Web Document Studio tab to open, edit, and export .docx, .xlsx, .pptx, .hwpx, and .xmind files with Naia AI diff review, or switch to Naia & MCP Connection to auto-connect desktop `ieumoffice mcp`."
+  },
+  "context": "사용자가 이음오피스 스튜디오(내장 웹 문서 편집기 및 데스크톱 ieumoffice mcp 연결 허브)를 열고 있습니다. skill_ieumoffice_studio 도구로 현재 열린 문서를 읽거나 수정 초안(propose_edit)을 제안할 수 있습니다.",
+  "keepAlive": true,
+  "permissions": [
+    "model.ask",
+    "speech",
+    "locale",
+    "clipboard.write"
+  ],
+  "tools": [
+    {
+      "name": "skill_ieumoffice_studio",
+      "description": "이음오피스 스튜디오에 열린 문서(.docx/.xlsx/.pptx/.hwpx/.xmind/.md)와 데스크톱 ieumoffice mcp 연결 상태를 다루는 도구입니다. action: status(상태 조회), read_document(현재 문서 본문 읽기), propose_edit(사용자 확인용 문서 수정안 제안), switch_format(문서 형식 전환), convert_mindmap(마인드맵을 pptx 또는 docx로 변환).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "read_document",
+              "propose_edit",
+              "switch_format",
+              "convert_mindmap"
+            ],
+            "description": "수행할 동작"
+          },
+          "content": {
+            "type": "string",
+            "description": "propose_edit 시 제안할 새 문서 내용"
+          },
+          "summary": {
+            "type": "string",
+            "description": "propose_edit 시 변경 요약 한 줄"
+          },
+          "format": {
+            "type": "string",
+            "enum": ["docx", "xlsx", "pptx", "hwpx", "xmind", "markdown"],
+            "description": "switch_format 대상 문서 형식"
+          },
+          "target": {
+            "type": "string",
+            "enum": ["pptx", "docx"],
+            "description": "convert_mindmap 변환 대상 형식"
+          }
+        },
+        "required": ["action"]
+      },
+      "tier": 0
+    }
+  ]
+}

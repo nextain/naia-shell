@@ -1,0 +1,49 @@
+{
+  "id": "ieumoffice",
+  "displayName": "IeumOffice",
+  "executables": {
+    "linux": [
+      "ieumoffice",
+      "~/.local/bin/ieumoffice",
+      "/usr/local/bin/ieumoffice",
+      "/usr/bin/ieumoffice",
+      "/opt/IeumOffice/resources/cli/ieumoffice",
+      "/opt/ieumoffice/resources/cli/ieumoffice"
+    ],
+    "macos": [
+      "ieumoffice",
+      "/Applications/IeumOffice.app/Contents/Resources/cli/ieumoffice",
+      "~/Applications/IeumOffice.app/Contents/Resources/cli/ieumoffice",
+      "/usr/local/bin/ieumoffice",
+      "~/.local/bin/ieumoffice"
+    ],
+    "windows": [
+      "ieumoffice.cmd",
+      "ieumoffice.exe",
+      "ieumoffice",
+      "%LOCALAPPDATA%\\Programs\\IeumOffice\\resources\\cli\\ieumoffice.cmd",
+      "%LOCALAPPDATA%\\Programs\\IeumOffice\\IeumOffice.exe",
+      "%ProgramFiles%\\IeumOffice\\resources\\cli\\ieumoffice.cmd",
+      "%ProgramFiles%\\IeumOffice\\IeumOffice.exe"
+    ]
+  },
+  "version": {
+    "args": ["--version"],
+    "timeoutMs": 5000,
+    "parse": { "kind": "stdoutFirstLine" }
+  },
+  "readiness": {
+    "args": ["--version"],
+    "timeoutMs": 5000,
+    "classify": [
+      { "when": { "spawnError": "notFound" }, "status": "not-installed" },
+      { "when": { "timedOut": true }, "status": "waiting-input" },
+      { "when": { "exitCode": 0 }, "status": "ready" },
+      { "when": { "exitCodeNonZero": true }, "status": "error" }
+    ]
+  },
+  "login": {
+    "args": ["mcp", "install"],
+    "openInTerminal": false
+  }
+}

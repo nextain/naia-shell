@@ -9,6 +9,7 @@
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "build:slides": "vite build --config vite.slides.config.ts",
     "build:charcard": "vite build --config vite.charcard.config.ts",
+    "build:ieumoffice": "vite build --config vite.ieumoffice.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "node scripts/dev-setup.mjs && node scripts/tauri-with-mode.mjs dev",
