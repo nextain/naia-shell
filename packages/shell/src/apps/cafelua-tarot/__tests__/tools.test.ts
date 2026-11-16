@@ -3,6 +3,7 @@ import { drawCelticCross, type TarotReading } from "../reading";
 import { createTarotToolHandler } from "../tools";
 function fixture() {
 	let reading: TarotReading | null = null;
+	let preferredSpread: "one" | "three" | "celtic" = "celtic";
 	const finish = vi.fn();
 	const openStory = vi.fn(() => ({ chapter_title: "Chapter", page: 1 }));
 	const readAloud = vi.fn(() => ({
@@ -15,7 +16,12 @@ function fixture() {
 	const stopReading = vi.fn(() => ({ page: 1 }));
 	const run = createTarotToolHandler({
 		getReading: () => reading,
+		getPreferredSpread: () => preferredSpread,
+		setPreferredSpread: (s) => {
+			preferredSpread = s;
+		},
 		startReading: (q, s) => {
+			preferredSpread = s;
 			reading = drawCelticCross(q, () => 0, 1, s);
 			return reading;
 		},
@@ -26,7 +32,7 @@ function fixture() {
 		openStory,
 		readAloud,
 		stopReading,
-		status: () => ({ screen: "table" }),
+		status: () => ({ screen: "table", preferred_spread: preferredSpread }),
 	});
 	return { run, finish, openStory, readAloud, stopReading };
 }
@@ -93,5 +99,31 @@ describe("Naia tarot actions", () => {
 		expect(f.run({ action: "stop_reading" }).page).toBe(1);
 		expect(f.run({ action: "status" }).screen).toBe("table");
 		expect(() => f.run({ action: "start_reading", spread: "wrong" })).toThrow();
+	});
+
+	it("supports select_spread and one-card readings while prompting for spread choice when question is missing", () => {
+		const f = fixture();
+		expect(f.run({ action: "start_reading" })).toMatchObject({
+			need_question: true,
+			need_spread: true,
+			preferred_spread: "celtic",
+			available_spreads: ["one", "three", "celtic"],
+		});
+		expect(f.run({ action: "select_spread", spread: "one" })).toMatchObject({
+			preferred_spread: "one",
+		});
+		expect(f.run({ action: "status" }).preferred_spread).toBe("one");
+		expect(f.run({ action: "start_reading", question: "today" })).toMatchObject(
+			{
+				spread: "one",
+				total: 1,
+			},
+		);
+		const onlyCard = f.run({ action: "reveal_next" });
+		expect(onlyCard).toMatchObject({
+			number: 1,
+			total: 1,
+			all_revealed: true,
+		});
 	});
 });

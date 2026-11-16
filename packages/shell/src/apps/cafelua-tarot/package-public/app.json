@@ -19,9 +19,10 @@
 		"vi": "Tarot Cafe Lua",
 		"zh": "Cafe Lua 塔罗"
 	},
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"manifest_version": 2,
-  "permissions": ["speech", "locale"],
+	"permissions": ["speech", "locale"],
+	"context": "사용자가 카페루아 타로 앱을 보고 있습니다. 새 타로를 시작하기 전에는 반드시 고민 내용과 함께 어떤 방식으로 볼지(1장 원카드 'one' / 3장 과거·현재·미래 'three' / 10장 정통 캘틱 크로스 'celtic', 기본 추천은 10장 캘틱 크로스)를 먼저 물어보고 사용자의 선택을 확인한 뒤 start_reading을 호출하세요.",
 	"iconUrl": "icon.svg",
 	"thumbnailUrl": "/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
 	"description": "Naia becomes Cafe Lua's tarot reader: tell her what's on your mind and she reads the cards one by one. The app also holds the Cafe Lua Tarot Stories book, and Naia can read it aloud to you.",
@@ -63,13 +64,14 @@
 	"tools": [
 		{
 			"name": "skill_cafelua_tarot",
-			"description": "For tarot, ask about the concern first. Use only the concern the user states in this conversation after you ask; do not reuse an old one. Use start_reading (three for a short reading), reveal one card at a time, interpret only revealed cards and wait for the user. After all cards, get_reading, synthesize, then finish. Never write or speak story text from memory. When asked to read a chapter or story, call open_story if needed, then read_aloud once. The app reads the original in Naia's voice; do not recite or summarize it. When asked to stop, call stop_reading once and end in one short sentence. Speak as Naia, not Alpha.",
+			"description": "For tarot, ask the user BOTH what is on their mind AND which spread style they want before starting: 'one' (1-card focus), 'three' (3-card Past/Present/Future), or 'celtic' (10-card Celtic Cross, recommended signature reading). Use select_spread if the user picks a spread first, then start_reading once both concern and spread are confirmed (default to 'celtic' if the user asks for the standard/full reading). Reveal one card at a time with reveal_next, interpret only revealed cards, and wait for the user. After all cards, call get_reading, synthesize, then finish. Never write or speak story text from memory. When asked to read a chapter or story, call open_story if needed, then read_aloud once. The app reads the original in Naia's voice; do not recite or summarize it. When asked to stop, call stop_reading once and end in one short sentence. Speak as Naia, not Alpha.",
 			"parameters": {
 				"type": "object",
 				"properties": {
 					"action": {
 						"type": "string",
 						"enum": [
+							"select_spread",
 							"start_reading",
 							"reveal_next",
 							"get_reading",
@@ -85,7 +87,7 @@
 					},
 					"spread": {
 						"type": "string",
-						"enum": ["celtic", "three"]
+						"enum": ["one", "three", "celtic"]
 					},
 					"card": {
 						"description": "Card name or number",
