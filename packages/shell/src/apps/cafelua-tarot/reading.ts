@@ -1,12 +1,25 @@
 import { FALLBACK_TAROT_CARDS } from "./data/fallbackCards";
-import { type DrawnCard, SPREAD_POSITIONS } from "./data/types";
+import {
+	type DrawnCard,
+	type SpreadPosition,
+	SPREAD_POSITIONS,
+} from "./data/types";
+
+export type TarotSpread = "one" | "three" | "celtic";
+
+export const ONE_CARD_POSITION: SpreadPosition = {
+	index: 0,
+	nameKr: "핵심 조언",
+	nameEn: "Core Guidance",
+	description: "지금 마음을 비추는 한 장의 핵심 메시지",
+};
 
 export interface TarotReading {
 	id: string;
 	question: string;
 	cards: DrawnCard[];
 	createdAt: number;
-	spread?: "celtic" | "three";
+	spread?: TarotSpread;
 }
 
 export type RandomSource = () => number;
@@ -23,7 +36,7 @@ export function drawCelticCross(
 	question: string,
 	random: RandomSource = Math.random,
 	createdAt = Date.now(),
-	spread: "celtic" | "three" = "celtic",
+	spread: TarotSpread = "celtic",
 ): TarotReading {
 	if (FALLBACK_TAROT_CARDS.length !== 22 || SPREAD_POSITIONS.length !== 10) {
 		throw new Error(
@@ -36,16 +49,18 @@ export function drawCelticCross(
 		[deck[index], deck[swap]] = [deck[swap], deck[index]];
 	}
 	const positions =
-		spread === "three"
-			? [SPREAD_POSITIONS[4], SPREAD_POSITIONS[0], SPREAD_POSITIONS[5]]
-			: [
-					SPREAD_POSITIONS[0],
-					SPREAD_POSITIONS[1],
-					SPREAD_POSITIONS[3],
-					SPREAD_POSITIONS[4],
-					SPREAD_POSITIONS[2],
-					...SPREAD_POSITIONS.slice(5),
-				];
+		spread === "one"
+			? [ONE_CARD_POSITION]
+			: spread === "three"
+				? [SPREAD_POSITIONS[4], SPREAD_POSITIONS[0], SPREAD_POSITIONS[5]]
+				: [
+						SPREAD_POSITIONS[0],
+						SPREAD_POSITIONS[1],
+						SPREAD_POSITIONS[3],
+						SPREAD_POSITIONS[4],
+						SPREAD_POSITIONS[2],
+						...SPREAD_POSITIONS.slice(5),
+					];
 	const cards = positions.map((position, index) => ({
 		card: deck[index],
 		position,

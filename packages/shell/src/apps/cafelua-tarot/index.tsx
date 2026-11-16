@@ -2,31 +2,68 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Book, type BookHandle } from "./Book";
 import { assetUrl } from "./assets";
-import { loungeBackground } from "./lounge-background";
 import {
 	createBrowserAudioController,
 	type TarotAudioController,
 } from "./audio";
 import { FALLBACK_TAROT_CARDS } from "./data/fallbackCards";
 import type { DrawnCard } from "./data/types";
-import { normalizeAppLocale, appText, type AppLocale } from "./i18n";
-import { drawCelticCross, type TarotReading } from "./reading";
+import { type AppLocale, appText, normalizeAppLocale } from "./i18n";
+import { loungeBackground } from "./lounge-background";
+import {
+	drawCelticCross,
+	type TarotReading,
+	type TarotSpread,
+} from "./reading";
 import { createTarotToolHandler } from "./tools";
 import { ui } from "./ui";
 import "./tarot.css";
 
-function TarotApp() {
+const SPREAD_OPTIONS: ReadonlyArray<{
+	id: TarotSpread;
+	count: number;
+	titleKey: "spreadOne" | "spreadThree" | "spreadCeltic";
+	descKey: "spreadOneDesc" | "spreadThreeDesc" | "spreadCelticDesc";
+	recommended?: boolean;
+}> = [
+	{
+		id: "one",
+		count: 1,
+		titleKey: "spreadOne",
+		descKey: "spreadOneDesc",
+	},
+	{
+		id: "three",
+		count: 3,
+		titleKey: "spreadThree",
+		descKey: "spreadThreeDesc",
+	},
+	{
+		id: "celtic",
+		count: 10,
+		titleKey: "spreadCeltic",
+		descKey: "spreadCelticDesc",
+		recommended: true,
+	},
+];
+
+export function TarotApp() {
 	const [locale, setLocale] = useState<AppLocale>(() =>
 		normalizeAppLocale(navigator.language.split("-")[0]),
 	);
+	const [preferredSpread, setPreferredSpread] =
+		useState<TarotSpread>("celtic");
+	const preferredSpreadRef = useRef<TarotSpread>("celtic");
+	preferredSpreadRef.current = preferredSpread;
+
 	const [reading, setReading] = useState<TarotReading | null>(null);
 	const readingRef = useRef<TarotReading | null>(null);
 	const [screen, setScreen] = useState<"table" | "book">("table");
 	const screenRef = useRef(screen);
 	screenRef.current = screen;
 	const [finished, setFinished] = useState(false);
-	const [selected, setSelected] = useState<DrawnCard | null>(null);
-	const [anchor, setAnchor] = useState({ left: 0, top: 0 });
+	const [spotlightIndex, setSpotlightIndex] = useState<number | null>(null);
+	const [artFullscreen, setArtFullscreen] = useState(false);
 	const meaningDrag = useRef<number | null>(null);
 	const [notice, setNotice] = useState("");
 	const [muted, setMuted] = useState(false);
@@ -34,14 +71,69 @@ function TarotApp() {
 	const audio = useRef<TarotAudioController | null>(null);
 	const ko = locale === "ko";
 	const t = (a: string, b: string) => (ko ? a : b);
-	function store(r: TarotReading) {
+
+	function store(r: TarotReading | null) {
 		readingRef.current = r;
 		setReading(r);
 	}
+
+	function selectPreferredSpread(next: TarotSpread) {
+		preferredSpreadRef.current = next;
+		setPreferredSpread(next);
+	}
+
+	function resetToSpreadPicker() {
+		store(null);
+		setFinished(false);
+		setSpotlightIndex(null);
+		setArtFullscreen(false);
+		setScreen("table");
+	}
+
+	useEffect(() => {
+		if (spotlightIndex === null) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				setArtFullscreen(false);
+				setSpotlightIndex(null);
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [spotlightIndex]);
+
 	function showNotice(s: string) {
 		setNotice(s);
 		window.setTimeout(() => setNotice(""), 3500);
 	}
+
+	// Push lightweight active state to the host shell so Naia asks spread style & concern naturally.
+	useEffect(() => {
+		if (!window.parent || window.parent === window) return;
+		const revealedCount =
+			reading?.cards.filter((c) => c.isFlipped).length ?? 0;
+		window.parent.postMessage(
+			{
+				type: "naia-app:context",
+				context: {
+					app: "land.naia.cafelua-tarot",
+					version: "0.1.5",
+					screen,
+					preferredSpread,
+					readingActive: Boolean(reading),
+					activeSpread: reading?.spread ?? null,
+					revealedCards: revealedCount,
+					totalCards: reading?.cards.length ?? 0,
+					finished,
+					guidance: reading
+						? "Reveal one card at a time with reveal_next and interpret only revealed cards."
+						: "Before calling start_reading, ask the user BOTH what is on their mind AND how they want to read: 'one' (1-card focus), 'three' (3-card Past/Present/Future), or 'celtic' (10-card Celtic Cross, recommended classic).",
+				},
+			},
+			"*",
+		);
+	}, [screen, preferredSpread, reading, finished]);
+
 	useEffect(() => {
 		const bgm = new Audio(assetUrl("sounds/taro-bgm.mp3"));
 		const a = createBrowserAudioController(bgm, () => {});
@@ -56,20 +148,26 @@ function TarotApp() {
 			a.dispose();
 		};
 	}, []);
+
 	const handler = useRef<(args: Record<string, unknown>) => unknown>(
 		() => ({}),
 	);
 	handler.current = createTarotToolHandler({
 		getReading: () => readingRef.current,
+		getPreferredSpread: () => preferredSpreadRef.current,
+		setPreferredSpread: selectPreferredSpread,
 		startReading: (question, spread) => {
+			selectPreferredSpread(spread);
 			const r = drawCelticCross(question, Math.random, Date.now(), spread);
 			store(r);
 			setFinished(false);
 			setScreen("table");
-			setSelected(null);
+			setSpotlightIndex(null);
 			return r;
 		},
-		setReading: store,
+		setReading: (next) => {
+			store(next);
+		},
 		onReveal: () => {
 			void audio.current?.playFlip();
 		},
@@ -78,7 +176,7 @@ function TarotApp() {
 			setScreen("table");
 		},
 		openStory: (card, part) => {
-			let item =
+			const item =
 				typeof card === "number"
 					? FALLBACK_TAROT_CARDS.find((c) => c.id === card)
 					: FALLBACK_TAROT_CARDS.find(
@@ -100,6 +198,7 @@ function TarotApp() {
 		stopReading: () => book.current!.stop(),
 		status: () => ({
 			screen: screenRef.current,
+			preferred_spread: preferredSpreadRef.current,
 			spread: readingRef.current?.spread ?? null,
 			revealed:
 				readingRef.current?.cards.filter((c) => c.isFlipped).length ?? 0,
@@ -107,6 +206,7 @@ function TarotApp() {
 			finished,
 		}),
 	});
+
 	useEffect(() => {
 		const onMessage = async (e: MessageEvent) => {
 			if (e.source !== window.parent || !e.data || typeof e.data !== "object")
@@ -145,17 +245,37 @@ function TarotApp() {
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);
 	}, []);
+
 	const cards = reading?.cards ?? [];
-	const last = cards.filter((c) => c.isFlipped).length;
-	const current = last ? cards[last - 1] : null;
+	const flippedIndices: number[] = [];
+	cards.forEach((c, idx) => {
+		if (c.isFlipped) flippedIndices.push(idx);
+	});
+	const last = flippedIndices.length;
+	const current = last ? cards[flippedIndices[last - 1]] : null;
+	const selected =
+		spotlightIndex !== null && cards[spotlightIndex]?.isFlipped
+			? cards[spotlightIndex]
+			: null;
+	const selectedFlippedOrder =
+		spotlightIndex !== null ? flippedIndices.indexOf(spotlightIndex) : -1;
+
 	const displayName = (c: DrawnCard) => (ko ? c.card.nameKr : c.card.nameEn);
 	const position = (c: DrawnCard) =>
 		ko ? c.position.nameKr : c.position.nameEn;
+
+	const spreadClass =
+		reading?.spread === "one"
+			? "one"
+			: reading?.spread === "three"
+				? "three"
+				: "celtic";
+
 	return (
 		<main
 			className="tarot-app"
 			style={{
-				backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.34),rgba(0,0,0,.12) 45%,rgba(0,0,0,.52)),url('${assetUrl(loungeBackground(new Date()))}')`,
+				backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,.16) 45%,rgba(0,0,0,.58)),url('${assetUrl(loungeBackground(new Date()))}')`,
 			}}
 		>
 			<div
@@ -167,8 +287,18 @@ function TarotApp() {
 							? reading.question || ui(locale, "today")
 							: appText(locale, "title")}
 					</strong>
-					<div>
+					<div className="table-header-actions">
+						{reading && (
+							<button
+								type="button"
+								className="header-pill-btn"
+								onClick={resetToSpreadPicker}
+							>
+								{ui(locale, "newReading")}
+							</button>
+						)}
 						<button
+							type="button"
 							aria-label={appText(locale, "stories")}
 							onClick={() => {
 								setScreen("book");
@@ -178,6 +308,7 @@ function TarotApp() {
 							▤
 						</button>
 						<button
+							type="button"
 							aria-label={
 								muted ? appText(locale, "unmute") : appText(locale, "mute")
 							}
@@ -192,53 +323,110 @@ function TarotApp() {
 					</div>
 				</header>
 				<section
-					className={`table-area ${reading?.spread === "three" ? "three" : "celtic"}`}
+					className={`table-area ${reading ? spreadClass : "setup"}`}
 					aria-label={ui(locale, "table")}
 				>
 					{!reading ? (
-						<div className="deck">
-							{[0, 1, 2, 3].map((i) => (
-								<img
-									key={i}
-									src={assetUrl("tarot/card-back.webp")}
-									alt={i === 3 ? t("덮인 카드 더미", "Deck of cards") : ""}
-								/>
-							))}
-						</div>
-					) : (
-						cards.map((c, i) => (
-							<div className={`card-place card-${i + 1}`} key={c.card.id}>
-								<button
-									className={`card ${c.isFlipped ? "flipped" : ""} ${!finished && last === i + 1 ? "current" : ""}`}
-									aria-label={`${position(c)}: ${c.isFlipped ? displayName(c) : ui(locale, "faceDown")}`}
-									onClick={(event) =>
-										c.isFlipped
-											? (setAnchor({
-													left: event.currentTarget.getBoundingClientRect()
-														.left,
-													top: event.currentTarget.getBoundingClientRect().top,
-												}),
-												setSelected(c))
-											: showNotice(ui(locale, "nextHint"))
-									}
-								>
+						<div className="spread-setup">
+							<div className="deck setup-deck" aria-hidden="true">
+								{[0, 1, 2, 3].map((i) => (
 									<img
-										className={c.isFlipped && c.isReversed ? "reversed" : ""}
-										src={assetUrl(
-											c.isFlipped ? c.card.imagePath : "tarot/card-back.webp",
-										)}
+										key={i}
+										src={assetUrl("tarot/card-back.webp")}
 										alt=""
 									/>
-								</button>
-								<span>
-									{i === 0 && reading.spread !== "three"
-										? t("현재 / 장애", "Present / Challenge")
-										: i === 1 && reading.spread !== "three"
-											? ""
-											: position(c)}
-								</span>
+								))}
 							</div>
-						))
+							<div
+								className="spread-picker"
+								role="group"
+								aria-label={ui(locale, "chooseSpread")}
+							>
+								<h2 className="spread-picker-title">
+									{ui(locale, "chooseSpread")}
+								</h2>
+								<div className="spread-options">
+									{SPREAD_OPTIONS.map((opt) => {
+										const active = preferredSpread === opt.id;
+										return (
+											<button
+												key={opt.id}
+												type="button"
+												className={`spread-option ${active ? "active" : ""}`}
+												data-spread={opt.id}
+												aria-pressed={active}
+												onClick={() => selectPreferredSpread(opt.id)}
+											>
+												<div className="spread-option-top">
+													<span className="spread-count-badge">
+														{opt.count}
+													</span>
+													{opt.recommended && (
+														<span className="spread-rec-badge">
+															{ui(locale, "recommended")}
+														</span>
+													)}
+												</div>
+												<strong className="spread-option-name">
+													{ui(locale, opt.titleKey)}
+												</strong>
+												<span className="spread-option-desc">
+													{ui(locale, opt.descKey)}
+												</span>
+											</button>
+										);
+									})}
+								</div>
+							</div>
+						</div>
+					) : (
+						<>
+							<div className="spread-board">
+								{cards.map((c, i) => (
+									<div className={`card-place card-${i + 1}`} key={c.card.id}>
+										<button
+											type="button"
+											className={`card ${c.isFlipped ? "flipped" : ""} ${!finished && last > 0 && flippedIndices[last - 1] === i ? "current" : ""} ${spotlightIndex === i ? "selected-card" : ""}`}
+											aria-label={`${position(c)}: ${c.isFlipped ? displayName(c) : ui(locale, "faceDown")}`}
+											onClick={() => {
+												if (c.isFlipped) {
+													setArtFullscreen(false);
+													setSpotlightIndex(i);
+												} else {
+													showNotice(ui(locale, "nextHint"));
+												}
+											}}
+										>
+											<img
+												className={c.isFlipped && c.isReversed ? "reversed" : ""}
+												src={assetUrl(
+													c.isFlipped
+														? c.card.imagePath
+														: "tarot/card-back.webp",
+												)}
+												alt=""
+											/>
+										</button>
+										<span>
+											{i === 0 && reading.spread === "celtic"
+												? t("현재 / 도전", "Present / Challenge")
+												: i === 1 && reading.spread === "celtic"
+													? ""
+													: position(c)}
+										</span>
+									</div>
+								))}
+							</div>
+							{last > 0 && !selected && (
+								<button
+									type="button"
+									className="spotlight-reopen"
+									onClick={() => setSpotlightIndex(flippedIndices[last - 1])}
+								>
+									🔍 {ui(locale, "enlargeCard")}
+								</button>
+							)}
+						</>
 					)}
 				</section>
 				<footer
@@ -251,6 +439,7 @@ function TarotApp() {
 							<div className="story-buttons">
 								{cards.map((c) => (
 									<button
+										type="button"
 										key={c.card.id}
 										onClick={() => {
 											setScreen("book");
@@ -266,48 +455,49 @@ function TarotApp() {
 						</>
 					) : notice || !reading ? (
 						<>
-							{notice || ui(locale, "prompt")}{" "}
+							<span>{notice || ui(locale, "prompt")}</span>
 							{!notice && <small>{ui(locale, "examples")}</small>}
 						</>
 					) : current ? (
-						<>
-							{last} / {cards.length} · {position(current)} ·{" "}
-							{displayName(current)} (
-							{current.isReversed
-								? appText(locale, "reversed")
-								: appText(locale, "upright")}
-							)
-						</>
+						<div className="footer-current-row">
+							<span>
+								{last} / {cards.length} · {position(current)} ·{" "}
+								{displayName(current)} (
+								{current.isReversed
+									? appText(locale, "reversed")
+									: appText(locale, "upright")}
+								)
+							</span>
+							{!selected && (
+								<button
+									type="button"
+									className="footer-enlarge-btn"
+									onClick={() => setSpotlightIndex(flippedIndices[last - 1])}
+								>
+									{ui(locale, "enlargeCard")}
+								</button>
+							)}
+						</div>
 					) : (
 						ui(locale, "laid")
 					)}
 				</footer>
 				{selected && (
-					<div className="meaning-overlay" onClick={() => setSelected(null)}>
+					<div
+						className="meaning-overlay modal"
+						onClick={() => {
+							setArtFullscreen(false);
+							setSpotlightIndex(null);
+						}}
+					>
 						<section
 							role="dialog"
 							aria-label={displayName(selected)}
-							className="meaning"
-							style={
-								window.innerWidth >= 720
-									? {
-											position: "absolute",
-											left: Math.min(window.innerWidth - 296, anchor.left + 75),
-											top: Math.max(
-												0,
-												Math.min(window.innerHeight - 280, anchor.top - 48),
-											),
-										}
-									: undefined
-							}
+							className={`meaning tarot-spotlight zoomed ${artFullscreen ? "art-only" : ""}`}
 							onClick={(e) => e.stopPropagation()}
-							onKeyDown={(e) => {
-								if (e.key === "Escape") setSelected(null);
-							}}
 							onPointerDown={(e) => {
 								if (
-									window.innerWidth < 720 &&
-									e.clientY - e.currentTarget.getBoundingClientRect().top < 30
+									e.clientY - e.currentTarget.getBoundingClientRect().top < 36
 								) {
 									meaningDrag.current = e.clientY;
 									e.currentTarget.setPointerCapture(e.pointerId);
@@ -317,29 +507,134 @@ function TarotApp() {
 								if (
 									meaningDrag.current !== null &&
 									e.clientY - meaningDrag.current > 40
-								)
-									setSelected(null);
+								) {
+									setArtFullscreen(false);
+									setSpotlightIndex(null);
+								}
 								meaningDrag.current = null;
 							}}
 						>
-							<button
-								className="meaning-close"
-								onClick={() => setSelected(null)}
-								aria-label={ui(locale, "close")}
-							>
-								×
-							</button>
-							<img src={assetUrl(selected.card.imagePath)} alt="" />
-							<div>
-								<h2>
-									{selected.card.id}. {displayName(selected)}
-								</h2>
-								<p>{selected.card.keywords.join(" · ")}</p>
-								<b>{appText(locale, "upright")}</b>
-								<p>{selected.card.upright.join(" · ")}</p>
-								<b>{appText(locale, "reversed")}</b>
-								<p>{selected.card.reversed.join(" · ")}</p>
+							<div className="spotlight-topbar">
+								<span className="spotlight-pos-pill">
+									{selectedFlippedOrder + 1} / {last} · {position(selected)}
+								</span>
+								<div className="spotlight-controls">
+									<button
+										type="button"
+										className="spotlight-zoom-btn"
+										onClick={() => setArtFullscreen((z) => !z)}
+									>
+										{artFullscreen
+											? ui(locale, "shrinkCard")
+											: ui(locale, "enlargeCard")}
+									</button>
+									<button
+										type="button"
+										className="meaning-close"
+										onClick={() => {
+											setArtFullscreen(false);
+											setSpotlightIndex(null);
+										}}
+										aria-label={ui(locale, "close")}
+									>
+										×
+									</button>
+								</div>
 							</div>
+							<div className="spotlight-body">
+								<button
+									type="button"
+									className="spotlight-art"
+									onClick={() => setArtFullscreen((z) => !z)}
+									aria-label={
+										artFullscreen
+											? ui(locale, "shrinkCard")
+											: ui(locale, "enlargeCard")
+									}
+								>
+									<img
+										className={selected.isReversed ? "reversed" : ""}
+										src={assetUrl(selected.card.imagePath)}
+										alt={displayName(selected)}
+									/>
+								</button>
+								{!artFullscreen && (
+									<div className="spotlight-meta">
+										<h2>
+											<span>
+												{selected.card.id}. {displayName(selected)}
+											</span>
+											<em
+												className={`orient-badge ${selected.isReversed ? "is-reversed" : "is-upright"}`}
+											>
+												{selected.isReversed
+													? appText(locale, "reversed")
+													: appText(locale, "upright")}
+											</em>
+										</h2>
+										{ko && (
+											<p className="spotlight-pos-desc">
+												{selected.position.description}
+											</p>
+										)}
+										<p className="spotlight-keywords">
+											{selected.card.keywords.join(" · ")}
+										</p>
+										<div className="spotlight-meanings">
+											<div
+												className={
+													!selected.isReversed
+														? "meaning-active"
+														: "meaning-dim"
+												}
+											>
+												<b>{appText(locale, "upright")}</b>
+												<p>{selected.card.upright.join(" · ")}</p>
+											</div>
+											<div
+												className={
+													selected.isReversed
+														? "meaning-active"
+														: "meaning-dim"
+												}
+											>
+												<b>{appText(locale, "reversed")}</b>
+												<p>{selected.card.reversed.join(" · ")}</p>
+											</div>
+										</div>
+									</div>
+								)}
+							</div>
+							{last > 1 && (
+								<div className="spotlight-nav">
+									<button
+										type="button"
+										disabled={selectedFlippedOrder <= 0}
+										onClick={() => {
+											if (selectedFlippedOrder > 0) {
+												setSpotlightIndex(
+													flippedIndices[selectedFlippedOrder - 1],
+												);
+											}
+										}}
+									>
+										‹ {ui(locale, "prevCard")}
+									</button>
+									<button
+										type="button"
+										disabled={selectedFlippedOrder >= last - 1}
+										onClick={() => {
+											if (selectedFlippedOrder < last - 1) {
+												setSpotlightIndex(
+													flippedIndices[selectedFlippedOrder + 1],
+												);
+											}
+										}}
+									>
+										{ui(locale, "nextCard")} ›
+									</button>
+								</div>
+							)}
 						</section>
 					</div>
 				)}
@@ -350,4 +645,8 @@ function TarotApp() {
 		</main>
 	);
 }
-createRoot(document.getElementById("root")!).render(<TarotApp />);
+
+const rootEl = document.getElementById("root");
+if (rootEl) {
+	createRoot(rootEl).render(<TarotApp />);
+}

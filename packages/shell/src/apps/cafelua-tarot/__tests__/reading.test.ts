@@ -44,4 +44,19 @@ describe("Cafe Lua Tarot local reading", () => {
 		);
 		expect(() => drawCelticCross("", () => 1)).toThrow(RangeError);
 	});
+
+	it("supports one-card focus and three-card spreads while keeping celtic as default", () => {
+		const def = drawCelticCross("default", seededRandom(), 10);
+		expect(def.spread).toBe("celtic");
+		expect(def.cards).toHaveLength(10);
+
+		const one = drawCelticCross("focus", seededRandom(), 20, "one");
+		expect(one.spread).toBe("one");
+		expect(one.cards).toHaveLength(1);
+		expect(one.cards[0]?.position.nameEn).toBe("Core Guidance");
+
+		const three = drawCelticCross("flow", seededRandom(), 30, "three");
+		expect(three.spread).toBe("three");
+		expect(three.cards).toHaveLength(3);
+	});
 });

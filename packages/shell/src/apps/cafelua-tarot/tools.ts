@@ -1,9 +1,15 @@
-import type { TarotReading } from "./reading";
+import type { TarotReading, TarotSpread } from "./reading";
 import { nextUnrevealedCard, revealNextCard, revealedCards } from "./reading";
+
+function isValidSpread(value: unknown): value is TarotSpread {
+	return value === "one" || value === "three" || value === "celtic";
+}
 
 export interface TarotToolState {
 	getReading: () => TarotReading | null;
-	startReading: (question: string, spread: "celtic" | "three") => TarotReading;
+	getPreferredSpread?: () => TarotSpread;
+	setPreferredSpread?: (spread: TarotSpread) => void;
+	startReading: (question: string, spread: TarotSpread) => TarotReading;
 	setReading: (reading: TarotReading) => void;
 	onReveal?: () => void;
 	finish: () => void;
@@ -42,14 +48,25 @@ function cardResult(
 export function createTarotToolHandler(state: TarotToolState) {
 	return (args: Record<string, unknown>): TarotToolResult => {
 		const action = args.action;
+		if (action === "select_spread") {
+			if (!isValidSpread(args.spread)) throw new Error("Invalid spread");
+			state.setPreferredSpread?.(args.spread);
+			return {
+				preferred_spread: args.spread,
+				available_spreads: ["one", "three", "celtic"],
+				note: "Spread preference updated on the table. Now ask the user's concern if not yet stated, then call start_reading.",
+			};
+		}
 		if (action === "start_reading") {
-			if (
-				args.spread !== undefined &&
-				args.spread !== "celtic" &&
-				args.spread !== "three"
-			)
+			if (args.spread !== undefined && !isValidSpread(args.spread))
 				throw new Error("Invalid spread");
-			const spread = args.spread === "three" ? "three" : "celtic";
+			const preferred = state.getPreferredSpread?.() ?? "celtic";
+			const spread: TarotSpread = isValidSpread(args.spread)
+				? args.spread
+				: preferred;
+			if (isValidSpread(args.spread)) {
+				state.setPreferredSpread?.(args.spread);
+			}
 			const question =
 				typeof args.question === "string"
 					? args.question.trim().slice(0, 500)
@@ -57,7 +74,10 @@ export function createTarotToolHandler(state: TarotToolState) {
 			if (!question)
 				return {
 					need_question: true,
-					note: "Ask the user what their concern is and wait for their answer before starting.",
+					need_spread: args.spread === undefined,
+					preferred_spread: spread,
+					available_spreads: ["one", "three", "celtic"],
+					note: "Ask the user both what is on their mind AND which spread style they want: 'one' (1-card focus), 'three' (3-card Past/Present/Future), or 'celtic' (10-card Celtic Cross, full traditional reading). Wait for their answer before starting.",
 				};
 			const reading = state.startReading(question, spread);
 			return {
