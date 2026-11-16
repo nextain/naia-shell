@@ -70,7 +70,7 @@ vi.mock("../AvatarCanvas", () => ({
 }));
 
 describe("Mini-app floating close button and full background termination (#872)", () => {
-	const TAROT_ID = "land.naia.cafelua-tarot";
+	const TAROT_ID = "land.naia.tarot-demo";
 	const SETTINGS_ID = "settings";
 
 	function renderShellMain(activeApp: string | null) {
@@ -120,13 +120,13 @@ describe("Mini-app floating close button and full background termination (#872)"
 		mockSendAppSkillsClear.mockClear();
 		appRegistry.register({
 			id: TAROT_ID,
-			name: "Cafe Lua Tarot",
+			name: "Tarot Demo",
 			source: "installed",
 			keepAlive: true,
 			deferMountUntilActive: true,
 			center: createGenericInstalledApp(
-				"/apps/land.naia.cafelua-tarot/index.html",
-				[{ name: "skill_cafelua_tarot", description: "tarot" }],
+				"/apps/land.naia.tarot-demo/index.html",
+				[{ name: "skill_tarot_demo", description: "tarot" }],
 				TAROT_ID,
 			),
 		});
