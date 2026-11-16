@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "외부 브라우저에서 앱을 둘러봅니다",
 	"appbar.addItem": "추가",
 	"appbar.removeShortcut": "바로가기 삭제",
+	"appbar.closeApp": "앱 닫기",
 	"appbar.removeApp": "앱 제거",
 	"appbar.enterUrl": "URL 입력 (예: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

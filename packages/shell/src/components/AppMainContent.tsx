@@ -4,9 +4,10 @@ import type {
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useMemo, useRef } from "react";
+import { Suspense, lazy, useMemo } from "react";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
+import { closeRunningApp } from "../lib/app-lifecycle";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
 import type { AppInstallRequest } from "../lib/app-store-client";
 import { t } from "../lib/i18n";
@@ -151,13 +152,24 @@ export function AppMainContent(props: AppMainContentProps) {
 	const chatVariant: "rail" | "floating" =
 		chatModeOverride === "workspace" ? "rail" : "floating";
 	const appListVersion = useAppStore((state) => state.appListVersion);
+	const activatedApps = useAppStore((state) => state.activatedApps ?? []);
+	const closedApps = useAppStore((state) => state.closedApps ?? []);
+	const appInstanceEpoch = useAppStore((state) => state.appInstanceEpoch ?? {});
 	// biome-ignore lint/correctness/useExhaustiveDependencies: version is the registry mutation signal.
 	const keepAliveApps = useMemo(
 		() => appRegistry.list().filter((app) => app.keepAlive !== false),
 		[appListVersion],
 	);
-	const activatedKeepAliveAppsRef = useRef(new Set<string>());
-	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
+	const activatedKeepAliveSet = useMemo(() => {
+		const next = new Set(activatedApps);
+		if (activeApp) next.add(activeApp);
+		return next;
+	}, [activatedApps, activeApp]);
+	const closedKeepAliveSet = useMemo(() => {
+		const next = new Set(closedApps);
+		if (activeApp) next.delete(activeApp);
+		return next;
+	}, [closedApps, activeApp]);
 
 	if (showAdkSetup)
 		return (
@@ -389,15 +401,17 @@ export function AppMainContent(props: AppMainContentProps) {
 									if (
 										!shouldMountKeepAliveApp(
 											app,
-											activatedKeepAliveAppsRef.current,
+											activatedKeepAliveSet,
+											closedKeepAliveSet,
 										)
 									) {
 										return null;
 									}
 									const AppCenter = app.center;
+									const epoch = appInstanceEpoch[app.id] ?? 0;
 									return (
 										<div
-											key={app.id}
+											key={`${app.id}:${epoch}`}
 											className={`content-app__slot${activeApp === app.id ? " content-app__slot--active" : ""}`}
 										>
 											<ErrorBoundary scope={`App(${app.id})`}>
@@ -408,7 +422,10 @@ export function AppMainContent(props: AppMainContentProps) {
 								})}
 								{activeApp &&
 									!keepAliveApps.some((app) => app.id === activeApp) && (
-										<div className="content-app__slot content-app__slot--active">
+										<div
+											key={`${activeApp}:${appInstanceEpoch[activeApp] ?? 0}`}
+											className="content-app__slot content-app__slot--active"
+										>
 											<ErrorBoundary scope={`App(${activeApp})`}>
 												{CenterComponent ? (
 													<CenterComponent naia={getBridgeForApp(activeApp)} />
@@ -417,6 +434,21 @@ export function AppMainContent(props: AppMainContentProps) {
 												)}
 											</ErrorBoundary>
 										</div>
+									)}
+								{activeApp &&
+									activeAppDescriptor &&
+									!activeAppDescriptor.builtIn && (
+										<button
+											type="button"
+											className="content-app__close-btn"
+											aria-label={t("appbar.closeApp")}
+											title={t("appbar.closeApp")}
+											data-testid="active-app-close-btn"
+											data-usage-event="app-main-content.close-active-app-4.click"
+											onClick={() => closeRunningApp(activeApp)}
+										>
+											✕
+										</button>
 									)}
 							</div>
 						)}

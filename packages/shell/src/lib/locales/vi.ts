@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "Duyệt ứng dụng trong trình duyệt hệ thống",
 	"appbar.addItem": "Thêm",
 	"appbar.removeShortcut": "Xóa lối tắt",
+	"appbar.closeApp": "Đóng ứng dụng",
 	"appbar.removeApp": "Xóa ứng dụng",
 	"appbar.enterUrl": "Nhập URL (vd: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

@@ -170,6 +170,9 @@ describe("App Registry", () => {
 		expect(shouldMountKeepAliveApp(descriptor, activated)).toBe(true);
 		activated.add("another-app");
 		expect(shouldMountKeepAliveApp(descriptor, activated)).toBe(true);
+		expect(
+			shouldMountKeepAliveApp(descriptor, activated, new Set([descriptor.id])),
+		).toBe(false);
 	});
 });
 

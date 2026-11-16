@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "Jelajahi aplikasi di browser sistem",
 	"appbar.addItem": "Tambah",
 	"appbar.removeShortcut": "Hapus pintasan",
+	"appbar.closeApp": "Tutup aplikasi",
 	"appbar.removeApp": "Hapus aplikasi",
 	"appbar.enterUrl": "Masukkan URL (contoh: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
