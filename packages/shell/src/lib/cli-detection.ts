@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { loadConfig, saveConfig } from "./config";
+import { refreshIeumOfficeMcpOnBoot } from "./ieumoffice-mcp";
 import { Logger } from "./logger";
 
 export type CliReadinessStatus =
@@ -154,4 +155,5 @@ export async function refreshCliDetectionOnBoot(): Promise<void> {
 			error: String(err),
 		});
 	}
+	await refreshIeumOfficeMcpOnBoot();
 }

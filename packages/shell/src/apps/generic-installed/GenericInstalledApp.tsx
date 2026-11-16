@@ -67,7 +67,23 @@ export function createGenericInstalledApp(
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
+			let cancelled = false;
+			let disposeIeumBridge: (() => void) | null = null;
+			if (appId === "land.naia.ieumoffice") {
+				void import("./ieumoffice-host-bridge").then(
+					({ installIeumOfficeHostBridge }) => {
+						if (cancelled) return;
+						disposeIeumBridge = installIeumOfficeHostBridge(
+							frame,
+							frameSrc,
+							appId,
+						);
+					},
+				);
+			}
 			return () => {
+				cancelled = true;
+				disposeIeumBridge?.();
 				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();

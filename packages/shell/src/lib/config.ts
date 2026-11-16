@@ -389,6 +389,11 @@ export interface AppConfig {
 	 */
 	enabledClis?: string[];
 	/**
+	 * Whether `ieumoffice mcp` is connected to Naia Agent (#870).
+	 * Auto-enabled when IeumOffice CLI is detected unless explicitly turned off.
+	 */
+	ieumofficeMcpEnabled?: boolean;
+	/**
 	 * Last CLI detection snapshot from Rust `cli_detect_refresh` (#605).
 	 * Refreshed on app start and Skills tab enter. Never stores CLI stdout.
 	 */

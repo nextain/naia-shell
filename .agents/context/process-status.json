@@ -18,8 +18,23 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-  "last_updated": "2026-11-09T03:27:03.770011+00:00",
+  "last_updated": "2026-11-16T15:40:00Z",
   "current_work": {
+    "ieumoffice_mcp_studio_870": {
+      "issue": 870,
+      "title": "이음오피스(land.naia.ieumoffice v0.2.0) 내장 웹 편집기 스튜디오 및 데스크톱 ieumoffice mcp 자동 감지·연결",
+      "requirements": "docs/requirements.md FR-IEUMOFFICE-MCP.1~3",
+      "scenario": "docs/user-scenarios.md UC-IEUMOFFICE-MCP-870",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-11-16T15:40:00Z"
+    },
     "ui_font_scale_20261105": {
       "issue": null,
       "title": "설정 › 일반 글자 크기(작게·보통·크게·아주 크게) — 앱 전체 글자 배율, BGM 패널 화면 안 배치, 상단 막대·설정 탭 줄 넘침 정리",

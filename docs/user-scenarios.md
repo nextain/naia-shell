@@ -2706,3 +2706,25 @@ Test Coverage Map (P02)
 | UC-UI-FONT-SCALE-20261105 | 설정 › 일반 라디오 그룹·키보드 이동·즉시 저장(`naia-config`) | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — UI font scale (UC-UI-FONT-SCALE-20261105) | `packages/shell/e2e/ui-font-scale.spec.ts` — 작게 선택 후 저장값·CSS 변수 |
 | UC-UI-FONT-SCALE-20261105 | `ui-config.json` 왕복·agent config 제외 | `packages/shell/src/lib/__tests__/adk-store.test.ts` — writes ALL UI settings | — |
 | UC-UI-FONT-SCALE-20261105 | BGM 앱 패널 위치가 화면 안(가장 큰 배율·좁은 창), 상단 막대·설정 탭 줄 겹침 없음 | `packages/shell/src/lib/__tests__/bgm-app-position.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 1280/1920 폭 아주 크게 배치 |
+
+
+## UC-IEUMOFFICE-MCP-870 — 이음오피스 스튜디오(v0.2.0) 내장 웹 편집기와 데스크톱 ieumoffice mcp 자동 연결
+
+사용자는 나이아 앱스토어에서 `이음오피스`(`land.naia.ieumoffice` `v0.2.0`)를 열어 설치 없이 즉시 `.docx`·`.xlsx`·`.pptx`·`.hwpx`·`.xmind`·`.md` 문서를 편집·변환·내보내고 나이아 AI 수정안을 비교 후 반영·되돌릴 수 있다. 또한 내 PC에 데스크톱 이음오피스(`pblsketch/ieumoffice`)가 설치되어 있으면 나이아 셸이 표준 OS 설치 경로와 `PATH`에서 `ieumoffice` CLI를 자동 감지해 `ieumoffice mcp` 도구를 나이아 에이전트 및 코딩 에이전트에 연결하고, 이음오피스 안에서도 나이아 클라우드·로컬 AI 프리셋을 연결할 수 있다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 첫 진입 시 [웹 문서 편집기] 탭에 예시 문서가 열려 바로 편집·수식 계산·마인드맵→슬라이드 변환·원본 형식 내려받기가 동작한다. |
+| 빈 목록 / 미설치 | 데스크톱 이음오피스가 미설치여도 내장 웹 편집기는 정상 동작하며, 공식 저장소(`https://github.com/pblsketch/ieumoffice/releases`) 안내가 표시된다. |
+| 진행 | 나이아 편집 요청(`naia-app:ask`) 또는 PC 재감지 중 진행 문구가 표시되고 중복 요청을 막는다. |
+| 성공 | AI 수정안은 변경 확인 상자에 먼저 표시되어 [문서에 반영하기]와 [직전 AI 반영 되돌리기]가 동작하며, 데스크톱 감지 시 `ieumoffice mcp`가 자동 연결된다. |
+| 오류 | 잘못된 문서 파일이나 브리지 오류 시 인라인 상태 배너와 닫기·재시도 경로를 제공해 화면이 멈추지 않는다. |
+| 좁은 폭 | 980px 이하 및 모바일 폭에서도 좌·중·우 패널이 세로 1열로 접혀 가로 넘침 없이 모든 단추에 접근할 수 있다. |
+
+Test Coverage Map (P02)
+
+| UC | 상태·행동 | Vitest·Rust 파일·그룹 | 실 UI·빌드 검증 |
+|---|---|---|---|
+| UC-IEUMOFFICE-MCP-870 | 순수 브라우저 ZIP·OOXML/OWPML/XMind 왕복(`.docx`, `.xlsx` 수식·순환참조, `.pptx`, `.hwpx`, `.xmind`→슬라이드/워드 변환) | `packages/shell/src/apps/ieumoffice/__tests__/zip-ooxml-engine.test.ts` | `pnpm -C packages/shell build:ieumoffice` (`dist-ieumoffice/index.html`) |
+| UC-IEUMOFFICE-MCP-870 | 웹 편집기 탭 전환, AI 수정안 비교·반영·되돌리기, `skill_ieumoffice_studio` 도구 응답, 공식 `pblsketch/ieumoffice` 주소 검증 | `packages/shell/src/apps/ieumoffice/__tests__/IeumOfficeApp.test.tsx` | `packages/shell/dist-ieumoffice/app.json` (`v0.2.0`) |
+| UC-IEUMOFFICE-MCP-870 | 호스트 `ieumoffice` 설치 경로 감지, Windows `ELECTRON_RUN_AS_NODE=1` MCP 실행 규격, 모델 도구 경계(`mcp__ieumoffice__*`), 출처 검증 | `packages/shell/src/lib/__tests__/ieumoffice-mcp.test.ts`; `packages/shell/src-tauri/src/ieumoffice.rs`; `packages/shell/src-tauri/src/cli_detect.rs` | `pnpm -C packages/shell build` 번들 예산 통과 |

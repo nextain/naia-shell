@@ -15,6 +15,10 @@ const DESCRIPTOR_SOURCES: &[(&str, &str)] = &[
     ("claude", include_str!("../cli-descriptors/claude.json")),
     ("codex", include_str!("../cli-descriptors/codex.json")),
     ("grok", include_str!("../cli-descriptors/grok.json")),
+    (
+        "ieumoffice",
+        include_str!("../cli-descriptors/ieumoffice.json"),
+    ),
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -163,10 +167,26 @@ fn is_executable_candidate(path: &Path) -> bool {
     }
 }
 
+fn expand_candidate_path(raw: &str) -> PathBuf {
+    if raw.starts_with("~/") || raw == "~" {
+        return expand_home(raw);
+    }
+    for key in ["LOCALAPPDATA", "ProgramFiles"] {
+        let token = format!("%{key}%");
+        if let Some(rest) = raw.strip_prefix(&token) {
+            if let Ok(base) = std::env::var(key) {
+                let trimmed = rest.trim_start_matches(['\\', '/']);
+                return PathBuf::from(base).join(trimmed);
+            }
+        }
+    }
+    PathBuf::from(raw)
+}
+
 /// Resolve the first existing executable among OS-specific candidates on PATH.
 pub fn resolve_executable(candidates: &[String]) -> Option<PathBuf> {
     for name in candidates {
-        let as_path = PathBuf::from(name);
+        let as_path = expand_candidate_path(name);
         if as_path.is_absolute() && is_executable_candidate(&as_path) {
             return Some(as_path);
         }
@@ -541,7 +561,38 @@ mod tests {
 
     #[test]
     fn descriptors_parse() {
-        assert_eq!(load_descriptors().expect("load").len(), 3);
+        assert_eq!(load_descriptors().expect("load").len(), 4);
+    }
+
+    #[test]
+    fn classify_ieumoffice_readiness() {
+        let rules = rules_from(include_str!("../cli-descriptors/ieumoffice.json"));
+        assert_eq!(
+            classify_outcome(
+                &rules,
+                &CommandOutcome {
+                    spawn_error: None,
+                    timed_out: false,
+                    exit_code: Some(0),
+                    stdout: "0.10.0\n".into(),
+                    stderr: String::new(),
+                },
+            ),
+            "ready"
+        );
+        assert_eq!(
+            classify_outcome(
+                &rules,
+                &CommandOutcome {
+                    spawn_error: Some("notFound"),
+                    timed_out: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                },
+            ),
+            "not-installed"
+        );
     }
 
     #[test]

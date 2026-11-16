@@ -194,6 +194,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-FIX-024-",
   // 앱 전체 글자 크기 설정(2026-11-05). 화면 표현 설정이다.
   "UC-UI-FONT-SCALE-20261105",
+  // 이음오피스 스튜디오(v0.2.0) 내장 웹 편집기 및 호스트 설치 감지·MCP 연결(#870). 확장앱·셸 표면 기능이다.
+  "UC-IEUMOFFICE-MCP-870",
 ];
 
 export function ownedByEpic(uc: string): boolean {

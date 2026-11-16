@@ -85,11 +85,24 @@ export const SHELL_RESERVED_TOOL_NAMES = new Set<string>([
 // invoked when its signed Store manifest owns it.
 export const LEGACY_APP_TOOL_KEEP_LIST = ["skill_blackjack_tutor"] as const;
 const LEGACY_APP_TOOL_KEEP_SET = new Set<string>(LEGACY_APP_TOOL_KEEP_LIST);
+const IEUMOFFICE_MCP_TOOL_PATTERN = /^mcp__ieumoffice__[A-Za-z0-9_]+$/;
+let ieumofficeMcpToolsAllowed = false;
+
+export function setIeumOfficeMcpToolsAllowed(allowed: boolean): void {
+	ieumofficeMcpToolsAllowed = allowed;
+}
+
+export function isIeumOfficeMcpToolsAllowed(): boolean {
+	return ieumofficeMcpToolsAllowed;
+}
 
 export type ModelFacingToolName = (typeof MODEL_FACING_TOOL_KEEP_LIST)[number];
 
 export function isModelFacingToolAllowed(name: string): boolean {
 	if (MODEL_FACING_TOOL_KEEP_SET.has(name)) return true;
+	if (ieumofficeMcpToolsAllowed && IEUMOFFICE_MCP_TOOL_PATTERN.test(name)) {
+		return true;
+	}
 	if (LEGACY_APP_TOOL_KEEP_SET.has(name)) {
 		// This compatibility exception belongs only to a verified Store owner;
 		// an unsigned iframe must not compete for the legacy dispatch name.

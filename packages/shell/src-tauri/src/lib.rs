@@ -22,6 +22,7 @@ mod distribution;
 mod ego_host;
 mod ego_host_bridge;
 mod herdr;
+mod ieumoffice;
 mod memory;
 mod ollama_runtime;
 mod platform;
@@ -3138,6 +3139,11 @@ fn spawn_agent_core(
     let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
     let spawn_adk_path = spawn_adk_path_snapshot();
     apply_agent_adk_spawn_env(&mut cmd, spawn_adk_path.as_deref());
+    ieumoffice::apply_agent_ieumoffice_mcp_env(
+        &mut cmd,
+        spawn_adk_path.as_deref(),
+        data_home::user_home_path(),
+    );
 
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
@@ -9813,6 +9819,72 @@ async fn gateway_health(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     }
 }
 
+#[tauri::command]
+async fn ieumoffice_detect_status(
+    adk_path: Option<String>,
+    gateway_url: Option<String>,
+    model: Option<String>,
+) -> Result<ieumoffice::IeumOfficeStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        let env = ieumoffice::DetectionEnv::from_system(data_home::user_home_path());
+        let resolved_adk = adk_path
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(spawn_adk_path_snapshot)
+            .map(std::path::PathBuf::from);
+        Ok(ieumoffice::detect_and_sync_status(
+            &env,
+            resolved_adk.as_deref(),
+            gateway_url.as_deref(),
+            model.as_deref(),
+        ))
+    })
+    .await
+    .map_err(|e| format!("ieumoffice_detect_status join: {e}"))?
+}
+
+#[tauri::command]
+async fn ieumoffice_set_mcp_enabled(
+    adk_path: Option<String>,
+    enabled: bool,
+) -> Result<ieumoffice::IeumOfficeStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        let env = ieumoffice::DetectionEnv::from_system(data_home::user_home_path());
+        let target_adk = adk_path
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(spawn_adk_path_snapshot)
+            .ok_or_else(|| "adk_path_not_configured".to_string())?;
+        ieumoffice::set_mcp_enabled_for_adk(&env, std::path::Path::new(&target_adk), enabled)
+    })
+    .await
+    .map_err(|e| format!("ieumoffice_set_mcp_enabled join: {e}"))?
+}
+
+#[tauri::command]
+async fn ieumoffice_register_coding_agents(
+) -> Result<ieumoffice::IeumOfficeCodingAgentsResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let env = ieumoffice::DetectionEnv::from_system(data_home::user_home_path());
+        ieumoffice::register_coding_agents(&env)
+    })
+    .await
+    .map_err(|e| format!("ieumoffice_register_coding_agents join: {e}"))?
+}
+
+#[tauri::command]
+fn ieumoffice_get_naia_preset(
+    gateway_url: Option<String>,
+    model: Option<String>,
+    local_model: Option<String>,
+) -> ieumoffice::IeumOfficeNaiaPreset {
+    ieumoffice::build_naia_preset(
+        gateway_url.as_deref(),
+        model.as_deref(),
+        local_model.as_deref(),
+    )
+}
+
 /// Returns the path to the Naia log file (~/.naia/logs/naia.log).
 #[tauri::command]
 fn get_gateway_log_path() -> String {
@@ -14565,6 +14637,10 @@ pub fn run() {
             cli_detect::cli_detect_refresh,
             cli_detect::cli_detect_one,
             cli_detect::cli_open_login,
+            ieumoffice_detect_status,
+            ieumoffice_set_mcp_enabled,
+            ieumoffice_register_coding_agents,
+            ieumoffice_get_naia_preset,
             get_gateway_log_path,
             get_log_dir,
             open_log_in_editor,
