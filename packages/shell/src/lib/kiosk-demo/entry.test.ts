@@ -1,23 +1,31 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createMemoryWebFs, setWebFsForTests } from "../web-runtime/web-fs";
 import { WEB_REMOTE_KEY_STORAGE_KEY } from "../web-runtime/web-auth";
+import { createMemoryWebFs, setWebFsForTests } from "../web-runtime/web-fs";
 import {
-	clearKioskVisitActivity,
-	isKioskVisitExpired,
 	KIOSK_VISIT_ACTIVE_SESSION_KEY,
+	KIOSK_VISIT_IDLE_TIMEOUT_MS,
 	KIOSK_VISIT_LAST_ACTIVE_KEY,
+	clearKioskVisitActivity,
+	getKioskIdleTimeoutMs,
+	isKioskVisitExpired,
 	recordKioskVisitActivity,
 	resetKioskVisit,
 	shouldResetKioskVisitOnEnter,
 } from "./entry";
 
+const idleOverrideHolder = globalThis as {
+	__NAIA_KIOSK_IDLE_TIMEOUT_MS__?: unknown;
+};
+
 beforeEach(() => {
 	localStorage.clear();
 	sessionStorage.clear();
+	idleOverrideHolder.__NAIA_KIOSK_IDLE_TIMEOUT_MS__ = undefined;
 	setWebFsForTests(null);
 });
 afterEach(() => {
+	idleOverrideHolder.__NAIA_KIOSK_IDLE_TIMEOUT_MS__ = undefined;
 	setWebFsForTests(null);
 });
 
@@ -118,4 +126,40 @@ it("keeps the visit on same-tab reload within the idle timeout (reset only for a
 	// 새 탭(세션 표식 없음)은 초기화한다.
 	sessionStorage.removeItem(KIOSK_VISIT_ACTIVE_SESSION_KEY);
 	expect(shouldResetKioskVisitOnEnter(13_000, 60_000)).toBe(true);
+});
+
+it("defaults idle timeout to 30 minutes (1,800,000ms) while honoring a valid __NAIA_KIOSK_IDLE_TIMEOUT_MS__ override", () => {
+	expect(KIOSK_VISIT_IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000);
+	expect(KIOSK_VISIT_IDLE_TIMEOUT_MS).toBe(1_800_000);
+	expect(getKioskIdleTimeoutMs()).toBe(1_800_000);
+
+	const t0 = 10_000;
+	recordKioskVisitActivity(t0);
+
+	// 3분(180,000ms) 및 30분 직전(1,799,999ms)에는 만료되지 않는다.
+	expect(isKioskVisitExpired(t0 + 3 * 60 * 1000)).toBe(false);
+	expect(shouldResetKioskVisitOnEnter(t0 + 3 * 60 * 1000)).toBe(false);
+	expect(isKioskVisitExpired(t0 + 1_800_000 - 1)).toBe(false);
+	expect(shouldResetKioskVisitOnEnter(t0 + 1_800_000 - 1)).toBe(false);
+
+	// 정확히 30분(1,800,000ms) 경과 시 만료·초기화 대상이 된다.
+	expect(isKioskVisitExpired(t0 + 1_800_000)).toBe(true);
+	expect(shouldResetKioskVisitOnEnter(t0 + 1_800_000)).toBe(true);
+
+	// 양수 유한수 전역 덮어쓰기(__NAIA_KIOSK_IDLE_TIMEOUT_MS__)는 그대로 반영하고, 비정상 값은 30분 기본값으로 되돌린다.
+	idleOverrideHolder.__NAIA_KIOSK_IDLE_TIMEOUT_MS__ = 45_000;
+	expect(getKioskIdleTimeoutMs()).toBe(45_000);
+	expect(isKioskVisitExpired(t0 + 44_999)).toBe(false);
+	expect(isKioskVisitExpired(t0 + 45_000)).toBe(true);
+
+	for (const invalid of [
+		0,
+		-1_000,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		"30m",
+	]) {
+		idleOverrideHolder.__NAIA_KIOSK_IDLE_TIMEOUT_MS__ = invalid;
+		expect(getKioskIdleTimeoutMs()).toBe(1_800_000);
+	}
 });

@@ -14,7 +14,7 @@ import { seedKioskAdkWorkspace } from "./knowledge";
 
 export const KIOSK_VISIT_ACTIVE_SESSION_KEY = "naia-kiosk-visit-active";
 export const KIOSK_VISIT_LAST_ACTIVE_KEY = "naia-kiosk-last-active-at";
-export const KIOSK_VISIT_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+export const KIOSK_VISIT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 export const KIOSK_DEMO_UNAVAILABLE_EVENT = "naia-kiosk-demo-unavailable";
 
 const KIOSK_CREDIT_EXHAUSTED_RE =
