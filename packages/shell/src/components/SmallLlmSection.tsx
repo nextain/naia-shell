@@ -41,7 +41,7 @@ export function SmallLlmSection({
 			!config.memoryLlmProvider
 		) {
 			defaultPersisted.current = true;
-			onPersist(writeConfiguredLlmRole(config, "memory", { inherit: "main" }));
+			onPersist(writeConfiguredLlmRole(config, "memory", { inherit: "sub" }));
 		}
 	}, [config, onPersist]);
 	const [selectedChoice, setSelectedChoice] = useState<

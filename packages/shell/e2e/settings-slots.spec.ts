@@ -307,7 +307,7 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		await expect(provider).toHaveValue("naia-local-voice");
 	});
 
-	test("FR-SLOT.3: apply Gemini defaults fills unset slots (non-destructive, §9 #5)", async ({
+	test("FR-SLOT.3: apply Naia defaults fills unset slots (non-destructive, 10/31 small-default)", async ({
 		page,
 	}) => {
 		// naia 게이트 + main 만 설정(sub/embed/stt/tts 미설정).
@@ -330,13 +330,13 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		expect(saved.model).toBe("deepseek-v4-flash"); // 보존(비파괴)
 		expect(saved.subLlmProvider).toBe("naia");
 		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
-		// #692 (b821f05f): Naia defaults now set the small memory LLM to the
-		// Naia account's gpt-5.4-nano unless a memory role was chosen directly
+		// 10/31 결정: Naia defaults now set the small memory LLM to the
+		// Naia account's gpt-5.6-luna low unless a memory role was chosen directly
 		// (surfacing.ts NAIA_SMALL_LLM_DEFAULT, SettingsTab.test.tsx FR-SLOT.3).
 		expect(saved.memoryLlmProvider).toBe("nextain");
 		expect(
 			(saved.llmRoles as Record<string, unknown> | undefined)?.memory,
-		).toMatchObject({ provider: "nextain", model: "gpt-5.4-nano" });
+		).toMatchObject({ provider: "nextain", model: "gpt-5.6-luna", thinkingLevel: "low" });
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");

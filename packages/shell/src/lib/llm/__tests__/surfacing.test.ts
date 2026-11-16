@@ -151,13 +151,14 @@ describe("normalizeOpenAiCompatBaseUrl", () => {
 });
 
 describe("writeSmallLlmSelection", () => {
-	it("writes naia choice with nextain/gpt-5.4-nano and mirrors memoryLlmProvider", () => {
+	it("writes naia choice with nextain/gpt-5.6-luna low and mirrors memoryLlmProvider", () => {
 		const original = baseConfig();
 		const updated = writeSmallLlmSelection(original, { choice: "naia" });
 
 		expect(updated.llmRoles?.memory).toEqual({
 			provider: "nextain",
 			model: NAIA_SMALL_LLM_DEFAULT.model,
+			thinkingLevel: NAIA_SMALL_LLM_DEFAULT.thinkingLevel,
 		});
 		expect(updated.memoryLlmProvider).toBe("nextain");
 		expect(updated.memoryLlmModel).toBe(NAIA_SMALL_LLM_DEFAULT.model);

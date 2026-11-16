@@ -989,7 +989,7 @@ export default {
 	"settings.memoryNaiaRequired": "Naia account required",
 	"settings.smallLlm": "Small LLM (surfacing · fact extraction)",
 	"settings.smallLlmHint": "A small model that follows the conversation in the background and brings related memories and knowledge into the next reply. It also extracts facts for memory.",
-	"settings.smallLlmNaia": "Naia account (gpt-5.4-nano, default)",
+	"settings.smallLlmNaia": "Naia account (gpt-5.6-luna low, default)",
 	"settings.smallLlmOllama": "Local Ollama (OpenAI-compatible)",
 	"settings.smallLlmVllm": "Local vLLM or OpenAI-compatible server",
 	"settings.smallLlmOff": "Turn surfacing off",

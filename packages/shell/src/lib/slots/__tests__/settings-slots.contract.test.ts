@@ -227,11 +227,13 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 		expect(NAIA_SLOT_DEFAULTS.main.model).not.toBe("gemini-2.5-flash");
 	});
 
-	it("NAIA_SLOT_DEFAULTS sub = naia / gemini-3.1-flash-lite", () => {
+	it("NAIA_SLOT_DEFAULTS sub = nextain / gpt-5.6-luna (2026-10-31 작은 모델 기본 변경)", () => {
 		expect(NAIA_SLOT_DEFAULTS.sub).toEqual({
-			provider: "naia",
-			model: "gemini-3.1-flash-lite",
+			provider: "nextain",
+			model: "gpt-5.6-luna",
 		});
+		// stale hardcode gemini-3.1-flash-lite 회귀 금지
+		expect(NAIA_SLOT_DEFAULTS.sub.model).not.toBe("gemini-3.1-flash-lite");
 	});
 
 	it("NAIA_SLOT_DEFAULTS embedding = CPU offline / multilingual-e5-large (한국어 우선, 2026-07-15)", () => {

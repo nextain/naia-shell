@@ -515,7 +515,7 @@ describe("SmallLlmSection", () => {
 	});
 });
 
-it("R17 persists a main-model default and local selection immediately without blur", async () => {
+it("R17 persists a sub-inherit default and local selection immediately without blur", async () => {
 	const onPersist = vi.fn();
 	const config = makeConfig({
 		provider: "vllm",
@@ -534,7 +534,7 @@ it("R17 persists a main-model default and local selection immediately without bl
 	);
 	expect(screen.getByTestId("small-llm-choice-main")).toBeChecked();
 	expect(onPersist).toHaveBeenCalledWith(
-		expect.objectContaining({ llmRoles: { memory: { inherit: "main" } } }),
+		expect.objectContaining({ llmRoles: { memory: { inherit: "sub" } } }),
 	);
 	expect(screen.getByTestId("memory-embedding-warning")).toHaveAttribute(
 		"role",

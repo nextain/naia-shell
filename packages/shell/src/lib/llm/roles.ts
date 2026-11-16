@@ -1,6 +1,6 @@
 // Shell 역할 설정 모델 — 저장/migration/UI에서 공통 사용.
 // provider 목록은 registry capability가 권위이며 이 파일에 역할별 배열을 두지 않는다.
-import type { AppConfig, LlmRoleConfig, LlmRoleId } from "../config";
+import type { AppConfig, LlmRoleConfig, LlmRoleId, ThinkingLevel } from "../config";
 import { providerSupportsRole } from "./registry";
 
 export type RoleProvenance = "explicit" | "inherit" | "legacy-inherit";
@@ -8,6 +8,7 @@ export interface EffectiveShellLlmRole {
 	role: LlmRoleId;
 	provider: string;
 	model: string;
+	thinkingLevel?: ThinkingLevel;
 	baseUrl?: string;
 	credentialRef?: string;
 	provenance: RoleProvenance;
@@ -129,6 +130,7 @@ export function resolveEffectiveLlmRoles(config: AppConfig):
 			role,
 			provider,
 			model,
+			...(selected.thinkingLevel ? { thinkingLevel: selected.thinkingLevel } : {}),
 			...(clean(selected.baseUrl) ? { baseUrl: clean(selected.baseUrl) } : {}),
 			...(clean(selected.credentialRef) ? { credentialRef: clean(selected.credentialRef) } : {}),
 			provenance: "explicit",

@@ -989,7 +989,7 @@ export default {
 	"settings.memoryNaiaRequired": "Naia account required",
 	"settings.smallLlm": "小型LLM（想起・事実抽出）",
 	"settings.smallLlmHint": "バックグラウンドで会話を追い、関連する記憶や知識を次の返答に思い出す小型モデルです。記憶の事実抽出にも使用します。",
-	"settings.smallLlmNaia": "Naiaアカウント（gpt-5.4-nano、デフォルト）",
+	"settings.smallLlmNaia": "Naiaアカウント（gpt-5.6-luna low、デフォルト）",
 	"settings.smallLlmOllama": "ローカルOllama（OpenAI互換）",
 	"settings.smallLlmVllm": "ローカルvLLMまたはOpenAI互換サーバー",
 	"settings.smallLlmOff": "想起をオフにする",

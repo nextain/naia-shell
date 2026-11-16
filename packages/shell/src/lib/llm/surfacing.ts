@@ -1,10 +1,11 @@
 import type { AppConfig, LlmRoleConfig, LlmRoleId } from "../config";
 import { readConfiguredLlmRoles, writeConfiguredLlmRole } from "./roles";
 
-/** Naia account default for the small (memory) LLM — Luke 2026-09-22, billed to the Naia account. */
+/** Naia account default for the small (memory) LLM — 2026-10-31 decision: luna low, billed to the Naia account. */
 export const NAIA_SMALL_LLM_DEFAULT = {
 	provider: "nextain",
-	model: "gpt-5.4-nano",
+	model: "gpt-5.6-luna",
+	thinkingLevel: "low",
 } as const;
 
 export type SmallLlmChoice = "naia" | "ollama" | "vllm" | "other" | "none";
@@ -116,6 +117,7 @@ export function writeSmallLlmSelection(
 		const next = writeConfiguredLlmRole(config, "memory", {
 			provider: "nextain",
 			model: NAIA_SMALL_LLM_DEFAULT.model,
+			thinkingLevel: NAIA_SMALL_LLM_DEFAULT.thinkingLevel,
 		});
 		return { ...next, memorySurfacing: "on", memorySurfacingJudge: "llm" };
 	}

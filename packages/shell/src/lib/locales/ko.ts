@@ -989,7 +989,7 @@ export default {
 	"settings.memoryNaiaRequired": "Naia 계정 필요",
 	"settings.smallLlm": "작은 LLM (떠오름·사실 추출)",
 	"settings.smallLlmHint": "대화를 뒤에서 보다가 지금 이야기와 이어지는 기억과 지식을 다음 답에 떠올려 주는 작은 모델입니다. 기억의 사실 추출에도 씁니다.",
-	"settings.smallLlmNaia": "Naia 계정 (gpt-5.4-nano, 기본)",
+	"settings.smallLlmNaia": "Naia 계정 (gpt-5.6-luna low, 기본)",
 	"settings.smallLlmOllama": "로컬 Ollama (OpenAI 호환)",
 	"settings.smallLlmVllm": "로컬 vLLM 또는 OpenAI 호환 서버",
 	"settings.smallLlmOff": "떠오름 끄기",

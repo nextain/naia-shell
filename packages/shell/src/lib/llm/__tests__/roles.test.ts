@@ -67,6 +67,60 @@ describe("Shell expert/main/sub + memory role settings", () => {
 		expect(resolveEffectiveLlmRoles(unsupported)).toEqual({ ok: false, role: "memory", reason: "unsupported" });
 	});
 
+	it("explicit memory thinkingLevel survives into the effective role (10/31 luna low)", () => {
+		let config = writeConfiguredLlmRole(base(), "memory", {
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			thinkingLevel: "low",
+		});
+		const resolved = resolveEffectiveLlmRoles(config);
+		expect(resolved.ok).toBe(true);
+		if (!resolved.ok) return;
+		expect(resolved.roles[3]).toMatchObject({
+			role: "memory",
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			thinkingLevel: "low",
+			provenance: "explicit",
+		});
+	});
+
+	it("inherit path carries the parent thinkingLevel (memory inherits sub)", () => {
+		let config = writeConfiguredLlmRole(base(), "sub", {
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			thinkingLevel: "low",
+		});
+		config = writeConfiguredLlmRole(config, "memory", { inherit: "sub" });
+		const resolved = resolveEffectiveLlmRoles(config);
+		expect(resolved.ok).toBe(true);
+		if (!resolved.ok) return;
+		expect(resolved.roles[3]).toMatchObject({
+			role: "memory",
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			thinkingLevel: "low",
+			provenance: "inherit",
+			inheritedFromRole: "sub",
+		});
+	});
+
+	it("roles without thinkingLevel resolve with no thinkingLevel key", () => {
+		const config = writeConfiguredLlmRole(base(), "memory", {
+			provider: "ollama",
+			model: "qwen3:4b",
+		});
+		const resolved = resolveEffectiveLlmRoles(config);
+		expect(resolved.ok).toBe(true);
+		if (!resolved.ok) return;
+		expect(resolved.roles[3]).toEqual({
+			role: "memory",
+			provider: "ollama",
+			model: "qwen3:4b",
+			provenance: "explicit",
+		});
+	});
+
 	it("main-only legacy configuration defaults expert/sub from main and memory from sub", () => {
 		// #602: 타사 직결 공급자는 제거됐다 — 모든 역할을 지원하는 로컬(ollama)로 검증한다.
 		const config: AppConfig = { provider: "ollama", model: "qwen3:8b", apiKey: "" };

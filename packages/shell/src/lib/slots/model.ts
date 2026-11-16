@@ -293,10 +293,10 @@ export type NaiaDefaultSlots = Pick<
 	SlotSnapshot,
 	"main" | "sub" | "embedding" | "stt" | "tts"
 >;
-/** memory role default = Naia gpt-5.4-nano (#692); a directly chosen memory role is kept. */
+/** memory role inherits sub (default = nextain/gpt-5.6-luna low); a directly chosen memory role is kept. */
 export const NAIA_SLOT_DEFAULTS: NaiaDefaultSlots = {
 	main: { provider: "nextain", model: "deepseek-v4-flash" },
-	sub: { provider: "naia", model: "gemini-3.1-flash-lite" },
+	sub: { provider: "nextain", model: "gpt-5.6-luna" },
 	// 기본 임베딩 = 다국어 e5 (한국어 우선 정책, 2026-07-15 루크 승인 "e5 추가 + 기본값으로").
 	// 영어 전용 MiniLM(80MB)보다 무겁지만(~1.1GB, CPU 동작) 한국어 회상 품질이 기준.
 	embedding: { provider: "offline", model: "multilingual-e5-large" },

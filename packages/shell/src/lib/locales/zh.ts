@@ -989,7 +989,7 @@ export default {
 	"settings.memoryNaiaRequired": "Naia account required",
 	"settings.smallLlm": "小型LLM（涌现·事实提取）",
 	"settings.smallLlmHint": "在后台跟随对话，并将相关记忆和知识带入下一个回复的小型模型。也用于记忆的事实提取。",
-	"settings.smallLlmNaia": "Naia账户（gpt-5.4-nano，默认）",
+	"settings.smallLlmNaia": "Naia账户（gpt-5.6-luna low，默认）",
 	"settings.smallLlmOllama": "本地Ollama（OpenAI兼容）",
 	"settings.smallLlmVllm": "本地vLLM或OpenAI兼容服务器",
 	"settings.smallLlmOff": "关闭涌现",
