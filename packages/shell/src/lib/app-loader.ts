@@ -445,6 +445,7 @@ export async function loadInstalledApps(): Promise<void> {
 			// round-trip to another app and back. An app may opt out with
 			// keepAlive:false in its manifest.
 			keepAlive: manifest.keepAlive ?? true,
+			deferMountUntilActive: (manifest.keepAlive ?? true) ? true : undefined,
 			center: createGenericInstalledApp(manifest.htmlEntry, appTools, manifest.id, manifest.permissions ?? []),
 		});
 
@@ -490,6 +491,7 @@ export async function removeInstalledApp(appId: string): Promise<void> {
 	storeSignatureCheckedAt.delete(appId);
 	executionEntitlementCheckedAt.delete(appId);
 	appRegistry.unregister(appId);
+	useAppStore.getState().closeApp?.(appId);
 	if (useAppStore.getState().activeApp === appId) {
 		useAppStore.getState().setActiveApp(null);
 	}

@@ -1278,6 +1278,7 @@ export default {
 	"appbar.appStoreDesc": "Explore aplicativos no navegador do sistema",
 	"appbar.addItem": "Adicionar",
 	"appbar.removeShortcut": "Remover atalho",
+	"appbar.closeApp": "Fechar aplicativo",
 	"appbar.removeApp": "Remover aplicativo",
 	"appbar.enterUrl": "Insira a URL (ex: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

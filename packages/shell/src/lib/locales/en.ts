@@ -1286,6 +1286,7 @@ const englishCore = {
 	"appbar.appStoreDesc": "Browse apps in your system browser",
 	"appbar.addItem": "Add",
 	"appbar.removeShortcut": "Remove Shortcut",
+	"appbar.closeApp": "Close App",
 	"appbar.removeApp": "Remove App",
 	"appbar.enterUrl": "Enter URL (e.g. https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

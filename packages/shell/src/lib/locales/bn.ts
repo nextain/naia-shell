@@ -1278,6 +1278,7 @@ export default {
 	"appbar.appStoreDesc": "সিস্টেম ব্রাউজারে অ্যাপ দেখুন",
 	"appbar.addItem": "যোগ করুন",
 	"appbar.removeShortcut": "শর্টকাট সরান",
+	"appbar.closeApp": "অ্যাপ বন্ধ করুন",
 	"appbar.removeApp": "অ্যাপ সরান",
 	"appbar.enterUrl": "URL লিখুন (যেমন: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

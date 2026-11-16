@@ -13,15 +13,20 @@ import { resetDistributionChannelForTests } from "../../lib/distribution";
 const {
 	mockNavigate,
 	mockSetActiveApp,
+	mockCloseApp,
+	mockSendAppSkillsClear,
 	mockEmit,
 	mockInvoke,
 	channel,
 	registeredApps,
 	appListVersion,
+	storeRuntime,
 } = vi.hoisted(() => ({
 	channel: { value: "standard" },
 	mockNavigate: vi.fn(),
 	mockSetActiveApp: vi.fn(),
+	mockCloseApp: vi.fn(),
+	mockSendAppSkillsClear: vi.fn().mockResolvedValue(true),
 	mockEmit: vi.fn().mockResolvedValue(undefined),
 	mockInvoke: vi.fn(),
 	registeredApps: {
@@ -30,11 +35,17 @@ const {
 			name: string;
 			center: () => null;
 			builtIn?: boolean;
+			keepAlive?: boolean;
 			icon?: string;
 			names?: Record<string, string>;
 		}>,
 	},
 	appListVersion: { value: 0 },
+	storeRuntime: {
+		activeApp: null as string | null,
+		activatedApps: [] as string[],
+		closedApps: [] as string[],
+	},
 }));
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -76,6 +87,10 @@ vi.mock("../../lib/config", () => ({
 
 vi.mock("../../lib/app-loader", () => ({
 	removeInstalledApp: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../lib/chat-service", () => ({
+	sendAppSkillsClear: (...a: unknown[]) => mockSendAppSkillsClear(...a),
 }));
 
 vi.mock("../../lib/app-registry", () => ({
@@ -121,8 +136,11 @@ const mockPopModal = vi.fn();
 vi.mock("../../stores/app", () => {
 	// state 는 lazy 생성(호출 시점) — 팩토리는 hoist 되어 module-level mock 보다 먼저 실행되므로.
 	const getState = () => ({
-		activeApp: null,
+		activeApp: storeRuntime.activeApp,
+		activatedApps: storeRuntime.activatedApps,
+		closedApps: storeRuntime.closedApps,
 		setActiveApp: mockSetActiveApp,
+		closeApp: mockCloseApp,
 		setActiveAppContext: vi.fn(),
 		appListVersion: appListVersion.value,
 		bumpAppListVersion: () => {
@@ -451,6 +469,51 @@ describe("AppBar — installed app removal", () => {
 			"앱을 제거하지 못했습니다",
 		);
 		expect(screen.getByTitle("Notes")).toBeInTheDocument();
+	});
+
+	it("separates appbar.closeApp above appbar.removeApp only when the app is active or mounted in background (#872)", async () => {
+		const { appRegistry } = await import("../../lib/app-registry");
+		const { removeInstalledApp } = await import("../../lib/app-loader");
+		const descriptor = {
+			id: "notes",
+			name: "Notes",
+			source: "installed" as const,
+			keepAlive: true,
+			center: () => null,
+		};
+		vi.mocked(appRegistry.list).mockReturnValue([descriptor]);
+		vi.mocked(appRegistry.get).mockReturnValue(descriptor);
+		storeRuntime.activeApp = null;
+		storeRuntime.activatedApps = [];
+		storeRuntime.closedApps = [];
+
+		const { rerender } = render(<AppBar />);
+		expect(document.querySelector(".app-bar-tab__running-dot")).toBeNull();
+		fireEvent.contextMenu(screen.getByTitle("Notes"));
+		expect(screen.queryByText("appbar.closeApp")).toBeNull();
+		expect(screen.getByText("appbar.removeApp")).toBeInTheDocument();
+
+		// Background-mounted keepAlive app: running dot + closeApp above removeApp
+		fireEvent.click(window);
+		storeRuntime.activatedApps = ["notes"];
+		rerender(<AppBar />);
+		expect(document.querySelector(".app-bar-tab__running-dot")).not.toBeNull();
+
+		fireEvent.contextMenu(screen.getByTitle("Notes"));
+		const items = Array.from(
+			document.querySelectorAll(".app-bar-ctx-menu__item"),
+		).map((el) => el.textContent);
+		expect(items).toEqual(["appbar.closeApp", "appbar.removeApp"]);
+		expect(document.querySelector(".app-bar-ctx-menu__divider")).not.toBeNull();
+
+		fireEvent.click(screen.getByText("appbar.closeApp"));
+		expect(mockCloseApp).toHaveBeenCalledWith("notes");
+		expect(mockSendAppSkillsClear).toHaveBeenCalledWith("notes");
+		expect(removeInstalledApp).not.toHaveBeenCalled();
+
+		storeRuntime.activeApp = null;
+		storeRuntime.activatedApps = [];
+		storeRuntime.closedApps = [];
 	});
 });
 

@@ -10,6 +10,7 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { closeRunningApp, isMiniAppRunning } from "../lib/app-lifecycle";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -63,6 +64,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const {
 		activeApp,
 		setActiveApp,
+		activatedApps = [],
+		closedApps = [],
 		appListVersion,
 		bumpAppListVersion,
 		pushModal,
@@ -177,9 +180,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			bumpAppListVersion();
 		}
 
-		if (activeApp === appId) {
-			setActiveApp(null);
-		}
+		closeRunningApp(appId);
 
 		Logger.debug("AppBar", `App removed: ${appId}`);
 	}
@@ -226,6 +227,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		setCtxMenu(null);
 	}
 
+	function handleCtxCloseApp() {
+		if (!ctxMenu?.appId) return;
+		closeRunningApp(ctxMenu.appId);
+		setCtxMenu(null);
+	}
+
 	async function handleCtxRemoveApp() {
 		if (!ctxMenu?.appId) return;
 		const appId = ctxMenu.appId;
@@ -254,7 +261,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			}
 			bumpAppListVersion();
 		}
-		if (activeApp === appId) setActiveApp(null);
+		closeRunningApp(appId);
 		setCtxMenu(null);
 	}
 
@@ -451,43 +458,57 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						)}
 					</>
 				)}
-				{modes.map((mode) => (
-					<div
-						key={mode.id}
-						className="app-bar-tab-wrapper"
-						data-app-id={mode.id}
-					>
-						<button
-							type="button"
-							className={`app-bar-tab${activeApp === mode.id ? " app-bar-tab--active" : ""}`}
+				{modes.map((mode) => {
+					const isRunning = isMiniAppRunning(
+						mode.id,
+						activeApp,
+						activatedApps,
+						closedApps,
+					);
+					return (
+						<div
+							key={mode.id}
+							className="app-bar-tab-wrapper"
 							data-app-id={mode.id}
-							title={mode.names?.[getLocale()] ?? mode.name}
-							onClick={() =>
-								setActiveApp(activeApp === mode.id ? null : mode.id)
-							}
 						>
-							{mode.iconSvg ? (
-								<img
-									className="app-bar-tab-icon app-bar-tab-icon--svg"
-									alt=""
-									src={`data:image/svg+xml,${encodeURIComponent(mode.iconSvg)}`}
-								/>
-							) : mode.icon ? (
-								<span className="app-bar-tab-icon">{mode.icon}</span>
-							) : null}
-						</button>
-						{editMode && !mode.builtIn && (
 							<button
 								type="button"
-								className="app-bar-tab-remove app-bar-tab-remove--shortcut"
-								title={`${mode.names?.[getLocale()] ?? mode.name} 삭제`}
-								onClick={(e) => handleRemoveApp(e, mode.id)}
+								className={`app-bar-tab${activeApp === mode.id ? " app-bar-tab--active" : ""}${isRunning ? " app-bar-tab--running" : ""}`}
+								data-app-id={mode.id}
+								title={mode.names?.[getLocale()] ?? mode.name}
+								onClick={() =>
+									setActiveApp(activeApp === mode.id ? null : mode.id)
+								}
 							>
-								✕
+								{mode.iconSvg ? (
+									<img
+										className="app-bar-tab-icon app-bar-tab-icon--svg"
+										alt=""
+										src={`data:image/svg+xml,${encodeURIComponent(mode.iconSvg)}`}
+									/>
+								) : mode.icon ? (
+									<span className="app-bar-tab-icon">{mode.icon}</span>
+								) : null}
+								{isRunning && (
+									<span
+										className="app-bar-tab__running-dot"
+										aria-hidden="true"
+									/>
+								)}
 							</button>
-						)}
-					</div>
-				))}
+							{editMode && !mode.builtIn && (
+								<button
+									type="button"
+									className="app-bar-tab-remove app-bar-tab-remove--shortcut"
+									title={`${mode.names?.[getLocale()] ?? mode.name} 삭제`}
+									onClick={(e) => handleRemoveApp(e, mode.id)}
+								>
+									✕
+								</button>
+							)}
+						</div>
+					);
+				})}
 				{/* WO-03: Hide browser shortcuts, which are disabled in web mode. */}
 				{!isWeb &&
 					browserShortcuts.map((shortcut) => (
@@ -577,13 +598,35 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						</button>
 					)}
 					{ctxMenu.appId && (
-						<button
-							type="button"
-							className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
-							onClick={handleCtxRemoveApp}
-						>
-							{t("appbar.removeApp")}
-						</button>
+						<>
+							{isMiniAppRunning(
+								ctxMenu.appId,
+								activeApp,
+								activatedApps,
+								closedApps,
+							) && (
+								<>
+									<button
+										type="button"
+										className="app-bar-ctx-menu__item"
+										onClick={handleCtxCloseApp}
+									>
+										{t("appbar.closeApp")}
+									</button>
+									<div
+										className="app-bar-ctx-menu__divider"
+										role="separator"
+									/>
+								</>
+							)}
+							<button
+								type="button"
+								className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
+								onClick={handleCtxRemoveApp}
+							>
+								{t("appbar.removeApp")}
+							</button>
+						</>
 					)}
 				</div>
 			)}
