@@ -278,7 +278,7 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 		},
 		body: JSON.stringify({
 			input: opts.text,
-			voice: opts.voice || "ko-KR-SunHi:DragonHDLatestNeural",
+			voice: opts.voice || "ko-KR-Neural2-A",
 			audio_encoding: opts.encoding || "MP3",
 		}),
 		signal: opts.signal,

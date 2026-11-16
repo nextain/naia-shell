@@ -101,14 +101,14 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 		if (!raw.ttsProvider) raw.ttsProvider = "edge";
 		remove("ttsEngine");
 	}
+	// The gateway's /v1/audio/speech serves Google voices and naia-voice only;
+	// Azure HD names stored by 0.2.5 get a 502, so they go back to Neural2.
 	if (
 		raw.ttsProvider === "nextain" &&
 		typeof raw.ttsVoice === "string" &&
-		/Neural2|Wavenet|Chirp3|Chirp-3/i.test(raw.ttsVoice)
+		/DragonHD/i.test(raw.ttsVoice)
 	) {
-		raw.ttsVoice = `ko-KR-${
-			legacyVoiceIsMale(raw.ttsVoice) ? "Hyunsu" : "SunHi"
-		}:DragonHDLatestNeural`;
+		raw.ttsVoice = `ko-KR-Neural2-${legacyVoiceIsMale(raw.ttsVoice) ? "C" : "A"}`;
 		changed = true;
 	}
 

@@ -8,12 +8,14 @@ import {
 	isToolAllowed,
 	loadConfig,
 	migrateLegacyDna3OllamaModel,
+	normalizeRetiredVoiceConfig,
 	reconcileExplicitLocalProfile,
 	removeAllowedTool,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
 	resolveThinkingLevel,
 	saveConfig,
+	type AppConfig,
 } from "../config";
 
 describe("config", () => {
@@ -397,3 +399,23 @@ describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
 	});
 });
 
+
+describe("Naia Cloud TTS voice migration", () => {
+	const voiceOf = (ttsVoice: string, ttsProvider = "nextain") =>
+		normalizeRetiredVoiceConfig({
+			ttsProvider,
+			ttsVoice,
+		} as unknown as AppConfig).config.ttsVoice;
+
+	it("moves Azure HD names the gateway rejects back to Google Neural2", () => {
+		expect(voiceOf("ko-KR-SunHi:DragonHDLatestNeural")).toBe("ko-KR-Neural2-A");
+		expect(voiceOf("ko-KR-Hyunsu:DragonHDLatestNeural")).toBe("ko-KR-Neural2-C");
+	});
+
+	it("keeps Google voices and other providers as they are", () => {
+		expect(voiceOf("ko-KR-Neural2-B")).toBe("ko-KR-Neural2-B");
+		expect(voiceOf("ko-KR-SunHi:DragonHDLatestNeural", "edge")).toBe(
+			"ko-KR-SunHi:DragonHDLatestNeural",
+		);
+	});
+});
