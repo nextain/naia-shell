@@ -4,6 +4,12 @@ import type {
 	SpeechPlan,
 } from "./nva-speech/speech-timing";
 
+export type {
+	AvatarSpeechTiming,
+	PreparedSpeech,
+	SpeechPlan,
+} from "./nva-speech/speech-timing";
+
 export interface AvatarPlaybackOptions {
 	muted?: boolean;
 	onPlaybackReady?: () => void;
@@ -42,6 +48,8 @@ export interface AvatarSpeechRenderer {
 	canPlaySpeechPlans?(): boolean;
 	/** Revise a running browser-timed plan (speechSynthesis boundary). */
 	updateSpeechPlan?(plan: SpeechPlan): boolean;
+	/** Pre-fetch canonical speech assets (`speech/atlas.bin`, etc.) in the background after greeting. */
+	warmSpeechAssets?(): Promise<void>;
 	setVoice(refUrl: string | null | undefined): Promise<boolean>;
 	interrupt(): void;
 	stop(): void;

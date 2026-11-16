@@ -14,11 +14,6 @@ const STAGE_AGENT = readText("packages/shell/scripts/stage-agent.mjs");
 const AGENT_PAIRING = readText("packages/shell/scripts/agent-pairing.mjs");
 const BUILD_E2E_TAURI = readText("packages/shell/scripts/build-e2e-tauri.mjs");
 const CODEX_E2E_ENVIRONMENT = readText("packages/shell/e2e-tauri/codex-e2e-environment.ts");
-const PAIRING = JSON.parse(readText("packages/shell/agent-pairing.json")) as {
-	agentCommit: string;
-	protoSha256: string;
-};
-
 describe("UC-WIRE-V1 paired proto build", () => {
 	it("requires an explicit NAIA_AGENT_PROTO_DIR", () => {
 		expect(BUILD_RS).toContain('env::var("NAIA_AGENT_PROTO_DIR").expect');
@@ -36,19 +31,15 @@ describe("UC-WIRE-V1 paired proto build", () => {
 	});
 
 	it("pins the paired agent ancestry and build evidence", () => {
-		expect(BUILD_RS).toContain(
-			`REQUIRED_AGENT_COMMIT: &str = "${PAIRING.agentCommit}"`,
-		);
-		expect(BUILD_RS).toContain(
-			`REQUIRED_PROTO_SHA256: &str =\n        "${PAIRING.protoSha256}"`,
-		);
+		expect(BUILD_RS).toContain('manifest["agentCommit"]');
+		expect(BUILD_RS).toContain('manifest["protoSha256"]');
 		expect(BUILD_RS).not.toContain("merge-base");
 		expect(BUILD_RS).toContain("NAIA_AGENT_REQUIRED_COMMIT");
 		expect(BUILD_RS).toContain("NAIA_AGENT_PAIRED_COMMIT");
 		expect(BUILD_RS).toContain("NAIA_AGENT_PROTO_SHA256");
 		expect(BUILD_RS).toContain("NAIA_AGENT_PAIRED_DIRTY");
-		expect(BUILD_RS).toContain("proto_sha256 != REQUIRED_PROTO_SHA256");
-		expect(BUILD_RS).toContain("agent_commit != REQUIRED_AGENT_COMMIT");
+		expect(BUILD_RS).toContain("proto_sha256 != required_proto_sha256");
+		expect(BUILD_RS).toContain("agent_commit != required_agent_commit");
 		expect(BUILD_RS).toContain("if proto_dirty");
 		expect(BUILD_RS).toContain("git_root_for_path(&proto_dir)");
 		expect(BUILD_RS).toContain("git_root_for_path(&agent_script)");

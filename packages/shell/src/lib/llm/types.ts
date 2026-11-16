@@ -3,7 +3,7 @@ import type { ModelCapability } from "../types.js";
 export type LlmRoleId = "expert" | "main" | "sub" | "memory";
 
 /** Settings-only ordering for the Naia model catalog. */
-export type ModelSortMode = "price" | "performance";
+export type ModelSortMode = "recommended" | "price" | "performance";
 
 /** Voice option for omni/tts models. */
 export interface LlmVoiceMeta {

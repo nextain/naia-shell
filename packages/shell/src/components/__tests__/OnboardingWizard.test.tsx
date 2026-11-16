@@ -10,6 +10,11 @@ import {
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../lib/llm/registry", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/llm/registry")>()),
+	fetchGatewayModelCatalog: vi.fn().mockResolvedValue(null),
+}));
+
 const eventListeners = vi.hoisted(
 	() => new Map<string, (event: { payload: any }) => void>(),
 );
@@ -117,6 +122,9 @@ vi.mock("../VrmPreview", () => ({
 }));
 
 import { useAppStore } from "../../stores/app";
+import { fetchGatewayModelCatalog } from "../../lib/llm/registry";
+import { readConfiguredLlmRoles } from "../../lib/llm/roles";
+import { activateNaiaLlm } from "../../lib/chat-service";
 import { OnboardingWizard } from "../OnboardingWizard";
 
 // Step order (without Naia key): agentName → userName → speechStyle → character → background → provider → complete
@@ -128,6 +136,70 @@ describe("OnboardingWizard", () => {
 
 	beforeEach(() => {
 		vi.useFakeTimers();
+		vi.mocked(fetchGatewayModelCatalog).mockResolvedValue(null);
+	});
+
+	it.each([
+		["Terra", ["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna"], "gpt-6.1-terra", "xhigh"],
+		["Solar", ["solar-pro4", "gpt-5.6-luna"], "solar-pro4", undefined],
+	])("IT-SM-05 first login selects %s from mocked catalog", async (_label, ids, main, thinking) => {
+		vi.mocked(fetchGatewayModelCatalog).mockResolvedValue((ids as string[]).map(id => ({ id, provider: "azure", price: { input: 1, output: 1 } })));
+		localStorage.setItem("naia-adk-path", "/adk-test");
+		renderAtAgentName();
+		await act(async () => { await Promise.resolve(); });
+		advanceFromAgentNameToProvider();
+		const loginButton = screen.getAllByRole("button").find(button => button.textContent?.includes("Naia"));
+		fireEvent.click(loginButton!);
+		act(() => { eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+		clickNextByClass();
+		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
+		await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.model).toBe(main);
+		expect(config.llmRoles.main.thinkingLevel).toBe(thinking);
+		expect(config.llmRoles.sub).toMatchObject({ model: "gpt-5.6-luna", thinkingLevel: "low" });
+		expect(activateNaiaLlm).toHaveBeenCalledWith("test-key", "nextain", main);
+	});
+
+	it.each([
+		["existing selection", { provider: "nextain", model: "chosen", apiKey: "" }, "chosen"],
+		["failed catalog", null, ""],
+	])("IT-SM-05 preserves %s", async (_label, existing, expected) => {
+		localStorage.setItem("naia-adk-path", "/adk-test");
+		if (existing) localStorage.setItem("naia-config", JSON.stringify(existing));
+		renderAtAgentName();
+		await act(async () => { await Promise.resolve(); });
+		advanceFromAgentNameToProvider();
+		const loginButton = screen.getAllByRole("button").find(button => button.textContent?.includes("Naia"));
+		fireEvent.click(loginButton!);
+		act(() => { eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+		clickNextByClass();
+		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
+		await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.model).toBe(expected);
+		expect(config.llmRoles.sub).toEqual({ inherit: "main" });
+	});
+
+	it("IT-SM-14 first onboarding retains legacy memory when Luna is available", async () => {
+		vi.mocked(fetchGatewayModelCatalog).mockResolvedValue([{ id: "gpt-5.6-luna", provider: "azure", price: { input: 1, output: 1 } }]);
+		localStorage.setItem("naia-adk-path", "/adk-test");
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "chosen-main", apiKey: "", memoryLlmProvider: "ollama", memoryLlmModel: "old-memory", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "memory-ref" }));
+		renderAtAgentName();
+		await act(async () => { await Promise.resolve(); });
+		advanceFromAgentNameToProvider();
+		const loginButton = screen.getAllByRole("button").find(button => button.textContent?.includes("Naia"));
+		fireEvent.click(loginButton!);
+		act(() => { eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+		clickNextByClass();
+		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
+		await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(readConfiguredLlmRoles(config).sub).toEqual({ inherit: "memory" });
+		expect(config).toMatchObject({ memoryLlmProvider: "ollama", memoryLlmModel: "old-memory", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "memory-ref" });
 	});
 
 	afterEach(() => {

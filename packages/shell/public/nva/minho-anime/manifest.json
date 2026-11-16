@@ -1,0 +1,96 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Minho",
+    "tagline": "차분한 판단과 정확한 실행",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 © 2026 Nextain Inc.",
+    "created": "2026-08-05",
+    "description": "차분한 판단과 책임감을 지닌 기획조정실장 캐릭터입니다.",
+    "note": "알파 채널을 포함해 배경을 자유롭게 합성하는 대기·발화·동작 NVA 예제.",
+    "style_label": "애니 화풍"
+  },
+  "canvas": {
+    "width": 720,
+    "height": 1280,
+    "fps": 24
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/idle.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.37,
+        0.025,
+        0.26,
+        0.18
+      ],
+      "label": "대기"
+    },
+    "talking": {
+      "clip": "clips/talking-ko.webm",
+      "loop": true,
+      "can_talk": true,
+      "face_bbox": [
+        0.37,
+        0.025,
+        0.26,
+        0.18
+      ],
+      "label": "말하기"
+    },
+    "briefing": {
+      "loop": false,
+      "can_talk": false,
+      "label": "차분한 브리핑",
+      "clip": "clips/briefing.webm"
+    }
+  },
+  "speech_clips": {
+    "speech-ko": {
+      "clip": "clips/talking-ko.webm",
+      "label": "한국어 발화 · Minho voice profile",
+      "audio": "embedded",
+      "locale": "ko-KR"
+    }
+  },
+  "expressions": {
+    "neutral": "idle",
+    "listening": "idle",
+    "speaking": "talking",
+    "idle": "idle",
+    "talking": "talking",
+    "briefing": "briefing"
+  },
+  "scenario": {
+    "nodes": {
+      "start": {
+        "type": "start"
+      },
+      "idle": {
+        "type": "scene",
+        "animation": "idle",
+        "label": "대기"
+      }
+    },
+    "edges": [
+      {
+        "from": "start",
+        "to": "idle"
+      }
+    ]
+  },
+  "stacked_alpha": {
+    "layout": "color-top-alpha-bottom",
+    "clips": {
+      "clips/briefing.webm": "clips/briefing.stacked.mp4",
+      "clips/idle.webm": "clips/idle.stacked.mp4",
+      "clips/talking-ko.webm": "clips/talking-ko.stacked.mp4"
+    }
+  }
+}

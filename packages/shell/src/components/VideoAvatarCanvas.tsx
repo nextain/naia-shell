@@ -7,6 +7,7 @@ import {
 	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
+import { shouldUseStackedAlpha } from "../lib/avatar/nva-stacked-alpha";
 import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
 import {
 	isBroadcastActive,
@@ -20,10 +21,12 @@ import {
 } from "../lib/ui-preferences";
 import {
 	type NvaManifest,
+	collectNvaManifestClipPaths,
 	isPrebakedNvaManifest,
 	parseNvaManifest,
 	resolveNvaAssetPath,
 } from "../lib/nva";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -36,14 +39,14 @@ interface NvaPan {
 	y: number;
 }
 const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
-function videoTransform(pan: NvaPan, zoom = 1): string {
-	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px) scale(${zoom})`;
+function videoTransform(pan: NvaPan): string {
+	return `translate(calc(var(--nva-center-offset, var(--naia-width, 320px) / 2 - 50vw) + ${pan.x}px), ${pan.y}px)`;
 }
 const MIN_NVA_ZOOM = 0.5;
 const MAX_NVA_ZOOM = 3;
 const NVA_ZOOM_STEP = 0.1;
 function clampNvaZoom(value: number): number {
-	return Math.min(MAX_NVA_ZOOM, Math.max(MIN_NVA_ZOOM, value));
+	return Math.round(Math.min(MAX_NVA_ZOOM, Math.max(MIN_NVA_ZOOM, value)) * 100) / 100;
 }
 function normalizeNvaZoom(value: unknown): number {
 	return typeof value === "number" &&
@@ -53,7 +56,48 @@ function normalizeNvaZoom(value: unknown): number {
 		? value
 		: 1;
 }
+function resolveAvatarDpr(): number {
+	const raw = typeof window !== "undefined" ? window.devicePixelRatio : 1;
+	return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+		? Math.min(2, Math.max(1, raw))
+		: 1;
+}
+export function syncAvatarCanvasBufferSize(
+	canvas: HTMLCanvasElement,
+	manifest: NvaManifest,
+	zoom: number,
+): { width: number; height: number; dpr: number } {
+	const dpr = resolveAvatarDpr();
+	const rect =
+		typeof canvas.getBoundingClientRect === "function"
+			? canvas.getBoundingClientRect()
+			: { width: 0, height: 0 };
+	const displayW =
+		rect.width > 0
+			? rect.width
+			: canvas.clientWidth > 0
+				? canvas.clientWidth
+				: manifest.canvas.width;
+	const displayH =
+		rect.height > 0
+			? rect.height
+			: canvas.clientHeight > 0
+				? canvas.clientHeight
+				: manifest.canvas.height;
+	const nextW = Math.max(1, Math.round(displayW * zoom * dpr));
+	const nextH = Math.max(1, Math.round(displayH * zoom * dpr));
+	if (canvas.width !== nextW) canvas.width = nextW;
+	if (canvas.height !== nextH) canvas.height = nextH;
+	const ctx = canvas.getContext("2d", { alpha: true });
+	if (ctx) {
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = "high";
+	}
+	return { width: nextW, height: nextH, dpr };
+}
 const VIDEO_STYLE = {
+	height: "92%",
+	width: "auto",
 	maxWidth: "min(100%, 56vh)",
 	maxHeight: "92%",
 	objectFit: "contain" as const,
@@ -150,6 +194,52 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		setManifest(null);
 		setLoaded(false);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
+		if (isWebMode()) {
+			const segments = nvaModel?.split(/[/\\]/).filter(Boolean) ?? [];
+			const bundleName = segments.at(-1) ?? "";
+			if (
+				!bundleName ||
+				segments.includes("..") ||
+				!/^[a-z0-9-]+$/.test(bundleName)
+			) {
+				const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
+				setError(err);
+				setMode("error");
+				useCascadeAvatarStore.getState().setNvaLoadError(err);
+				return;
+			}
+			const directory = `/nva/${bundleName}`;
+			void fetch(`${directory}/manifest.json`)
+				.then(async (res) => {
+					if (!res.ok) {
+						throw new Error(`HTTP ${res.status}`);
+					}
+					const raw =
+						typeof res.text === "function"
+							? await res.text()
+							: JSON.stringify(await res.json());
+					const parsed = parseNvaManifest(raw);
+					if (!isPrebakedNvaManifest(parsed))
+						throw new Error("NVA requires vrm_slots prebaked WebM assets");
+					for (const clipPath of collectNvaManifestClipPaths(parsed)) {
+						resolveNvaAssetPath(directory, clipPath);
+					}
+					if (!disposed) {
+						setBundleDir(directory);
+						setManifest(parsed);
+					}
+				})
+				.catch((cause) => {
+					if (!disposed) {
+						setError(String(cause));
+						setMode("error");
+						useCascadeAvatarStore.getState().setNvaLoadError(String(cause));
+					}
+				});
+			return () => {
+				disposed = true;
+			};
+		}
 		const adkPath = getAdkPath();
 		if (!adkPath || !nvaModel) {
 			setError("missing-nva-model");
@@ -204,9 +294,36 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	}, [ambientIdle]);
 
 	useEffect(() => {
+		rendererRef.current?.setZoom(zoom);
+		if (!canvas || !manifest) return;
+		syncAvatarCanvasBufferSize(canvas, manifest, zoom);
+	}, [canvas, manifest, zoom]);
+
+	useEffect(() => {
+		if (!canvas || !manifest) return;
+		const sync = () => {
+			syncAvatarCanvasBufferSize(canvas, manifest, zoomRef.current);
+		};
+		const observer =
+			typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
+		observer?.observe(canvas);
+		if (avatarAreaRef.current) {
+			observer?.observe(avatarAreaRef.current);
+		}
+		if (typeof window !== "undefined") {
+			window.addEventListener("resize", sync);
+		}
+		return () => {
+			observer?.disconnect();
+			if (typeof window !== "undefined") {
+				window.removeEventListener("resize", sync);
+			}
+		};
+	}, [canvas, manifest]);
+
+	useEffect(() => {
 		if (!video || !canvas || !manifest || !bundleDir) return;
-		canvas.width = manifest.canvas.width;
-		canvas.height = manifest.canvas.height;
+		syncAvatarCanvasBufferSize(canvas, manifest, zoomRef.current);
 		const urls = new Map<string, string>();
 		const renderer = new PrebakedAvatarRenderer({
 			modelId: nvaModel,
@@ -215,6 +332,21 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			resolveAssetUrl: async (relativePath) => {
 				const cached = urls.get(relativePath);
 				if (cached) return cached;
+				if (isWebMode()) {
+					const validatedBase = resolveNvaAssetPath(bundleDir, relativePath);
+					const normalizedRel = relativePath
+						.replace(/\\/g, "/")
+						.replace(/^\/+/, "");
+					const stackedRel = shouldUseStackedAlpha()
+						? (manifest.stacked_alpha?.clips?.[normalizedRel] ??
+							manifest.stacked_alpha?.clips?.[relativePath])
+						: undefined;
+					const url = stackedRel
+						? resolveNvaAssetPath(bundleDir, stackedRel)
+						: validatedBase;
+					urls.set(relativePath, url);
+					return url;
+				}
 				const url = await toLocalBlobUrl(
 					resolveNvaAssetPath(bundleDir, relativePath),
 				);
@@ -222,9 +354,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				return url;
 			},
 			// Read bytes directly: a Linux webm URL is MediaSource-backed and not fetch()able.
-			loadAssetBlob: (relativePath) =>
-				readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath)),
+			loadAssetBlob: isWebMode()
+				? undefined
+				: (relativePath) =>
+						readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath)),
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
+			idleGestureIntervalMs: 18_000,
 			onPlaybackFailure: (reason) => {
 				setError(reason);
 				setMode("error");
@@ -235,6 +370,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			},
 		});
 		renderer.setIdleOverride(ambientIdleRef.current);
+		renderer.setZoom(zoomRef.current);
 		renderer.start(video, canvas);
 		rendererRef.current = renderer;
 		useCascadeAvatarStore.getState().setRenderer(renderer);
@@ -285,10 +421,14 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
+				data-video-avatar-zoom={zoom}
 				style={{
 					...VIDEO_STYLE,
-					transform: videoTransform(pan, zoom),
-					visibility: mode === "error" ? "hidden" : undefined,
+					aspectRatio: manifest
+						? `${manifest.canvas.width} / ${manifest.canvas.height}`
+						: undefined,
+					transform: videoTransform(pan),
+					visibility: mode === "error" ? "hidden" : "visible",
 				}}
 			/>
 			{mode !== "prebaked" && (

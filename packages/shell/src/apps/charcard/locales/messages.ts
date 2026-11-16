@@ -1,6 +1,6 @@
 import { Logger } from "../../../lib/logger";
 
-Logger.debug("CharCardLocale", "loading character card app locale strings");
+let charCardLocaleLogged = false;
 
 export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.imageOmitted": "Image not shown because it is too large.",
@@ -282,6 +282,10 @@ export function charCardText(
 	params?: Readonly<Record<string, string | number>>,
 	localeOverride?: string,
 ): string {
+	if (!charCardLocaleLogged) {
+		charCardLocaleLogged = true;
+		Logger.debug("CharCardLocale", "loading character card app locale strings");
+	}
 	const lang = resolveCharCardLocale(localeOverride);
 	const table = CHARCARD_MESSAGES_BY_LOCALE[lang] ?? CHARCARD_ENGLISH_MESSAGES;
 	const template = table[key] ?? CHARCARD_ENGLISH_MESSAGES[key];

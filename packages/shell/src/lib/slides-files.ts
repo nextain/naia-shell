@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isKioskDemo } from "./kiosk-demo/flag";
 import { isValidSlideVideoFileName } from "./slide-script";
 
 export const SLIDES_FILES = "naia-slides:files";
@@ -27,7 +28,7 @@ export interface SlidesImportProgress {
 let parentCapability: string | null = null;
 let parentPort: MessagePort | null = null;
 const nativeWindow = () =>
-	window.parent === window && "__TAURI_INTERNALS__" in window;
+	window.parent === window && ("__TAURI_INTERNALS__" in window || isKioskDemo());
 const requestId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function isValidCapability(value: unknown): value is string {

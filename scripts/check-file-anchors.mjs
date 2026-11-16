@@ -5,7 +5,7 @@
  * 문제: ci-verify-structure 는 루트 dir(F12)만 검사 → `src/main/**` 안에 새 파일을
  * 추가하면 어느 계약/UC 에도 안 묶여도 통과. (UC12 provider-resolver.ts 가 이렇게 샘.)
  *
- * 규칙(계약 먼저, 코드 나중): `src/main` 의 모든 .ts 는 module-manifest.json 에
+ * 규칙(계약 먼저, 코드 나중): `src/main` 및 `packages/shell/src/lib/kiosk-demo` 의 모든 .ts 는 module-manifest.json 에
  * {layer, uc, contract} 앵커와 함께 등록돼야 한다.
  *   - 디스크 파일 ∉ manifest  → RED (미계약 코드 = 드리프트)
  *   - manifest 항목 파일 부재  → RED (stale)
@@ -15,13 +15,13 @@
  * exit 0 = 모든 파일이 계약에 앵커됨. exit 1 = 드리프트.
  * 0 토큰·결정론·LLM 없음. PostToolUse 훅 + cron 에서 호출.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = process.env.CI_PROJECT_ROOT || join(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = join(ROOT, ".agents", "context", "module-manifest.json");
-const SCAN_DIR = "src/main";
+const SCAN_DIRS = ["src/main", "packages/shell/src/lib/kiosk-demo", "packages/shell/web-worker"];
 const VALID_LAYERS = new Set(["domain", "ports", "app", "adapters", "composition"]);
 
 function listTs(absDir, relBase) {
@@ -35,7 +35,7 @@ function listTs(absDir, relBase) {
 	for (const e of entries) {
 		const rel = relBase ? `${relBase}/${e.name}` : e.name;
 		if (e.isDirectory()) out.push(...listTs(join(absDir, e.name), rel));
-		else if (e.name.endsWith(".ts") && !e.name.endsWith(".d.ts")) out.push(rel);
+		else if (/\.tsx?$/.test(e.name) && !e.name.endsWith(".d.ts")) out.push(rel);
 	}
 	return out;
 }
@@ -55,7 +55,7 @@ function main() {
 		process.exit(1);
 	}
 
-	const disk = listTs(join(ROOT, SCAN_DIR), SCAN_DIR).sort();
+	const disk = [...[...new Set([...SCAN_DIRS, ...(manifest.scan_dirs ?? [])])].flatMap((dir) => listTs(join(ROOT, dir), dir)), ...(manifest.scan_files ?? []).filter((f) => existsSync(join(ROOT, f)))].filter((f) => !f.endsWith(".test.ts")).sort();
 	const registered = new Set(keys);
 	const errs = [];
 
@@ -77,7 +77,7 @@ function main() {
 		for (const e of errs) console.error("  ✗ " + e);
 		process.exit(1);
 	}
-	console.log(`[file-anchors] OK — ${disk.length} 파일 전부 계약 앵커됨 (${SCAN_DIR}).`);
+	console.log(`[file-anchors] OK — ${disk.length} 파일 전부 계약 앵커됨 (${SCAN_DIRS.join(", ")}).`);
 	process.exit(0);
 }
 main();

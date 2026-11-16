@@ -59,7 +59,7 @@ describe("ChatBridge (outbound driving adapter)", () => {
     await bridge.cancel(handle);
     expect(chat.cancelled[0]?.requestId).toBe("r1");
   });
-  it("thinking: level 유효값(off/low/high) 전달 및 무효값 필터링 (#709)", () => {
+  it("UT-SM-04 thinking level 전달 및 무효값 필터링 (#709)", () => {
     const chat = new MockChatPort();
     let seq = 0;
     const bridge = new ChatBridge({ chat, clientId: "s", newRequestId: () => `r-${++seq}` });
@@ -74,6 +74,9 @@ describe("ChatBridge (outbound driving adapter)", () => {
 
     bridge.submit({ ...input, thinking: { level: "invalid" as any } }, () => {});
     expect(chat.started[2]?.thinking).toBeUndefined();
+
+    bridge.submit({ ...input, thinking: { level: "xhigh" }, enableThinking: true }, () => {});
+    expect(chat.started[3]?.thinking).toEqual({ level: "xhigh" });
   });
 });
 

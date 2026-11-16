@@ -10,6 +10,7 @@ import {
 	SKILL_YOUTUBE_BGM,
 	cancelRadioDjRecovery,
 	clampVolume,
+	classifyWebBgmIntent,
 	continueRadioDjRecoveryAfterQueueAdvance,
 	executeBgmSkill,
 	filterSingleTrackCandidates,
@@ -18,6 +19,7 @@ import {
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
 	sanitizeRadioDjSearchQuery,
+	searchWebYoutubeCatalog,
 	shouldActivateRadioDj,
 	waitForBgmObservedPlayback,
 } from "../bgm-skill";
@@ -1314,5 +1316,61 @@ describe("clampVolume (도메인 — agent UC8 어댑터 동형)", () => {
 		expect(clampVolume("loud")).toBe(0.5);
 		expect(clampVolume(Number.NaN)).toBe(0.5);
 		expect(clampVolume(undefined)).toBe(0.5);
+	});
+});
+
+describe("web mode YouTube BGM catalog and intent classification (fix7d)", () => {
+	it("classifies conversational YouTube play and stop requests", () => {
+		expect(classifyWebBgmIntent("유튜브 틀어 줘")).toEqual({
+			action: "play",
+			category: "lofi",
+			query: "lofi hip hop beats to study relax",
+		});
+		expect(classifyWebBgmIntent("유튜브로 재즈 틀어 줘")).toEqual({
+			action: "play",
+			category: "jazz",
+			query: "smooth jazz cafe bossa nova",
+		});
+		expect(classifyWebBgmIntent("유튜브 멈춰 줘")).toEqual({
+			action: "stop",
+		});
+		expect(classifyWebBgmIntent("음악 꺼 줘")).toEqual({
+			action: "stop",
+		});
+	});
+
+	it("searches built-in keyless YouTube catalog and confirms web playback then stops cleanly", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			const results = searchWebYoutubeCatalog("lofi hip hop beats to study relax");
+			expect(results.length).toBeGreaterThan(0);
+			expect(results[0]?.id).toBeTruthy();
+
+			const { deps, emitted } = mkDeps(results);
+			const playOut = JSON.parse(
+				await executeBgmSkill({ action: "play", category: "lofi" }, deps),
+			);
+			expect(playOut).toMatchObject({
+				ok: true,
+				action: "play",
+				announceTrack: true,
+			});
+			expect(deps.playback.current()?.status).toBe("playing");
+			expect(emitted[0]).toMatchObject({
+				type: "bgm_youtube_play",
+			});
+
+			const stopOut = JSON.parse(
+				await executeBgmSkill({ action: "stop" }, deps),
+			);
+			expect(stopOut).toMatchObject({
+				ok: true,
+				action: "stop",
+			});
+			expect(deps.playback.current()?.status).toBe("ended");
+			expect(emitted.at(-1)).toEqual({ type: "bgm_youtube_stop" });
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 });

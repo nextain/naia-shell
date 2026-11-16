@@ -106,3 +106,6 @@ packages/shell/C:\\*
 # 다른 기계가 clone 할 때 내용을 못 받고, 짝 해석까지 흔들린다.
 naia-agent-worktrees/
 worktrees/
+
+# 웹 시연 NVA 입 atlas: 생성물(시연 사이트 산출물). 100MB 넘는 것이 있어 저장소에 두지 않는다.
+packages/shell/public/nva/*/speech/atlas.bin

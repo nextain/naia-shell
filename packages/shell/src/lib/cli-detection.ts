@@ -43,6 +43,12 @@ export type ShellGestureId = (typeof SHELL_GESTURES)[number]["id"];
 export async function refreshCliDetection(
 	persistRefreshTime = true,
 ): Promise<CliDetectionSnapshot> {
+	if (import.meta.env.MODE === "web") {
+		return {
+			refreshedAt: String(Date.now()),
+			results: [],
+		};
+	}
 	const snapshot = await invoke<CliDetectionSnapshot>("cli_detect_refresh");
 	const config = loadConfig();
 	if (config) {

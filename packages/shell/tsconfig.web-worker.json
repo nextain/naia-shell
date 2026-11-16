@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker", "WebWorker.AsyncIterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "web-worker/**/*.ts",
+    "src/lib/web-runtime/webllm-model.ts",
+    "src/lib/web-runtime/web-adk-path.ts"
+  ]
+}

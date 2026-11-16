@@ -16,7 +16,21 @@ export const UI_PREFERENCE_KEYS = {
 	classifiedDirs: "classifiedDirs",
 	readAnnouncementIds: "readAnnouncementIds",
 	updatePromptSnooze: "updatePromptSnooze",
+	layoutOrientation: "layoutOrientation",
+	chatHeightRatio: "chatHeightRatio",
+	naiaWidth: "naiaWidth",
 } as const;
+
+export type LayoutOrientation = "landscape" | "portrait";
+export const LAYOUT_ORIENTATION_STORAGE_KEY = "naia-layout-orientation";
+export const CHAT_HEIGHT_RATIO_STORAGE_KEY = "naia-chat-height-ratio";
+export const NAIA_WIDTH_STORAGE_KEY = "naia-layout-width";
+
+export function isLayoutOrientation(
+	value: unknown,
+): value is LayoutOrientation {
+	return value === "landscape" || value === "portrait";
+}
 
 export type UiPreferenceKey =
 	(typeof UI_PREFERENCE_KEYS)[keyof typeof UI_PREFERENCE_KEYS];
@@ -317,4 +331,156 @@ export function resetUiPreferencesForTests(): void {
 	writesEnabled = false;
 	activeAdkPath = null;
 	listeners.clear();
+	removeStorage(LAYOUT_ORIENTATION_STORAGE_KEY);
+	removeStorage(CHAT_HEIGHT_RATIO_STORAGE_KEY);
+	removeStorage(NAIA_WIDTH_STORAGE_KEY);
+	if (typeof document !== "undefined" && document.documentElement) {
+		document.documentElement.removeAttribute("data-layout-orientation");
+	}
+}
+
+export function getStoredChatHeightRatio(): number | null {
+	const fromPref = Number(snapshot[UI_PREFERENCE_KEYS.chatHeightRatio]);
+	if (Number.isFinite(fromPref) && fromPref >= 0.2 && fromPref <= 0.92) {
+		return fromPref;
+	}
+	const raw = readStorage(CHAT_HEIGHT_RATIO_STORAGE_KEY);
+	const fromStorage = raw === null ? Number.NaN : Number(raw);
+	if (
+		Number.isFinite(fromStorage) &&
+		fromStorage >= 0.2 &&
+		fromStorage <= 0.92
+	) {
+		return fromStorage;
+	}
+	return null;
+}
+
+export function setStoredChatHeightRatio(ratio: number | null): void {
+	if (ratio === null || !Number.isFinite(ratio)) {
+		removeStorage(CHAT_HEIGHT_RATIO_STORAGE_KEY);
+		void patchUiPreferences({
+			[UI_PREFERENCE_KEYS.chatHeightRatio]: undefined,
+		});
+		return;
+	}
+	const clamped = Math.max(0.25, Math.min(0.88, Number(ratio.toFixed(4))));
+	writeStorage(CHAT_HEIGHT_RATIO_STORAGE_KEY, String(clamped));
+	void patchUiPreferences({ [UI_PREFERENCE_KEYS.chatHeightRatio]: clamped });
+}
+
+export function getStoredNaiaWidth(): number | null {
+	const fromPref = Number(snapshot[UI_PREFERENCE_KEYS.naiaWidth]);
+	if (Number.isFinite(fromPref) && fromPref >= 120 && fromPref <= 1200) {
+		return Math.round(fromPref);
+	}
+	const raw = readStorage(NAIA_WIDTH_STORAGE_KEY);
+	const fromStorage = raw === null ? Number.NaN : Number(raw);
+	if (
+		Number.isFinite(fromStorage) &&
+		fromStorage >= 120 &&
+		fromStorage <= 1200
+	) {
+		return Math.round(fromStorage);
+	}
+	return null;
+}
+
+export function setStoredNaiaWidth(width: number | null): void {
+	if (width === null || !Number.isFinite(width)) {
+		removeStorage(NAIA_WIDTH_STORAGE_KEY);
+		void patchUiPreferences({ [UI_PREFERENCE_KEYS.naiaWidth]: undefined });
+		return;
+	}
+	const clamped = Math.max(120, Math.min(1200, Math.round(width)));
+	writeStorage(NAIA_WIDTH_STORAGE_KEY, String(clamped));
+	void patchUiPreferences({ [UI_PREFERENCE_KEYS.naiaWidth]: clamped });
+}
+
+export function detectViewportLayoutOrientation(): LayoutOrientation {
+	if (typeof window === "undefined") return "landscape";
+	return window.innerWidth <= 600 && window.innerHeight > window.innerWidth
+		? "portrait"
+		: "landscape";
+}
+
+export function getStoredLayoutOrientation(): LayoutOrientation | null {
+	const fromPref = snapshot[UI_PREFERENCE_KEYS.layoutOrientation];
+	if (isLayoutOrientation(fromPref)) return fromPref;
+	const fromStorage = readStorage(LAYOUT_ORIENTATION_STORAGE_KEY);
+	if (isLayoutOrientation(fromStorage)) return fromStorage;
+	const cfg = loadConfig();
+	const fromConfig = cfg?.uiPreferences?.[UI_PREFERENCE_KEYS.layoutOrientation];
+	if (isLayoutOrientation(fromConfig)) return fromConfig;
+	return null;
+}
+
+export function resolveEffectiveLayoutOrientation(): LayoutOrientation {
+	return getStoredLayoutOrientation() ?? detectViewportLayoutOrientation();
+}
+
+export function syncLayoutOrientationAttribute(
+	orientation: LayoutOrientation = resolveEffectiveLayoutOrientation(),
+): LayoutOrientation {
+	if (typeof document !== "undefined" && document.documentElement) {
+		document.documentElement.setAttribute(
+			"data-layout-orientation",
+			orientation,
+		);
+	}
+	return orientation;
+}
+
+export function setLayoutOrientation(
+	orientation: LayoutOrientation | null,
+): LayoutOrientation {
+	if (orientation === null) {
+		removeStorage(LAYOUT_ORIENTATION_STORAGE_KEY);
+		void patchUiPreferences({
+			[UI_PREFERENCE_KEYS.layoutOrientation]: undefined,
+		});
+	} else {
+		writeStorage(LAYOUT_ORIENTATION_STORAGE_KEY, orientation);
+		void patchUiPreferences({
+			[UI_PREFERENCE_KEYS.layoutOrientation]: orientation,
+		});
+	}
+	const effective = resolveEffectiveLayoutOrientation();
+	syncLayoutOrientationAttribute(effective);
+	if (typeof window !== "undefined") {
+		window.dispatchEvent(
+			new CustomEvent("naia:layout-orientation-change", {
+				detail: { orientation: effective, manual: orientation },
+			}),
+		);
+	}
+	return effective;
+}
+
+export function toggleLayoutOrientation(
+	current: LayoutOrientation = resolveEffectiveLayoutOrientation(),
+): LayoutOrientation {
+	const next: LayoutOrientation =
+		current === "portrait" ? "landscape" : "portrait";
+	return setLayoutOrientation(next);
+}
+
+function subscribeLayoutOrientation(listener: () => void): () => void {
+	const unsubPrefs = subscribeUiPreferences(listener);
+	if (typeof window === "undefined") return unsubPrefs;
+	window.addEventListener("resize", listener);
+	window.addEventListener("naia:layout-orientation-change", listener);
+	return () => {
+		unsubPrefs();
+		window.removeEventListener("resize", listener);
+		window.removeEventListener("naia:layout-orientation-change", listener);
+	};
+}
+
+export function useEffectiveLayoutOrientation(): LayoutOrientation {
+	return useSyncExternalStore(
+		subscribeLayoutOrientation,
+		resolveEffectiveLayoutOrientation,
+		() => "landscape",
+	);
 }

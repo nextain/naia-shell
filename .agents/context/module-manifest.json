@@ -1,565 +1,947 @@
 {
-	"_doc": "파일단위 계약 앵커 (드리프트 자동차단). src/main 의 모든 .ts 는 여기 {layer,uc,contract} 와 함께 등록돼야 한다. 미등록 = 미계약 코드 = RED (scripts/check-file-anchors.mjs). 계약 먼저, 코드 나중. layer ∈ {domain,ports,app,adapters,composition}. ⚠️ naia-memory 연결/gRPC 파일은 다른 세션 소유 — 등장 시 owner:\"memory-session\" 으로 표기하고 이 세션서 짓지 말 것.",
-	"files": {
-		"src/main/domain/discord-setup.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-DISCORD"
-			],
-			"contract": "docs/user-scenarios.md#UC-DISCORD"
-		},
-		"src/main/domain/chat.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/domain/onboarding.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC12"
-			],
-			"contract": "docs/progress/UC12-contract-2026-06-12.md"
-		},
-		"src/main/domain/approval.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC13"
-			],
-			"contract": "docs/progress/UC13-os-approval-2026-06-11.md"
-		},
-		"src/main/domain/boot.ts": {
-			"layer": "domain",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/domain/startup.ts": {
-			"layer": "domain",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/domain/config.ts": {
-			"layer": "domain",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/domain/observe.ts": {
-			"layer": "domain",
-			"uc": [
-				"F1"
-			],
-			"contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
-		},
-		"src/main/domain/degradation.ts": {
-			"layer": "domain",
-			"uc": [
-				"F1"
-			],
-			"contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
-		},
-		"src/main/domain/mutate.ts": {
-			"layer": "domain",
-			"uc": [
-				"F2"
-			],
-			"contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
-		},
-		"src/main/domain/workspace.ts": {
-			"layer": "domain",
-			"uc": [
-				"F3"
-			],
-			"contract": "docs/progress/F3-baseline-contract-2026-06-09.md"
-		},
-		"src/main/ports/uc1.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/ports/f1.ts": {
-			"layer": "ports",
-			"uc": [
-				"F1"
-			],
-			"contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
-		},
-		"src/main/ports/f2.ts": {
-			"layer": "ports",
-			"uc": [
-				"F2"
-			],
-			"contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
-		},
-		"src/main/ports/f3.ts": {
-			"layer": "ports",
-			"uc": [
-				"F3"
-			],
-			"contract": "docs/progress/F3-baseline-contract-2026-06-09.md"
-		},
-		"src/main/ports/index.ts": {
-			"layer": "ports",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/app/chat/chat-service.ts": {
-			"layer": "app",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/app/chat/client-session.ts": {
-			"layer": "app",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/app/control/approval.ts": {
-			"layer": "app",
-			"uc": [
-				"UC13"
-			],
-			"contract": "docs/progress/UC13-os-approval-2026-06-11.md"
-		},
-		"src/main/app/control/onboarding.ts": {
-			"layer": "app",
-			"uc": [
-				"UC12"
-			],
-			"contract": "docs/progress/UC12-contract-2026-06-12.md"
-		},
-		"src/main/app/control/boot.ts": {
-			"layer": "app",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/app/control/graft-smoke.ts": {
-			"layer": "app",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-graft-2026-06-09.md"
-		},
-		"src/main/app/control/status.ts": {
-			"layer": "app",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/app/control/observe.ts": {
-			"layer": "app",
-			"uc": [
-				"F1"
-			],
-			"contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
-		},
-		"src/main/app/control/mutate.ts": {
-			"layer": "app",
-			"uc": [
-				"F2"
-			],
-			"contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
-		},
-		"src/main/adapters/message-router.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/adapters/chat-bridge.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/adapters/child-stdio.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/adapters/shell-compat.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC1",
-				"UC13"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/adapters/tauri/uc1.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/adapters/tauri/live.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/adapters/tauri/index.ts": {
-			"layer": "adapters",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/adapters/tauri/config-map.ts": {
-			"layer": "adapters",
-			"uc": [
-				"F0"
-			],
-			"contract": "docs/progress/F0-contract-2026-06-09.md"
-		},
-		"src/main/adapters/tauri/uc12.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC12"
-			],
-			"contract": "docs/progress/UC12-contract-2026-06-12.md"
-		},
-		"src/main/adapters/tauri/f1.ts": {
-			"layer": "adapters",
-			"uc": [
-				"F1"
-			],
-			"contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
-		},
-		"src/main/adapters/tauri/f2.ts": {
-			"layer": "adapters",
-			"uc": [
-				"F2"
-			],
-			"contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
-		},
-		"src/main/adapters/tauri/f3.ts": {
-			"layer": "adapters",
-			"uc": [
-				"F3"
-			],
-			"contract": "docs/progress/F3-baseline-contract-2026-06-09.md"
-		},
-		"src/main/composition/index.ts": {
-			"layer": "composition",
-			"uc": [
-				"UC1"
-			],
-			"contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
-		},
-		"src/main/domain/voice.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC2"
-			],
-			"contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
-		},
-		"src/main/ports/v2.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC2"
-			],
-			"contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
-		},
-		"src/main/adapters/tauri/v2.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC2"
-			],
-			"contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
-		},
-		"src/main/domain/agent-bench.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-AGENT-BENCH-RUN",
-				"UC-AGENT-BENCH-REPORT",
-				"UC-AGENT-BENCH-FALSE-COMPLETION"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/agent-bench.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-AGENT-BENCH-RUN",
-				"UC-AGENT-BENCH-REPORT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/agent-bench.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-AGENT-BENCH-RUN",
-				"UC-AGENT-BENCH-REPORT",
-				"UC-AGENT-BENCH-FALSE-COMPLETION"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/env-tool.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-ENV-TOOL-BROWSE",
-				"UC-ENV-TOOL-TERMINAL-EXEC",
-				"UC-ENV-TOOL-CANCEL",
-				"UC-ENV-TOOL-BOUNDARY-DENY",
-				"UC-ENV-TOOL-SPACE",
-				"UC-ENV-TOOL-RECOVER"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/env-tool.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-ENV-TOOL-BROWSE",
-				"UC-ENV-TOOL-TERMINAL-EXEC",
-				"UC-ENV-TOOL-CANCEL",
-				"UC-ENV-TOOL-SPACE",
-				"UC-ENV-TOOL-RECOVER",
-				"UC-ENV-TOOL-SCRIPT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/adapters/ego-browser-env.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC-ENV-TOOL-BROWSE",
-				"UC-ENV-TOOL-CANCEL",
-				"UC-ENV-TOOL-SPACE",
-				"UC-ENV-TOOL-RECOVER",
-				"UC-ENV-TOOL-SCRIPT"
-			],
-			"contract": "docs/progress/issue-582-ego-browser-host.md"
-		},
-		"src/main/app/control/env-tool.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-ENV-TOOL-BROWSE",
-				"UC-ENV-TOOL-TERMINAL-EXEC",
-				"UC-ENV-TOOL-CANCEL",
-				"UC-ENV-TOOL-BOUNDARY-DENY",
-				"UC-ENV-TOOL-SPACE",
-				"UC-ENV-TOOL-SCRIPT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/capability.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-ENV-TOOL-BOUNDARY-DENY",
-				"UC-ENV-SURFACE-DENY",
-				"UC-CHANNEL-SESSION-DISCLOSURE-DENY"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/orchestration.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-ORCHESTRATION-ISSUE-LEAD",
-				"UC-ORCHESTRATION-CLASSIFY",
-				"UC-ORCHESTRATION-WORKER-REPLACE",
-				"UC-ORCHESTRATION-RESTART-RESUME",
-				"UC-ORCHESTRATION-CODING-PROVIDER"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/orchestration.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-ORCHESTRATION-ISSUE-LEAD",
-				"UC-ORCHESTRATION-WORKER-REPLACE"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/orchestration.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-ORCHESTRATION-ISSUE-LEAD",
-				"UC-ORCHESTRATION-CLASSIFY",
-				"UC-ORCHESTRATION-WORKER-REPLACE",
-				"UC-ORCHESTRATION-RESTART-RESUME",
-				"UC-ORCHESTRATION-CODING-PROVIDER"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/workspace-context.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-WORKSPACE-CONTEXT-DISCOVER",
-				"UC-WORKSPACE-CONTEXT-ENTER-PROJECT",
-				"UC-WORKSPACE-CONTEXT-SWITCH-PROJECT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/workspace-entrypoint.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-WORKSPACE-CONTEXT-DISCOVER",
-				"UC-WORKSPACE-CONTEXT-BROKEN-ENTRYPOINT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/workspace-context.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-WORKSPACE-CONTEXT-DISCOVER",
-				"UC-WORKSPACE-CONTEXT-ENTER-PROJECT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/workspace-context.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-WORKSPACE-CONTEXT-DISCOVER",
-				"UC-WORKSPACE-CONTEXT-ENTER-PROJECT",
-				"UC-WORKSPACE-CONTEXT-SWITCH-PROJECT",
-				"UC-WORKSPACE-CONTEXT-BROKEN-ENTRYPOINT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/adapters/workspace-context-observe.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC-WORKSPACE-CONTEXT-DISCOVER",
-				"UC-WORKSPACE-CONTEXT-ENTER-PROJECT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/environment-intent.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-ENV-SURFACE-OBSERVE",
-				"UC-ENV-SURFACE-ACT",
-				"UC-ENV-SURFACE-DATA"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/environment-translation.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-ENV-SURFACE-ACT",
-				"UC-ENV-SURFACE-DATA",
-				"UC-ENV-SURFACE-DENY"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/environment-dispatch.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-ENV-DISPATCH-STRUCTURED",
-				"UC-ENV-DISPATCH-TERMINAL"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/environment-dispatch.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-ENV-DISPATCH-STRUCTURED",
-				"UC-ENV-DISPATCH-TERMINAL",
-				"UC-ENV-DISPATCH-REFUSE"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/environment-session.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-ENV-LIVE-OBSERVE",
-				"UC-ENV-LIVE-ACT",
-				"UC-ENV-STICKY"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/herdr-control.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-HERDR-CONTROL-OBSERVE",
-				"UC-HERDR-CONTROL-MUTATE",
-				"UC-HERDR-CONTROL-RECONNECT",
-				"UC-HERDR-CONTROL-STALE-REVISION"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/herdr-protocol.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-HERDR-CONTROL-OBSERVE",
-				"UC-HERDR-CONTROL-MUTATE"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/herdr-control.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-HERDR-CONTROL-OBSERVE",
-				"UC-HERDR-CONTROL-MUTATE",
-				"UC-HERDR-CONTROL-RECONNECT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/herdr-control.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-HERDR-CONTROL-OBSERVE",
-				"UC-HERDR-CONTROL-MUTATE",
-				"UC-HERDR-CONTROL-RECONNECT",
-				"UC-HERDR-CONTROL-STALE-REVISION"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/adapters/herdr-environment.ts": {
-			"layer": "adapters",
-			"uc": [
-				"UC-ENV-SURFACE-OBSERVE",
-				"UC-ENV-LIVE-OBSERVE"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/domain/channel-session.ts": {
-			"layer": "domain",
-			"uc": [
-				"UC-CHANNEL-SESSION-HANDOFF",
-				"UC-CHANNEL-SESSION-RECONNECT",
-				"UC-CHANNEL-SESSION-DUPLICATE-DELIVERY",
-				"UC-CHANNEL-SESSION-DISCLOSURE-DENY"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/ports/channel-session.ts": {
-			"layer": "ports",
-			"uc": [
-				"UC-CHANNEL-SESSION-HANDOFF",
-				"UC-CHANNEL-SESSION-RECONNECT"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		},
-		"src/main/app/control/channel-session.ts": {
-			"layer": "app",
-			"uc": [
-				"UC-CHANNEL-SESSION-HANDOFF",
-				"UC-CHANNEL-SESSION-RECONNECT",
-				"UC-CHANNEL-SESSION-DUPLICATE-DELIVERY",
-				"UC-CHANNEL-SESSION-DISCLOSURE-DENY"
-			],
-			"contract": "docs/progress/issue-497-universal-agent.md"
-		}
-	}
+  "_doc": "파일단위 계약 앵커 (드리프트 자동차단). src/main 의 모든 .ts 는 여기 {layer,uc,contract} 와 함께 등록돼야 한다. 미등록 = 미계약 코드 = RED (scripts/check-file-anchors.mjs). 계약 먼저, 코드 나중. layer ∈ {domain,ports,app,adapters,composition}. ⚠️ naia-memory 연결/gRPC 파일은 다른 세션 소유 — 등장 시 owner:\"memory-session\" 으로 표기하고 이 세션서 짓지 말 것.",
+  "files": {
+    "packages/shell/web-worker/kiosk-browser-agent.ts": {
+      "layer": "composition",
+      "uc": [
+        "UC-KIOSK-MEMORY-S2"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-memory-s2-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/memory.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-MEMORY-S2"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-memory-s2-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/flag.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3"
+      ],
+      "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+    },
+    "src/main/domain/discord-setup.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-DISCORD"
+      ],
+      "contract": "docs/user-scenarios.md#UC-DISCORD"
+    },
+    "src/main/domain/chat.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/domain/onboarding.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC12"
+      ],
+      "contract": "docs/progress/UC12-contract-2026-06-12.md"
+    },
+    "src/main/domain/approval.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC13"
+      ],
+      "contract": "docs/progress/UC13-os-approval-2026-06-11.md"
+    },
+    "src/main/domain/boot.ts": {
+      "layer": "domain",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/domain/startup.ts": {
+      "layer": "domain",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/domain/config.ts": {
+      "layer": "domain",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/domain/observe.ts": {
+      "layer": "domain",
+      "uc": [
+        "F1"
+      ],
+      "contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
+    },
+    "src/main/domain/degradation.ts": {
+      "layer": "domain",
+      "uc": [
+        "F1"
+      ],
+      "contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
+    },
+    "src/main/domain/mutate.ts": {
+      "layer": "domain",
+      "uc": [
+        "F2"
+      ],
+      "contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
+    },
+    "src/main/domain/workspace.ts": {
+      "layer": "domain",
+      "uc": [
+        "F3"
+      ],
+      "contract": "docs/progress/F3-baseline-contract-2026-06-09.md"
+    },
+    "src/main/ports/uc1.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/ports/f1.ts": {
+      "layer": "ports",
+      "uc": [
+        "F1"
+      ],
+      "contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
+    },
+    "src/main/ports/f2.ts": {
+      "layer": "ports",
+      "uc": [
+        "F2"
+      ],
+      "contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
+    },
+    "src/main/ports/f3.ts": {
+      "layer": "ports",
+      "uc": [
+        "F3"
+      ],
+      "contract": "docs/progress/F3-baseline-contract-2026-06-09.md"
+    },
+    "src/main/ports/index.ts": {
+      "layer": "ports",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/app/chat/chat-service.ts": {
+      "layer": "app",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/app/chat/client-session.ts": {
+      "layer": "app",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/app/control/approval.ts": {
+      "layer": "app",
+      "uc": [
+        "UC13"
+      ],
+      "contract": "docs/progress/UC13-os-approval-2026-06-11.md"
+    },
+    "src/main/app/control/onboarding.ts": {
+      "layer": "app",
+      "uc": [
+        "UC12"
+      ],
+      "contract": "docs/progress/UC12-contract-2026-06-12.md"
+    },
+    "src/main/app/control/boot.ts": {
+      "layer": "app",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/app/control/graft-smoke.ts": {
+      "layer": "app",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-graft-2026-06-09.md"
+    },
+    "src/main/app/control/status.ts": {
+      "layer": "app",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/app/control/observe.ts": {
+      "layer": "app",
+      "uc": [
+        "F1"
+      ],
+      "contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
+    },
+    "src/main/app/control/mutate.ts": {
+      "layer": "app",
+      "uc": [
+        "F2"
+      ],
+      "contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
+    },
+    "src/main/adapters/message-router.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/adapters/chat-bridge.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/adapters/child-stdio.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/adapters/shell-compat.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC1",
+        "UC13"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/adapters/tauri/uc1.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/adapters/tauri/live.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/adapters/tauri/index.ts": {
+      "layer": "adapters",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/adapters/tauri/config-map.ts": {
+      "layer": "adapters",
+      "uc": [
+        "F0"
+      ],
+      "contract": "docs/progress/F0-contract-2026-06-09.md"
+    },
+    "src/main/adapters/tauri/uc12.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC12"
+      ],
+      "contract": "docs/progress/UC12-contract-2026-06-12.md"
+    },
+    "src/main/adapters/tauri/f1.ts": {
+      "layer": "adapters",
+      "uc": [
+        "F1"
+      ],
+      "contract": "docs/progress/F1-baseline-contract-2026-06-09.md"
+    },
+    "src/main/adapters/tauri/f2.ts": {
+      "layer": "adapters",
+      "uc": [
+        "F2"
+      ],
+      "contract": "docs/progress/F2-baseline-contract-2026-06-09.md"
+    },
+    "src/main/adapters/tauri/f3.ts": {
+      "layer": "adapters",
+      "uc": [
+        "F3"
+      ],
+      "contract": "docs/progress/F3-baseline-contract-2026-06-09.md"
+    },
+    "src/main/composition/index.ts": {
+      "layer": "composition",
+      "uc": [
+        "UC1"
+      ],
+      "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md"
+    },
+    "src/main/domain/voice.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC2"
+      ],
+      "contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
+    },
+    "src/main/ports/v2.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC2"
+      ],
+      "contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
+    },
+    "src/main/adapters/tauri/v2.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC2"
+      ],
+      "contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
+    },
+    "src/main/domain/agent-bench.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-AGENT-BENCH-RUN",
+        "UC-AGENT-BENCH-REPORT",
+        "UC-AGENT-BENCH-FALSE-COMPLETION"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/agent-bench.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-AGENT-BENCH-RUN",
+        "UC-AGENT-BENCH-REPORT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/agent-bench.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-AGENT-BENCH-RUN",
+        "UC-AGENT-BENCH-REPORT",
+        "UC-AGENT-BENCH-FALSE-COMPLETION"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/env-tool.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-ENV-TOOL-BROWSE",
+        "UC-ENV-TOOL-TERMINAL-EXEC",
+        "UC-ENV-TOOL-CANCEL",
+        "UC-ENV-TOOL-BOUNDARY-DENY",
+        "UC-ENV-TOOL-SPACE",
+        "UC-ENV-TOOL-RECOVER"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/env-tool.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-ENV-TOOL-BROWSE",
+        "UC-ENV-TOOL-TERMINAL-EXEC",
+        "UC-ENV-TOOL-CANCEL",
+        "UC-ENV-TOOL-SPACE",
+        "UC-ENV-TOOL-RECOVER",
+        "UC-ENV-TOOL-SCRIPT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/adapters/ego-browser-env.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-ENV-TOOL-BROWSE",
+        "UC-ENV-TOOL-CANCEL",
+        "UC-ENV-TOOL-SPACE",
+        "UC-ENV-TOOL-RECOVER",
+        "UC-ENV-TOOL-SCRIPT"
+      ],
+      "contract": "docs/progress/issue-582-ego-browser-host.md"
+    },
+    "src/main/app/control/env-tool.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-ENV-TOOL-BROWSE",
+        "UC-ENV-TOOL-TERMINAL-EXEC",
+        "UC-ENV-TOOL-CANCEL",
+        "UC-ENV-TOOL-BOUNDARY-DENY",
+        "UC-ENV-TOOL-SPACE",
+        "UC-ENV-TOOL-SCRIPT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/capability.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-ENV-TOOL-BOUNDARY-DENY",
+        "UC-ENV-SURFACE-DENY",
+        "UC-CHANNEL-SESSION-DISCLOSURE-DENY"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/orchestration.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-ORCHESTRATION-ISSUE-LEAD",
+        "UC-ORCHESTRATION-CLASSIFY",
+        "UC-ORCHESTRATION-WORKER-REPLACE",
+        "UC-ORCHESTRATION-RESTART-RESUME",
+        "UC-ORCHESTRATION-CODING-PROVIDER"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/orchestration.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-ORCHESTRATION-ISSUE-LEAD",
+        "UC-ORCHESTRATION-WORKER-REPLACE"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/orchestration.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-ORCHESTRATION-ISSUE-LEAD",
+        "UC-ORCHESTRATION-CLASSIFY",
+        "UC-ORCHESTRATION-WORKER-REPLACE",
+        "UC-ORCHESTRATION-RESTART-RESUME",
+        "UC-ORCHESTRATION-CODING-PROVIDER"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/workspace-context.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-WORKSPACE-CONTEXT-DISCOVER",
+        "UC-WORKSPACE-CONTEXT-ENTER-PROJECT",
+        "UC-WORKSPACE-CONTEXT-SWITCH-PROJECT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/workspace-entrypoint.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-WORKSPACE-CONTEXT-DISCOVER",
+        "UC-WORKSPACE-CONTEXT-BROKEN-ENTRYPOINT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/workspace-context.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-WORKSPACE-CONTEXT-DISCOVER",
+        "UC-WORKSPACE-CONTEXT-ENTER-PROJECT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/workspace-context.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-WORKSPACE-CONTEXT-DISCOVER",
+        "UC-WORKSPACE-CONTEXT-ENTER-PROJECT",
+        "UC-WORKSPACE-CONTEXT-SWITCH-PROJECT",
+        "UC-WORKSPACE-CONTEXT-BROKEN-ENTRYPOINT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/adapters/workspace-context-observe.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WORKSPACE-CONTEXT-DISCOVER",
+        "UC-WORKSPACE-CONTEXT-ENTER-PROJECT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/environment-intent.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-ENV-SURFACE-OBSERVE",
+        "UC-ENV-SURFACE-ACT",
+        "UC-ENV-SURFACE-DATA"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/environment-translation.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-ENV-SURFACE-ACT",
+        "UC-ENV-SURFACE-DATA",
+        "UC-ENV-SURFACE-DENY"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/environment-dispatch.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-ENV-DISPATCH-STRUCTURED",
+        "UC-ENV-DISPATCH-TERMINAL"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/environment-dispatch.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-ENV-DISPATCH-STRUCTURED",
+        "UC-ENV-DISPATCH-TERMINAL",
+        "UC-ENV-DISPATCH-REFUSE"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/environment-session.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-ENV-LIVE-OBSERVE",
+        "UC-ENV-LIVE-ACT",
+        "UC-ENV-STICKY"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/herdr-control.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-HERDR-CONTROL-OBSERVE",
+        "UC-HERDR-CONTROL-MUTATE",
+        "UC-HERDR-CONTROL-RECONNECT",
+        "UC-HERDR-CONTROL-STALE-REVISION"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/herdr-protocol.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-HERDR-CONTROL-OBSERVE",
+        "UC-HERDR-CONTROL-MUTATE"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/herdr-control.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-HERDR-CONTROL-OBSERVE",
+        "UC-HERDR-CONTROL-MUTATE",
+        "UC-HERDR-CONTROL-RECONNECT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/herdr-control.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-HERDR-CONTROL-OBSERVE",
+        "UC-HERDR-CONTROL-MUTATE",
+        "UC-HERDR-CONTROL-RECONNECT",
+        "UC-HERDR-CONTROL-STALE-REVISION"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/adapters/herdr-environment.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-ENV-SURFACE-OBSERVE",
+        "UC-ENV-LIVE-OBSERVE"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/domain/channel-session.ts": {
+      "layer": "domain",
+      "uc": [
+        "UC-CHANNEL-SESSION-HANDOFF",
+        "UC-CHANNEL-SESSION-RECONNECT",
+        "UC-CHANNEL-SESSION-DUPLICATE-DELIVERY",
+        "UC-CHANNEL-SESSION-DISCLOSURE-DENY"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/ports/channel-session.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC-CHANNEL-SESSION-HANDOFF",
+        "UC-CHANNEL-SESSION-RECONNECT"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "src/main/app/control/channel-session.ts": {
+      "layer": "app",
+      "uc": [
+        "UC-CHANNEL-SESSION-HANDOFF",
+        "UC-CHANNEL-SESSION-RECONNECT",
+        "UC-CHANNEL-SESSION-DUPLICATE-DELIVERY",
+        "UC-CHANNEL-SESSION-DISCLOSURE-DENY"
+      ],
+      "contract": "docs/progress/issue-497-universal-agent.md"
+    },
+    "packages/shell/src/lib/kiosk-demo/knowledge.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/core/safety.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/core/text.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/core/compile.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/core/serve.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/core/verify.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/domain/ports.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/domain/types.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/store/memory.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/retrieval/bm25.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/extract/markdown.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/ingest/text.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/gateway-url.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/create-agent-worker.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/openai-compat-provider.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/fake-engine.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/kiosk-knowledge.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/agent-port-relay.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/webllm-engine.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/opfs-read-fs.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/agent-worker.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/web-worker/adk-snapshot-fs.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
+    "packages/shell/src/lib/kiosk-demo/entry.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3"
+      ],
+      "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+    },
+    "packages/shell/src/components/KioskDemoGate.tsx": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-demo-gate.md"
+    },
+    "packages/shell/src/lib/web-runtime/agent-bridge.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-agent-bridge.md"
+    },
+    "packages/shell/src/lib/web-runtime/auto-install.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-auto-install.md"
+    },
+    "packages/shell/src/lib/web-runtime/command-table.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-command-table.md"
+    },
+    "packages/shell/src/lib/web-runtime/csp.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-csp.md"
+    },
+    "packages/shell/src/lib/web-runtime/event-bus.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-event-bus.md"
+    },
+    "packages/shell/src/lib/web-runtime/install.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-install.md"
+    },
+    "packages/shell/src/lib/web-runtime/llm-provider.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-llm-provider.md"
+    },
+    "packages/shell/src/lib/web-runtime/model-start.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-model-start.md"
+    },
+    "packages/shell/src/lib/web-runtime/router.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-router.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-path.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-path.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-source.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-source.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-status.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-status.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-assets.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-assets.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-auth.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-auth.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-fs.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-fs.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-model-status.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-model-status.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-storage-persist.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-storage-persist.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-workspace-commands.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-workspace-commands.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-workspace-files.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-workspace-files.md"
+    },
+    "packages/shell/src/lib/web-runtime/webgpu-check.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-webgpu-check.md"
+    },
+    "packages/shell/src/lib/web-runtime/webllm-model.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-webllm-model.md"
+    },
+    "packages/shell/src/lib/kiosk-demo/slides.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S6"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-slides-s6.md"
+    }
+  },
+  "scan_dirs": [
+    "src/main",
+    "packages/shell/src/lib/kiosk-demo",
+    "packages/shell/src/lib/web-runtime"
+  ],
+  "scan_files": [
+    "packages/shell/web-worker/kiosk-browser-agent.ts",
+    "packages/shell/src/components/KioskDemoGate.tsx"
+  ]
 }

@@ -150,6 +150,10 @@ export function MarkdownPreview({
 	codeComponent,
 }: MarkdownPreviewProps) {
 	const articleRef = useRef<HTMLElement>(null);
+	const normalizedContent = useMemo(
+		() => content.replace(/([)\]}])\*\*(?=[가-힣A-Za-z0-9])/g, "$1**\u200B"),
+		[content],
+	);
 	useEffect(() => {
 		const article = articleRef.current;
 		if (article) article.scrollTop = previewScrollPositions.get(filePath) ?? 0;
@@ -212,7 +216,7 @@ export function MarkdownPreview({
 					},
 				}}
 			>
-				{content}
+				{normalizedContent}
 			</Markdown>
 		</article>
 	);
