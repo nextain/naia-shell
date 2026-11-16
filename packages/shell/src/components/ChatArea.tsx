@@ -257,6 +257,7 @@ import {
 } from "../lib/voice/index";
 import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
+import { resolveEffectiveTtsProvider } from "../lib/tts/resolve-web-tts-provider";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
 import { isNaiaAuthWireError, wireErrorMessage } from "../lib/wire-errors";
@@ -1647,13 +1648,16 @@ export function ChatArea({
 				? localStorage.getItem("naia-remote-key")?.trim() || undefined
 				: undefined);
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
+		const effectiveTtsProvider = resolveEffectiveTtsProvider(
+			config,
+			resolvedNaiaKey,
+		);
 		pipelineVoiceConfigRef.current = {
-			voice: resolveTtsVoiceId(config),
-			ttsProvider:
-				isWebMode() && !isKioskDemo()
-					? "browser"
-					: config.ttsProvider ||
-						(isKioskDemo() ? "nextain" : isWebMode() ? "browser" : "edge"),
+			voice: resolveTtsVoiceId({
+				...config,
+				ttsProvider: effectiveTtsProvider,
+			}),
+			ttsProvider: effectiveTtsProvider,
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
 			naiaKey: resolvedNaiaKey,
@@ -4283,13 +4287,17 @@ export function ChatArea({
 					(isWebMode() && typeof localStorage !== "undefined"
 						? localStorage.getItem("naia-remote-key")?.trim() || undefined
 						: undefined);
+				const effectiveSessionTtsProvider = resolveEffectiveTtsProvider(
+					config,
+					resolvedSessionNaiaKey,
+				);
 				pipelineVoiceConfigRef.current = {
-					voice: resolveTtsVoiceId(config) ?? config.voice,
-					ttsProvider:
-						isWebMode() && !isKioskDemo()
-							? "browser"
-							: config.ttsProvider ||
-								(isKioskDemo() ? "nextain" : isWebMode() ? "browser" : "edge"),
+					voice:
+						resolveTtsVoiceId({
+							...config,
+							ttsProvider: effectiveSessionTtsProvider,
+						}) ?? config.voice,
+					ttsProvider: effectiveSessionTtsProvider,
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
 					naiaKey: resolvedSessionNaiaKey,

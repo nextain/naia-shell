@@ -14,6 +14,7 @@ export function isWebAuthenticated
 export function isWebLoginGateDisabled
 export function isWebLoginRequired
 export function logoutWebSession
+export function resolveWebLoginOnboardingComplete
 export function seedKioskDemoWebAuth
 export function setWebLoginRequiredForTests
 export function startWebLoginRedirect

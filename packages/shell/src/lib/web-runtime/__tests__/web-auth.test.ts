@@ -1,6 +1,6 @@
+import { fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
 import { createElement } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebLoginScreen } from "../../../components/WebLoginScreen";
 import {
@@ -40,9 +40,18 @@ describe("web-auth (item 5)", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("defaults login base URL to https://dev.naia.land and allows env override", () => {
+	it("defaults login base URL to https://naia.land and honors VITE_NAIA_WEB_LOGIN_BASE / VITE_NAIA_WEB_BASE_URL / explicit overrides", () => {
+		expect(getWebLoginBaseUrl()).toBe("https://naia.land");
+		expect(getWebLoginBaseUrl("https://dev.naia.land/")).toBe(
+			"https://dev.naia.land",
+		);
+
+		vi.stubEnv("VITE_NAIA_WEB_BASE_URL", "https://www.naia.land/");
+		expect(getWebLoginBaseUrl()).toBe("https://www.naia.land");
+
+		vi.stubEnv("VITE_NAIA_WEB_LOGIN_BASE", "https://dev.naia.land/");
 		expect(getWebLoginBaseUrl()).toBe("https://dev.naia.land");
-		expect(getWebLoginBaseUrl("https://naia.land/")).toBe("https://naia.land");
+		vi.unstubAllEnvs();
 	});
 
 	it("requires login by default in web mode and allows disabling via VITE_NAIA_WEB_LOGIN_REQUIRED=0", () => {
@@ -62,7 +71,7 @@ describe("web-auth (item 5)", () => {
 			navigate: nav,
 		});
 		const parsed = new URL(built.url);
-		expect(parsed.origin).toBe("https://dev.naia.land");
+		expect(parsed.origin).toBe("https://naia.land");
 		expect(parsed.pathname).toBe("/ko/login");
 		expect(parsed.searchParams.get("redirect")).toBe("desktop");
 		expect(parsed.searchParams.get("app")).toBe("naia-os");
@@ -468,29 +477,128 @@ describe("web-auth (item 5)", () => {
 			spy.mockRestore();
 		}
 	});
+
+	it("keeps onboardingComplete=false for brand-new Official Web SaaS logins (including over unauthenticated OPFS auto-seeds), preserves returning users, and keeps Kiosk Demo at true", async () => {
+		// 1) Fresh official web login with no prior config -> onboardingComplete: false
+		await completeWebNaiaLogin("naia_fresh_saas_key_12345", "usr_new_1");
+		expect(loadConfig()?.onboardingComplete).toBe(false);
+		expect(loadConfig()?.naiaUserId).toBe("usr_new_1");
+
+		// 2) Even if OPFS INITIAL_WEB_WORKSPACE_CONFIG seeded an unauthenticated placeholder before login,
+		// first real user login still enters Official Web Onboarding (onboardingComplete: false)
+		logoutWebSession();
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				webAutoDefaultModel: true,
+				onboardingComplete: true,
+			}),
+		);
+		await completeWebNaiaLogin("naia_fresh_saas_key_67890", "usr_new_2");
+		expect(loadConfig()?.onboardingComplete).toBe(false);
+
+		// 3) Once usr_new_2 completes onboarding, re-logging in as usr_new_2 preserves onboardingComplete: true
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				...loadConfig(),
+				naiaUserId: "usr_new_2",
+				userName: "루크",
+				onboardingComplete: true,
+			}),
+		);
+		await completeWebNaiaLogin("naia_returning_saas_key_222", "usr_new_2");
+		expect(loadConfig()?.onboardingComplete).toBe(true);
+
+		// 4) Switching directly to a different account without server onboarding_complete=true enters onboarding
+		await completeWebNaiaLogin("naia_switched_user_key_333", "usr_new_3");
+		expect(loadConfig()?.onboardingComplete).toBe(false);
+
+		// 5) Server OAuth callback onboarding_complete=1 marks returning user complete on a fresh browser
+		localStorage.clear();
+		startWebLoginRedirect({
+			origin: "https://app.naia.land",
+			lang: "ko",
+			state: "returning-callback-state",
+			navigate: () => {},
+		});
+		await consumeWebAuthCallbackFromLocation(
+			{
+				pathname: "/auth/callback",
+				search: "",
+				hash: "#key=gw-returning-server-flag-999&user_id=usr_returning&onboarding_complete=1&state=returning-callback-state",
+			},
+			() => {},
+		);
+		expect(loadConfig()?.onboardingComplete).toBe(true);
+
+		// 6) Kiosk Demo mode always preserves onboardingComplete: true
+		localStorage.clear();
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		try {
+			await completeWebNaiaLogin("gw-kiosk-demo-key-123456", undefined);
+			expect(loadConfig()?.onboardingComplete).toBe(true);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 });
 
 describe("web boot workspace selection", () => {
 	it("reads the persisted local provider and model even if the cache is absent", async () => {
 		const { readWebBootSelection } = await import("../auto-install");
-		const readText = vi.fn(async () => JSON.stringify({ provider: "nextain", model: "server", llmRoles: { main: { provider: "webllm", model: "Qwen3-4B-q4f32_1-MLC" } } }));
-		expect(await readWebBootSelection({ readText })).toEqual({ provider: "webllm", model: "Qwen3-4B-q4f32_1-MLC" });
+		const readText = vi.fn(async () =>
+			JSON.stringify({
+				provider: "nextain",
+				model: "server",
+				llmRoles: {
+					main: { provider: "webllm", model: "Qwen3-4B-q4f32_1-MLC" },
+				},
+			}),
+		);
+		expect(await readWebBootSelection({ readText })).toEqual({
+			provider: "webllm",
+			model: "Qwen3-4B-q4f32_1-MLC",
+		});
 		expect(readText).toHaveBeenCalledWith("naia-adk/naia-settings/config.json");
 	});
 });
-
 
 describe("web workspace selection recovery", () => {
 	it("retains the authenticated server selection after a cache mismatch", async () => {
 		setWebAssetsModeForTests(true);
 		const { createMemoryWebFs } = await import("../web-fs");
-		const { handleWebWorkspaceCommand } = await import("../web-workspace-commands");
+		const { handleWebWorkspaceCommand } = await import(
+			"../web-workspace-commands"
+		);
 		const { readWebBootSelection } = await import("../auto-install");
 		const fs = createMemoryWebFs();
-		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model: "Qwen3-4B-q4f16_1-MLC" }));
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: "Qwen3-4B-q4f16_1-MLC" }),
+		);
 		localStorage.setItem("naia-remote-key", "test-login-key-1234");
-		await handleWebWorkspaceCommand("write_naia_config", { adkPath: "opfs://naia-adk", json: JSON.stringify({ provider: "nextain", model: "deepseek-v4-flash", llmRoles: { main: { provider: "nextain", model: "deepseek-v4-flash" } } }) }, fs);
-		expect(await readWebBootSelection(fs)).toEqual({ provider: "nextain", model: "deepseek-v4-flash" });
+		await handleWebWorkspaceCommand(
+			"write_naia_config",
+			{
+				adkPath: "opfs://naia-adk",
+				json: JSON.stringify({
+					provider: "nextain",
+					model: "deepseek-v4-flash",
+					llmRoles: {
+						main: { provider: "nextain", model: "deepseek-v4-flash" },
+					},
+				}),
+			},
+			fs,
+		);
+		expect(await readWebBootSelection(fs)).toEqual({
+			provider: "nextain",
+			model: "deepseek-v4-flash",
+		});
 		expect(isWebAuthenticated()).toBe(true);
 		expect(await getNaiaKeySecure()).toBe("test-login-key-1234");
 		localStorage.clear();
@@ -498,9 +606,21 @@ describe("web workspace selection recovery", () => {
 	});
 	it("rejects unreadable or malformed workspace config rather than trusting a stale cache", async () => {
 		const { readWebBootSelection } = await import("../auto-install");
-		await expect(readWebBootSelection({ readText: async () => { throw new Error("storage failure"); } })).rejects.toThrow("storage failure");
-		await expect(readWebBootSelection({ readText: async () => "{" })).rejects.toThrow();
-		await expect(readWebBootSelection({ readText: async () => "{}" })).rejects.toThrow("provider missing");
-		expect(await readWebBootSelection({ readText: async () => null })).toBeNull();
+		await expect(
+			readWebBootSelection({
+				readText: async () => {
+					throw new Error("storage failure");
+				},
+			}),
+		).rejects.toThrow("storage failure");
+		await expect(
+			readWebBootSelection({ readText: async () => "{" }),
+		).rejects.toThrow();
+		await expect(
+			readWebBootSelection({ readText: async () => "{}" }),
+		).rejects.toThrow("provider missing");
+		expect(
+			await readWebBootSelection({ readText: async () => null }),
+		).toBeNull();
 	});
 });
