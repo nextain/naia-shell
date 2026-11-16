@@ -487,6 +487,8 @@ export function AiControlBar({
 					>
 						<span className="bgm-ai-toggle__dot" />⌂
 					</button>
+				</>
+			)}
 
 			{broadcastBridge.lastError && (
 				<div
@@ -582,8 +584,6 @@ export function AiControlBar({
 						</button>
 					</div>
 				</div>
-			)}
-				</>
 			)}
 		</div>
 	);

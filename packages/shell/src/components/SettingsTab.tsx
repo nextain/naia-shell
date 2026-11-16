@@ -2259,9 +2259,6 @@ export function SettingsTab() {
 						...prev,
 						...grouped,
 						nextain: mergeCatalogModels(grouped.nextain ?? [], prev.nextain ?? []),
-						...(prev.nextain?.some((m) => m.pricing !== undefined)
-							? { nextain: prev.nextain }
-							: {}),
 						// vLLM/Ollama lists come from their own hosts, not this catalog.
 						// The catalog can land after that discovery; its static (empty)
 						// lists must not wipe the discovered models and blank the model.
