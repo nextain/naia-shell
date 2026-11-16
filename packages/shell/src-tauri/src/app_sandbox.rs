@@ -143,17 +143,56 @@ pub fn app_sandbox_open_in_workspace(app: AppHandle, adk_path: String, app_id: S
 }
 #[tauri::command]
 pub fn slides_recording_start(adk_path: String) -> Result<(), String> {
-    let recording = RECORDING.get_or_init(|| Mutex::new(None));
-    let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
-    if recording.is_some() { return Err("recording already active".into()); }
-    let folder = root(&adk_path, "land.naia.slides")?.join("video");
-    std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_secs();
-    let output = folder.join(format!("naia-presentation-{timestamp}.mp4"));
-    let ffmpeg = crate::broadcast::resolve_ffmpeg_path(None);
-    let child = Command::new(ffmpeg).args(["-y", "-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "title=Naia", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]).arg(&output).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|error| format!("could not start MP4 recording: {error}"))?;
-    *recording = Some((child, output));
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        let _ = adk_path;
+        return Err(
+            "macOS에서는 현재 슬라이드 창 내장 MP4 녹화(gdigrab)를 지원하지 않습니다. macOS 화면 기록(Cmd+Shift+5)을 사용해 주세요."
+                .into(),
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let recording = RECORDING.get_or_init(|| Mutex::new(None));
+        let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
+        if recording.is_some() {
+            return Err("recording already active".into());
+        }
+        let ffmpeg = crate::broadcast::resolve_ffmpeg_path(None);
+        crate::broadcast::validate_ffmpeg_executable(&ffmpeg)?;
+        let folder = root(&adk_path, "land.naia.slides")?.join("video");
+        std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_secs();
+        let output = folder.join(format!("naia-presentation-{timestamp}.mp4"));
+        let child = Command::new(ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "gdigrab",
+                "-framerate",
+                "30",
+                "-draw_mouse",
+                "0",
+                "-i",
+                "title=Naia",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&output)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("could not start MP4 recording: {error}"))?;
+        *recording = Some((child, output));
+        Ok(())
+    }
 }
 #[tauri::command]
 pub fn slides_recording_stop() -> Result<String, String> {

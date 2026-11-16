@@ -736,6 +736,26 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 			"icons/icon.icns",
 		]);
 		expect(conf.bundle.resources["resources/node"]).toBe("node");
+		expect(conf.bundle.macOS).toEqual({
+			infoPlist: "Info.plist",
+			entitlements: "entitlements.app.plist",
+		});
+		const infoPlist = readFileSync(
+			resolve(SHELL, "src-tauri", conf.bundle.macOS.infoPlist),
+			"utf8",
+		);
+		expect(infoPlist).toContain("<key>NSMicrophoneUsageDescription</key>");
+		const appEntitlements = readFileSync(
+			resolve(SHELL, "src-tauri", conf.bundle.macOS.entitlements),
+			"utf8",
+		);
+		expect(appEntitlements).toContain(
+			"<key>com.apple.security.device.audio-input</key>",
+		);
+		expect(appEntitlements).not.toContain("com.apple.security.cs.allow-jit");
+		expect(appEntitlements).not.toContain(
+			"com.apple.security.cs.allow-unsigned-executable-memory",
+		);
 		const keys = Object.keys(conf.bundle.resources);
 		expect(keys.some((k) => k.includes("vosk"))).toBe(false);
 		expect(keys.some((k) => k.includes("vcruntime"))).toBe(false);

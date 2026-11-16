@@ -121,4 +121,58 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		await expect(getCameraActions().playAction("missing")).resolves.toBe(false);
 		await expect(getCameraActions().playAction("wave")).resolves.toBe(true);
 	});
+
+	it("uses manifest stacked_alpha clips on desktop and transitions to error mode when playback fails", async () => {
+		activeManifest = btoa(
+			JSON.stringify({
+				nva_version: "0.2",
+				canvas: { width: 720, height: 1280 },
+				animations: {
+					idle: { clip: "clips/body.webm", loop: true, can_talk: false },
+				},
+				vrm_slots: {
+					profile: {
+						generation_mode: "prebaked_webm_only",
+						default_locale: "ko-KR",
+					},
+					visemes: { aiueo: { clip: "clips/viseme-aiueo.webm" } },
+					speech: {},
+				},
+				stacked_alpha: {
+					layout: "color-top-alpha-bottom",
+					clips: {
+						"clips/body.webm": "clips/body.stacked.mp4",
+					},
+				},
+			}),
+		);
+		const { container, unmount } = render(<VideoAvatarCanvas nvaModel="jina" />);
+		await vi.waitFor(() =>
+			expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+				"data-video-avatar-loaded",
+				"true",
+			),
+		);
+		expect(mockToLocalBlobUrl).toHaveBeenCalledWith(
+			"D:\\alpha-adk\\naia-settings\\nva-files\\jina\\clips\\body.stacked.mp4",
+		);
+		const videoEl = container.querySelector("video") as HTMLVideoElement;
+		expect(videoEl.dataset.naiaStackedAlpha).toBe("true");
+		unmount();
+
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
+			new DOMException("Unsupported codec", "NotSupportedError"),
+		);
+		const { container: failedContainer } = render(
+			<VideoAvatarCanvas nvaModel="jina" />,
+		);
+		await vi.waitFor(() =>
+			expect(
+				failedContainer.querySelector("[data-video-avatar]"),
+			).toHaveAttribute("data-video-avatar-mode", "error"),
+		);
+		expect(useCascadeAvatarStore.getState().nvaLoadError).toContain(
+			"Unsupported codec",
+		);
+	});
 });

@@ -1,6 +1,15 @@
+import { cpSync, existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { type Plugin, defineConfig } from "vite";
 import packageJson from "./package.json";
+import { shouldIncludeDesktopPublicAsset } from "./src/lib/avatar/desktop-public-assets";
+
+export { shouldIncludeDesktopPublicAsset };
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function readPositiveIntegerEnv(
 	name: string,
@@ -26,11 +35,44 @@ function readPositiveIntegerEnv(
 	return value;
 }
 
+export function desktopPublicAssetsPlugin(): Plugin {
+	let outputDirectory = "";
+	const publicDirectory = path.resolve(__dirname, "public");
+	return {
+		name: "desktop-public-assets",
+		apply: "build",
+		configResolved(config) {
+			outputDirectory = path.resolve(config.root, config.build.outDir);
+		},
+		writeBundle() {
+			if (!existsSync(publicDirectory)) return;
+			cpSync(publicDirectory, outputDirectory, {
+				recursive: true,
+				filter: (source) => {
+					const rel = path.relative(publicDirectory, source);
+					if (!rel) return true;
+					let isDir = false;
+					try {
+						isDir = statSync(source).isDirectory();
+					} catch {
+						isDir = false;
+					}
+					return shouldIncludeDesktopPublicAsset(rel, isDir);
+				},
+			});
+		},
+	};
+}
+
 const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
-export default defineConfig(() => ({
-	plugins: [react()],
+export default defineConfig(({ command }) => ({
+	publicDir: command === "build" ? false : "public",
+	plugins: [
+		react(),
+		...(command === "build" ? [desktopPublicAssetsPlugin()] : []),
+	],
 	build: {
 		// Bundle-budget verification uses this graph to prove that large optional
 		// surfaces stay behind dynamic imports instead of merely producing a

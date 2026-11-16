@@ -18,8 +18,25 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-  "last_updated": "2026-11-09T03:27:03.770011+00:00",
+  "last_updated": "2026-11-16T15:52:00+00:00",
   "current_work": {
+    "macos_nva_and_quality_026_20261116": {
+      "issue": null,
+      "title": "macOS (WKWebView) 데스크톱 NVA 투명 재생 복구 및 마이크 TCC·Cmd+Q 종료·한글 폰트·PipeWire/더미 ffmpeg 방어 수리",
+      "branch": "fix/macos-nva-and-quality-026",
+      "requirements": "docs/requirements.md FR-MACOS-QUALITY.1~5",
+      "scenario": "docs/user-scenarios.md UC-MACOS-NVA-AND-QUALITY-20261116",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "P04_evidence": "Focused Vitest 6 suites / 108 tests passed (macos-nva-fallback 8, VideoAvatarCanvas 5, prebaked-renderer 17, AvatarCanvas 3, platform-matrix 61, nva 14); agent-bench-scenario-source contract 24/24 passed; pnpm build + pnpm -C packages/shell build (bundle budget OK) + check-compile-integrity, check-logging, check-lint-boundary, check-vacuous-tests, check-uc-traceability, check-assembly-coverage, check-untranslated-ui all passed. Rust cargo check/test runs in CI.",
+      "last_updated": "2026-11-16T16:14:00+00:00"
+    },
     "ui_font_scale_20261105": {
       "issue": null,
       "title": "설정 › 일반 글자 크기(작게·보통·크게·아주 크게) — 앱 전체 글자 배율, BGM 패널 화면 안 배치, 상단 막대·설정 탭 줄 넘침 정리",

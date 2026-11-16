@@ -194,6 +194,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-FIX-024-",
   // 앱 전체 글자 크기 설정(2026-11-05). 화면 표현 설정이다.
   "UC-UI-FONT-SCALE-20261105",
+  // macOS 데스크톱 WKWebView NVA 폴백·TCC 권한·종료 정리·폰트·PipeWire 방어(2026-11-16). 플랫폼 미디어·패키징 품질 수리다.
+  "UC-MACOS-NVA-AND-QUALITY-20261116",
 ];
 
 export function ownedByEpic(uc: string): boolean {

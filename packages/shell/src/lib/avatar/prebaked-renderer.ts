@@ -1,3 +1,4 @@
+import { Logger } from "../logger";
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
 import type {
 	AvatarPlaybackOptions,
@@ -12,12 +13,35 @@ import {
 	parseMotionSpec,
 	resolveChestY,
 } from "./nva-procedural-motion";
+import {
+	isStackedAlphaClipUrl,
+	isStackedAlphaVideoElement,
+	markVideoStackedAlpha,
+	shouldUseStackedAlpha,
+} from "./nva-stacked-alpha";
+import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
+
+export interface StackedAlphaCompositorLike {
+	readonly canvas: HTMLCanvasElement;
+	draw(video: HTMLVideoElement): boolean;
+	dispose(): void;
+}
+
+export interface ResolvedNvaClipSource {
+	url: string;
+	stackedAlpha?: boolean;
+	resolvedPath?: string;
+}
 
 interface Config {
 	manifest: NvaManifest;
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
+	/** Optional ordered fallback resolver (e.g. `.stacked.mp4` -> `.mp4` -> `.webm` on WKWebView). */
+	resolveClipCandidates?: (path: string) => Promise<ResolvedNvaClipSource[]>;
 	onSpeaking?: (speaking: boolean) => void;
+	createStackedAlpha?: () => StackedAlphaCompositorLike;
+	onPlaybackFailure?: (reason: string) => void;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -43,9 +67,11 @@ export function canCarryAlpha(clipPath: string): boolean {
  *   2) Shell의 실제 재생 시작/종료에 맞춘 idle/talking 비주얼 전환
  *
  * 표시는 숨은 `<video>`(디코드 버퍼)를 매 프레임 `<canvas>`(alpha:true)에 합성한다.
- * WebM 알파 클립은 그대로 drawImage, 알파를 가질 수 없는 컨테이너(mp4 등)는
- * `manifest.chroma_key`(또는 배경색 `background.color`)로 GPU 크로마키 처리해
- * 검은/불투명 배경이 노출되지 않게 한다.
+ * - 상하 분리(`stacked_alpha`, `.stacked.mp4` 또는 `dataset.naiaStackedAlpha="true"`):
+ *   `NvaStackedAlphaGL`(WebGL1)로 상단 RGB + 하단 그레이스케일 알파를 합성한다.
+ * - WebM 알파 클립: 그대로 drawImage.
+ * - 알파를 가질 수 없는 일반 컨테이너(mp4 등): `manifest.chroma_key`(또는 배경색 `background.color`)로
+ *   GPU 크로마키 처리해 검은/불투명 배경이 노출되지 않게 한다.
  */
 export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private video: HTMLVideoElement | null = null;
@@ -55,6 +81,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private clipVideos = new Map<string, HTMLVideoElement>();
 	private canvas: HTMLCanvasElement | null = null;
 	private ctx: CanvasRenderingContext2D | null = null;
+	private stackedAlpha: StackedAlphaCompositorLike | null = null;
+	private stackedAlphaFailed = false;
 	private keyer: NvaChromakeyGL | null = null;
 	private keyerFailed = false;
 	private currentKeyColor: string | undefined;
@@ -62,9 +90,11 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private offscreenCanvas: HTMLCanvasElement | null = null;
 	private offscreenCtx: CanvasRenderingContext2D | null = null;
 	private disposed = false;
+	private mediaFailed = false;
 	private generation = 0;
 	private speakingVisual = false;
 	private cancelOneShot: (() => void) | null = null;
+	private cancelLoopErrorWatcher: (() => void) | null = null;
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
@@ -200,9 +230,91 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.config.manifest.animations.talking?.clip ??
 				this.config.manifest.animations.speak?.clip ??
 				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true, undefined, generation, false);
+			void this.playClip(clip, true, true, undefined, generation, false).catch(
+				(err) => {
+					Logger.warn("PrebakedAvatarRenderer", "talking clip playback failed", {
+						clip,
+						error: String(err),
+					});
+				},
+			);
 		} else {
 			void this.playIdle();
+		}
+	}
+
+	private reportPlaybackFailure(reason: unknown): void {
+		if (this.disposed || this.mediaFailed) return;
+		this.mediaFailed = true;
+		const message =
+			reason instanceof Error ? reason.message : String(reason || "NVA clip playback failed");
+		Logger.warn("PrebakedAvatarRenderer", "NVA playback failed", {
+			reason: message,
+		});
+		this.config.onPlaybackFailure?.(message);
+	}
+
+	private async resolveSourcesForClip(
+		path: string,
+	): Promise<ResolvedNvaClipSource[]> {
+		if (this.config.resolveClipCandidates) {
+			const resolved = await this.config.resolveClipCandidates(path);
+			if (resolved.length > 0) return resolved;
+		}
+		const normalizedRel = path.replace(/\\/g, "/").replace(/^\/+/, "");
+		const mappedStacked = shouldUseStackedAlpha()
+			? (this.config.manifest.stacked_alpha?.clips?.[normalizedRel] ??
+				this.config.manifest.stacked_alpha?.clips?.[path])
+			: undefined;
+
+		if (mappedStacked && mappedStacked !== path) {
+			const sources: ResolvedNvaClipSource[] = [];
+			try {
+				const stackedUrl = await this.config.resolveAssetUrl(mappedStacked);
+				sources.push({
+					url: stackedUrl,
+					stackedAlpha: true,
+					resolvedPath: mappedStacked,
+				});
+			} catch {
+				// Fall through to primary clip path when stacked asset cannot be resolved.
+			}
+			try {
+				const fallbackUrl = await this.config.resolveAssetUrl(path);
+				sources.push({
+					url: fallbackUrl,
+					stackedAlpha: isStackedAlphaClipUrl(path),
+					resolvedPath: path,
+				});
+			} catch (err) {
+				if (sources.length === 0) throw err;
+			}
+			return sources;
+		}
+
+		const url = await this.config.resolveAssetUrl(path);
+		return [
+			{
+				url,
+				stackedAlpha:
+					isStackedAlphaClipUrl(path) || isStackedAlphaClipUrl(url),
+				resolvedPath: path,
+			},
+		];
+	}
+
+	private evictFailedPooledVideo(url: string, video: HTMLVideoElement): void {
+		if (this.clipVideos.get(url) === video) {
+			this.clipVideos.delete(url);
+		}
+		video.pause();
+		if (video !== this.mountedVideo) {
+			video.remove();
+		} else {
+			video.removeAttribute("src");
+			delete video.dataset.naiaClipUrl;
+			delete video.dataset.naiaStackedAlpha;
+			delete video.dataset.naiaResolvedPath;
 		}
 	}
 
@@ -216,7 +328,30 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	): Promise<void> {
 		if (!this.video || !this.mountedVideo)
 			throw new Error("NVA video is not mounted");
-		const url = await this.config.resolveAssetUrl(path);
+		const normalizedRel = path.replace(/\\/g, "/").replace(/^\/+/, "");
+		const mappedStacked = shouldUseStackedAlpha()
+			? (this.config.manifest.stacked_alpha?.clips?.[normalizedRel] ??
+				this.config.manifest.stacked_alpha?.clips?.[path])
+			: undefined;
+		let sources: ResolvedNvaClipSource[];
+		try {
+			if (!this.config.resolveClipCandidates && (!mappedStacked || mappedStacked === path)) {
+				const url = await this.config.resolveAssetUrl(path);
+				sources = [
+					{
+						url,
+						stackedAlpha:
+							isStackedAlphaClipUrl(path) || isStackedAlphaClipUrl(url),
+						resolvedPath: path,
+					},
+				];
+			} else {
+				sources = await this.resolveSourcesForClip(path);
+			}
+		} catch (err) {
+			if (loop) this.reportPlaybackFailure(err);
+			throw err;
+		}
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
 		if (
@@ -224,83 +359,157 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			expectedGeneration !== this.generation
 		)
 			return;
-		this.currentKeyColor =
-			this.config.manifest.chroma_key ??
-			(canCarryAlpha(path)
+
+		let lastError: unknown = new Error("NVA clip playback failed");
+		for (let i = 0; i < sources.length; i++) {
+			const source = sources[i];
+			const effectivePath = source.resolvedPath ?? path;
+			const isStacked =
+				source.stackedAlpha ??
+				(isStackedAlphaClipUrl(effectivePath) ||
+					isStackedAlphaClipUrl(source.url));
+			this.currentKeyColor = isStacked
 				? undefined
-				: this.config.manifest.background?.color);
-		const video = this.videoForClip(url);
-		this.cancelOneShot?.();
-		if (this.video !== video) {
-			this.video.pause();
+				: (this.config.manifest.chroma_key ??
+					(canCarryAlpha(effectivePath)
+						? undefined
+						: this.config.manifest.background?.color));
+
+			const video = this.videoForClip(source.url, isStacked, effectivePath);
+			this.cancelOneShot?.();
+			this.cancelLoopErrorWatcher?.();
+			if (this.video && this.video !== video) {
+				this.video.pause();
+			}
 			this.video = video;
+			video.loop = loop;
+			video.muted = muted;
+			if (!resumePosition) video.currentTime = 0;
+
+			try {
+				if (loop) {
+					const onAsyncMediaError = () => {
+						if (this.video === video && !this.disposed) {
+							this.reportPlaybackFailure(
+								video.error?.message || `Media decode error (${effectivePath})`,
+							);
+						}
+					};
+					video.addEventListener("error", onAsyncMediaError, { once: true });
+					this.cancelLoopErrorWatcher = () => {
+						video.removeEventListener("error", onAsyncMediaError);
+						this.cancelLoopErrorWatcher = null;
+					};
+					await video.play();
+					return;
+				}
+				await new Promise<void>((resolve, reject) => {
+					const cleanup = () => {
+						video.removeEventListener("playing", ready);
+						video.removeEventListener("ended", ended);
+						video.removeEventListener("error", failed);
+						if (this.cancelOneShot === cancel) this.cancelOneShot = null;
+					};
+					const cancel = () => {
+						cleanup();
+						resolve();
+					};
+					let playbackStarted = false;
+					const ready = () => {
+						if (playbackStarted) return;
+						playbackStarted = true;
+						options?.onPlaybackReady?.();
+					};
+					const ended = () => {
+						cleanup();
+						resolve();
+					};
+					const failed = (cause?: unknown) => {
+						cleanup();
+						reject(
+							cause instanceof Error
+								? cause
+								: new Error(
+										video.error?.message ||
+											`NVA clip playback failed (${effectivePath})`,
+									),
+						);
+					};
+					video.addEventListener("playing", ready, { once: true });
+					video.addEventListener("ended", ended, { once: true });
+					video.addEventListener("error", () => failed(), { once: true });
+					this.cancelOneShot = cancel;
+					video.play().then(ready).catch(failed);
+				});
+				return;
+			} catch (err) {
+				lastError = err;
+				this.cancelLoopErrorWatcher?.();
+				this.evictFailedPooledVideo(source.url, video);
+				if (this.disposed) throw err;
+				if (
+					expectedGeneration !== undefined &&
+					expectedGeneration !== this.generation
+				) {
+					return;
+				}
+				if (i + 1 < sources.length) {
+					Logger.warn(
+						"PrebakedAvatarRenderer",
+						"clip candidate failed; trying next fallback",
+						{
+							failedPath: effectivePath,
+							nextPath: sources[i + 1]?.resolvedPath ?? path,
+							error: String(err),
+						},
+					);
+				}
+			}
 		}
-		video.loop = loop;
-		video.muted = muted;
-		if (!resumePosition) video.currentTime = 0;
+
 		if (loop) {
-			await video.play();
-			return;
+			this.reportPlaybackFailure(lastError);
 		}
-		await new Promise<void>((resolve, reject) => {
-			const cleanup = () => {
-				video.removeEventListener("playing", ready);
-				video.removeEventListener("ended", ended);
-				video.removeEventListener("error", failed);
-				if (this.cancelOneShot === cancel) this.cancelOneShot = null;
-			};
-			const cancel = () => {
-				cleanup();
-				resolve();
-			};
-			let playbackStarted = false;
-			const ready = () => {
-				if (playbackStarted) return;
-				playbackStarted = true;
-				options?.onPlaybackReady?.();
-			};
-			const ended = () => {
-				cleanup();
-				resolve();
-			};
-			const failed = () => {
-				cleanup();
-				reject(new Error("NVA clip playback failed"));
-			};
-			video.addEventListener("playing", ready, { once: true });
-			video.addEventListener("ended", ended, { once: true });
-			video.addEventListener("error", failed, { once: true });
-			this.cancelOneShot = cancel;
-			video.play().then(ready).catch(failed);
-		});
+		throw lastError instanceof Error
+			? lastError
+			: new Error(String(lastError));
 	}
 
 	/**
 	 * 클립마다 <video> 를 하나씩 두고 재사용한다. WebKitGTK 에서 `src=` 재대입은 이전
 	 * GStreamer 파이프라인을 메인 스레드에서 동기 해체하는데, 그 파이프라인의 demuxer
 	 * 스레드가 bus 동기 핸들러에서 메인 스레드를 기다리는 순간과 겹치면 서로 기다리며
-	 * 웹뷰 전체가 멈춘다(gdb: HTMLMediaElement::prepareForLoad → MediaPlayerPrivateGStreamer
-	 * ::tearDown ↔ matroskademux → callOnMainThreadAndWait; 슬라이드 낭독 idle/talking
-	 * 전환에서 3/3 재현, 2026-09-11). 첫 클립은 마운트된 요소를 쓰고, 다른 클립은 같은
-	 * 부모 아래 같은 스타일의 숨은 형제 요소를 만든다. 그래서 idle↔talking 왕복에 해체가 없다.
+	 * 웹뷰 전체가 멈춘다. 첫 클립은 마운트된 요소를 쓰고, 다른 클립은 같은
+	 * 부모 아래 같은 스타일의 숨은 형제 요소를 만든다.
+	 * 또한 데스크톱 `blob:` URL에서도 `stacked_alpha` 여부가 유실되지 않도록
+	 * `dataset.naiaStackedAlpha`와 `dataset.naiaResolvedPath`를 기록한다.
 	 */
-	private videoForClip(url: string): HTMLVideoElement {
+	private videoForClip(
+		url: string,
+		isStackedAlpha = false,
+		resolvedPath?: string,
+	): HTMLVideoElement {
 		const mounted = this.mountedVideo;
 		if (!mounted) throw new Error("NVA video is not mounted");
 		const pooled = this.clipVideos.get(url);
-		if (pooled) return pooled;
+		if (pooled) {
+			markVideoStackedAlpha(pooled, isStackedAlpha, resolvedPath);
+			return pooled;
+		}
 		let video: HTMLVideoElement;
-		if (this.clipVideos.size === 0) {
+		if (this.clipVideos.size === 0 && !mounted.dataset.naiaClipUrl) {
 			video = mounted;
 		} else {
 			video = document.createElement("video");
 			video.playsInline = true;
+			video.muted = true;
 			video.crossOrigin = mounted.crossOrigin;
 			video.style.cssText = mounted.style.cssText;
 			mounted.parentNode?.insertBefore(video, mounted.nextSibling);
 		}
 		video.src = url;
 		video.dataset.naiaClipUrl = url;
+		markVideoStackedAlpha(video, isStackedAlpha, resolvedPath);
 		this.clipVideos.set(url, video);
 		return video;
 	}
@@ -315,7 +524,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			undefined,
 			generation,
 			true,
-		).catch(() => {});
+		).catch((err) => {
+			this.reportPlaybackFailure(err);
+		});
 	}
 
 	private ensureOffscreen(
@@ -339,7 +550,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		return { canvas: this.offscreenCanvas, ctx: this.offscreenCtx };
 	}
 
-	/** 숨은 decode `<video>`를 매 프레임 표시 `<canvas>`에 합성(필요 시 크로마키 및 라이브2D식 절차적 모션). */
+	/** 숨은 decode `<video>`를 매 프레임 표시 `<canvas>`에 합성(stacked_alpha / 크로마키 / 절차적 모션). */
 	private startDrawLoop(): void {
 		if (this.running) return;
 		this.running = true;
@@ -356,11 +567,16 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				video.videoWidth > 0 &&
 				video.videoHeight > 0
 			) {
+				const isStacked = isStackedAlphaVideoElement(video);
+				const sourceWidth = video.videoWidth;
+				const sourceHeight = isStacked
+					? Math.max(1, Math.floor(video.videoHeight / 2))
+					: video.videoHeight;
 				const rect = containRect(
 					canvas.width,
 					canvas.height,
-					video.videoWidth,
-					video.videoHeight,
+					sourceWidth,
+					sourceHeight,
 				);
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
@@ -376,14 +592,58 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					}
 
 					let drew = false;
-					if (keyColor && !this.keyerFailed) {
+					if (isStacked) {
+						if (!this.stackedAlphaFailed) {
+							try {
+								if (!this.stackedAlpha) {
+									this.stackedAlpha = this.config.createStackedAlpha
+										? this.config.createStackedAlpha()
+										: new NvaStackedAlphaGL();
+								}
+								if (!this.stackedAlpha.draw(video)) {
+									throw new Error("stacked-alpha context lost");
+								}
+								drawTarget.drawImage(
+									this.stackedAlpha.canvas,
+									rect.dx,
+									rect.dy,
+									rect.dw,
+									rect.dh,
+								);
+								drew = true;
+							} catch (error) {
+								this.stackedAlphaFailed = true;
+								this.stackedAlpha?.dispose();
+								this.stackedAlpha = null;
+								Logger.warn(
+									"PrebakedAvatarRenderer",
+									"stacked-alpha WebGL failed; drawing top half only",
+									{ error: String(error) },
+								);
+							}
+						}
+						if (!drew) {
+							drawTarget.drawImage(
+								video,
+								0,
+								0,
+								sourceWidth,
+								sourceHeight,
+								rect.dx,
+								rect.dy,
+								rect.dw,
+								rect.dh,
+							);
+							drew = true;
+						}
+					} else if (keyColor && !this.keyerFailed) {
 						try {
 							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
 							else this.keyer.setParams({ keyColor });
 							const keyed = this.keyer.process(
 								video,
-								video.videoWidth,
-								video.videoHeight,
+								sourceWidth,
+								sourceHeight,
 							);
 							drawTarget.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
 							drew = true;
@@ -415,6 +675,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	interrupt(): void {
 		this.generation++;
 		this.cancelOneShot?.();
+		this.cancelLoopErrorWatcher?.();
 		this.speakingVisual = false;
 		this.config.onSpeaking?.(false);
 		void this.playIdle();
@@ -425,6 +686,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.running = false;
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
+		this.cancelLoopErrorWatcher?.();
+		this.stackedAlpha?.dispose();
+		this.stackedAlpha = null;
 		this.keyer?.dispose();
 		this.keyer = null;
 		this.offscreenCanvas = null;

@@ -1529,6 +1529,9 @@ struct AppState {
     /// to agent-core after every restart so credentials are never permanently lost.
     /// Deduplicated by type: latest message of each type wins.
     startup_messages: Mutex<StartupMessageCache>,
+    /// Guards owned sidecar teardown so `WindowEvent::Destroyed` and macOS `Cmd+Q`
+    /// (`RunEvent::ExitRequested` / `RunEvent::Exit`) never leak or double-shutdown.
+    runtime_shutdown_started: std::sync::atomic::AtomicBool,
 }
 
 struct AuditState {
@@ -14528,6 +14531,7 @@ pub fn run() {
             oauth_state: Arc::new(Mutex::new(None)),
             last_agent_restart: Mutex::new(None),
             startup_messages: Mutex::new(StartupMessageCache::default()),
+            runtime_shutdown_started: std::sync::atomic::AtomicBool::new(false),
         })
         .manage(ollama_runtime::RuntimeManager::default())
         .manage(workspace::new_shared_watcher())
@@ -15242,107 +15246,133 @@ pub fn run() {
 						));
 						return;
 					}
-                    // Kill Chrome on app exit (not on React component unmount)
-                    crate::browser::browser_embed_kill();
-                    // #582 S6b: 정상 종료도 소유 런타임 정리 경로다 (계약 4.8).
-                    crate::ego_host_bridge::stop_blocking("cleanup(shutdown)"); // #582 S6c
-                    crate::ego_host::cleanup_current_adk("cleanup(shutdown)");
-
-                    let state: tauri::State<'_, AppState> = window.state();
-
-                    // Ollama is a Shell-owned user runtime. Its supervisor
-                    // closes the process tree before Tauri releases managed state.
-                    let ollama_runtime: tauri::State<'_, ollama_runtime::RuntimeManager> =
-                        window.state();
-                    ollama_runtime.shutdown();
-
-                    // Stop health monitor thread
-                    if let Ok(guard) = state.health_monitor_shutdown.lock() {
-                        if let Some(ref flag) = *guard {
-                            flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    }
-
-                    // Kill agent first (it depends on gateway)
-                    let agent_lock = state.agent.lock();
-                    if let Ok(mut guard) = agent_lock {
-                        if let Some(mut process) = guard.take() {
-                            log_verbose("[Naia] Terminating agent-core...");
-                            let _ = graceful_shutdown_and_reap_agent(&mut process);
-                        }
-                    }
-
-                    // Kill BGM server sidecar (#335) ??independent of agent
-                    let bgm_lock = state.bgm_server.lock();
-                    if let Ok(mut guard) = bgm_lock {
-                        if let Some(mut process) = guard.take() {
-                            log_verbose("[Naia] Terminating BGM server...");
-                            let _ = process.child.kill();
-                        } else {
-                            // FR-BGM.15 (#517): a spawn still inside its readiness
-                            // probe has written the PID file but not yet stored the
-                            // child in state. The helper takes the record lock and
-                            // revalidates this Shell's owner/child identities before
-                            // the targeted kill; another Shell's record is preserved.
-                            terminate_untracked_bgm_record();
-                        }
-                    }
-                    remove_pid_file("bgm-server");
-
-                    // Kill the owned local cascade tree (R2.2b). The platform
-                    // ownership handle/process group covers loader descendants;
-                    // Drop remains a final safety net if this path changes.
-                    if let Ok(mut guard) = state.cascade.lock() {
-                        if let Some(mut process) = guard.take() {
-                            log_verbose("[Naia] Terminating local cascade...");
-                            process.terminate();
-                        }
-                    }
-                    remove_pid_file("cascade");
-
-                    if let Ok(mut guard) = state.voxcpm2.lock() {
-                        if let Some(mut process) = guard.take() {
-                            log_verbose("[Naia] Terminating local Naia Host TensorRT service...");
-                            process.terminate_and_reap();
-                        }
-                    }
-                    remove_pid_file("voxcpm2");
-
-                    // Kill Node Host + Gateway (only if we spawned)
-                    let gateway_lock = state.gateway.lock();
-                    if let Ok(mut guard) = gateway_lock {
-                        if let Some(mut process) = guard.take() {
-                            // Kill Node Host first
-                            if let Some(ref mut nh) = process.node_host {
-                                log_verbose("[Naia] Terminating Node Host...");
-                                let _ = nh.kill();
-                            }
-                            remove_pid_file("node-host");
-                            // Kill Gateway
-                            if process.we_spawned {
-                                log_verbose("[Naia] Terminating Gateway (we spawned it)...");
-                                let _ = process.child.kill();
-                                remove_pid_file("gateway");
-                            } else {
-                                log_verbose("[Naia] Gateway not managed by us ??leaving it running");
-                            }
-                        }
-                    }
-                    log_both("[Naia] === Session ended ===");
+                    shutdown_owned_runtimes(window.app_handle(), "window_destroyed");
                 }
                 _ => {}
             }
         })
         .build(context)
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                 log_verbose("[project_agent_pty::shutdown] branch=application_exit");
                 let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
                     app_handle.state();
                 project_agent_pty::shutdown_project_agent_sessions(&project_agents);
+                shutdown_owned_runtimes(app_handle, "application_exit");
             }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } => {
+                if let Some(main_win) = app_handle.get_webview_window("main") {
+                    let _ = main_win.unminimize();
+                    let _ = main_win.show();
+                    let _ = main_win.set_focus();
+                }
+            }
+            _ => {}
         });
+}
+
+fn claim_runtime_shutdown_once(flag: &std::sync::atomic::AtomicBool) -> bool {
+    !flag.swap(true, std::sync::atomic::Ordering::AcqRel)
+}
+
+fn shutdown_owned_runtimes(app_handle: &tauri::AppHandle, reason: &'static str) {
+    let state: tauri::State<'_, AppState> = app_handle.state();
+    if !claim_runtime_shutdown_once(&state.runtime_shutdown_started) {
+        log_verbose(&format!(
+            "[Naia] Skipping duplicate owned-runtime teardown (reason={reason})"
+        ));
+        return;
+    }
+    log_verbose(&format!(
+        "[Naia] Starting owned-runtime teardown (reason={reason})"
+    ));
+
+    // Kill Chrome on app exit (not on React component unmount)
+    crate::browser::browser_embed_kill();
+    // #582 S6b: 정상 종료도 소유 런타임 정리 경로다 (계약 4.8).
+    crate::ego_host_bridge::stop_blocking("cleanup(shutdown)"); // #582 S6c
+    crate::ego_host::cleanup_current_adk("cleanup(shutdown)");
+
+    // Ollama is a Shell-owned user runtime. Its supervisor
+    // closes the process tree before Tauri releases managed state.
+    let ollama_runtime: tauri::State<'_, ollama_runtime::RuntimeManager> = app_handle.state();
+    ollama_runtime.shutdown();
+
+    // Stop health monitor thread
+    if let Ok(guard) = state.health_monitor_shutdown.lock() {
+        if let Some(ref flag) = *guard {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    // Kill agent first (it depends on gateway)
+    let agent_lock = state.agent.lock();
+    if let Ok(mut guard) = agent_lock {
+        if let Some(mut process) = guard.take() {
+            log_verbose("[Naia] Terminating agent-core...");
+            let _ = graceful_shutdown_and_reap_agent(&mut process);
+        }
+    }
+
+    // Kill BGM server sidecar (#335) — independent of agent
+    let bgm_lock = state.bgm_server.lock();
+    if let Ok(mut guard) = bgm_lock {
+        if let Some(mut process) = guard.take() {
+            log_verbose("[Naia] Terminating BGM server...");
+            let _ = process.child.kill();
+            let _ = process.child.wait();
+        } else {
+            // FR-BGM.15 (#517): a spawn still inside its readiness
+            // probe has written the PID file but not yet stored the
+            // child in state.
+            terminate_untracked_bgm_record();
+        }
+    }
+    remove_pid_file("bgm-server");
+
+    // Kill the owned local cascade tree (R2.2b).
+    if let Ok(mut guard) = state.cascade.lock() {
+        if let Some(mut process) = guard.take() {
+            log_verbose("[Naia] Terminating local cascade...");
+            process.terminate();
+        }
+    }
+    remove_pid_file("cascade");
+
+    if let Ok(mut guard) = state.voxcpm2.lock() {
+        if let Some(mut process) = guard.take() {
+            log_verbose("[Naia] Terminating local Naia Host TensorRT service...");
+            process.terminate_and_reap();
+        }
+    }
+    remove_pid_file("voxcpm2");
+
+    // Kill Node Host + Gateway (only if we spawned)
+    let gateway_lock = state.gateway.lock();
+    if let Ok(mut guard) = gateway_lock {
+        if let Some(mut process) = guard.take() {
+            if let Some(ref mut nh) = process.node_host {
+                log_verbose("[Naia] Terminating Node Host...");
+                let _ = nh.kill();
+                let _ = nh.wait();
+            }
+            remove_pid_file("node-host");
+            if process.we_spawned {
+                log_verbose("[Naia] Terminating Gateway (we spawned it)...");
+                let _ = process.child.kill();
+                let _ = process.child.wait();
+                remove_pid_file("gateway");
+            } else {
+                log_verbose("[Naia] Gateway not managed by us — leaving it running");
+            }
+        }
+    }
+    log_both(&format!("[Naia] === Session ended ({reason}) ==="));
 }
 
 #[cfg(test)]
@@ -15355,6 +15385,14 @@ mod tests {
         assert_eq!(e2e_should_auto_allow_permission(true, false), false);
         assert_eq!(e2e_should_auto_allow_permission(false, true), false);
         assert_eq!(e2e_should_auto_allow_permission(false, false), false);
+    }
+
+    #[test]
+    fn runtime_shutdown_guard_claims_exactly_once_across_window_destroy_and_cmd_q_exit() {
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        assert!(claim_runtime_shutdown_once(&flag));
+        assert!(!claim_runtime_shutdown_once(&flag));
+        assert!(!claim_runtime_shutdown_once(&flag));
     }
 
     #[test]

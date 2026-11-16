@@ -292,10 +292,52 @@ function NvaThumbnail({ path, label }: { path: string; label: string }) {
 						Uint8Array.from(raw, (char) => char.charCodeAt(0)),
 					),
 				);
-				const clipPath = resolveNvaAssetPath(
-					bundleDir,
-					defaultClipOf(manifest).video,
-				);
+				const defaultIdleClip = defaultClipOf(manifest).video;
+				const normalizedIdle = defaultIdleClip
+					.replace(/\\/g, "/")
+					.replace(/^\/+/, "");
+				const stackedRel =
+					manifest.stacked_alpha?.clips?.[normalizedIdle] ??
+					manifest.stacked_alpha?.clips?.[defaultIdleClip];
+				// On WebKit/WKWebView where VP9+Alpha .webm fails to decode, prefer static
+				// poster image (`idle.webp` / `speech/neutral-head.png`) or stacked MP4.
+				const isAppleWebKit =
+					typeof navigator !== "undefined" &&
+					/(Macintosh|Mac OS X|iPhone|iPad)/i.test(navigator.userAgent) &&
+					/AppleWebKit\//i.test(navigator.userAgent) &&
+					!/(Chrome\/|Chromium\/|Edg\/)/i.test(navigator.userAgent);
+				if (isAppleWebKit) {
+					for (const staticRel of [
+						manifest.expression_states?.neutral?.preview_image,
+						manifest.expression_states?.neutral?.image,
+						"idle.webp",
+						"speech/neutral-head.png",
+					]) {
+						if (!staticRel) continue;
+						try {
+							const staticPath = resolveNvaAssetPath(bundleDir, staticRel);
+							await invoke<string>("read_local_binary", {
+								path: staticPath,
+								allowedBase: adkPath,
+							});
+							const staticUrl = await toLocalBlobUrl(staticPath);
+							if (!disposed) {
+								setPreview({
+									url: staticUrl,
+									label,
+									path: staticPath,
+									type: "image",
+								});
+							}
+							return;
+						} catch {
+							// Try next candidate
+						}
+					}
+				}
+				const preferredRel =
+					isAppleWebKit && stackedRel ? stackedRel : defaultIdleClip;
+				const clipPath = resolveNvaAssetPath(bundleDir, preferredRel);
 				const url = await toLocalBlobUrl(clipPath);
 				if (!disposed)
 					setPreview({ url, label, path: clipPath, type: "video" });

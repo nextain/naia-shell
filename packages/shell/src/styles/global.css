@@ -18,10 +18,12 @@ textarea {
 	font-size: calc(13.333px * var(--ui-font-scale, 1));
 }
 
-/* Korean font fallback via @font-face local() — WebKitGTK can't always resolve CJK TTC fonts from CSS font-family */
+/* Korean font fallback via @font-face local() — WebKitGTK can't always resolve CJK TTC fonts from CSS font-family.
+   Put Pretendard and macOS Apple SD Gothic Neo ahead of NanumGothic so macOS never falls back to legacy Nanum installs. */
 @font-face {
 	font-family: "KoreanUI";
-	src: local("나눔바른고딕"), local("NanumBarunGothic"), local("나눔고딕"),
+	src: local("Pretendard"), local("Apple SD Gothic Neo"),
+		local("나눔바른고딕"), local("NanumBarunGothic"), local("나눔고딕"),
 		local("NanumGothic"), local("Noto Sans CJK KR");
 	unicode-range: U+AC00-D7A3, U+1100-11FF, U+3130-318F, U+A960-A97F, U+D7B0-D7FF,
 		U+FFA0-FFDC;
@@ -320,8 +322,10 @@ body,
 	overflow: hidden;
 	background: var(--espresso);
 	font-family:
-		"Pretendard", "Inter", "KoreanUI", "NanumBarunGothic", "나눔바른고딕", "NanumGothic", "나눔고딕", "Noto Sans CJK KR", "Noto Sans CJK JP",
-		"Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, sans-serif;
+		"Pretendard", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
+		"Inter", "KoreanUI", "Malgun Gothic", "맑은 고딕", "NanumBarunGothic",
+		"나눔바른고딕", "NanumGothic", "나눔고딕", "Noto Sans CJK KR",
+		"Noto Sans CJK JP", "Noto Sans CJK SC", sans-serif;
 	color: var(--cream);
 }
 
@@ -3336,7 +3340,7 @@ body.resizing-row {
 .locale-select {
 	position: relative;
 	width: 148px;
-	font-family: "KoreanUI", system-ui, sans-serif;
+	font-family: "Pretendard", "Apple SD Gothic Neo", "KoreanUI", system-ui, sans-serif;
 }
 
 .locale-select__trigger,

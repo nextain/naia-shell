@@ -2706,3 +2706,24 @@ Test Coverage Map (P02)
 | UC-UI-FONT-SCALE-20261105 | 설정 › 일반 라디오 그룹·키보드 이동·즉시 저장(`naia-config`) | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — UI font scale (UC-UI-FONT-SCALE-20261105) | `packages/shell/e2e/ui-font-scale.spec.ts` — 작게 선택 후 저장값·CSS 변수 |
 | UC-UI-FONT-SCALE-20261105 | `ui-config.json` 왕복·agent config 제외 | `packages/shell/src/lib/__tests__/adk-store.test.ts` — writes ALL UI settings | — |
 | UC-UI-FONT-SCALE-20261105 | BGM 앱 패널 위치가 화면 안(가장 큰 배율·좁은 창), 상단 막대·설정 탭 줄 겹침 없음 | `packages/shell/src/lib/__tests__/bgm-app-position.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 1280/1920 폭 아주 크게 배치 |
+
+### UC-MACOS-NVA-AND-QUALITY-20261116 — macOS (`WKWebView`) 데스크톱 NVA 투명 재생 복구 및 품질 4건 수리
+
+macOS 데스크톱(Apple Silicon 및 Intel Mac `WKWebView`) 사용자는 앱을 실행해 NVA 비디오 아바타를 투명 배경으로 보고, 마이크 권한 안내를 거쳐 음성 입력을 쓰며, 선명한 시스템 한글 글꼴로 대화를 읽고, `Cmd+Q`로 종료했을 때 백그라운드 `node` 사이드카 프로세스가 남지 않는다. 또한 Linux 전용 PipeWire 방송·슬라이드 녹화 경로와 개발용 자리표시 `ffmpeg` 실행이 macOS에서 안전하게 차단된다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 데스크톱 `VideoAvatarCanvas`에서도 `stacked_alpha` H.264 MP4 경로와 `blob:` URL `dataset.naiaStackedAlpha` 플래그가 활성화되고, 한글 글꼴은 `Pretendard`·`Apple SD Gothic Neo`가 구형 나눔고딕이나 일본어/중국어 한자 폰트보다 먼저 선택된다. |
+| 빈 목록 | NVA 매니페스트에 `stacked_alpha` 매핑이 아직 없는 구형 ADK 번들에서도 macOS `WKWebView`(VP9+Alpha 미지원 환경)에서는 동반 `.stacked.mp4`·번들 `/nva/<bundle>/*.stacked.mp4`·크로마키 `.mp4` 후보를 우선 탐색한다. |
+| 진행 | 클립 후보를 순서대로 디코드·재생 시도하는 동안 로딩 안내(`avatar.videoLoading`)를 표시한다. |
+| 성공 | H.264 `stacked_alpha`(상단 색상·하단 알파) 또는 크로마키 클립이 WebGL로 투명 합성되어 재생되고, macOS 번들 `Info.plist`(`NSMicrophoneUsageDescription`) 및 `entitlements.app.plist`(`com.apple.security.device.audio-input`)가 포함되며, `Cmd+Q`(`RunEvent::ExitRequested`/`RunEvent::Exit`) 시 모든 소유 사이드카가 1회 정리된다. |
+| 오류 | 모든 후보 클립 디코드가 실패하면 검은 화면으로 방치하지 않고 `onPlaybackFailure`를 통해 오류 안내(`avatar.videoFailed`)와 `nvaLoadError` 상태를 기록한다. macOS에서 PipeWire 방송이나 자리표시 `ffmpeg` 실행 요청 시 명확한 안내 오류를 즉시 반환한다. |
+| 좁은 폭 | 아바타 캔버스 비율 유지(`containRect`) 및 Retina DPR 상한(`1.5`)이 창 크기와 무관하게 동일하게 동작한다. |
+
+Test Coverage Map (P02)
+
+| UC | 상태·행동 | 단위·계약 시험 | 네이티브·빌드 시험 |
+|---|---|---|---|
+| UC-MACOS-NVA-AND-QUALITY-20261116 | 데스크톱 `stacked_alpha` 라우팅 해제, `blob:` URL `dataset.naiaStackedAlpha` 보존, WebKit `.stacked.mp4`/`.mp4` 자동 폴백 및 디코드 실패 감지 | `packages/shell/src/lib/avatar/__tests__/macos-nva-fallback.test.ts`, `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/vite.config.ts` (`desktopPublicAssetsPlugin` NVA 매니페스트/폴백 보존 검증) |
+| UC-MACOS-NVA-AND-QUALITY-20261116 | macOS `Info.plist`(`NSMicrophoneUsageDescription`) 및 최소 권한 `entitlements.app.plist`(`audio-input`) 번들 연결, 한글 폰트 스택(`Apple SD Gothic Neo` 우선), Retina DPR 상한(`1.5`) | `packages/shell/scripts/__tests__/platform-matrix.test.ts`, `packages/shell/src/lib/avatar/__tests__/macos-nva-fallback.test.ts` | `packages/shell/src-tauri/tauri.conf.json` |
+| UC-MACOS-NVA-AND-QUALITY-20261116 | `Cmd+Q`(`RunEvent::ExitRequested`/`RunEvent::Exit`) 사이드카 일괄 종료 멱등 보장, macOS Linux PipeWire 실행 차단 및 30바이트 자리표시 `ffmpeg` 방어 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src-tauri/src/lib.rs` | `cargo check` / `cargo test --lib` |

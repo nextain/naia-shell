@@ -33,6 +33,18 @@ import {
 	loadVRMAnimation,
 	reAnchorRootPositionTrack,
 } from "../lib/vrm/animation";
+
+export function resolveVrmPixelRatio(
+	rawDpr: number = typeof window !== "undefined" ? window.devicePixelRatio : 1,
+	userAgent: string = typeof navigator !== "undefined" ? navigator.userAgent : "",
+): number {
+	const dpr =
+		typeof rawDpr === "number" && Number.isFinite(rawDpr) && rawDpr > 0
+			? rawDpr
+			: 1;
+	const maxDpr = /(Macintosh|Mac OS X)/i.test(userAgent) ? 1.5 : 2;
+	return Math.min(maxDpr, dpr);
+}
 import { loadVrm, loadVrmFromArrayBuffer } from "../lib/vrm/core";
 import {
 	buildExpressionResolver,
@@ -283,7 +295,7 @@ export function AvatarCanvas() {
 		let initializedRenderer: WebGLRenderer | null = null;
 		try {
 			initializedRenderer = new WebGLRenderer({ antialias: true, alpha: true });
-			initializedRenderer.setPixelRatio(window.devicePixelRatio);
+			initializedRenderer.setPixelRatio(resolveVrmPixelRatio());
 			initializedRenderer.setSize(
 				container.clientWidth,
 				container.clientHeight,
