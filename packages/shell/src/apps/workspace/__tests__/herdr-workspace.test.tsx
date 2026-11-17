@@ -229,7 +229,12 @@ describe("HerdrWorkspaceCenterArea", () => {
 		expect(
 			spaces.compareDocumentPosition(agents) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
-		const terminal = await screen.findByTestId("embedded-herdr-terminal");
+		// Terminal is React.lazy; the first mount in this file waits for that chunk.
+		const terminal = await screen.findByTestId(
+			"embedded-herdr-terminal",
+			undefined,
+			{ timeout: 5000 },
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Open terminal path" }));
 		await screen.findByTestId("workspace-viewer");
