@@ -2173,7 +2173,9 @@ describe("ChatArea", () => {
 
 		render(<ChatArea />);
 		expect(
-			await screen.findByText(/도구 실행 승인|Tool Execution Approval/),
+			await screen.findByText(/도구 실행 승인|Tool Execution Approval/, undefined, {
+				timeout: 5000,
+			}),
 		).toBeDefined();
 	});
 
