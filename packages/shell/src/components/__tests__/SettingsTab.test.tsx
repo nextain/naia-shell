@@ -6110,6 +6110,55 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		vi.unstubAllEnvs();
 	});
 
+	it("keeps Naia Cloud TTS and the onboarding DragonHD voice in ordinary web mode", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-5.6-luna",
+				apiKey: "",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+				ttsVoice: "ko-KR-Hyunsu:DragonHDLatestNeural",
+			}),
+		);
+
+		render(<SettingsTab />);
+		const profileTtsSelect = screen.getByTestId(
+			"profile-tts-provider",
+		) as HTMLSelectElement;
+		expect(Array.from(profileTtsSelect.options).map((o) => o.value)).toEqual([
+			"nextain",
+			"browser",
+		]);
+		expect(profileTtsSelect.value).toBe("nextain");
+
+		gotoSettingsTab("voice");
+		expect(
+			(screen.getByTestId("gateway-tts-provider") as HTMLSelectElement).value,
+		).toBe("nextain");
+		expect(
+			(document.getElementById("tts-voice-select") as HTMLSelectElement).value,
+		).toBe("ko-KR-Hyunsu:DragonHDLatestNeural");
+
+		fireEvent.change(screen.getByTestId("gateway-tts-provider"), {
+			target: { value: "browser" },
+		});
+		let saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.ttsProvider).toBe("browser");
+		fireEvent.change(screen.getByTestId("gateway-tts-provider"), {
+			target: { value: "nextain" },
+		});
+		saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.ttsProvider).toBe("nextain");
+		expect(saved.ttsVoice).toBe("ko-KR-SunHi:DragonHDLatestNeural");
+		vi.unstubAllEnvs();
+	});
+
 	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, defaults to Naia Cloud TTS in both profile and voice tabs without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);

@@ -365,6 +365,21 @@ describe("S3 kiosk isolation", () => {
 		const loaded = loadConfig()!;
 		expect(loaded.ttsProvider).toBe("browser");
 	});
+	it("keeps Naia Cloud TTS (onboarding DragonHD voice) in ordinary web mode", () => {
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		saveConfig({
+			provider: "naia",
+			model: "gemini-3-flash-preview",
+			apiKey: "",
+			ttsEnabled: true,
+			ttsProvider: "nextain",
+			ttsVoice: "ko-KR-Hyunsu:DragonHDLatestNeural",
+		});
+		const loaded = loadConfig()!;
+		expect(loaded.ttsProvider).toBe("nextain");
+		expect(loaded.ttsVoice).toBe("ko-KR-Hyunsu:DragonHDLatestNeural");
+	});
 	it("resolves Jina avatar and widened chat layout when kiosk flag is ON, and preserves normal web avatar and layout when OFF", () => {
 		expect(resolveShellAvatarSelection(null)).toEqual({
 			avatarProvider: "naia-video-avatar",

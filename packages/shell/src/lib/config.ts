@@ -750,9 +750,15 @@ export function loadConfig(): AppConfig | null {
 			) {
 				config.sttProvider = "web-speech";
 			}
+			// Web keeps two engines: browser speechSynthesis or Naia Cloud ("nextain",
+			// the DragonHD voices picked in onboarding). Anything else needs a desktop host.
 			if (!config.ttsProvider) {
 				config.ttsProvider = isKioskDemo() ? "nextain" : "browser";
-			} else if (!isKioskDemo() && config.ttsProvider !== "browser") {
+			} else if (
+				!isKioskDemo() &&
+				config.ttsProvider !== "browser" &&
+				config.ttsProvider !== "nextain"
+			) {
 				config.ttsProvider = "browser";
 			}
 		} else if (!config.sttProvider) {

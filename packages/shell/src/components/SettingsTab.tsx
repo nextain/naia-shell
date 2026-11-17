@@ -252,7 +252,10 @@ import {
 	readSlots,
 } from "../lib/slots/model";
 import { listSttProviders } from "../lib/stt/registry";
-import { listTtsProviderMetas } from "../lib/tts/registry";
+import {
+	getTtsProviderMeta,
+	listTtsProviderMetas,
+} from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
 import type { ModelCapability, ProviderId } from "../lib/types";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
@@ -971,17 +974,23 @@ export function SettingsTab() {
 				: KIOSK_DEMO_TTS_VOICE
 			: existing?.ttsVoice ?? (isWebMode() ? "" : defaultVoiceForProvider),
 	);
+	// 웹판 Naia Cloud 기본 목소리: 키오스크는 지나, 일반 웹판은 드래곤 HD 첫 목소리(온보딩과 같음).
+	const webCloudVoice = isKioskDemo()
+		? KIOSK_DEMO_TTS_VOICE
+		: (getTtsProviderMeta("nextain")?.voices?.[0]?.id ?? "");
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
-	// 보여 준다(#575). 일반 웹판은 브라우저 내장 합성("browser")으로 고정하고,
-	// 키오스크 시연판은 Naia Cloud TTS("nextain")를 기본으로 하되 "browser"도 선택 가능하게 둔다.
+	// 보여 준다(#575). 웹판은 브라우저 내장 합성("browser")과 Naia Cloud TTS("nextain")
+	// 둘 중 하나다. 키오스크 시연판은 nextain, 일반 웹판은 browser 가 기본이다.
 	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>(
 		isKioskDemo()
 			? existing?.ttsProvider === "browser"
 				? "browser"
 				: "nextain"
 			: isWebMode()
-				? "browser"
+				? existing?.ttsProvider === "nextain"
+					? "nextain"
+					: "browser"
 				: effectiveTtsProvider((existing ?? {}) as AppConfig),
 	);
 	const [sttProvider, setSttProvider] = useState<SttProviderId>(
@@ -3861,7 +3870,7 @@ export function SettingsTab() {
 			// Resolve the effective TTS provider / voice / credentials, then
 			// synthesize shell-side (#363). The agent's skill_tts was never a real
 			// synthesizer, so preview routes through the same path as live voice.
-			if (isWebMode() && (!isKioskDemo() || ttsProvider === "browser")) {
+			if (isWebMode() && ttsProvider === "browser") {
 				if (
 					typeof window === "undefined" ||
 					!("speechSynthesis" in window) ||
@@ -4511,13 +4520,10 @@ export function SettingsTab() {
 					? String(slotSnapshot.stt.provider)
 					: t("settings.slot.notSet");
 			case "tts":
-				if (isKioskDemo()) {
+				if (isWebMode()) {
 					return ttsProvider === "browser"
 						? t("webSpeech.synthesisProvider")
 						: "Naia Cloud TTS";
-				}
-				if (isWebMode()) {
-					return t("webSpeech.synthesisProvider");
 				}
 				return slotSnapshot.tts.provider
 					? String(slotSnapshot.tts.provider)
@@ -5773,7 +5779,7 @@ export function SettingsTab() {
 											)}
 											{group.id === "voice" && (
 												<>
-													{isKioskDemo() ? (
+													{isWebMode() ? (
 														<select
 															data-testid="profile-tts-provider"
 															aria-label={t("settings.ttsProvider")}
@@ -5790,9 +5796,7 @@ export function SettingsTab() {
 																) as TtsProviderId;
 																setTtsProvider(next);
 																const nextVoice =
-																	next === "nextain"
-																		? KIOSK_DEMO_TTS_VOICE
-																		: "";
+																	next === "nextain" ? webCloudVoice : "";
 																setTtsVoice(nextVoice);
 																persistConfig({
 																	ttsProvider: next,
@@ -5801,20 +5805,6 @@ export function SettingsTab() {
 															}}
 														>
 															<option value="nextain">Naia Cloud TTS</option>
-															<option value="browser">
-																{t("webSpeech.synthesisProvider")}
-															</option>
-														</select>
-													) : isWebMode() ? (
-														<select
-															data-testid="profile-tts-provider"
-															aria-label={t("settings.ttsProvider")}
-															value="browser"
-															onChange={() => {
-																setTtsProvider("browser");
-																persistConfig({ ttsProvider: "browser" });
-															}}
-														>
 															<option value="browser">
 																{t("webSpeech.synthesisProvider")}
 															</option>
@@ -7474,7 +7464,8 @@ export function SettingsTab() {
 						<label htmlFor="tts-provider-select">
 							{t("settings.ttsProvider")}
 						</label>
-						{isKioskDemo() ? (
+						{isWebMode() ? (
+							<>
 							<select
 								id="tts-provider-select"
 								data-testid="gateway-tts-provider"
@@ -7485,9 +7476,7 @@ export function SettingsTab() {
 									) as TtsProviderId;
 									setTtsProvider(next);
 									const nextVoice =
-										next === "nextain"
-											? KIOSK_DEMO_TTS_VOICE
-											: "";
+										next === "nextain" ? webCloudVoice : "";
 									setTtsVoice(nextVoice);
 									persistConfig({ ttsProvider: next, ttsVoice: nextVoice });
 								}}
@@ -7497,26 +7486,8 @@ export function SettingsTab() {
 									{t("webSpeech.synthesisProvider")}
 								</option>
 							</select>
-						) : isWebMode() ? (
-							<>
-								<select
-									id="tts-provider-select"
-									data-testid="gateway-tts-provider"
-									value="browser"
-									disabled={
-										typeof window === "undefined" ||
-										!("speechSynthesis" in window)
-									}
-									onChange={() => {
-										setTtsProvider("browser");
-										persistConfig({ ttsProvider: "browser" });
-									}}
-								>
-									<option value="browser">
-										{t("webSpeech.synthesisProvider")}
-									</option>
-								</select>
-								{(typeof window === "undefined" ||
+								{ttsProvider === "browser" &&
+									(typeof window === "undefined" ||
 									!("speechSynthesis" in window)) && (
 									<div
 										className="settings-hint"
@@ -7767,7 +7738,7 @@ export function SettingsTab() {
 
 					{/* TTS Voice picker — dynamic based on provider */}
 					{(() => {
-						if (isWebMode() && (!isKioskDemo() || ttsProvider === "browser")) {
+						if (isWebMode() && ttsProvider === "browser") {
 							const synthSupported =
 								typeof window !== "undefined" && "speechSynthesis" in window;
 							const langPrefix = locale.slice(0, 2).toLowerCase();
