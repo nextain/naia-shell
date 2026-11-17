@@ -5,7 +5,10 @@ vi.mock("../../logger", () => ({
 	Logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
-import { createWebSpeechSttSession } from "../web-speech-stt";
+import {
+	createWebSpeechSttSession,
+	webSpeechSttOptions,
+} from "../web-speech-stt";
 
 /**
  * Minimal fake of the browser SpeechRecognition object, letting tests
@@ -233,5 +236,95 @@ describe("createWebSpeechSttSession — network error retry loop (#623)", () => 
 			{ transcript: "다시 시작", isFinal: true, confidence: 0.9 },
 		]);
 		expect(errors).toHaveLength(1);
+	});
+});
+
+describe("createWebSpeechSttSession — build options (19판)", () => {
+	beforeEach(() => {
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("desktop build keeps the #615 check: two empty finals report empty-transcript", async () => {
+		const session = createWebSpeechSttSession(
+			"ko-KR",
+			webSpeechSttOptions(false),
+		);
+		const errors: { code: string }[] = [];
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		recognition.emitResult([{ transcript: "", confidence: 1, isFinal: true }]);
+		recognition.emitResult([{ transcript: "", confidence: 1, isFinal: true }]);
+
+		expect(errors.map((e) => e.code)).toEqual(["empty-transcript"]);
+	});
+
+	it("web build drops empty finals without erroring", async () => {
+		const session = createWebSpeechSttSession(
+			"ko-KR",
+			webSpeechSttOptions(true),
+		);
+		const errors: { code: string }[] = [];
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		for (let i = 0; i < 5; i++) {
+			recognition.emitResult([
+				{ transcript: "", confidence: 0, isFinal: true },
+			]);
+		}
+
+		expect(errors).toEqual([]);
+	});
+});
+
+describe("createWebSpeechSttSession — late results after stop (19판)", () => {
+	beforeEach(() => {
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("drops results a stopped recognizer flushes after stop()", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		const results: { transcript: string }[] = [];
+		session.onResult((r) => results.push(r));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		await session.stop();
+		// Real browsers still deliver the pending final after stop().
+		recognition.emitResult([
+			{ transcript: "멈춘 뒤 결과", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(recognition.stop).toHaveBeenCalledTimes(1);
+		expect(results).toEqual([]);
+	});
+
+	it("after a pause/resume only the new recognizer forwards results", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		const results: { transcript: string }[] = [];
+		session.onResult((r) => results.push(r));
+
+		await session.start();
+		const first = FakeSpeechRecognition.instances[0];
+		// TTS self-echo pause: stop then start again.
+		await session.stop();
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+
+		first.emitResult([
+			{ transcript: "나이아 목소리 메아리", confidence: 0.9, isFinal: true },
+		]);
+		second.emitResult([
+			{ transcript: "사용자 말", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(results.map((r) => r.transcript)).toEqual(["사용자 말"]);
 	});
 });

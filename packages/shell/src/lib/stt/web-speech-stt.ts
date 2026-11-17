@@ -77,6 +77,15 @@ export interface WebSpeechSttOptions {
 	detectEmptyBackend?: boolean;
 }
 
+/**
+ * Session options per build. Desktop (WebView2) keeps the #615 empty-result
+ * check so a dead speech backend still turns the mic off; the web build only
+ * drops empty results.
+ */
+export function webSpeechSttOptions(webMode: boolean): WebSpeechSttOptions {
+	return { detectEmptyBackend: !webMode };
+}
+
 /** Create a Web Speech API STT session. */
 export function createWebSpeechSttSession(
 	language: string,
@@ -136,12 +145,17 @@ export function createWebSpeechSttSession(
 				throw new Error(msg);
 			}
 
-			recognition = buildRecognition();
+			const instance = buildRecognition();
+			recognition = instance;
 			consecutiveEmptyFinals = 0;
 			emptyTranscriptErrorReported = false;
 			stopped = false;
 
-			recognition.onresult = (event: SpeechRecognitionEvent) => {
+			instance.onresult = (event: SpeechRecognitionEvent) => {
+				// Browsers still flush results after stop() (and the TTS self-echo
+				// pause restarts with a new instance). Only the live instance may
+				// forward results; late ones from a stopped instance are dropped.
+				if (stopped || recognition !== instance) return;
 				for (let i = event.resultIndex; i < event.results.length; i++) {
 					const res = event.results[i];
 					const transcript = res[0].transcript;

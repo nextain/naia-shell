@@ -207,6 +207,7 @@ import {
 import {
 	createApiSttSession,
 	createWebSpeechSttSession,
+	webSpeechSttOptions,
 	getSttProvider,
 	isWebSpeechAvailable,
 } from "../lib/stt";
@@ -4593,9 +4594,10 @@ export function ChatArea({
 					} else if (isWebBased) {
 						// Web Speech API — browser built-in, free, no model download
 						// 웹판 브라우저는 음악·멈춤 때도 빈 결과를 내므로 빈 결과 검사(#615, WebView2 용)를 끈다.
-						const session = createWebSpeechSttSession(sttLang, {
-							detectEmptyBackend: !isWebMode(),
-						});
+						const session = createWebSpeechSttSession(
+							sttLang,
+							webSpeechSttOptions(isWebMode()),
+						);
 						let webSpeechError = false;
 						const cleanupResult = session.onResult(handleSttResult);
 						sttCleanupRef.current.push(cleanupResult);
