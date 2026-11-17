@@ -67,8 +67,22 @@ export function isWebSpeechAvailable(): boolean {
  */
 const EMPTY_FINAL_ERROR_THRESHOLD = 2;
 
+export interface WebSpeechSttOptions {
+	/**
+	 * Report `empty-transcript` after consecutive empty finals (WebView2 with
+	 * no speech backend, #615). Real browsers in the web build also emit empty
+	 * finals for non-speech sound (music, a stop() flush), so the web build
+	 * turns this off and only drops the empty results.
+	 */
+	detectEmptyBackend?: boolean;
+}
+
 /** Create a Web Speech API STT session. */
-export function createWebSpeechSttSession(language: string): SttSession {
+export function createWebSpeechSttSession(
+	language: string,
+	options: WebSpeechSttOptions = {},
+): SttSession {
+	const detectEmptyBackend = options.detectEmptyBackend ?? true;
 	let resultCallbacks: ((result: SttResult) => void)[] = [];
 	let errorCallbacks: ((error: { code: string; message: string }) => void)[] =
 		[];
@@ -142,6 +156,7 @@ export function createWebSpeechSttSession(language: string): SttSession {
 					if (isFinal && transcript.trim() === "") {
 						consecutiveEmptyFinals++;
 						if (
+							detectEmptyBackend &&
 							consecutiveEmptyFinals >= EMPTY_FINAL_ERROR_THRESHOLD &&
 							!emptyTranscriptErrorReported
 						) {

@@ -130,6 +130,34 @@ describe("createWebSpeechSttSession — empty transcript detection (#615)", () =
 			{ transcript: "날씨 어때요", isFinal: true, confidence: 0.8 },
 		]);
 	});
+
+	it("web build (detectEmptyBackend: false) drops empty finals without erroring", async () => {
+		const session = createWebSpeechSttSession("ko-KR", {
+			detectEmptyBackend: false,
+		});
+		const results: { transcript: string; isFinal: boolean }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+
+		// Music or a stop() flush in a real browser: several empty finals.
+		for (let i = 0; i < 5; i++) {
+			recognition.emitResult([
+				{ transcript: "", confidence: 0, isFinal: true },
+			]);
+		}
+		recognition.emitResult([
+			{ transcript: "노래 틀어줘", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(errors).toEqual([]);
+		expect(results).toEqual([
+			{ transcript: "노래 틀어줘", isFinal: true, confidence: 0.9 },
+		]);
+	});
 });
 
 describe("createWebSpeechSttSession — network error retry loop (#623)", () => {
