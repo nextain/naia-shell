@@ -19,6 +19,8 @@ import {
 	isLegacyBundledVrmModel,
 } from "../lib/avatar-presets";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import { getTtsProviderMeta } from "../lib/tts/registry";
+import { synthesizeTts } from "../lib/tts/synthesize";
 import {
 	activateNaiaLlm,
 	isNewCore,
@@ -193,6 +195,7 @@ interface OnboardingSnapshot {
 	memoryLlmProvider: "none" | "naia" | "vllm" | "ollama";
 	ttsEnabled: boolean;
 	webVoiceURI: string;
+	cloudVoice: string;
 	localVoiceEnabled: boolean;
 }
 
@@ -347,6 +350,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	// Voice step state — default ON with the free Web TTS engine (FR-VOICE onboarding).
 	const [ttsEnabled, setTtsEnabled] = useState(true);
 	const [webVoiceURI, setWebVoiceURI] = useState("");
+	// Naia Cloud(드래곤 HD) 목소리 — 로그인했을 때만 고를 수 있고, 고르면 브라우저 목소리 대신 쓴다.
+	const [cloudVoice, setCloudVoice] = useState("");
+	const [cloudVoiceError, setCloudVoiceError] = useState("");
 	const [webVoices, setWebVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [voicePreviewing, setVoicePreviewing] = useState(false);
 	const [localVoiceEnabled, setLocalVoiceEnabled] = useState(false);
@@ -461,6 +467,39 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		utter.onend = () => setVoicePreviewing(false);
 		utter.onerror = () => setVoicePreviewing(false);
 		window.speechSynthesis.speak(utter);
+	}
+
+	const cloudVoices = getTtsProviderMeta("nextain")?.voices ?? [];
+
+	// 로그인하면 기본 목소리를 드래곤 HD 첫 목소리로 둔다(브라우저 목소리를 직접 고르면 그쪽이 이김).
+	useEffect(() => {
+		if (naiaLoginDone && !cloudVoice && !webVoiceURI && cloudVoices[0]) {
+			setCloudVoice(cloudVoices[0].id);
+		}
+	}, [naiaLoginDone, cloudVoice, webVoiceURI, cloudVoices]);
+
+	async function previewCloudVoice(voice: string) {
+		const naiaKey =
+			loadConfig()?.naiaKey ?? localStorage.getItem("naia-remote-key") ?? "";
+		setCloudVoiceError("");
+		setVoicePreviewing(true);
+		try {
+			const { audioBase64 } = await synthesizeTts({
+				text: t("onboard.voice.previewText"),
+				voice,
+				provider: "nextain",
+				naiaKey,
+				gatewayUrl: LAB_GATEWAY_URL,
+			});
+			const mime = audioBase64.startsWith("UklGR") ? "wav" : "mp3";
+			const audio = new Audio(`data:audio/${mime};base64,${audioBase64}`);
+			audio.onended = () => setVoicePreviewing(false);
+			audio.onerror = () => setVoicePreviewing(false);
+			await audio.play();
+		} catch (err) {
+			setVoicePreviewing(false);
+			setCloudVoiceError(err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	async function refreshVoxCpm2InstallationForOnboarding(): Promise<{
@@ -691,6 +730,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryLlmProvider,
 			ttsEnabled,
 			webVoiceURI,
+			cloudVoice,
 			localVoiceEnabled,
 		};
 	});
@@ -1047,6 +1087,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryLlmProvider,
 			ttsEnabled,
 			webVoiceURI,
+			cloudVoice,
 			localVoiceEnabled,
 		},
 	) {
@@ -1118,7 +1159,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						localVoiceEnabled: true,
 						vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST,
 					}
-				: {
+				: snapshot.ttsEnabled && snapshot.cloudVoice && snapshot.naiaLoginDone
+					? {
+							ttsEnabled: true,
+							ttsProvider: "nextain" as const,
+							ttsVoice: snapshot.cloudVoice,
+						}
+					: {
 						ttsEnabled: snapshot.ttsEnabled,
 						ttsProvider: snapshot.ttsEnabled
 							? !snapshot.webVoiceURI && base.ttsProvider === "nextain"
@@ -1673,12 +1720,57 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								</span>
 							</button>
 						</div>
+						{ttsEnabled && naiaLoginDone && cloudVoices.length > 0 && (
+							<div
+								className="onboarding-step__provider-done"
+								data-testid="onboarding-cloud-voice"
+							>
+								<span className="onboarding-step__provider-check">
+									{t("onboard.voice.cloudTitle")}
+								</span>
+								<p>{t("onboard.voice.cloudHint")}</p>
+								<div className="onboarding-step__options">
+									{cloudVoices.map((voice) => (
+										<button
+											key={voice.id}
+											type="button"
+											className={`onboarding-step__option${cloudVoice === voice.id ? " onboarding-step__option--selected" : ""}`}
+											onClick={() => {
+												setCloudVoice(voice.id);
+												setWebVoiceURI("");
+												void previewCloudVoice(voice.id);
+											}}
+											disabled={voicePreviewing}
+										>
+											<span className="onboarding-step__option-label">
+												{voicePreviewing && cloudVoice === voice.id
+													? t("onboard.voice.previewing")
+													: voice.label}
+											</span>
+										</button>
+									))}
+								</div>
+								{cloudVoiceError && (
+									<p className="onboarding-step__hint onboarding-step__hint--warn">
+										{cloudVoiceError}
+									</p>
+								)}
+							</div>
+						)}
 						{ttsEnabled && webVoices.length > 0 && (
 							<div className="onboarding-step__voice-picker">
+								{naiaLoginDone && cloudVoices.length > 0 && (
+									<span className="onboarding-step__hint">
+										{t("onboard.voice.browserTitle")}
+									</span>
+								)}
 								<select
 									className="onboarding-step__input"
 									value={webVoiceURI}
-									onChange={(e) => setWebVoiceURI(e.target.value)}
+									onChange={(e) => {
+										setWebVoiceURI(e.target.value);
+										if (e.target.value) setCloudVoice("");
+									}}
 								>
 									<option value="">
 										{t("settings.memoryEmbeddingDeviceAuto")}
