@@ -13,3 +13,7 @@ Show the ready model and fallback notice in a keyboard-operable disclosure, init
 ## Verification status
 
 Not yet run. Record before/after message rectangles, ancestor clipping and pointer hits for 1280 × 720, 800 × 450 and 1920 × 1080; exercise disclosure and return action by pointer and keyboard, and error/fallback/retry/input access. Confirm whether the evidence reproduces the original condition. Existing user cache, actual touch, a screen reader and real kiosk entry are separate verification items. No deployment of this candidate has been performed.
+
+## Current evidence
+
+On the unchanged 0c7c0eeb build, the 1280 × 720 and 800 × 450 message viewport measured 16px while its content needed 75px; the fallback status used 100px. At 1920 × 1080 the message viewport measured 150px. A candidate run measured 68px with details closed and 64px with details open at 1280 × 720, and 64px with details open at 800 × 450. Pointer and Tab checks reached messages, input and error actions at all three sizes. The complete combined browser run exited nonzero because the independently reproduced model-switch persistence defect failed on all three sizes; it is not a passing model-switch test. See `web-model-switch-persistence-20261119.md` in the separate model-switch worktree and `/tmp/alpha-chat-candidate-v4-browser.log` on the test host. The repeatable layout-only test does not claim model-switch persistence works.
