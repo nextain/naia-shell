@@ -19,6 +19,7 @@ import {
 	generateDjLineViaChat,
 } from "./web-radio-dj";
 import { isWebLlmModelId } from "./webllm-model";
+import { trackWebGpuAnalyticsEvent } from "./usage-analytics";
 
 export interface WorkerLike {
 	postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -305,11 +306,20 @@ export function createAgentBridge(deps: {
 						progress: typeof data.progress === "number" ? data.progress : 0,
 					});
 				}
+			} else if (data.kind === "engine-download-start") {
+				trackWebGpuAnalyticsEvent("webgpu_model_download_start");
+			} else if (data.kind === "engine-download-complete") {
+				trackWebGpuAnalyticsEvent("webgpu_model_download_complete");
+			} else if (data.kind === "engine-download-fail") {
+				trackWebGpuAnalyticsEvent("webgpu_model_download_fail");
 			} else if (data.kind === "engine-ready") {
 				Logger.info("WebAgent", "webllm-ready", {
 					model: data.model,
 					elapsedMs: data.elapsedMs,
 				});
+				if (import.meta.env.VITE_NAIA_WEB_LLM !== "fake") {
+					trackWebGpuAnalyticsEvent("webgpu_model_ready");
+				}
 				if (isWebLlmModelId(data.model)) {
 					setWebModelStatus({
 						phase: "ready",

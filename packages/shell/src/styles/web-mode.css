@@ -1260,3 +1260,42 @@
 
 /* Web layout follows the viewport; the native shell keeps its manual control. */
 [data-naia-web="true"] [data-testid="layout-orientation-toggle"] { display: none; }
+
+[data-naia-web="true"] .web-usage-consent {
+	position: fixed;
+	left: 16px;
+	right: 16px;
+	bottom: 16px;
+	z-index: 100000;
+	max-width: 680px;
+	margin: 0 auto;
+	padding: 16px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--background);
+	color: var(--foreground);
+	box-shadow: 0 8px 32px rgb(0 0 0 / 28%);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+}
+[data-naia-web="true"] .web-usage-consent__copy { min-width: 0; }
+[data-naia-web="true"] .web-usage-consent__copy p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; }
+[data-naia-web="true"] .web-usage-consent__actions { display: flex; flex: none; gap: 8px; }
+[data-naia-web="true"] .web-usage-consent__actions button,
+[data-naia-web="true"] .web-usage-consent__manage {
+	min-height: 36px;
+	padding: 7px 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--background);
+	color: var(--foreground);
+	cursor: pointer;
+}
+[data-naia-web="true"] .web-usage-consent__actions button:last-child { background: var(--foreground); color: var(--background); }
+[data-naia-web="true"] .web-usage-consent__manage { position: fixed; right: 12px; bottom: 12px; z-index: 99999; }
+@media (max-width: 560px) {
+	[data-naia-web="true"] .web-usage-consent { align-items: stretch; flex-direction: column; }
+	[data-naia-web="true"] .web-usage-consent__actions { justify-content: flex-end; }
+}

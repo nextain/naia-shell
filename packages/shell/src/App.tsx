@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
 import { WebLoginScreen } from "./components/WebLoginScreen";
+import { WebGpuUsageConsent } from "./components/WebGpuUsageConsent";
 import { useAgentAuthSync } from "./hooks/useAgentAuthSync";
 import {
 	applyTheme,
@@ -1264,10 +1265,16 @@ export function App() {
 			? "setup"
 			: chatModeOverride;
 	if (isWebLoginRequired() && !webAuthenticated) {
-		return <WebLoginScreen authError={webAuthError} />;
+		return (
+			<>
+				{isWebMode() && <WebGpuUsageConsent />}
+				<WebLoginScreen authError={webAuthError} />
+			</>
+		);
 	}
 	return (
 		<>
+			{isWebMode() && <WebGpuUsageConsent />}
 			<AppShellFrame
 				appReady={appReady}
 				bootComplete={appReady && installedAppsReady}
