@@ -40,7 +40,7 @@ export function WebPushSettings() {
 		<details className="settings-field" data-testid="web-push-settings">
 			<summary>{t("webPush.title")}</summary>
 			<p>{t("webPush.description")}</p>
-			<button type="button" className="voice-preview-btn" disabled={busy} onClick={() => void enable()}>{t("webPush.enable")}</button>
+			<button type="button" className="voice-preview-btn" disabled={busy} data-usage-event="web-push-settings.v026-add-1.click" onClick={() => void enable()}>{t("webPush.enable")}</button>
 			<p role="status">{status}</p>
 			{subscription && <details><summary>{t("webPush.subscriptionDetails")}</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{subscription}</pre></details>}
 		</details>

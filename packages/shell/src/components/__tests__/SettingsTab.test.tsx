@@ -154,7 +154,8 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
-import { setLocale, t } from "../../lib/i18n";
+import { getLocale, setLocale, t } from "../../lib/i18n";
+import { usage } from "../../lib/usage-runtime";
 import { Logger } from "../../lib/logger";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
@@ -1705,6 +1706,52 @@ describe("SettingsTab", () => {
 		expect(saved.subLlmModel).toBeUndefined();
 	});
 
+	it("records a successful settings login after balance lookup without a browser failure", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		mockInvoke.mockResolvedValue([]);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ credits: 10 }),
+			}),
+		);
+		const choice = vi
+			.spyOn(usage, "choice")
+			.mockReturnValue({ enabled: true, epoch: "test" });
+		const record = vi.spyOn(usage, "record").mockImplementation(() => {});
+		render(<SettingsTab />);
+		await waitFor(() =>
+			expect(eventListeners.get("naia_auth_complete")).toBeDefined(),
+		);
+		fireEvent.click(screen.getByTestId("profile-login-naia"));
+		await waitFor(() =>
+			expect(record).toHaveBeenCalledWith(
+				"login.browser.start",
+				"settings",
+				expect.anything(),
+			),
+		);
+		await act(async () => {
+			await eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key" },
+			});
+		});
+		expect(record).toHaveBeenCalledWith(
+			"login.credentials.saved",
+			"settings",
+			expect.anything(),
+		);
+		expect(record).not.toHaveBeenCalledWith(
+			"login.attempt.fail",
+			"settings",
+			expect.anything(),
+		);
+		choice.mockRestore();
+		record.mockRestore();
+	});
+
 	it("persists Naia auth callback even when no config exists yet", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		mockInvoke.mockResolvedValue([]);
@@ -2624,6 +2671,131 @@ describe("SettingsTab", () => {
 		expect(await screen.findByRole("alert")).toHaveTextContent(
 			"settings files are locked",
 		);
+	});
+});
+
+// ── UC-UI-FONT-SCALE-20261105: 글자 크기 ─────────────────────────────────────
+
+describe("SettingsTab — UI font scale (UC-UI-FONT-SCALE-20261105)", () => {
+	afterEach(async () => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+		document.documentElement.style.removeProperty("--ui-font-scale");
+		delete document.documentElement.dataset.uiFontScale;
+		await setLocale("en");
+	});
+
+	function fontScaleRadios() {
+		const group = screen.getByRole("radiogroup", { name: "Font size" });
+		return Array.from(
+			group.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+		);
+	}
+
+	it("defaults to Normal when nothing is stored", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const radios = fontScaleRadios();
+		expect(radios.map((radio) => radio.textContent)).toEqual([
+			"Small",
+			"Normal",
+			"Large",
+			"Extra large",
+		]);
+		const checked = radios.filter(
+			(radio) => radio.getAttribute("aria-checked") === "true",
+		);
+		expect(checked.map((radio) => radio.textContent)).toEqual(["Normal"]);
+		// roving tabindex: only the selected option is in the tab order
+		expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, 0, -1, -1]);
+	});
+
+	it("shows the persisted choice and treats an unknown value as Normal", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", uiFontScale: "large" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		expect(screen.getByTestId("ui-font-scale-large")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		cleanup();
+
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", uiFontScale: "gigantic" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		expect(screen.getByTestId("ui-font-scale-normal")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+	});
+
+	it("applies immediately and saves without the Save button", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash" }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(screen.getByTestId("ui-font-scale-xlarge"));
+
+		const root = document.documentElement;
+		expect(root.style.getPropertyValue("--ui-font-scale")).toBe("1.5");
+		expect(root.dataset.uiFontScale).toBe("xlarge");
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.uiFontScale).toBe("xlarge");
+		// other settings survive the immediate save
+		expect(saved.model).toBe("gemini-2.5-flash");
+		expect(screen.getByTestId("ui-font-scale-xlarge")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+	});
+
+	it("moves the selection with arrow keys and Home/End", () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "gemini" }));
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const normal = screen.getByTestId("ui-font-scale-normal");
+		normal.focus();
+		fireEvent.keyDown(normal, { key: "ArrowLeft" });
+		const small = screen.getByTestId("ui-font-scale-small");
+		expect(small).toHaveAttribute("aria-checked", "true");
+		expect(document.activeElement).toBe(small);
+		expect(
+			document.documentElement.style.getPropertyValue("--ui-font-scale"),
+		).toBe("0.9");
+
+		fireEvent.keyDown(small, { key: "End" });
+		expect(screen.getByTestId("ui-font-scale-xlarge")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		fireEvent.keyDown(screen.getByTestId("ui-font-scale-xlarge"), {
+			key: "ArrowRight",
+		});
+		// wraps around
+		expect(screen.getByTestId("ui-font-scale-small")).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") || "{}").uiFontScale,
+		).toBe("small");
 	});
 });
 
@@ -6260,77 +6432,82 @@ describe("web mode backgrounds and NVA (r7)", () => {
 	});
 
 	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, defaults to Naia Cloud TTS in both profile and voice tabs without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {
-		mockInvoke.mockResolvedValue([]);
-		setWebAssetsModeForTests(true);
-		vi.stubEnv("MODE", "web");
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		localStorage.setItem("naia-remote-key", "test-kiosk-fixture-only");
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({
-				provider: "nextain",
-				model: "gpt-5.6-luna",
-				apiKey: "",
-				ttsEnabled: true,
-				ttsProvider: "naia-local-voice",
-			}),
-		);
+		const previousLocale = getLocale();
+		await setLocale("ko");
+		try {
+			mockInvoke.mockResolvedValue([]);
+			setWebAssetsModeForTests(true);
+			vi.stubEnv("MODE", "web");
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+			localStorage.setItem("naia-remote-key", "test-kiosk-fixture-only");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+					apiKey: "",
+					ttsEnabled: true,
+					ttsProvider: "naia-local-voice",
+				}),
+			);
 
-		render(<SettingsTab />);
-		// Profile tab: no lab-disconnect-btn, no memory-transfer-export in kiosk mode, no local-voice starting badge, LLM main shows nextain / gpt-5.6-luna, profile-tts-provider defaults to nextain (Naia Cloud TTS) with browser fallback option
-		expect(document.querySelector(".lab-disconnect-btn")).toBeNull();
-		expect(screen.queryByTestId("memory-transfer-export")).toBeNull();
-		expect(document.querySelector('[data-testid="slot-tts-live"]')).toBeNull();
-		expect(screen.getByTestId("slot-main").textContent).toContain(
-			"nextain / gpt-5.6-luna",
-		);
-		const profileTtsSelect = screen.getByTestId(
-			"profile-tts-provider",
-		) as HTMLSelectElement;
-		expect(Array.from(profileTtsSelect.options).map((o) => o.value)).toEqual([
-			"nextain",
-			"browser",
-		]);
-		expect(profileTtsSelect.value).toBe("nextain");
+			render(<SettingsTab />);
+			// Profile tab: no lab-disconnect-btn, no memory-transfer-export in kiosk mode, no local-voice starting badge, LLM main shows nextain / gpt-5.6-luna, profile-tts-provider defaults to nextain (Naia Cloud TTS) with browser fallback option
+			expect(document.querySelector(".lab-disconnect-btn")).toBeNull();
+			expect(screen.queryByTestId("memory-transfer-export")).toBeNull();
+			expect(document.querySelector('[data-testid="slot-tts-live"]')).toBeNull();
+			expect(screen.getByTestId("slot-main").textContent).toContain(
+				"nextain / gpt-5.6-luna",
+			);
+			const profileTtsSelect = screen.getByTestId(
+				"profile-tts-provider",
+			) as HTMLSelectElement;
+			expect(Array.from(profileTtsSelect.options).map((o) => o.value)).toEqual([
+				"nextain",
+				"browser",
+			]);
+			expect(profileTtsSelect.value).toBe("nextain");
 
-		// Knowledge tab is visible in kiosk mode
-		expect(
-			document.querySelector('[data-settings-tab="knowledge"]'),
-		).not.toBeNull();
+			// Knowledge tab is visible in kiosk mode
+			expect(
+				document.querySelector('[data-settings-tab="knowledge"]'),
+			).not.toBeNull();
 
-		// General tab: no web-logout-btn in kiosk mode
-		gotoSettingsTab("general");
-		expect(screen.queryByTestId("web-logout-btn")).toBeNull();
+			// General tab: no web-logout-btn in kiosk mode
+			gotoSettingsTab("general");
+			expect(screen.queryByTestId("web-logout-btn")).toBeNull();
 
-		// Voice tab: shows the same Naia Cloud TTS value and options
-		gotoSettingsTab("voice");
-		const voiceTtsSelect = document.getElementById(
-			"tts-provider-select",
-		) as HTMLSelectElement;
-		expect(Array.from(voiceTtsSelect.options).map((o) => o.value)).toEqual([
-			"nextain",
-			"browser",
-		]);
-		expect(voiceTtsSelect.value).toBe("nextain");
-		const nextainVoiceSelect = document.getElementById(
-			"tts-voice-select",
-		) as HTMLSelectElement;
-		expect(nextainVoiceSelect).not.toBeNull();
-		expect(nextainVoiceSelect.value).toBe("ko-KR-Neural2-A");
-		expect(nextainVoiceSelect.disabled).toBe(true);
-		expect(
-			Array.from(nextainVoiceSelect.options).map((o) => ({
-				value: o.value,
-				label: o.textContent,
-			})),
-		).toEqual([
-			{
-				value: "ko-KR-Neural2-A",
-				label: "기본 여성(Neural2)",
-			},
-		]);
-
-		vi.unstubAllEnvs();
+			// Voice tab: shows the same Naia Cloud TTS value and options
+			gotoSettingsTab("voice");
+			const voiceTtsSelect = document.getElementById(
+				"tts-provider-select",
+			) as HTMLSelectElement;
+			expect(Array.from(voiceTtsSelect.options).map((o) => o.value)).toEqual([
+				"nextain",
+				"browser",
+			]);
+			expect(voiceTtsSelect.value).toBe("nextain");
+			const nextainVoiceSelect = document.getElementById(
+				"tts-voice-select",
+			) as HTMLSelectElement;
+			expect(nextainVoiceSelect).not.toBeNull();
+			expect(nextainVoiceSelect.value).toBe("ko-KR-Neural2-A");
+			expect(nextainVoiceSelect.disabled).toBe(true);
+			expect(
+				Array.from(nextainVoiceSelect.options).map((o) => ({
+					value: o.value,
+					label: o.textContent,
+				})),
+			).toEqual([
+				{
+					value: "ko-KR-Neural2-A",
+					label: "기본 여성(Neural2)",
+				},
+			]);
+		} finally {
+			vi.unstubAllEnvs();
+			await setLocale(previousLocale);
+		}
 	});
 
 	it("FR-WEB-KIOSK-FIX.10, R3.2 shows nextain / gpt-5.6-luna on profile tab in kiosk mode even without saved model and styles memory-transfer-export with voice-preview-btn in normal web mode", () => {
@@ -6399,107 +6576,112 @@ describe("web mode backgrounds and NVA (r7)", () => {
 	});
 
 	it("FR-WEB-KIOSK-FIX7B.6 renders all Jina card fields in the Persona tab, marks edited fields with '카드에서 바꿈', injects edits into the conversation prompt, and reverts on '카드 원래대로'", async () => {
-		mockInvoke.mockResolvedValue([]);
-		setWebAssetsModeForTests(true);
-		vi.stubEnv("MODE", "web");
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		const { buildKioskDemoConfigSeed } = await import("../../lib/config-seed");
-		const { buildSystemPrompt } = await import("../../lib/persona");
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify(buildKioskDemoConfigSeed()),
-		);
+		const previousLocale = getLocale();
+		await setLocale("ko");
+		try {
+			mockInvoke.mockResolvedValue([]);
+			setWebAssetsModeForTests(true);
+			vi.stubEnv("MODE", "web");
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+			const { buildKioskDemoConfigSeed } = await import("../../lib/config-seed");
+			const { buildSystemPrompt } = await import("../../lib/persona");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify(buildKioskDemoConfigSeed()),
+			);
 
-		render(<SettingsTab />);
-		gotoSettingsTab("persona");
+			render(<SettingsTab />);
+			gotoSettingsTab("persona");
 
-		expect(screen.getByTestId("charcard-fields-editor")).toBeInTheDocument();
-		expect(screen.getByTestId("charcard-field-name")).toHaveValue("지나");
-		expect(
-			(
-				screen.getByTestId(
-					"charcard-field-description",
-				) as HTMLTextAreaElement
-			).value,
-		).toContain("넥스테인");
-		expect(
-			(
-				screen.getByTestId(
-					"charcard-field-personality",
-				) as HTMLTextAreaElement
-			).value,
-		).toContain("존댓말");
-		expect(
-			(screen.getByTestId("charcard-field-scenario") as HTMLTextAreaElement)
-				.value,
-		).toContain("시연 공간");
-		expect(
-			(screen.getByTestId("charcard-field-first_mes") as HTMLTextAreaElement)
-				.value,
-		).toContain("게스트님, 안녕하세요.");
-		expect(screen.getByTestId("charcard-greeting-select")).toBeInTheDocument();
-		expect(
-			screen.getByTestId("charcard-field-mes_example"),
-		).toBeInTheDocument();
-		expect(screen.getByTestId("charcard-lorebook-list")).toBeInTheDocument();
-		expect(
-			screen.getByTestId("charcard-field-system_prompt"),
-		).toBeInTheDocument();
-		expect(
-			screen.getByTestId("charcard-field-post_history_instructions"),
-		).toBeInTheDocument();
-		expect(screen.getByTestId("charcard-field-creator")).toHaveValue("Nextain");
-		expect(
-			screen.getByTestId("charcard-field-creator_notes"),
-		).toBeInTheDocument();
-		expect(screen.getByTestId("charcard-field-tags")).toHaveValue(
-			"지나, Jina, Nextain, NAIA",
-		);
-		expect(screen.queryByTestId("card-field-modified-badge")).toBeNull();
-		expect(screen.getByTestId("card-revert-original-btn")).toBeDisabled();
+			expect(screen.getByTestId("charcard-fields-editor")).toBeInTheDocument();
+			expect(screen.getByTestId("charcard-field-name")).toHaveValue("지나");
+			expect(
+				(
+					screen.getByTestId(
+						"charcard-field-description",
+					) as HTMLTextAreaElement
+				).value,
+			).toContain("넥스테인");
+			expect(
+				(
+					screen.getByTestId(
+						"charcard-field-personality",
+					) as HTMLTextAreaElement
+				).value,
+			).toContain("존댓말");
+			expect(
+				(screen.getByTestId("charcard-field-scenario") as HTMLTextAreaElement)
+					.value,
+			).toContain("시연 공간");
+			expect(
+				(screen.getByTestId("charcard-field-first_mes") as HTMLTextAreaElement)
+					.value,
+			).toContain("게스트님, 안녕하세요.");
+			expect(screen.getByTestId("charcard-greeting-select")).toBeInTheDocument();
+			expect(
+				screen.getByTestId("charcard-field-mes_example"),
+			).toBeInTheDocument();
+			expect(screen.getByTestId("charcard-lorebook-list")).toBeInTheDocument();
+			expect(
+				screen.getByTestId("charcard-field-system_prompt"),
+			).toBeInTheDocument();
+			expect(
+				screen.getByTestId("charcard-field-post_history_instructions"),
+			).toBeInTheDocument();
+			expect(screen.getByTestId("charcard-field-creator")).toHaveValue("Nextain");
+			expect(
+				screen.getByTestId("charcard-field-creator_notes"),
+			).toBeInTheDocument();
+			expect(screen.getByTestId("charcard-field-tags")).toHaveValue(
+				"지나, Jina, Nextain, NAIA",
+			);
+			expect(screen.queryByTestId("card-field-modified-badge")).toBeNull();
+			expect(screen.getByTestId("card-revert-original-btn")).toBeDisabled();
 
-		// Edit personality and scenario
-		fireEvent.change(screen.getByTestId("charcard-field-personality"), {
-			target: { value: "고친 성격: 명랑하고 씩씩한 안내원" },
-		});
-		fireEvent.change(screen.getByTestId("charcard-field-scenario"), {
-			target: { value: "고친 상황: 미래형 전시관 로비" },
-		});
+			// Edit personality and scenario
+			fireEvent.change(screen.getByTestId("charcard-field-personality"), {
+				target: { value: "고친 성격: 명랑하고 씩씩한 안내원" },
+			});
+			fireEvent.change(screen.getByTestId("charcard-field-scenario"), {
+				target: { value: "고친 상황: 미래형 전시관 로비" },
+			});
 
-		expect(screen.getByTestId("card-modified-personality")).toHaveTextContent(
-			"카드에서 바꿈",
-		);
-		expect(screen.getByTestId("card-modified-scenario")).toHaveTextContent(
-			"카드에서 바꿈",
-		);
-		expect(
-			screen.getByTestId("card-field-modified-badge"),
-		).toHaveTextContent("카드에서 바꿈");
-		expect(screen.getByTestId("card-revert-original-btn")).not.toBeDisabled();
+			expect(screen.getByTestId("card-modified-personality")).toHaveTextContent(
+				"카드에서 바꿈",
+			);
+			expect(screen.getByTestId("card-modified-scenario")).toHaveTextContent(
+				"카드에서 바꿈",
+			);
+			expect(
+				screen.getByTestId("card-field-modified-badge"),
+			).toHaveTextContent("카드에서 바꿈");
+			expect(screen.getByTestId("card-revert-original-btn")).not.toBeDisabled();
 
-		// Verify edited values enter the actual conversation system prompt
-		const updatedCfg = JSON.parse(localStorage.getItem("naia-config")!);
-		const promptAfterEdit = buildSystemPrompt(updatedCfg.persona, updatedCfg);
-		expect(promptAfterEdit).toContain("고친 성격: 명랑하고 씩씩한 안내원");
-		expect(promptAfterEdit).toContain("고친 상황: 미래형 전시관 로비");
+			// Verify edited values enter the actual conversation system prompt
+			const updatedCfg = JSON.parse(localStorage.getItem("naia-config")!);
+			const promptAfterEdit = buildSystemPrompt(updatedCfg.persona, updatedCfg);
+			expect(promptAfterEdit).toContain("고친 성격: 명랑하고 씩씩한 안내원");
+			expect(promptAfterEdit).toContain("고친 상황: 미래형 전시관 로비");
 
-		// Click "카드 원래대로"
-		fireEvent.click(screen.getByTestId("card-revert-original-btn"));
-		expect(screen.queryByTestId("card-modified-personality")).toBeNull();
-		expect(screen.queryByTestId("card-modified-scenario")).toBeNull();
-		expect(screen.queryByTestId("card-field-modified-badge")).toBeNull();
-		expect(screen.getByTestId("card-revert-original-btn")).toBeDisabled();
+			// Click "카드 원래대로"
+			fireEvent.click(screen.getByTestId("card-revert-original-btn"));
+			expect(screen.queryByTestId("card-modified-personality")).toBeNull();
+			expect(screen.queryByTestId("card-modified-scenario")).toBeNull();
+			expect(screen.queryByTestId("card-field-modified-badge")).toBeNull();
+			expect(screen.getByTestId("card-revert-original-btn")).toBeDisabled();
 
-		const revertedCfg = JSON.parse(localStorage.getItem("naia-config")!);
-		const promptAfterRevert = buildSystemPrompt(
-			revertedCfg.persona,
-			revertedCfg,
-		);
-		expect(promptAfterRevert).not.toContain(
-			"고친 성격: 명랑하고 씩씩한 안내원",
-		);
-		expect(promptAfterRevert).toContain("존댓말");
-
-		vi.unstubAllEnvs();
+			const revertedCfg = JSON.parse(localStorage.getItem("naia-config")!);
+			const promptAfterRevert = buildSystemPrompt(
+				revertedCfg.persona,
+				revertedCfg,
+			);
+			expect(promptAfterRevert).not.toContain(
+				"고친 성격: 명랑하고 씩씩한 안내원",
+			);
+			expect(promptAfterRevert).toContain("존댓말");
+		} finally {
+			vi.unstubAllEnvs();
+			await setLocale(previousLocale);
+		}
 	});
 });

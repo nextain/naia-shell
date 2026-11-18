@@ -140,7 +140,7 @@ UC15 제품 수용 확장(#84):
 > - **S05a WRITE(전두엽=agent)**: agent 가 각 turn 을 `{adkPath}/conversations/{sessionId}.jsonl` append(`ConversationLogPort`). 인지흐름 = 사고→표현 후 *경험 외재화/기록*. sessionId 배선(proto+domain+codec). (Phase2: 음성 turn = agent 경유 동일 기록.)
 > - **S05b READ(shell, agent 독립 E1)**: HistoryTab 이 Rust IPC 로 conversations 직접 list/read/delete(**write 없음**). 죽은 directToolCall 대체.
 > - **S05c 관계(비구현)**: transcript = UC3/S41 memory recall 원재료 + 멀티모달 잠재기억 substrate(`audioRef` 예약).
-> - **검증(P02)**: agent write 계약(짝 naia-agent 저장소의 `conversation-log.contract.test.ts`: jsonl append·sessionId 격리·no-throw·CRLF — 이 저장소에는 없다) / shell read 계약(`conversation-store.test.ts`: 경계 가드·agent-down 빈목록) / 통합(`conversation-persistence.integration.test.ts`: 대화→재시작→복원 golden) + Playwright e2e(HistoryTab 복원)·e2e-tauri(Rust IPC adkPath 경계).
+> - **검증(P02)**: agent write 계약(짝 naia-agent 저장소의 conversation-log.contract.test.ts: jsonl append·sessionId 격리·no-throw·CRLF — 이 저장소에는 없다) / shell read 계약(`packages/shell/src/lib/__tests__/conversation-store.test.ts`: 경계 가드·agent-down 빈목록) / 통합(짝 naia-agent 저장소의 conversation-persistence.integration.test.ts: 대화→재시작→복원 golden) + Playwright e2e(`packages/shell/e2e/uc-history-transcript.spec.ts` HistoryTab 복원)·e2e-tauri(Rust IPC adkPath 경계).
 
 > **S72 워크스페이스 전환 설정 복원 (2026-06-24, 셸 feature)**: 워크스페이스(ADK path) 전환 시 그 워크스페이스의 정체성 설정(페르소나·이름·말투·locale·VRM·배경·BGM)이 복원돼야 한다. 현 버그 = 전환 핸들러(SettingsTab/WorkspaceCenterArea)가 ADK 포인터(localStorage `naia-adk-path`)만 바꾸고 기존 localStorage `naia-config` 를 유지 → 페르소나/VRM 안 바뀜. 초기 설정(AdkSetupScreen)은 `readNaiaConfig` 로 복원하나 전환 경로만 누락(비대칭).
 > - **S72a 복원(전환 핸들러)**: `setAdkPath` 후 config.json(persona/이름/말투/locale via `readNaiaConfig`) + ui-config.json(VRM/배경/BGM via `readNaiaUiConfig`) → localStorage `naia-config` 로 병합 복원 → reload. AdkSetupScreen 과 동형(비대칭 해소).
@@ -173,7 +173,7 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | **S-VOICE-CLOUD-OFF** (#603, epic #589) | 사용자는 음성 설정에서 타사 Google/OpenAI/ElevenLabs TTS·STT와 Gemini Live/OpenAI Realtime을 볼 수 없고, Naia Cloud TTS(게이트웨이 경유, 0.2.6 부터 Google Neural2 `ko-KR-Neural2-A`/`C` 이름 — 사용자 키 없이 Naia 계정으로만, FR-TTS.4)·Azure Voice Live·로컬 GPU/vLLM·browser/Edge/Vosk/Whisper만 쓴다. 이전 설정은 안전한 retained route로 이동하며 제거된 키는 저장·agent wire에 남지 않는다 | 설정 제어면 + 표현/감각 | `third-party-cloud-voice-absent.test.ts` · `config.test.ts` · `config-secrets.test.ts` · Settings/ChatArea focused tests · `cargo check` |
 | **S-CAP** (#365) | 모델을 고르면 그 모델 **능력에 맞춰 설정이 전개**(omni→STT/TTS 슬롯 숨김, 텍스트→노출). gateway 가 능력 선언 | 제어면(설정) — capability manifest 도출 | `test_models.py`·`capability-fetch.test.ts`·`slots.test.ts`. ⚠️ 라이브 /v1/models=게이트웨이 배포 |
 | **S-VRAM** (#2) | 내 GPU VRAM 을 감지해 **로컬에서 돌릴 수 있는 tier**(아바타·음성)를 보여주고 선택. opt-in 시 외부 슬롯 대신 로컬 | 제어면(설정) — VRAM→capability 브리지 | `vram-tiers.test.ts`. ⚠️ 실 VRAM 감지=실 GPU, 로컬 serving=windows-manager 로더(DEFER) |
-| **S-SLOT** (#gate-slots, 신규 — 2026-06-28) | 설정이 **naia 계정 게이트 → 6 클라우드 슬롯(LLM main·LLM sub·embedding·STT·TTS·video avatar) 각각 독립 설정** 순서로 전개. naia 계정 시 Gemini 기본값 자동 적용. 구 engine/ai/models/memory 분산을 통합해 "설정 헷갈림" 해소. **Naia는 provider가 아닌 접근 유형(게이트)**. local 런타임(cascade)은 별도 "naia-omni local setting" 영역(wm 연동, **DEFER**). legacy 고정 VRAM tier는 R2-3으로 폐기 → capability 토글+VRAM 예산(설계 P1.4) | 제어면(설정) — 게이트+슬롯 모델 | `settings-slots.contract.test.ts`(신규)·`settings-tab.test.ts`·`onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)=wm 언블록 후 |
+| **S-SLOT** (#gate-slots, 신규 — 2026-06-28) | 설정이 **naia 계정 게이트 → 6 클라우드 슬롯(LLM main·LLM sub·embedding·STT·TTS·video avatar) 각각 독립 설정** 순서로 전개. naia 계정 시 Gemini 기본값 자동 적용. 구 engine/ai/models/memory 분산을 통합해 "설정 헷갈림" 해소. **Naia는 provider가 아닌 접근 유형(게이트)**. local 런타임(cascade)은 별도 "naia-omni local setting" 영역(wm 연동, **DEFER**). legacy 고정 VRAM tier는 R2-3으로 폐기 → capability 토글+VRAM 예산(설계 P1.4) | 제어면(설정) — 게이트+슬롯 모델 | `packages/shell/src/lib/slots/__tests__/settings-slots.contract.test.ts`(신규)·`packages/shell/src/components/__tests__/SettingsTab.test.tsx`·`onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)=wm 언블록 후 |
 | **S-EMBKO** (한글 오프라인 임베딩, FR-SLOT.6 — 2026-07-15) | 한국어 사용자가 기억(memory) 임베딩을 **CPU 오프라인**으로 돌릴 때, 영어 전용(all-MiniLM/all-mpnet) 대신 **다국어(한국어) 모델을 선택**할 수 있다 — offline 모델 선택지에 `multilingual-e5-large`(1024d) 추가. 백엔드 naia-memory `OfflineEmbeddingProvider` 가 이미 지원(e5 query/passage 프리픽스·`device=cpu` 존중) → **셸이 노출만**(백엔드 무변경, 경계 준수). 기본값 무변경(선택지로만) | 제어면(설정) — 임베딩 슬롯 한글 모델 노출 | `settings-slots.contract.test.ts`(offline 모델 union·roundtrip). ⚠️ 실 다운로드/한글 회상=수동 프리페치 검증(부스 전, 2026-07-16) |
 | **S-VREC** (#2 후속, FR-VRAM.4 — 2026-06-30) | GPU 프로파일(VRAM)을 정하면 **그 예산 안에서 각 슬롯에 로컬 추천이 보인다** — 두뇌 탭 GPU 프로파일 아래 추천 요약, 음성/아바타/메인 셀렉터의 추천 옵션 배지, 프로파일 슬롯 개요 배지, 온보딩에도 추천 표시. **외부 슬롯은 숨기지 않고 추천만**(선택·확인은 사용자) | 제어면(설정) — VRAM 예산→슬롯 추천 | `tier-slots.test.ts`(6/6). ⚠️ 실제 로컬 기동=Round 2(wm 로더, DEFER) |
 | **S-VOICE** (FR-VOICE — 2026-06-30) | naia-local-voice(로컬 GPU 음성)를 고르면 **로컬 음성 호스트로 합성**(LLM 호스트 오용 수정). 로컬 엔진 미실행/미연결 시 **무료 음성으로 조용히 위장하지 않고** "로컬 음성 미가용"을 1회 명확히 알리고 무음. 음성 picker 채움 | 표현(speech) — 로컬 음성 정직화 | `synthesize.test.ts`(naia-local-voice host 라우팅 3건). ⚠️ 실제 합성 동작=로컬 cascade 기동(Round 2, DEFER) |
@@ -181,7 +181,7 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | **S-VOICE-READY** (#418, FR-VOICE.14~15 — 2026-08-13) | 로컬 음성이 선택된 상태에서 사용자는 "포트가 열렸다"가 아니라 **음성 엔진의 준비 신호(façade `/health` 의 TTS ready)** 를 기준으로 상태를 본다: 엔진 미실행이면 Voice Reference 영역이 침묵 대기·일반 네트워크 오류 대신 "엔진 실행 필요"를 명시하고 그 자리에서 시작할 수 있으며, 엔진이 떠 있지만 TTS 미가용이면 준비 중임을 안내한다. e2e/하니스 시드는 제품 config 스키마의 시드 빌더(`config-seed.ts`)에서 생성되어 폐기 필드가 하니스로 재유입되지 않는다(2026-08-11 voice-6g 하니스 사고 재발 방지). | 표현(설정 Voice Reference) + e2e 하니스 | `local-runtime.test.ts`(health 파싱·미도달 null) + `RefAudioSection.test.tsx`(엔진 미실행 명시 상태+시작 액션) + `config-seed.test.ts`(폐기 키 런타임 거부·마이그레이션 폐기 목록 일치) + Tauri 94 실측 `/health` |
 | **S-SHELL-ISO** (#425, FR-SHELL-ISO.1 — 2026-08-13) | 개발자는 운영 설치본(Naia)을 켜 둔 채 개발 인스턴스(**Naia Dev**)를 동시에 실행한다. 두 앱은 설정·로그인·로컬 데이터를 서로 침범하지 않으며(별도 identifier + `~/.naia-dev`), 단일 GPU 음성 런타임(VoxCPM2 :8910)은 **공유**한다 — 나중에 뜬 인스턴스가 건강한 엔진을 죽이고 재스폰하는 대신 입양해 그대로 쓴다(상대 인스턴스의 발화 절단·GPU 이중 적재 방지). 뇌(naia-agent)는 인스턴스별 자식 프로세스로 비공유. | 개발 워크플로 + Windows lifecycle + 공유 GPU 표현 | Rust 단위 2건(홈 오버라이드·입양 계약) + `local-runtime.test.ts` 입양 페이로드 핀 + 실기 동시 실행 스모크(운영 발화 중 dev 기동 → 발화 무절단, 수동 1회) |
 | **S-ADK-PATH-ONE-ROOT** (#664, FR-ADK-PATH.1 — 2026-09-18) | Shell Dev adk-path 가 `D:\alpha-adk` 이면 agent spawn env 와 SetWorkspace 도 그 루트다. leftover `C:\Users\<user>\naia-adk` clone 의 memory store 를 쓰지 않는다. | 제어면(workspace) + agent spawn | Rust `agent_spawn_env_uses_adk_path_not_leftover_home_clone` |
-| **S-ADK-SOURCE** (#739, FR-ADK-SRC.1 — 2026-10-03) | 처음 설치한 사용자가 ADK 설정 화면에서 새 워크스페이스를 받으면 셸은 `nextain/naia-adk` 를 받는다(git 이 없으면 같은 저장소의 main zip). 받은 워크스페이스에 기본 캐릭터 VRM 2개(`01-OL_Woman.vrm`·`02-Hood_Boy.vrm`)와 기본 배경(`naia-dawn-city-uhd.webp`)·배경 영상(`naia-autumn-office-live.mp4`)이 있다(naia-adk #76 이후 기준). | 제어면(workspace) — ADK 부트스트랩(S57) | Rust `naia_adk_source_tests`, `naia_adk_source_network_tests`(수동 `--ignored`), e2e-tauri `packages/shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts`(모의 받기, 설치 화면 흐름 회귀) |
+| **S-ADK-SOURCE** (#739, FR-ADK-SRC.1 — 2026-10-03) | 처음 설치한 사용자가 ADK 설정 화면에서 새 워크스페이스를 받으면 셸은 `nextain/naia-adk` 를 받는다(git 이 없으면 같은 저장소의 main zip). 받은 워크스페이스 기본 목록의 기대값은 캐릭터 VRM 2개(`01-OL_Woman.vrm`·`02-Hood_Boy.vrm`), NVA 3개, 배경 6개(`naia-dawn-city-uhd.webp`·`naia-autumn-office-live.mp4` 포함)와 음악 3개다(naia-adk 기준). | 제어면(workspace) — ADK 부트스트랩(S57) | Rust `naia_adk_source_tests`, `naia_adk_source_network_tests`(수동 `--ignored`), e2e-tauri `packages/shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts`(모의 받기, 설치 화면 흐름 회귀) |
 | **UC-SHELL-APP-EXPOSURE-024** | 사용자는 Shell 앱 막대의 기본 동작에서 앱스토어를 바로 열고, 아바타 설정에서 나이아 비디오 스튜디오의 NVA 아바타 만들기를 시작한다. 앱스토어는 단일 Tauri 창에서 현재 로케일의 `/apps`를 열며 기존 창을 앞으로 가져오고 활성 앱을 바꾸지 않는다. Steam 판에서는 숨긴다. `+` 대화상자의 기존 앱스토어 동작은 유지한다. 슬라이드 앱은 작은 아이콘과 앱스토어 미리보기에서 발표 화면·기능을 알아볼 수 있다. | AppBar 단일 창 + 설정 Avatar CTA + Slides 패키지 아트워크 | `AppBar.test.tsx`: 기본/Steam 표시, 단일 창 포커스 및 활성 앱 불변; `SettingsTab.test.tsx`: 아바타 탭 CTA/Studio URL/오류 로그; `i18n-user-facing.test.ts`: 14개 locale 키; `e2e/app-store-nva-entry.spec.ts`: 실제 UI 표시·클릭·좁은 폭; `pnpm build:slides`: 공개 SVG 산출 확인 |
 | **UC-BROADCAST-STREAM-026** | 사용자는 OBS 없이 설정의 방송 절에서 플랫폼(유튜브·트위치·치지직·숲), 서버 주소, 해상도(1080p30/720p30), 방송 키(비밀 저장소, 화면 가림)를 설정하고 AI 막대의 방송 단추로 송출을 켜고 끈다. 방송 중에는 단추에 빨간 점과 경과 시간이 표시되고, 키가 없으면 단추가 비활성화된다. 앱 화면과 앱 소리(공유 AudioContext 의 TTS + 로컬 반주, AudioWorklet 48kHz PCM)만 내보내며, 방송 중 유튜브 반주 선택 시 내 곡만 안내하고 차단한다. ffmpeg 가 비정상 종료되면 끊김 알림과 함께 10초 간격으로 최대 3회 자동 재시작하고, 방송 종료 시 `<ADK>/data-private/broadcast/log.jsonl` 에 요약 한 줄을 남긴다. | Tauri ffmpeg sidecar + `broadcast.rs` + WebAudio PCM Worklet + Settings/AiControlBar | `packages/shell/src-tauri/src/broadcast.rs` 단위 시험(플랫폼별 `-g`/비트레이트·키 `***` 마스킹·곁프로그램 탐색 순서·리눅스 캡처 자리 오류·`log.jsonl` 한 줄 기록); `packages/shell/src/lib/__tests__/broadcast.test.ts` 단위 시험(PCM 프레임 묶기·유튜브 반주 차단·기록 요약·키 마스킹) |
 | **UC-APP-STORE-UPDATE-WINDOW** | 사용자는 앱바 스토어 버튼을 여러 번 눌러도 앱스토어 창 하나만 열고, 다시 누르면 그 창을 앞으로 가져온다. 서명·SHA-256·매니페스트·권한 검증을 통과한 같은 앱은 같은 버전으로 복구 설치할 수 있고, 더 낮은 버전은 설치 거부된다. 권한이 넓어지면 추가 권한을 보고 명시적으로 승인해야 한다. 업데이트 준비/교체가 실패하면 기존 앱과 private data root가 남는다. 설치·삭제가 성공하거나 스토어 창을 닫으면 메인 창이 설치 앱 목록을 다시 읽어 앱바에 반영한다. | Tauri app-store 창 + 스토어 설치·삭제 이벤트 + 설치 앱 목록 새로고침 | `app.rs` store update lifecycle tests; `AppBar.test.tsx` 단일 창/포커스; `App.tsx` store event listener contract; Playwright `e2e/app-store-nva-entry.spec.ts`: 기본·빈 목록·진행·성공·오류·좁은 폭과 close refresh |
@@ -202,7 +202,7 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | **S-CASCADE-HISTORICAL** (Round 2, 2026-06-30) | 과거 8GB 음성 단독/fp16 가정 기록. **현재 Windows 8GB 실행 계약이 아니다.** 현재는 `windows_trt_8g`가 VoxCPM2 W8A16 + TensorRT LocDiT와 Ditto를 함께 계획한다. | 이력 | 현재 시나리오는 UC-WIN-NVA-8G 참조 |
 | **S-8G-HISTORICAL** (2026-07-08) | 과거 로컬 LLM/아바타/both 3모드와 8GB 음성 클라우드 전용 가정. **Windows `windows_trt_8g`에는 적용하지 않는다.** | 이력 | 현재 시나리오는 UC-WIN-NVA-8G 참조 |
 | **S-CASCADE-T3** (BYO 원격 cascade, 2026-07-15) | 로그인 사용자가 직접 운영하거나 별도로 제공받은 Host URL을 입력한다. 이는 향후 Nextain cloud cascade와 별개이며 현재 cloud endpoint·entitlement·자동 폴백을 뜻하지 않는다. 명시한 Host가 로컬 façade보다 우선한다. | 제어면(설정) + 표시계면(NVA idle/발화) | `config.test.ts`·`capability-settings.spec.ts`·nva-remote-idle.live.spec.ts(지워짐, 700f855c) |
-| **S-VN** (#ui-reorg, 신규 — 2026-06-29) | 홈(기본) 화면에서 naia와 **몰입형 VN 대화** — 전체화면 VRM 아바타 + 하단 넓은 대화박스(탭 없는 집중형). 좁게 떠 있던 채팅 앱 제거("대화 집중 안 됨" 해소) | 표현(셸 UI) — 단일 ChatApp을 CSS로 재배치(variant=vn), 무리마운트 | `119-pty-terminal.spec.ts` T6(VN variant 노출). ⚠️ 미감=실 앱 |
+| **S-VN** (#ui-reorg, 신규 — 2026-06-29) | 홈(기본) 화면에서 naia와 **몰입형 VN 대화** — 전체화면 VRM 아바타 + 하단 넓은 대화박스(탭 없는 집중형). 좁게 떠 있던 채팅 앱 제거("대화 집중 안 됨" 해소) | 표현(셸 UI) — 단일 ChatApp을 CSS로 재배치(variant=vn), 무리마운트 | `packages/shell/e2e/91-workspace-app.spec.ts` · `packages/shell/src/apps/workspace/__tests__/pty-ipc.test.ts` (VN variant 및 workspace PTY 전환). ⚠️ 미감=실 앱 |
 | **S-WS4** (#ui-reorg) | 워크스페이스 진입 시 **4단 관제탑**: 대화창(좌 레일)·워크트리·문서뷰어(상)+터미널(하)·서브에이전트 리스트. 레일 접기·상하 비율 자유 리사이즈·터미널 탭/그리드 | 표현(셸 UI) — App.tsx `data-ui-mode` 파생 + WorkspaceCenterArea center 상하분할 | T7(레일 variant)·T8(레일 접기 시 ChatApp 무리마운트)·T9(문서뷰어/터미널 분할) + 91 18/18(무회귀) |
 | **S-DOC** (#ui-reorg) | 대량 작업문서를 **탭으로 유지·전환**(문서 탭바)해 "터미널에서 문서 찾기 어려움" 해소. 서브에이전트 클릭 시 그 에이전트 최근문서가 탭으로 surface. Ctrl+P QuickOpen 유지 | 표현(셸 UI) — `openDocs` 상태 + DocTabBar | T10(세션 클릭→문서 탭 surface) + 91 S3/S6(에디터 무회귀) |
 | **S-ASK** (#ui-reorg) | 터미널 출력의 파일경로 **클릭=문서뷰어에서 열기 / Alt+클릭=대화창에 AI 질의**. 문서 탭에도 AI 질의(✦) 버튼 | 표현(셸 UI) — Terminal link provider Alt 분기 + 기존 `naia:ask-ai` 재사용 | `Terminal.tsx` activate Alt 분기. ⚠️ xterm 링크 클릭=실 앱 |
@@ -278,7 +278,11 @@ Shell은 빌드 때 고정된 정확한 Agent 런타임만 실행한다.
 - 채팅: API 키 없이 `chat_request.provider=grok`가 Agent로 가고 응답이 렌더된다.
 - 경계: `~/.grok/auth.json`을 읽거나 복사하지 않는다. 게이트웨이 카탈로그의 `grok:` prefix는 API(`xai`)로 남는다.
 
-검증: Playwright 실 UI `packages/shell/e2e/grok-readiness.spec.ts`. 로그인된 실제 Shell은 `e2e-tauri/specs/96-grok-readiness.spec.ts`.
+검증: Playwright 실 UI `packages/shell/e2e/grok-readiness.spec.ts`. 로그인된 실제 Shell은 `packages/shell/e2e-tauri/specs/96-grok-readiness.spec.ts`.
+
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-GROK-SUBSCRIPTION | `packages/shell/e2e/grok-readiness.spec.ts`, `packages/shell/e2e-tauri/specs/96-grok-readiness.spec.ts` | SuperGrok CLI 준비 확인·오류 구분·무키 채팅 요청 검증 |
 
 ## UC-JEONJU-COURSE-READINESS — 강의용 Codex 준비 상태를 확인한다
 
@@ -291,7 +295,11 @@ Shell은 빌드 때 고정된 정확한 Agent 런타임만 실행한다.
 - 재시도: 사용자가 설치 또는 로그인을 마친 뒤 같은 화면에서 다시 확인할 수 있다.
 - 경계: 이 확인은 Codex에게 파일 작성·Git commit·push·배포를 맡기지 않는다. Git과 GitHub Pages는 수강생이 별도 단계에서 직접 수행한다.
 
-이 UC의 상태 분류과 토큰 비노출은 Rust·Settings 단위 테스트로, 실제 로그인된 Codex CLI와 Brain 화면의 준비 상태 표시는 `e2e-tauri/specs/96-codex-readiness.spec.ts` 네이티브 Tauri E2E로 검증한다.
+이 UC의 상태 분류과 토큰 비노출은 Rust·Settings 단위 테스트로, 실제 로그인된 Codex CLI와 Brain 화면의 준비 상태 표시는 `packages/shell/e2e-tauri/specs/96-codex-readiness.spec.ts` 네이티브 Tauri E2E로 검증한다.
+
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-JEONJU-COURSE-READINESS | `packages/shell/src-tauri/src/cli_detect.rs`, `packages/shell/src/lib/__tests__/cli-detection.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/e2e-tauri/specs/96-codex-readiness.spec.ts` | Codex CLI 설치·로그인 상태 분류 및 토큰 비노출 검증 |
 
 ## UC-CODEX-WORKER-LIFECYCLE — 격리된 Codex 코딩 작업자를 관리한다
 
@@ -327,6 +335,10 @@ For the Jeonju course, the user explicitly selects a Git root and enables course
 - **Visible course interaction:** Shell keeps the course start action disabled until the saved Discord course target is the same Git root currently entered by the instructor. The selected-workspace card is the student-facing Naia report: it states whether the proposal is queued, running, cancelling, completed with verification, completed without verification, failed, or cancelled. A verified completion tells the student to inspect the two files, check the page in a browser, and then make the Git commit; its `수업 파일 열기` action opens `index.html` directly in the Shell editor. Failed or cancelled work explicitly says that success was not claimed and that remaining files are preserved for review.
 - If readiness fails, no worker is created and the UI gives a safe instruction to review the selected folder rather than exposing raw Git or Agent output.
 
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-JEONJU-COURSE-WORKER | `packages/shell/src/apps/workspace/__tests__/coding-workers-tauri.test.ts`, `packages/shell/src/apps/workspace/__tests__/jeonju-course-target.test.ts` | 수업 모드 작업자 Tauri 어댑터 경계 및 허용 파일 제한 검증 |
+
 ### UC-JEONJU-DISCORD-COURSE-TARGET
 
 Before starting the Agent, the instructor opens **Coding Workers**, enables Jeonju course mode, and explicitly saves the Discord course target. Shell writes the target only to the active ADK control root at `naia-settings/jeonju-discord-course.json`.
@@ -337,6 +349,10 @@ Before starting the Agent, the instructor opens **Coding Workers**, enables Jeon
 - Agent startup consumes this trusted target document. The saved target is distinct from an ordinary Coding Worker request, so normal workers continue to use isolated worktrees.
 
 Success means the visible confirmation identifies the saved target and fixed boundary without exposing a token or raw Git output. A failed save keeps the prior target unchanged and gives only the folder-readiness guidance.
+
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-JEONJU-DISCORD-COURSE-TARGET | `packages/shell/src/apps/workspace/__tests__/jeonju-course-target.test.ts`, `packages/shell/src-tauri/src/lib.rs` | Discord 수업 대상 스키마·경로 포함 경계 및 거부 계약 검증 |
 
 ## UC-NAIA-AZURE-MODELS — Naia 계정으로 호스팅 채팅 모델을 일반 대화에 사용한다
 
@@ -371,6 +387,8 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 
 ## Test Coverage Map (P02)
 
+0.2.5 표에서 단위 시험(UT)과 통합 시험(IT)은 리눅스에서, 종단 시험(E2E)은 각 기기에서 확인한다. 파일 지정 예정은 아직 시험 파일이 정해지지 않은 계획이다.
+
 **UC9/S29 설치 앱 iframe (#761):** `packages/shell/src/lib/__tests__/asset-url.test.ts`는 Linux `asset://localhost` 변환, 이미 정규화된 URL, Windows URL, percent-encoded 경로를 검증한다. `packages/shell/src/apps/__tests__/generic-installed-slides.test.tsx`는 실제 컴포넌트 iframe `src`를 확인하고, `packages/shell/src/lib/__tests__/slides-host-bridge.test.ts`와 `slides-files-bridge.test.ts`는 정규화된 프레임 주소와 origin으로 브리지를 검증한다.
 
 **UC-JEONJU-COURSE-WORKER** 의 화면은 지금 없다. 코딩 작업자 패널이 2026-09-05 에 없어졌고(#554, Herdr 창의 agents 탭과 IDE 뷰어가 그 자리를 대신한다), 그 패널을 그려서 재던 단위 테스트와 실기 수용 스펙을 함께 지웠다 — 97-course-worker-guidance 는 2026-09-05 에(6eeb1433), coding-workers 단위 테스트와 91-jeonju-course-worker 스펙은 같은 날 그 뒤에 지웠다. 남은 것은 화면이 아닌 계약이다: `packages/shell/src/apps/workspace/__tests__/coding-workers-tauri.test.ts` 가 작업자 어댑터의 Tauri 경계를, `src-tauri/src/lib.rs` 가 생성·취소·재개의 네이티브 계약을 재다. 화면을 되살릴지는 #554 에서 정한다. The proposal worker may inherit a read-only parent sandbox, because it no longer writes the course repository: Naia performs the constrained apply and post-apply verification.
@@ -385,15 +403,29 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|
-| UC-CODEX-WORKER-LIFECYCLE | `packages/shell/src/apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
-| UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
+| UC-FIX-024-I1 | `packages/shell/src/lib/__tests__/background-selection.test.ts`: 저장 배경 보존과 기본·대체 순서; `packages/shell/scripts/__tests__/platform-matrix.test.ts`: 설치·삭제 훅과 설치 경로 안의 프로세스 종료 검사 | `packages/shell/e2e-tauri/specs/app-store-window.spec.ts`: Windows 스토어 창 열기·재포커스·닫기와 본 창 응답. Windows 실제 설치·갱신·삭제는 직접 확인 대기 |
+| UC-NVA-CAMERA-GESTURE-1022 (0.2.5) | `packages/shell/src/components/__tests__/AiControlBar.test.tsx`: 조작 접기·펼치기와 확대·축소, `shows accessible AI and TTS icons with an off slash`의 인공지능·음성 꺼짐 빗금 | T10 직접 시험: 윈도우 2070·4060, 리눅스 각각; 인공지능·음성 각각 켜고 끄며 그림 확인; `packages/shell/e2e/nva-prebaked.spec.ts` 확대·축소·초기화 |
+| UC-FIX-024-I1 | `packages/shell/src-tauri/tests/async_window_commands.rs`: 창을 만드는 Tauri 명령이 모두 async 인지 소스에서 검사(WebView2 교착 방지) | `packages/shell/e2e-tauri/specs/app-store-window.spec.ts`: 윈도우에서 스토어 창 하나를 열고 다시 앞으로 가져온 뒤 닫는 동안 주 창이 응답; 직접 시험: 윈도우 2070·4060 |
+| UC-025-01 | T1: `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` 자막 기본·전환·저장 | `packages/shell/e2e/nva-prebaked.spec.ts` 좁은 화면; T1 직접 시험: 윈도우 2070·4060, 리눅스 |
+| UC-025-02 | T2: `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` 키 입력·연속 이동·입력칸 제외 | T2 직접 시험: 윈도우 2070·4060, 리눅스 |
+| UC-025-03 | T3: `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` 이름·기존 화면 | T3 직접 시험: 윈도우 2070·4060, 리눅스 |
+| UC-025-04 | T4 `browser_webview.rs`의 `download_tests`: `confines_suggested_names_to_download_folder`, `rejects_invalid_adk_directory`, `rejects_downloads_symlink_outside_adk`(유닉스), `rejects_unconvertible_default_download_destination`(리눅스), `chooses_adk_download_folder_and_numbers_collisions` | T4 직접 시험: 윈도우 2070·4060, 리눅스 각각에서 정상 파일과 중복 이름 확인. 목적지 설정 실패 뒤 기본 위치 대체 연결은 자동 시험 없음, 남은 위험 |
+| UC-025-05 | T5: `packages/shell/src/lib/__tests__/adk-assets-e2e.test.ts` 기본 자산 목록 | T5 한국어·영어 라디오 곡 각각 끝까지 직접 재생: 윈도우 2070·4060, 리눅스 |
+| UC-025-06 | T11: `releases/v0.2.5.yaml`과 후보 동작·제외 범위 대조 | T11 출시 글 직접 검토: 시험 담당자가 윈도우 2070·4060과 리눅스 후보 동작을 각각 대조 |
+| UC-025-07 | UT-01 쪽 이동, IT-01 파일 연결: 기존 `packages/shell/src/lib/__tests__/slides-files-bridge.test.ts` 연결 확인, 각 시험의 전체 범위는 파일 지정 예정; 리눅스 | T8, E2E-01 설치·쪽 이동·음성·녹화: 직접 시험, 윈도우 2070·4060, 리눅스 |
+| UC-025-09 | UT-02 카드 순서는 앱 몫: 별도 타로 작업 트리의 tools.test.ts에 공개 순서·미공개 카드 시험이 있으나 현재 후보에 포함되는지는 미확인; IT-02 일부: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`의 문장별 낭독 완료 대기 및 낭독 완료·취소·실패, `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`의 낭독 요청·취소와 취소 결과 전달; 리눅스 | E2E-02 카드·낭독, E2E-05 공용 낭독·취소: 직접 시험, 윈도우 2070·4060과 리눅스 각각. 실제 앱과 음성의 전체 경계는 미검증. 대화 벤치 카드 순서 판정은 정의만 있고 모델 실행 대기 |
+| UC-025-10 | UT-03 탭·복사 안내는 앱 저장소 몫; IT-03 일부: `packages/shell/src/apps/__tests__/generic-installed-slides.test.tsx`는 권한 있는 설치 앱 iframe에만 클립보드 쓰기를 위임하고 읽기는 위임하지 않는지 확인; 이음오피스의 `clipboard.write` 선언은 앱 저장소 몫; 리눅스 | E2E-03 주소 복사: 직접 시험, 윈도우 2070·4060, 리눅스. 설치 앱의 실제 복사 동작은 미검증 |
+| UC-025-11 | UT-04: `packages/shell/src/apps/charcard/__tests__/card-parser.test.ts`, `packages/shell/src/apps/charcard/__tests__/prompt-builder.test.ts`; IT-04: `packages/shell/src/components/__tests__/ChatArea.test.tsx` (`chat-area-cases-01.tsx`); UT-06·IT-06: `packages/shell/src/apps/generic-installed/__tests__/GenericInstalledApp.context.test.tsx`, `packages/shell/src/lib/__tests__/app-loader.test.ts`, `packages/shell/src/components/__tests__/ChatArea.test.tsx` (`chat-area-cases-01.tsx`); 리눅스 | E2E-04 역할극·닫기, E2E-06 카드 → 슬라이드 → 일반 대화 문맥 전환·슬라이드 자료 보존: 직접 시험, 윈도우 2070·4060, 리눅스 각각. 대화 벤치 역할극 응답 판정은 정의만 있고 모델 실행 대기 |
+| UC-025-12 | UT-05 권한·출처: `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`, IT-05 질문·낭독·언어: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`; UT-07 서명 목록, IT-07 설치·복구: 시험 파일 지정 예정; 리눅스 | T8 기존 기능, T9 `run-regression.mjs` 회귀 기록, E2E-05 공용 연결, E2E-07 네 앱 설치: 윈도우 2070·4060과 리눅스 각각. 대화 벤치 앱 질문 응답 판정은 정의만 있고 모델 실행 대기 |
+| UC-CODEX-WORKER-LIFECYCLE | `packages/shell/src/apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `packages/shell/e2e-tauri/specs/96-codex-readiness.spec.ts` (후속 browser e2e coding-workers 스펙 작성 예정): Tauri adapter fixture와 Codex 준비 경계를 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
+| UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `packages/shell/src/apps/workspace/__tests__/coding-workers-tauri.test.ts` · `packages/shell/e2e-tauri/specs/96-codex-readiness.spec.ts` (후속 e2e coding-workers 스펙 작성 예정): Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | 실 UI 스펙(95-llm-role-settings)은 #589/#598 이 두뇌 화면의 역할 편집기를 지우며 함께 지웠다 — 실 UI 확인 없음 |
 | UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `motif-3` · `gpt-5.6-luna` 다섯 개를 노출하고 Codex 목록은 그대로인지, Motif 가격·tool support 메타데이터가 반영되는지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 다섯 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
 | UC-NAIA-LEGACY-MAIN-MODEL | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts`: 선택기 모델 유지, 퇴역 id(#670·#603)는 게이트웨이가 제공해도 기본값으로, 그 밖의 id는 게이트웨이 목록에 있으면 유지(`gpt-5.4-nano`)·없으면 기본값·목록을 못 읽으면 그대로, `gatewayServedModelIds` 가 live·상태 없음만 센다. `packages/shell/src/hooks/__tests__/useAgentAuthSync.test.ts`: 기동 훅이 게이트웨이 제공 모델을 저장하지 않고, 퇴역 id는 즉시 옮기고, 목록 실패 시 건드리지 않고, 확인 중 바뀐 설정을 덮지 않는다. | 실 Shell 기동 확인은 대기 — 화면 변화 없음(설정 값만) |
 | UC-LOCAL-LLM-MODEL-PULL-759 | `packages/shell/src/lib/__tests__/ollama-runtime.test.ts`: Rust camelCase policy/status/start/cancel/retry 인자와 상태·오류 해석; `ChatArea.test.tsx`·`chat-service.test.ts`: 관리형 Qwen에만 정책 context 전달; `ollama-chat-admission.test.ts`: managed/external-local·원격 허용 경계; `SettingsTab.test.tsx`: 초기 후보·확인·2배 공간·라이선스 표시·정책 미결 차단·진행·취소·재시도·오류·ready 목록 저장과 provider/model 변경 보존; `i18n-user-facing.test.ts`: 14개 locale 키 | `packages/shell/e2e/ollama-settings.spec.ts`: 가짜 Tauri만 사용해 기본/정책 대기/확인/진행/취소/재시도/오류/성공, 이벤트 작업 ID·태그 불일치 무시, 원격 host pull 0회, 키보드/ARIA·좁은 폭; Rust fake HTTP tests: decimal GB conversion·exact 2× boundary·same store preflight; paired Agent fake-fetch: `options.num_ctx=8192`; `thinking-settings.spec.ts`: 기존 설정·대화 생각 상태 회귀. 실제 Ollama/GPU는 사용하지 않는다.
 | UC-LOCAL-MODEL-VRAM-RESERVATION | Rust `vram_reservation::tests`: 8 GiB 상호 배타, 다른 장치 독립성, byte reservation의 unknown/insufficient VRAM, 8 GiB 초과 `policy_undecided`, starting/running 계산, 동시 요청 승자 1개, kind-only Voice의 빈 장치·unknown availability 승인, 8 GiB LocalLlm 충돌, 반납 후 retry, 스냅샷 byte `null`, stale 이중 반납 방지, child reap 뒤 lease 반환 및 인벤토리 실패 후 재조회. `ollama_runtime::tests::ollama_no_window_child_supports_ctrl_break_shutdown`: Windows에서 실제 관리형 자식을 `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED`로 띄우고, 창 핸들이 없는 상태와 기존 CTRL_BREAK 종료 및 부모 콘솔 복귀를 확인한다. `lib.rs` fixture는 released 프로파일 예약량을 None으로 유지하고 그 값을 실제 Voice 시작 예약 요청에 전달한다. 명시적 종료·상태 감지의 end-to-end fixture는 P04 진행 중으로 남는다. | 화면·Tauri IPC 변경 없음. 기존 Settings/Onboarding Vitest는 회귀로 실행하고 실제 GPU 경로는 실행하지 않는다. |
-| S-ADK-SOURCE (#739) | `packages/shell/src-tauri/src/lib.rs` `naia_adk_source_tests`: 받기 주소 상수 두 개와 옛 주소 부재 / `naia_adk_source_network_tests`: 실제 얕은 git clone 과 zip 받기 뒤 `naia-settings/vrm-files/01-OL_Woman.vrm`·`02-Hood_Boy.vrm`, `naia-settings/background/naia-dawn-city-uhd.webp`·`naia-autumn-office-live.mp4` 존재(각 100KB 초과)(네트워크가 필요해 `#[ignore]`, `cargo test --lib naia_adk_source_network_tests -- --ignored` 로 수동 실행) | e2e-tauri 기존 `packages/shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts`(기존 `wdio.conf.ts`, 모의 받기 켜짐)를 수정 전후 같은 명령으로 돌려 실제 Tauri 바이너리의 기동과 설치 화면 진입이 기준선과 같음을 본다(스펙의 직접 클릭을 `clickElement` 로 바꾼 뒤 S1·S2 는 설치 화면 → 받기 명령 IPC(모의) → 온보딩 도달을 단언한다). 모의 받기는 받기 주소를 타지 않으므로 실제 받기 대상과 자산은 왼쪽 네트워크 시험이 맡는다. 화면은 바뀌지 않아 Playwright·e2e-tauri 스펙은 더하지 않는다 |
-| UC-NVA-CAMERA-GESTURE-1022 | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` · `packages/shell/src/lib/__tests__/ui-preferences.test.ts` · `packages/shell/src/lib/avatar/__tests__/camera-actions.test.ts` · `packages/shell/src/components/__tests__/AiControlBar.test.tsx`: NVA 확대·축소(0.5~3배)·이동 결합·저장·초기화·잘못된 값 정규화와 접근성 조작; `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 대기 영상 위치 이어 재생·gesture 목록·무음 1회 재생 후 복귀·발화 중 무시·없는 key 무시; `packages/shell/src/lib/avatar/__tests__/nva-gesture-trigger.test.ts` · `packages/shell/src/lib/__tests__/persona.test.ts` · `packages/shell/src/lib/__tests__/persona-disabled.test.ts` · `packages/shell/src/components/__tests__/ChatArea.test.tsx`: 조건부 gesture 프롬프트 안내, 완성·분할 표기 파싱 및 화면·TTS 문장 제거; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 실행 중 로컬 음성 엔진에서 Edge→local 전환 복귀 및 설정 저장 | `packages/shell/e2e/nva-prebaked.spec.ts`: 확대·축소·초기화 단추, 동작 단추·클립 재생, 빈 gesture 목록, 키보드 조작 및 360px 좁은 폭 배치; `packages/shell/e2e/settings-slots.spec.ts`: 실행 중 로컬 음성 제공자 전환과 영속 확인 |
+| S-ADK-SOURCE (#739) | `packages/shell/src-tauri/src/lib.rs` `naia_adk_source_tests`: 받기 주소 상수 두 개와 옛 주소 부재 / `naia_adk_source_network_tests`: 실제 얕은 git clone 과 zip 받기 뒤 기본 VRM 2개(`01-OL_Woman.vrm`·`02-Hood_Boy.vrm`), NVA manifest 3개, 배경 6개(`naia-dawn-city-uhd.webp`·`naia-autumn-office-live.mp4` 포함), 음악 3개가 비어 있지 않은 파일로 존재하는지 확인(네트워크가 필요해 `#[ignore]`, `cargo test --lib naia_adk_source_network_tests -- --ignored` 로 수동 실행) | e2e-tauri 기존 `packages/shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts`(기존 `wdio.conf.ts`, 모의 받기 켜짐)를 수정 전후 같은 명령으로 돌려 실제 Tauri 바이너리의 기동과 설치 화면 진입이 기준선과 같음을 본다(스펙의 직접 클릭을 `clickElement` 로 바꾼 뒤 S1·S2 는 설치 화면 → 받기 명령 IPC(모의) → 온보딩 도달을 단언한다). 모의 받기는 받기 주소를 타지 않으므로 실제 받기 대상과 자산은 왼쪽 네트워크 시험이 맡는다. 화면은 바뀌지 않아 Playwright·e2e-tauri 스펙은 더하지 않는다 |
+| UC-NVA-CAMERA-GESTURE-1022 | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` · `packages/shell/src/lib/__tests__/ui-preferences.test.ts` · `packages/shell/src/lib/avatar/__tests__/camera-actions.test.ts` · `packages/shell/src/components/__tests__/AiControlBar.test.tsx`: NVA 확대·축소(0.5~3배)·이동 결합·저장·초기화·잘못된 값 정규화와 접근성 조작; `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 대기 영상 위치 이어 재생·gesture 목록·무음 1회 재생 후 복귀·발화 중 무시·없는 key 무시; `packages/shell/src/lib/avatar/__tests__/nva-gesture-trigger.test.ts` · `packages/shell/src/lib/__tests__/persona.test.ts` · `packages/shell/src/lib/__tests__/persona-disabled.test.ts` · `packages/shell/src/components/__tests__/ChatArea.test.tsx`: 조건부 gesture 프롬프트 안내, 완성·분할 표기 파싱 및 화면·TTS 문장 제거; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 실행 중 로컬 음성 엔진에서 Edge→local 전환 복귀 및 설정 저장 | `packages/shell/e2e/nva-prebaked.spec.ts`: 확대·축소·초기화 단추, 동작 단추·클립 재생, 빈 gesture 목록, 키보드 조작 및 360px 좁은 폭 배치; `packages/shell/e2e/settings-slots.spec.ts`: 실행 중 로컬 음성 제공자 전환과 영속 확인; `packages/shell/e2e-tauri/specs/94-nva-prebaked-shell.spec.ts`: 네이티브 Tauri NVA prebaked 셸 재생 회귀 |
 | UC-NVA-ACTION-HOTKEYS-20261025 | `packages/shell/src/lib/avatar/__tests__/nva-action-hotkeys.test.ts`: `Digit1`~`Digit9` 판정, 맥 Option 문자 key, Ctrl/Meta/Shift/AltGr(AltGraph)/repeat/IME/키패드/범위 밖/xterm 제외, 플랫폼 표기; `packages/shell/src/lib/avatar/__tests__/nva-gesture-rate-limiter.test.ts`: AI 최소 간격 15초·같은 key 60초, 수동 실행 기록; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx` · `AiControlBar.test.tsx`: 입력 막대 위치, 툴팁·접근성 이름, 빈 목록, 오버레이 중복 제거, 재생 시작 시에만 기록; `packages/shell/src/lib/__tests__/persona.test.ts` · `persona-disabled.test.ts`: 조건부 권장 안내와 단축키 표기; `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts` · `camera-actions.test.ts` · `VideoAvatarCanvas.test.tsx`: 재생 시작 여부 반환; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: Alt+n 입력 보존, 음성 idle 까지 AI 동작 미룸, 전송·취소·아바타 교체·TTS/슬라이드 인터럽트 시 폐기, 초안 편집 시 유지, 실시간 음성 턴마다 목록 갱신 | `packages/shell/e2e/nva-prebaked.spec.ts`: 입력 중 Alt+1/Alt+2 재생과 입력 내용 불변, 입력 막대 옆 단추와 툴팁 단축키, 동작 없는 아바타의 단추 없음·Alt+1 무반응, 360px 좁은 폭 겹침 없음 |
 | UC-SHELL-STUDIO-NVA-APPLY-105 | Rust `packages/shell/src-tauri/src/studio_nva_apply.rs` tests: `naia://studio-nva-apply` 파싱(정상·호스트 밖·비밀 query·잘못된 id), 같은 아바타·환경 대기열 중복 제거, 200 MiB 상한 스트리밍 임시 파일, 크기·SHA-256·ZIP 매니페스트 검사; `packages/shell/src-tauri/src/lib.rs` `mutex_name_matches_tauri_identifier`; `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts`: 확인 전 내려받기 없음, 검사 실패 시 가져오기·적용 안 함, 지연 수신기의 대기 링크 회수와 확인 창 1회; `packages/shell/scripts/__tests__/check-bundle-budget.test.mjs`: 적용 수신기·창이 첫 청크 밖 | 윈도 실기기(쉘 꺼짐·켜짐·같은 링크 두 번·Lab 로그인 딥링크 유지)는 설치판 수락 확인으로 남김 |
 | UC-SHELL-APP-EXPOSURE-024 — 기본·빈 목록 | 앱 막대의 앱스토어 고정 버튼은 앱 레지스트리 목록이 비어 있어도 보이고, Avatar 탭은 NVA 파일이 없어도 스튜디오 시작 버튼을 보인다. | `AppBar.test.tsx`, `SettingsTab.test.tsx` |
@@ -406,7 +438,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-APP-STORE-UPDATE-WINDOW — 좁은 폭·키보드 | 고정 폭의 별도 창에서 스토어를 열어 좁은 메인 셸 앱바의 가로 배치를 바꾸지 않는다. 키보드 활성화는 앱바 버튼의 기본 Enter/Space 동작을 사용한다. | `e2e/app-store-nva-entry.spec.ts`: 360px·키보드·bounding box |
 | UC-PROJECT-APP-SELECT-OPEN-756-S1 | `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`: 선택된 체크아웃의 중첩 `project.yaml` 메타데이터 읽기와 템플릿(`_template`, `_template-local`) 제외, 빈 목록·설정 오류 복구 안내, 프로젝트 선택 후 세 탭 유지 및 키보드 접근성 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts`: 프로젝트 검색·선택·열기, 세 탭 빈 상태, 빈 목록·설정 오류 복구 조치, 키보드 조작·좁은 화면 및 네이티브 카탈로그 IPC 확인 |
 | UC-PROJECT-APP-SINGLE-OPEN-756-S2 | `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`: 1·2단 후보 탐색과 밑줄·심볼릭 링크 제외, 저장된 naia-adk 경로 우선 조회·복구, 프로젝트 단일 열기·전환·취소 복귀, 프로젝트별 마지막 탭 저장·복원 및 행·YAML 크기 상한 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts`: 저장된 경로 카탈로그 스캔, 단일 프로젝트 전환·취소 복귀·셸 재시작 복원, 단일 앱 막대 항목 유지, 메타데이터 오류·잘림 안내 및 키보드·좁은 화면 확인 |
-| UC-PROJECT-APP-LOCAL-756-S3 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`, `packages/shell/src-tauri/src/project_catalog_runtime.rs`, `packages/shell/src-tauri/src/project_agent_pty.rs`, `packages/shell/src-tauri/src/project_agent_pty/lifecycle.rs`, `packages/shell/src-tauri/src/project_agent_pty/commands.rs`, `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_webview.rs`, `packages/shell/src-tauri/src/herdr/pty.rs`, `packages/shell/src/apps/__tests__/browser-center-area.test.tsx`: checkout 경로 경계 검증, 네 고정 에이전트(`claude`·`codex`·`muse`·`opencode`) PATH 탐색·고정 argv·PTY 프로젝트별 격리·중단·종료 정리, `dashboard_url`·`issues_url` 주소 검증과 프로젝트 전용 WebView 동일 출처 분리 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e/91-workspace-app.spec.ts`, `packages/shell/e2e/197-browser-login.spec.ts`: 단계 3 checkout 복구 안내, 에이전트 라디오 선택·설치 안내, 프로젝트 전환(A→B→A)·중단, 대시보드·이슈 주소 상태와 프로젝트 WebView IPC 경계 및 기존 Workspace·Browser 회귀 확인 |
+| UC-PROJECT-APP-LOCAL-756-S3 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts`, `packages/shell/src/apps/projects/__tests__/project-agent-pty-regression.contract.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`, `packages/shell/src-tauri/src/project_catalog_runtime.rs`, `packages/shell/src-tauri/src/project_agent_pty.rs`, `packages/shell/src-tauri/src/project_agent_pty/lifecycle.rs`, `packages/shell/src-tauri/src/project_agent_pty/commands.rs`, `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_webview.rs`, `packages/shell/src-tauri/src/herdr/pty.rs`, `packages/shell/src/apps/__tests__/browser-center-area.test.tsx`: checkout 경로 경계 검증, 네 고정 에이전트(`claude`·`codex`·`muse`·`opencode`) PATH 탐색·고정 argv·PTY 프로젝트별 격리·중단·종료 정리, `dashboard_url`·`issues_url` 주소 검증과 프로젝트 전용 WebView 동일 출처 분리 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e/91-workspace-app.spec.ts`, `packages/shell/e2e/197-browser-login.spec.ts`, `packages/shell/e2e-tauri/specs/project-agent-pty-input.spec.ts`: 단계 3 checkout 복구 안내, 에이전트 라디오 선택·설치 안내, 프로젝트 전환(A→B→A)·중단, 실 Tauri PTY 입력 왕복, 대시보드·이슈 주소 상태와 프로젝트 WebView IPC 경계 및 기존 Workspace·Browser 회귀 확인 |
 | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs`: 플랫폼별 키프레임(`-g 60`/`-g 30`)·비트레이트(`6M`/`8M`)·해상도·인코더(`h264_nvenc`/`libx264`) 인자 생성, 방송 키 `***` 마스킹, 곁프로그램(`binaries/ffmpeg-<triple>` → `NAIA_FFMPEG_PATH` → `PATH`) 탐색 순서, 리눅스 화면 캡처 자리 오류(`미구현 — 실측 대기`), `log.jsonl` 한 줄 기록; `packages/shell/src/lib/__tests__/broadcast.test.ts`: 48kHz 스테레오 PCM 프레임 묶기, 플랫폼 프리셋·키 마스킹, 방송 중 유튜브 반주 차단 안내, 응답 수·크레딧 차이·두뇌(`local`\|`gateway`\|`both`) 기록 계산 | 윈도우(4060)·리눅스 웨이랜드(3090) 실기 송출·녹화 확인은 별도 실측 단계 |
 | UC-NVA-BROADCAST-HOTFIX | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: interrupt·루프 전환 뒤 이전 play 의 늦은 reject 를 오류로 올리지 않고 현재 클립의 실제 timeout 만 오류로 본다. `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`·`ResilientVideo.test.tsx`: 디코더 거절·무응답 때 시험 VRM 캡처 없이 투명 상태와 상태 안내 | `packages/shell/e2e/broadcast-transparent-fallback.spec.ts`: 빈 미디어·로딩·성공·오류·재마운트 복구를 360/1100px 에서 투명 DOM·상태 안내로 확인. 자세한 표는 아래 UC-NVA-BROADCAST-HOTFIX 절 |
 
@@ -524,7 +556,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 | 환경-공간 | S31·S32 | BGM/배경 Old-Baseline → EnvironmentPort.space |
 | 채널 | S35~S39·S60 | 외부 인증 Old-Baseline(깨짐 분류) → channels/ClientSessionPort |
 | 설정·control | S01~S08·S47·S51·S53·S54·S57~S59·S67 | control-plane Old-Baseline → 각 port |
-| 설정 SoT | S72 · **UC-CONFIG-SOT** | **부팅 병합 계약**: `mergeBootConfig({local,file,ui})` 순수함수 = 파일 절대 우선(스테일 localStorage persona 를 config.json 이 덮는가) → `lib/__tests__/config-boot-merge.test.ts` [계약] / **되쓰기 게이트**: 하이드레이션 전 `syncConfigToFile` 호출 없음 → 동 파일 [계약] / **e2e-tauri**(⚠️ 미작성 — 2026-07-15 리뷰 적발, 실 파일 부재): config.json=나이아 · localStorage=알파 → 부팅 → 나이아 유지·config.json 미오염 시나리오는 단위 계약(`config-boot-merge.test.ts`)으로만 검증됨, e2e-tauri 통합 스펙은 **후속 작성 대상**(P04 미충족 명시) |
+| 설정 SoT | S72 · **UC-CONFIG-SOT** | **부팅 병합 계약**: `mergeBootConfig({local,file,ui})` 순수함수 = 파일 절대 우선(스테일 localStorage persona 를 config.json 이 덮는가) → `packages/shell/src/lib/__tests__/config-boot-merge.test.ts` [계약] / **되쓰기 게이트**: 하이드레이션 전 `syncConfigToFile` 호출 없음 → 동 파일 [계약] / **e2e-tauri**(⚠️ 미작성 — 2026-07-15 리뷰 적발, 실 파일 부재): config.json=나이아 · localStorage=알파 → 부팅 → 나이아 유지·config.json 미오염 시나리오는 단위 계약(`config-boot-merge.test.ts`)으로만 검증됨, e2e-tauri 통합 스펙은 **후속 작성 대상**(P04 미충족 명시) |
 | OS-core(DEFER) | S45·S46 | SafetyPort·ClientSessionPort 계약(F3 후) |
 | 보류 | S41·S42·S52b | naia-memory 트랙(미배선 = **격리/면제 목록**, golden baseline 아님) |
 
@@ -615,6 +647,10 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 - **검증(P02)**: requirements.md **FR-KB-OS.5~9** 매핑 — `knowledge-config.test.ts`(config CRUD·dedup·kb 통계 파싱 단위)·`KnowledgeSettingsTab.test.tsx`(RTL 폴더 add/remove·스코프·상태 렌더)·`e2e/settings-knowledge.spec.ts`(Playwright 실 UI: 설정 지식 탭 폴더 추가/제거/상태 표시). 컴파일 트리거(FR-KB-OS.8)는 에이전트 `CompileKnowledge` 배선에 의존(미배선 시 정직 표기).
 - 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K4).
 
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-KB-MANAGE | `packages/shell/src/__tests__/knowledge-config.test.ts`, `packages/shell/src/components/__tests__/KnowledgeSettingsTab.test.tsx`, `packages/shell/e2e/settings-knowledge.spec.ts` | 지식 소스 폴더·스코프 저장 및 설정 UI 상태 표시 검증 |
+
 ## 해소·DEFER (재논 금지)
 - ~~UC7 포트 축~~ = 해소(R1): UC7 = `EnvironmentPort`(host-system). `ActionPort`=body movement(별개).
 - OS-core(UC10a·UC13a) = P01 시나리오 **포함 확정**, 구현 DEFER(F3 후).
@@ -697,12 +733,9 @@ LLM은 좁은 능동 발화 도구로 profile 시작을 **요청 또는 제안**
 
 Test Coverage Map:
 
-- 컴포넌트: `AiControlBar`가 꺼짐/준비됨/실행 중/차단됨의 라벨, `aria-pressed`, 설명과
-  시작·중단 요청을 올바르게 표현한다.
-- 구성: `proactive-speech-settings`가 profile 정책과 사용자 허가를 별도로 저장·정규화하고,
-  TTS-off/미구성 profile을 fail-closed 한다.
-- 실제 Tauri: 새 `e2e-tauri` 시나리오가 버튼으로 시작·중단한 뒤 agent의 profile 설정과
-  activity stop을 확인하고, 로컬 음성 준비 실패는 실행 성공으로 표시하지 않는지 확인한다.
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-PROACTIVE-COST-CONTROL | `packages/shell/src/components/__tests__/AiControlBar.test.tsx`, `packages/shell/src/lib/__tests__/proactive-speech-settings.test.ts`, `packages/shell/e2e-tauri/specs/71-proactive-speech-profiles.spec.ts` | 꺼짐/준비됨/실행 중/차단됨 표시·정책 정규화·실 Tauri 시작/중단 검증 |
 
 ## UC-WIRE-V1 — 이미지·Discord·RAG·처리 공개 공통 채팅 경계 (#384 / naia-agent #89)
 
@@ -728,6 +761,10 @@ P02 검증:
   `cargo check`, Shell TypeScript build.
 - T-WIRE-15: `packages/shell/src/lib/__tests__/wire-errors.test.ts`와
   `chat-service.test.ts`의 안정 code/i18n/public callback 검증.
+
+| UC | 검증 수단 | 확인 |
+|---|---|---|
+| UC-WIRE-V1 | `src/test/uc-wire-v1.contract.test.ts`, `src/test/uc-wire-v1-paired-proto.contract.test.ts`, `packages/shell/src/lib/__tests__/wire-errors.test.ts`, `packages/shell/src/lib/__tests__/chat-service.test.ts`, `packages/shell/src-tauri/src/agent_grpc.rs` | 공통 채팅 경계·paired proto 변환·안정 오류 코드 검증 |
 
 ## S-STEAM — Windows Steam 배포 준비 (#314)
 
@@ -788,11 +825,12 @@ P02 검증:
 
 | Scenario | Unit / contract | UI / integration | Real Discord E2E |
 |---|---|---|---|
-| UC-DISCORD-1 | credential boundary, allow-list, participation policy | Settings connection flow | bot invite, permissions, allowed-channel activation |
+| UC-DISCORD | `packages/shell/src/lib/__tests__/discord-cron-absent.test.ts`, `packages/shell/src/lib/__tests__/csp-no-discord.test.ts`, `packages/shell/src-tauri/src/lib.rs` | #610 이후 Discord 탭 부재 계약 및 CSP/dotenv 보안 경계 검증 (LEGACY/DEFERRED) |
+| UC-DISCORD-1 | `packages/shell/src/lib/__tests__/discord-cron-absent.test.ts`, `packages/shell/src-tauri/src/lib.rs` | #610 연결 탭 제거 후 자격증명 경계 및 디버그 dotenv 허용 검증 (LEGACY/DEFERRED) |
 | UC-DISCORD-1A | #610 removed the Connections settings tab and its unit test (ConnectionsSettingsTab.test.tsx); Rust dotenv parser accepts only `DISCORD_BOT_TOKEN` for debug E2E | The browser specs (discord-settings-secure, discord-channel-agent) waited on the removed Connections tab and were deleted in 0.2.3. The native-cancellation and live-auth e2e-tauri specs (92, 94) were removed with the tab in #610. | provisioned test bot: allow-list save → Agent authority `ready` |
 | UC-DISCORD-1B | #610 removed the Connections settings tab and the Channels tab together with their unit tests (ConnectionsSettingsTab.test.tsx, ChannelsTab.test.tsx) | #610 removed the inbox handoff e2e-tauri spec (93) with the tabs | provisioned test bot: binding save → inbox channel list → inbound/outbound records remain in their binding |
-| UC-DISCORD-2 | recency and selected-channel persistence | narrow/wide channel inbox navigation | multi-channel history visibility |
-| UC-DISCORD-3 | Gateway event deduplication, per-channel context, reconnect | live status and unread rendering | two-channel message/reply/reconnect flow |
+| UC-DISCORD-2 | `packages/shell/src/lib/__tests__/csp-no-discord.test.ts` | #610 채널함 탭 제거 및 CSP 비노출 경계 검증 (LEGACY/DEFERRED) |
+| UC-DISCORD-3 | `packages/shell/src/lib/__tests__/discord-cron-absent.test.ts`, `packages/shell/src-tauri/src/lib.rs` | #610 실시간 공동 대화 UI 제거 후 백엔드 비활성/격리 검증 (LEGACY/DEFERRED) |
 
 | **S-CASCADE-INSTALL-PLAN** (FR-CASCADE.2 — 2026-07-22) | 4060 profile users see a Shell-checked local-runtime plan. Loader, Python runtime, cascade service bundle, Ditto engine, VoxCPM2 model, and bundled reference voices each report a name, progress, next action, retryability, and failure reason. With no packaged artifact or download manifest, Shell reports that boundary and does not pretend to download or start anything. `ready` is true only when all prerequisites and the live :8910 requested services are verified. | Rust `cascade_installation_status` contract tests (missing prerequisite, queued model download, ready-to-start, live ready) and `SettingsTab.test.tsx` (profile plan display; no `start_cascade` when `canStart=false`). Actual download/install and Tauri voice+lipsync remain a separate E2E gate after packaged artifacts exist. |
 
@@ -806,8 +844,8 @@ When a development task is delegated, Shell hands the saved workspace configurat
 
 | Scenario | Unit / contract | Integration |
 |---|---|---|
-| three tiers persist and inherit | `lib/llm/roles.test.ts`, `lib/adk-store.test.ts` | config file roundtrip |
-| Pi-only role handoff | 짝 naia-agent 저장소의 `pi-role-runner.contract.test.ts` (이 저장소에는 없다) | fake Pi session through supervisor |
+| UC-LLM-THREE-TIER | `packages/shell/src/lib/llm/__tests__/roles.test.ts`, `packages/shell/src/lib/__tests__/adk-store.test.ts` | 3계층 역할 상속 및 설정 파일 왕복 검증 |
+| Pi-only role handoff | 짝 naia-agent 저장소의 pi-role-runner.contract.test.ts (이 저장소에는 없다) | fake Pi session through supervisor |
 
 ## UC-NAIA-MODEL-ORDER — Compare only usable Naia models
 
@@ -833,6 +871,7 @@ reorders the same native WebView picker without changing the selected model.
 
 | Scenario | Unit / contract | UI / integration |
 |---|---|---|
+| UC-NAIA-MODEL-ORDER | `packages/shell/src/lib/llm/__tests__/registry.test.ts`, `packages/shell/src/lib/llm/__tests__/model-picker-rule.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx` | 가중 가격 기본 정렬, 미가용 경로 제외, 성능 정렬 전환 검증 |
 | weighted price is the default | registry weighted-score and stable-sort tests | Settings component and Playwright option-order assertions |
 | unavailable routes are absent | registry metadata/filter contract | Settings component and Playwright absence assertions |
 | performance order is evidence-based | dated recommendation-order contract | Settings sort-change assertion |
@@ -869,6 +908,7 @@ successful until the player reports an observed `playing` transition.
 
 | Scenario | Unit / contract | UI / integration |
 |---|---|---|
+| UC-RADIO-DJ-DURABLE | `packages/shell/src/lib/__tests__/bgm-skill.test.ts`, `packages/shell/src/lib/__tests__/chat-service.test.ts`, `packages/shell/e2e/bgm-skill.spec.ts`, `packages/shell/e2e-tauri/specs/94-radio-bgm-queue.spec.ts` | Radio DJ 도구 재등록, 중복/재생 전환, Skills 단일 설정 소유권 검증 |
 | agent restart before a chat turn | `chat-service.test.ts` boolean delivery receipt | `e2e/bgm-skill.spec.ts` asserts same-turn `app_skills` precedes `chat_request` |
 | current search result repeats | `bgm-skill.test.ts` current-video exclusion and same-video replay receipt | BGM Playwright fixture observes a fresh iframe/playback transition |
 | YouTube WebView identification | embed URL/remount component contract | Playwright request verifies referrer; the paired native Linux Tauri/WebKitGTK radio queue E2E `94-radio-bgm-queue.spec.ts` verifies observed A-to-B playback, the announce gate that withholds a title until observed playing (S-RADIO-DJ-5) and a detached track A late error leaving track B untouched (S-RADIO-DJ-1) |
@@ -936,7 +976,7 @@ Test Coverage Map
 
 | UC | 단위·계약 | 비고 |
 |---|---|---|
-| UC-BGM-ORPHAN-PORT-RECOVERY | `src-tauri/src/lib.rs:13661` `bgm_port_reclaim_terminates_real_stale_sidecar_listener`: 실제 node 리스너를 포트에 앉히고 회수 후 해제까지 실측 / `:13612` `bgm_port_reclaim_kills_only_proven_sidecar_holder`: 남의 프로세스를 죽이지 않는지 | 재시작 회복·포트 경합·사용자에게 보이는 실패 문구를 한 UC 가 함께 덮는다 |
+| UC-BGM-ORPHAN-PORT-RECOVERY | `src-tauri/src/lib.rs:13661` `bgm_port_reclaim_terminates_real_stale_sidecar_listener`, `src/test/bgm-sidecar-reclaim.contract.test.ts`, `src/test/e2e-agent-lease-reclaim.contract.test.ts`, `src/test/lease-reclaim-platform.contract.test.ts`: 실제 node 리스너를 포트에 앉히고 회수 후 해제까지 실측 / `:13612` `bgm_port_reclaim_kills_only_proven_sidecar_holder`: 남의 프로세스를 죽이지 않는지 및 임대 회수 계약 | 재시작 회복·포트 경합·사용자에게 보이는 실패 문구를 한 UC 가 함께 덮는다 |
 
 ## UC-BGM-STALE-OWNER-ADOPT — 죽은 셸의 BGM 소유 기록이 새 셸을 막지 않는다 (#684)
 
@@ -1040,6 +1080,7 @@ GPU가 감지되면 온보딩은 음성 설정에서 로컬 음성과 레퍼런�
 
 | 상태 | 단위/컴포넌트 | UI/통합 |
 |---|---|---|
+| UC-ONBOARDING-APPEARANCE-VOICE | `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx`, `packages/shell/src/components/__tests__/BgmPlayer.test.tsx`, `packages/shell/e2e/onboarding-fresh.spec.ts`, `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts` | 온보딩 외모·음성 독립 선택, GPU 힌트, 좌측 배치, BGM 일시정지 토글 검증 |
 | 기본·빈 목록 | 온보딩 VRM/NVA 목록 및 일반 이름 placeholder | Playwright 기본 화면 |
 | 진행·성공 | GPU 안내, NVA 저장, 비디오 프레임 캡처 | Playwright 선택/저장 및 스크린샷 |
 | 오류·복구 | 영상 캡처 실패 시 video 프레임 fallback, GPU 미감지 시 자동 프로파일 없음 | 컴포넌트 오류 fallback |
@@ -1080,8 +1121,8 @@ Those older sections are historical evidence only.
 | **UC-NVA-COMPOSITE** | NVA가 대기·발화·대기를 오갈 때 앱 배경이 항상 유지되고, 알파를 가질 수 없는 발화 클립(mp4 등)이라도 검은 배경이 노출되지 않는다. | prebaked-renderer 유닛 테스트; 실기 Windows 시각 검증은 이 세션에서 미실시 |
 | **UC-SETTINGS-AVATAR-SYNC** | 로그인·원격 설정 반영 등으로 메인 화면의 아바타가 NVA로 바뀌면, 설정 탭의 상세/미리보기도 같은 시점에 NVA로 갱신된다(재시작 불요). | SettingsTab hydration 회귀 테스트 |
 | **UC-DISCORD-TAB-LIVE** | 대화창 하단 🌐 Channels 탭을 열면 실제 연결 상태·서버·채널 목록·대화 스레드가 보인다("안정화 작업 중" 정적 문구가 아니다). | NaiaMetaArea + ChannelsTab 컴포넌트 테스트 |
-| **UC-BGM-NO-FALSE-SKIP** | YouTube 곡이 실제로 재생 중이면, iframe의 "재생 중" 신호 메시지가 유실되더라도(WebView2 핸드셰이크 이슈) 12초 워치독이 다른 곡으로 강제 전환하지 않는다. 진행률(`infoDelivery`) 신호가 독립적으로 재생을 확인한다. | `components/__tests__/BgmPlayer.test.tsx`(신규) + `e2e/bgm-skill.spec.ts` 실 브라우저 재작성(대기열 보존·상태 diagnostic 확인) |
-| **UC-BGM-ENDED-NOTIFY** | 곡이 실제로 끝나면(타이머 아님, 진짜 ended 이벤트) Shell이 트랙 시작 때와 동일한 방식으로 에이전트에게 즉시 통지한다. 에이전트가 다음 곡을 고르거나 멘트를 하는 결정은 naia-agent 소관(이 저장소 범위 밖)이라 이 시나리오는 "통지가 나가는지"까지만 다룬다. | `components/__tests__/BgmPlayer.test.tsx`(신규, music_ended 발신 검증) |
+| **UC-BGM-NO-FALSE-SKIP** | YouTube 곡이 실제로 재생 중이면, iframe의 "재생 중" 신호 메시지가 유실되더라도(WebView2 핸드셰이크 이슈) 12초 워치독이 다른 곡으로 강제 전환하지 않는다. 진행률(`infoDelivery`) 신호가 독립적으로 재생을 확인한다. | `packages/shell/src/components/__tests__/BgmPlayer.test.tsx`(신규) + `e2e/bgm-skill.spec.ts` 실 브라우저 재작성(대기열 보존·상태 diagnostic 확인) |
+| **UC-BGM-ENDED-NOTIFY** | 곡이 실제로 끝나면(타이머 아님, 진짜 ended 이벤트) Shell이 트랙 시작 때와 동일한 방식으로 에이전트에게 즉시 통지한다. 에이전트가 다음 곡을 고르거나 멘트를 하는 결정은 naia-agent 소관(이 저장소 범위 밖)이라 이 시나리오는 "통지가 나가는지"까지만 다룬다. | `packages/shell/src/components/__tests__/BgmPlayer.test.tsx`(신규, music_ended 발신 검증) |
 | **UC-BGM-AI-LOCAL-NEXT** | 유튜브·로컬 혼합 플레이리스트에서 AI next/prev가 UI 버튼과 같이 로컬 파일을 재생하고, 확인되면 제목을 돌려 준다. | `BgmPlayer.test.tsx` AI next 로컬 재생 + `bgm-skill.test.ts` navigate ack |
 | **UC-BGM-TAURI-OBSERVE** | Tauri가 YouTube `source=null`로 메시지를 보내도 playing/infoDelivery를 관측하고, play 확인은 loading이 아니라 playing이다. | `decideIframeMessageSource` 단위 + BgmPlayer null-source playing + `waitForBgmObservedPlayback` |
 | **UC-VOICE-ONBOARDING** | 로그인 이후 온보딩에 음성 단계가 있다: 무료 Web TTS on/off + 시스템 보이스 미리듣기, 그리고 VRAM 6GB+ 감지 시 실제로 로컬 VoxCPM2를 켜고 끌 수 있는 버튼(안내 링크가 아니라 진짜 `start_cascade`/`stop_cascade` 호출). | OnboardingWizard 컴포넌트 테스트(음성 단계 내비게이션 + 실제 invoke 호출 + 저장된 config 필드 검증) + `e2e/onboarding-fresh.spec.ts` 실 브라우저 3/3 통과 |
@@ -1092,7 +1133,7 @@ Those older sections are historical evidence only.
 
 | Scenario | User-observable outcome | Coverage |
 |---|---|---|
-| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 Naia 선택기에는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 나타나고, "Naia 기본값 적용"을 눌러도 메인은 Flash로 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_API_KEY 필요) |
+| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 Naia 선택기에는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 나타나고, "Naia 기본값 적용"을 눌러도 메인은 Flash로 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `packages/shell/src/lib/slots/__tests__/settings-slots.contract.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_API_KEY 필요) |
 
 ### 2026-09-13 로그인하지 않고 쓰기 (#591, 에픽 #589)
 
@@ -1118,12 +1159,12 @@ any-llm 게이트웨이 쪽(라우팅·가격)은 이미 구현·테스트돼 �
 | **UC-V017-LIVE-AUTH-ACTIVATION** (#449) | A successful clean-install login refreshes the account balance and activates the persisted Naia credential in the already-running chat core before onboarding completes. The first request works in the same app process; a restart is never the recovery path. Delayed or duplicate auth callbacks remain idempotent, and activation failure stays on a retryable completion state. | auth-activation unit/component tests + clean-profile Playwright first balance/first chat acceptance |
 | **UC-V017-WINDOWS-VOXCPM2-SELECT-INSTALL-START** (#450) | On supported Windows NVIDIA hardware, VoxCPM2 remains selectable when its model/engine is absent. Selecting it runs one transaction: verify bundled `windows_trt_6g` runtime → download pinned model → prepare/verify TensorRT LocDiT → start the direct service → require TRT-identifying health → persist provider. Failure rolls back config and slot manifest and permits retry. Local commands/state/PIDs use VoxCPM2 names. The remote Cascade WebSocket route is preserved independently and is never killed, adopted, or reconfigured by this transaction. | selector state-machine tests + Rust direct-service/model-preparation/health tests + remote Cascade health/WebSocket preservation + clean Windows native acceptance; RTX 2070 success remains unclaimed until that hardware gate passes |
 | **UC-V017-ONBOARDING-DEFAULT-NVA-PREVIEW** (#451) | Entering the avatar step publishes the resolved bundled Naia NVA selection as soon as its asset is ready, so the selected card and live preview agree without a click. A later default effect cannot overwrite an explicit user choice. | onboarding component event-order tests + Playwright desktop/narrow/loading/error/keyboard review |
-| **UC-V017-ONBOARDING-NAIA-VRM-ASSETS** (#451) | A user who obtains a fresh `naia-adk` sees the two official Naia VRMs alongside the four existing VRMs in onboarding. Each of the six cards has a recognizable loaded thumbnail and remains selectable, while the preselected Naia NVA stays the only initially selected card. | `naia-adk` tracked-asset/hash inspection + avatar preset unit test + Playwright six-card image-load/selection/desktop/narrow review |
+| **UC-V017-ONBOARDING-NAIA-VRM-ASSETS** (#451) | A user who obtains a fresh `naia-adk` sees the two default VRMs and three default NVAs in onboarding. Each installed VRM has a recognizable loaded thumbnail and remains selectable, while the preselected Naia NVA stays the only initially selected card. Additional user-installed or older VRMs can also be selected. | `naia-adk` asset inventory inspection + avatar preset unit test + Playwright image-load/selection/desktop/narrow review with a mocked extended inventory |
 | **UC-V017-HERDR-FIRST-SURFACE** (#452) | A clean-install first Workspace open distinguishes Herdr process spawn, API readiness, page load, and renderer failure. A bounded failure becomes an actionable error with retry and safe diagnostics instead of a terminal black `loading` surface; retry preserves the workspace and restarts only the failed layer. | Herdr startup state-machine unit/Rust tests + Playwright/e2e-tauri absent/delayed/exit/page/renderer/retry states |
 | **UC-V017-LINUX-VOXCPM2-STANDALONE-RUNTIME** (#537) | A Naia OS (Linux) user with a supported NVIDIA GPU turns on local voice in Settings. The Shell verifies and stages the digest-pinned `linux_trt_6g` artifact, runs the bash installer (voice palette, installer-acquired TensorRT and CUDA library wheels, pinned model, GPU-local engine on the selected card), then starts the compiled loopback service with the stored Naia credential over stdin. The first sentence is spoken from this machine; no Cascade process, checkout, or fallback is involved, and a failure at any phase is shown as that phase, never as a silent switch to a remote voice. | Real-machine journey on RTX 3090 ×2 Bazzite: installer log with every `VOXCPM2_PROGRESS` phase, `VOXCPM2_READY` with `profile: linux_trt_6g`, the shell's "로컬 음성을 N번 카드에 올립니다" line, and a captured WAV (#537) |
 | **UC-V017-WINDOWS-VOXCPM2-STANDALONE-RUNTIME** (#453) | A clean Windows RTX user installs and starts local VoxCPM2 without any `naia-labs`, `naia-omni`, or `naia-omni-cascade` checkout. Shell verifies and stages a digest-pinned artifact released by the standalone `voxcpm2-tensorrt` repository, automatically prepares the pinned NVIDIA dependencies and model in Shell-managed state, builds the device-specific TensorRT engine, and starts the artifact's loopback-only service under Shell lifecycle control. A user-authorized voice is installed separately because the release carries no default voice. Two complete sentence synthesis requests succeed; after a service restart the same dependencies, model, engine, and user voice are reused without another acquisition or rebuild. A missing or hash-drifted runtime fails visibly, and local TRT never falls back to or reconfigures an external Cascade provider. | standalone runtime pytest/source-boundary checks + Shell staging hash/independence contracts + Rust lifecycle tests + Settings Playwright + clean RTX 4060 install/build/health/two-speech/restart acceptance |
 
-P02 release-state matrix: build preparation, missing required runtime, successful NSIS/MSI creation, silent install, installed launch; Herdr server already ready/cold start/process absent/delayed ready/process exit/API ready but page failure/renderer failure/timeout/error/retry; first-login config persistence/reload/credential and balance refresh progress/success/error/retry/duplicate callback/crash-before-complete, first-chat success/error without app restart; VoxCPM2 eligible-uninstalled/select-installing/download failure/engine-build failure/verify failure/start failure/health failure/rollback/retry/success and ineligible-GPU states; digest-pinned standalone runtime clean staging, missing object, size/hash drift, private-repository absence, local-model-only enforcement, two Korean synthesis requests, process restart, model/engine/reference-voice reuse, and external Cascade isolation; NVA default asset loading/ready/error, no-click preview, explicit selection, keyboard selection, six installed VRM cards with loaded thumbnails, and desktop/narrow layout; NSIS/MSI silent uninstall plus same-build reinstall; live/stale diagnostic logs; and bundled Node native ABI are checked separately. The Naia live-action card has a distinct face-alignment assertion; generic media-overflow geometry alone is not completion evidence. Publishing remains outside this scenario until the clean-install gate passes.
+P02 release-state matrix: build preparation, missing required runtime, successful NSIS/MSI creation, silent install, installed launch; Herdr server already ready/cold start/process absent/delayed ready/process exit/API ready but page failure/renderer failure/timeout/error/retry; first-login config persistence/reload/credential and balance refresh progress/success/error/retry/duplicate callback/crash-before-complete, first-chat success/error without app restart; VoxCPM2 eligible-uninstalled/select-installing/download failure/engine-build failure/verify failure/start failure/health failure/rollback/retry/success and ineligible-GPU states; digest-pinned standalone runtime clean staging, missing object, size/hash drift, private-repository absence, local-model-only enforcement, two Korean synthesis requests, process restart, model/engine/reference-voice reuse, and external Cascade isolation; NVA default asset loading/ready/error, no-click preview, explicit selection, keyboard selection, installed VRM cards with loaded thumbnails (including a mocked extended inventory), and desktop/narrow layout; NSIS/MSI silent uninstall plus same-build reinstall; live/stale diagnostic logs; and bundled Node native ABI are checked separately. The Naia live-action card has a distinct face-alignment assertion; generic media-overflow geometry alone is not completion evidence. Publishing remains outside this scenario until the clean-install gate passes.
 
 ### 2026-08-17 private VoxCPM2 activation journey (#453)
 
@@ -1222,7 +1263,9 @@ P02 상태 매트릭스: thinking 없음, 구조화된 thinking 진행, 한 청�
 - inline code는 선택 언어의 레지스트리 규칙을 적용하며 backtick은 발화하지 않는다.
 - 정규화 결과가 비면 브라우저·로컬·원격 어느 provider에도 발화 요청을 만들지 않는다.
 
-Test Coverage Map: `lib/tts/__tests__/text-filter.test.ts`가 공통/언어/fallback 규칙을 검증하고, `lib/tts/__tests__/sentence-pipeline.test.ts`가 실제 provider payload의 단일 정규화 경계를 검증한다.
+| UC | 단위·계약 | 검증 |
+|---|---|---|
+| UC-V022-TTS-TEXT-NORMALIZATION | `packages/shell/src/lib/tts/__tests__/text-filter.test.ts`, `packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts` | 공통/언어별 정규화 및 실제 provider payload 단일 경계 검증 |
 
 ## 2026-09-03 발화 텍스트 정규화 확장 — 카오모지 제거·한국어 숫자 읽기 (#540)
 
@@ -1234,7 +1277,9 @@ Test Coverage Map: `lib/tts/__tests__/text-filter.test.ts`가 공통/언어/fall
 - 규칙은 provider 공유 정규화 계층에 있어 브라우저·로컬·원격 어느 음성이든 동일하게 적용되고, 영어·일어·중국어 발화의 숫자 표기는 바뀌지 않는다.
 - 로컬 음성처럼 voice 이름이 locale 형식이 아니어도 본문이 한글이면 한국어 숫자 읽기가 적용된다.
 
-Test Coverage Map: `lib/tts/__tests__/text-filter-speech.test.ts`(카오모지 제거·locale 분기)와 `lib/tts/__tests__/ko-number-reading.test.ts`(수사 변환·단위 테이블)가 검증한다.
+| UC | 단위·계약 | 검증 |
+|---|---|---|
+| UC-VOICE-TEXT-SPEECH-CLEANUP | `packages/shell/src/lib/tts/__tests__/text-filter-speech.test.ts`, `packages/shell/src/lib/tts/__tests__/ko-number-reading.test.ts` | 카오모지 제거·locale 분기 및 한국어 수사 변환 검증 |
 ## UC-V022-CHAT-RICH-MARKDOWN — 채팅 Markdown·코드·Mermaid
 
 - assistant 응답의 안전한 GFM을 읽기 좋은 형태로 표시한다.
@@ -1242,11 +1287,19 @@ Test Coverage Map: `lib/tts/__tests__/text-filter-speech.test.ts`(카오모지 �
 - Mermaid는 strict 보안 모드로 렌더링하고 실패 시 원문으로 복구한다.
 - 스트리밍 중 미완성 fence와 긴 코드가 대화 레이아웃을 깨뜨리지 않는다.
 
+| UC | 단위·UI | 확인 |
+|---|---|---|
+| UC-V022-CHAT-RICH-MARKDOWN | `packages/shell/src/components/__tests__/ChatMarkdown.test.tsx`, `packages/shell/src/components/__tests__/MarkdownCodeBlock.test.tsx`, `packages/shell/e2e/chat-tools.spec.ts` | GFM·코드 블록 복사·Mermaid 안전 렌더링 및 스트리밍 레이아웃 검증 |
+
 ## UC-V022-PERMISSION-SHORTCUTS — 권한 결정을 키보드로 선택 (#477)
 
 - 도구 권한 팝업이 열렸을 때 `Alt+Y`는 이번만 허용, `Alt+A`는 항상 허용, `Alt+N`은 거부를 정확히 한 번 실행한다.
 - 버튼의 플랫폼별 단축키 표기와 실제 키 해석은 같은 정의를 사용한다.
 - 팝업이 닫히면 리스너가 제거되며, 일반 입력과 추가 수정키 조합은 가로채지 않는다.
+
+| UC | 단위·컴포넌트 | 확인 |
+|---|---|---|
+| UC-V022-PERMISSION-SHORTCUTS | `packages/shell/src/lib/__tests__/permission-shortcuts.test.ts`, `packages/shell/src/components/__tests__/PermissionModal.test.tsx` | 권한 팝업 단축키 매핑·단일 실행·해제 검증 |
 
 ## UC-V022-LOCAL-RELEASE-ACCEPTANCE — 동일 빌드 사용자 검증
 
@@ -1262,6 +1315,10 @@ Test Coverage Map: `lib/tts/__tests__/text-filter-speech.test.ts`(카오모지 �
 - 설치를 마친 Host 음성은 설정에서 선택하는 즉시 자동 시작되고, 시작 실패나 차단 시 사유와 되돌림 안내가 프로필·음성 화면에 보인다. 무언 revert 는 없다. (#507)
 - 개발·e2e 실행도 설치본과 같은 위치(resource_dir)에서 installer 리소스를 찾으므로, 설치 완료된 엔진이 개발 빌드에서 미설치로 보이거나 재다운로드를 요구하지 않는다. (#508)
 - bgm-skill 검증은 즐겨찾기를 워크스페이스 SoT(`naia-config.bgmYoutubeFavorites`)에서 읽고, 비표준 포트의 공지 API(announcements) CORS 노이즈를 BGM 오류로 오인하지 않는다.
+
+| UC | 단위·E2E | 확인 |
+|---|---|---|
+| UC-V022-LOCAL-RELEASE-ACCEPTANCE | `packages/shell/scripts/__tests__/stage-voxcpm2-runtime.test.ts`, `packages/shell/e2e/bgm-skill.spec.ts`, `packages/shell/e2e/tts-fallback.spec.ts` | v0.2.2 로컬 Host 음성 스테이징·BGM SoT·음성 폴백 인수 검증 |
 
 Test Coverage Map: 관련 단위·컴포넌트 테스트만으로 완료하지 않는다. `v0.2.2` 버전과 리소스를 가진 동일 debug/release 후보를 시작해 Playwright UI 여정과 Windows Tauri smoke를 모두 통과해야 한다.
 ## 2026-08-26 워크스페이스 컨텍스트 해석 (#501, 에픽 #497)
@@ -1313,7 +1370,7 @@ Test Coverage Map (P02):
 | 전체 | vitest `src/test/workspace-context-observe-adapter.contract.test.ts` | Tauri 웹뷰 경로(F2 관측 포트) 재사용, 크기 기반 지문의 한계 고정 |
 | 전체 | vitest `packages/shell/src/apps/workspace/__tests__/workspace-context-app.test.tsx` | 앱 상태 매트릭스(루트 없음·성공·빈 목록·오류·프로젝트 전환·다시 읽기) |
 | 전체 | Playwright `packages/shell/e2e/workspace-context.spec.ts` | 실 UI에서 근거 표시, 선언 밖 문서 미표시, 프로젝트 전환 시 범위·개정 변화, 경로 중복 없음, 근거 출처 정확성, 실패 진단, 좁은 폭 미넘침 |
-| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/workspace-context.spec.ts` | 실제 파일 시스템 픽스처에서 발견·진입·전환·실패의 풀스택 왕복 |
+| 전체 | Playwright `packages/shell/e2e/workspace-context.spec.ts` (네이티브 e2e-tauri workspace-context 왕복 스펙 작성 예정) | 실제 파일 시스템 픽스처에서 발견·진입·전환·실패의 풀스택 왕복 |
 
 상태 매트릭스: 기본(진입점 정상), 빈 목록(선언된 인덱스 0개), 진행(대용량 워크스페이스 스캔 중),
 성공(컨텍스트 확정), 오류(진입점 깨짐), 좁은 폭(컨텍스트 근거 앱 축소)을 모두 매핑한다.
@@ -1366,7 +1423,7 @@ Test Coverage Map (P02):
 | UC-HERDR-CONTROL-RECONNECT | vitest `src/test/herdr-control-reconnect-bounds.contract.test.ts` | 재접속 상한, 상한 도달 시 정직 실패 |
 | 전체 | vitest `src/test/herdr-protocol-conformance.contract.test.ts` | 설치된 herdr 의 `api schema` 와 우리 계약을 대조하고 요구사항별 실현 가능성을 사실에서 계산 |
 | UC-HERDR-CONTROL-OBSERVE | vitest `packages/shell/src/apps/workspace/__tests__/herdr.test.ts` + Rust `herdr::api` | 스냅샷 protocol 19..=22 수락, 18·23 거절. 오류는 범위만 말하고 낡은 단일 핀을 유일한 기대로 두지 않는다 (#645) |
-| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/herdr-control.spec.ts` | 실제 Herdr 상대 관측·변경·충돌·재시작 복구 왕복 |
+| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/100-herdr-first-frame.spec.ts`, `packages/shell/e2e-tauri/specs/environment-dispatch.spec.ts` (작성 예정: herdr-control 네이티브 스펙) | 실제 Herdr 상대 관측·변경·충돌·재시작 복구 왕복 |
 
 상태 매트릭스: 기본(Herdr 정상), 빈 목록(space 0개), 진행(작업자 실행 중), 성공(변경 반영),
 오류(충돌·타임아웃·연결 끊김), 좁은 폭(제어 앱 축소)을 모두 매핑한다.
@@ -1415,7 +1472,7 @@ Test Coverage Map (P02):
 | UC-ENV-TOOL-TERMINAL-EXEC | vitest `src/test/env-tool-workspace-escape.contract.test.ts` | 경계 밖 명령 거부 negative |
 | UC-ENV-TOOL-CANCEL | vitest `src/test/env-tool-cancel-timeout.contract.test.ts` | 취소·타임아웃·부분 실행 구별, 재전송 멱등 |
 | UC-ENV-TOOL-BOUNDARY-DENY | vitest `src/test/env-tool-approval-matrix.contract.test.ts` | 등급별 승인 요구, 비상속, 명시적 거부 |
-| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/env-tool.spec.ts` | 실 브라우저와 실 Herdr 터미널의 풀스택 왕복 |
+| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/env-tool-browser-native.spec.ts`, `packages/shell/e2e-tauri/specs/env-tool-browser-host-lifecycle.spec.ts`, `packages/shell/e2e-tauri/specs/env-tool-browser-host-fullstack.spec.ts` | 실 브라우저와 실 Herdr 터미널의 풀스택 왕복 |
 
 상태 매트릭스: 기본, 빈 목록(열린 컨텍스트 0개), 진행(작업 실행 중), 성공, 오류(거부·타임아웃·취소),
 좁은 폭(도구 결과 앱 축소)을 모두 매핑한다.
@@ -1463,7 +1520,7 @@ Test Coverage Map (P02):
 | UC-ORCHESTRATION-WORKER-REPLACE | vitest `src/test/orchestration-worker-adapter.contract.test.ts` | Codex·Claude·OpenCode 어댑터 생명주기 동등성 |
 | UC-ORCHESTRATION-WORKER-REPLACE | vitest `src/test/orchestration-replace-preserve.contract.test.ts` | 교체 시 이슈 상태·산출물 보존 |
 | UC-ORCHESTRATION-RESTART-RESUME | e2e-tauri `packages/shell/e2e-tauri/specs/orchestration-restart.spec.ts` | 앱·Herdr 재시작 후 이어받기, 증거 없는 단정 0 |
-| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/orchestration-reference.spec.ts` | 참조 이슈를 구현자와 독립 검증자로 완주 |
+| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/orchestration-restart.spec.ts` · vitest `src/test/orchestration-live.contract.test.ts` (작성 예정: orchestration-reference 스펙) | 참조 이슈를 구현자와 독립 검증자로 완주 |
 
 상태 매트릭스: 기본, 빈 목록(작업자 0), 진행(작업자 실행 중), 성공(검증 완료), 오류(작업자 사망·소유 충돌),
 좁은 폭(작업자 목록 축소)을 모두 매핑한다.
@@ -1508,7 +1565,7 @@ Test Coverage Map (P02):
 | UC-CHANNEL-SESSION-RECONNECT | vitest `src/test/channel-session-resume-refs.contract.test.ts` | 재개 참조 보관, 작업자 상태 복사 금지 |
 | UC-CHANNEL-SESSION-RECONNECT | e2e-tauri channel-reboot.spec.ts — #610 에서 채널 표면과 함께 지워졌다. 재부팅 후 이어받기 실기 검증은 현재 없다 | 재부팅 후 이어받기, 증거 없는 완료·중단 단정 0 |
 | UC-CHANNEL-SESSION-DISCLOSURE-DENY | vitest `src/test/channel-session-disclosure-policy.contract.test.ts` | 채널별 공개 범위, 기밀 컨텍스트 유출 negative |
-| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/channel-continuity.spec.ts` | 데스크톱과 Discord 사이 연속성 종단 시나리오 |
+| 전체 | vitest `src/test/channel-session-identity.contract.test.ts` (네이티브 E2E 미구현 — channel-continuity) | 데스크톱과 Discord 사이 연속성 종단 시나리오 |
 
 상태 매트릭스: 기본, 빈 목록(활성 작업 0), 진행(작업 실행 중 알림), 성공, 오류(연결 끊김·정책 거부),
 좁은 폭(채널 목록 축소)을 모두 매핑한다.
@@ -1546,7 +1603,7 @@ Test Coverage Map (P02):
 | UC-AGENT-BENCH-RUN | vitest `src/test/agent-bench-scenario-source.contract.test.ts` | 이 문서에서 형제 UC 를 읽어 판정 목록을 만든다. 계열이 비면 실패 |
 | UC-AGENT-BENCH-FALSE-COMPLETION | vitest `src/test/agent-bench-false-completion.contract.test.ts` | 미수행 보고·축소 suite·교차 누출·무단 발신 탐지 |
 | UC-AGENT-BENCH-REPORT | vitest `src/test/agent-bench-report.contract.test.ts` | 지연 중앙값·꼬리, 비용, 개입 횟수, 재현성 |
-| 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/agent-bench.spec.ts` | 실제 Herdr·브라우저·코딩 작업자 게이트에서의 수용 실행 |
+| 전체 | vitest `src/test/agent-bench-execution.contract.test.ts`, `src/test/agent-bench-live.test.ts` (작성 예정: agent-bench 네이티브 스펙) | 실제 Herdr·브라우저·코딩 작업자 게이트에서의 수용 실행 |
 
 상태 매트릭스: 기본, 빈 목록(시나리오 0), 진행(벤치 실행 중), 성공(수용), 오류(가짜 완료 탐지·임계 초과),
 좁은 폭(리포트 표 축소)을 모두 매핑한다.
@@ -1766,7 +1823,7 @@ Test Coverage Map (P02):
 | UC-ENV-ATTENTION | vitest `src/test/environment-live-herdr.contract.test.ts` | 살아 있는 Herdr 의 실제 터미널 이름·손잡이가 미관찰 중 전송되지 않음 |
 | UC-ENV-ATTENTION | e2e-tauri `packages/shell/e2e-tauri/specs/environment-dispatch.spec.ts` | 실 Rust — 뇌가 없을 때 등록이 "확인됨"으로 새지 않음(fail-closed 방향만) |
 
-> 받는 쪽(naia-agent) 검증은 그 저장소의 `src/test/uc-environment-segments.contract.test.ts`
+> 받는 쪽(naia-agent) 검증은 그 저장소의 src/test/uc-environment-segments.contract.test.ts
 > 가 소유한다. 이 저장소에서 실행할 수 없으므로 위 표에 넣지 않는다 — 넣으면 벤치가
 > 실행하지 못하는 경로를 문서 부패로 읽는다. 두 저장소의 표본 동기는
 > `environment-wire-conformance.contract.test.ts` 가 짝 저장소 대조로 지킨다.
@@ -1809,7 +1866,7 @@ Test Coverage Map (P02):
 |---|---|---|
 | UC-V023-MEMORY-PAIRING | vitest `src/test/agent-pairing-drift.contract.test.ts` | manifest 형식, CI checkout SHA, staging commit·clean·package gate 결선 |
 | UC-V023-MEMORY-PAIRING | vitest `packages/shell/scripts/__tests__/platform-matrix.test.ts` | installer workflow의 agent·memory 정확한 revision checkout |
-| UC-V023-MEMORY-PAIRING | vitest `packages/shell/scripts/__tests__/agent-pairing.test.ts` | 준비 경로 공유(dev·PROD), 형제 memory 이동·거부, 설치본 대조, frozen 설치, 추적 파일 변경 거부 |
+| UC-V023-MEMORY-PAIRING | vitest `packages/shell/scripts/__tests__/agent-pairing.test.ts`, e2e-tauri `packages/shell/e2e-tauri/specs/34-device-pairing.spec.ts` | 준비 경로 공유(dev·PROD), 형제 memory 이동·거부, 설치본 대조, frozen 설치, 추적 파일 변경 거부 및 디바이스 페어링 |
 
 ### UC-PERF-BUNDLE-BUDGET — 선택 기능은 필요할 때 내려받는다 (#431)
 
@@ -1950,7 +2007,7 @@ Test Coverage Map
 | UC-SLIDES-IMPORT-LIFETIME | Progress, cancel, retry, timeout, missing converter, corrupt input, bounded content/version/options cache and late result rejection. | slides_import Rust tests; slides-files.test.ts, slides-files-bridge.test.ts; slides-sidecar.spec.ts |
 | UC-SLIDES-EDIT | Edit page narration; apply/cancel; pause speech before applying; export edited Markdown copy; guard unapplied and unexported changes on document/script replacement. | slide-script.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts |
 | UC-SLIDES-DEMO-VIDEO | In an installed Slides deck, a `## N-M. [영상] filename.mp4` or `[video]` script heading schedules a same-folder video after page N narration. The video fills the slide canvas with sound, narration resumes immediately after its `ended` event, and range-end videos finish before completion/repeat. While the current page is being narrated, the next narration page's audio and aligned plan are prepared through the existing Shell speech pipeline; preparation continues during a video after that page. At most one narration page is prefetched, its synthesis requests run sequentially, and automatic page advance reuses its exact audio and plan. The canonical avatar keeps showing the current page's aligned mouth plan; a prepared next sentence's aligned plan remains on its separate canonical stage through an intervening video and becomes active only with its matching sound. Starting prefetch for the following page from this sentence's playback callback must not cancel the consumed page's stage before its play callback runs. Pause/resume, next/previous/goto, stop, question, repeat/range change, page skip and document replacement invalidate the prepared generation so stale audio or plans never play. Pause/resume, next/previous/goto, stop and question pause the current segment. Missing, rejected and playback-failed files are identified and skipped without stalling. Throughout Slides focus, narration, and video, the NVA avatar stays in the Shell’s left avatar panel at its existing size and crop. Focus controls change the Slides viewer only; no presentation-state message repositions the avatar. Per-sequence diagnostics report plan arrival, preparation timing, timeout/play state and swallowed errors without logging text or credentials. A later avatar plan waits for the current canonical player load to finish, and stale generations never play. | slide-script.test.ts, slide-presenter.test.ts, slides-files.test.ts, slides-files-bridge.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts, slides_files_test.rs, gateway-aligned-plan.test.ts, sentence-pipeline.test.ts (consumed stage survives next-page prefetch and settles `played:true` after video), audio-queue.test.ts, canonical-speech.test.ts, prebaked-renderer.test.ts, VideoAvatarCanvas.test.tsx, slides-host-bridge.test.ts, slides-host.test.ts; two isolated Linux recording takes with ffprobe/silencedetect/frame/audio evidence |
-| UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host(-bridge).test.ts`(recording_lost), 변이 확인 |
+| UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host.test.ts`, `slides-host-bridge.test.ts`(recording_lost), 변이 확인 |
 
 UC-SLIDES-DEMO-VIDEO P02 상태 매트릭스: **기본/빈 목록**은 영상 지시가 없는 PDF가 기존처럼 표시·낭독되고 평소 아바타 위치를 쓰는 상태, **진행**은 문서 선택·영상 구간 표시·현재 낭독 중 다음 쪽 준비와 아바타가 왼쪽 기본 칸에서 원래 크기·자르기로 유지됨, **성공**은 영상 화면·소리 재생과 다음 쪽에서 캐시된 오디오·정렬 계획 재사용 및 발표 중에도 아바타가 기존 왼쪽 칸을 유지, **오류**는 파일 누락/거부 또는 play 실패 알림 후 자동 진행, TTS/계획 오류 진단과 이동·정지 후 늦은 준비 폐기, **좁은 폭**은 1,100px 이하에서 영상 비율·검은 여백·제어와 아바타가 기본 왼쪽 칸에 보이고 발표 전용 crop이 적용되지 않는 상태다. 순차 준비 시험은 다음 쪽 한 장만 준비하고 합성 요청을 직렬 처리하며, 영상 뒤 문장이 재생을 시작하면서 그 다음 쪽 prefetch가 시작되어도 소비된 문장의 stage가 취소되지 않고 실제 재생 완료 `played:true`로 남는지, 현재 낭독의 계획 load와 다음 쪽 계획 준비가 서로의 입 재생을 끊지 않는지 확인한다. `sentence-pipeline.test.ts`는 현재 오디오 재생 중 다음 쪽 합성·계획 준비, 영상 뒤 캐시 재사용과 다음 페이지 prefetch 경계에서 stage 보존·취소를, `prebaked-renderer.test.ts`는 별도 정본 stage 승격과 취소를 확인한다. `slides-center-area.test.tsx`, `VideoAvatarCanvas.test.tsx`, `slides-host-bridge.test.ts`, `slides-sidecar.spec.ts`는 상태 표시·키보드(이전/다음/일시정지/정지)·ARIA·좁은 레이아웃·아바타 배치를, Linux 실녹화는 영상/음성 트랙과 쪽 사이 간격을 확인한다.
 
@@ -1961,13 +2018,13 @@ P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboar
 The automated quality checks are committed with the feature:
 
 - `packages/shell/e2e/slides-sidecar.spec.ts`: seven browser scenarios for PDF rendering, paired scripts, range/repeat, fullscreen, narrow layout, script editing/export, live host language/theme, recording request wiring, cancelled import and document-navigation isolation.
-- `packages/shell/src/lib/__tests__/slides-{files,files-bridge,host,host-bridge}.test.ts` and `slide-script.test.ts`: message lifetime, capability validation, cleanup, failure recovery and lossless script section editing.
+- `packages/shell/src/lib/__tests__/slides-files.test.ts`, `packages/shell/src/lib/__tests__/slides-files-bridge.test.ts`, `packages/shell/src/lib/__tests__/slides-host.test.ts`, `packages/shell/src/lib/__tests__/slides-host-bridge.test.ts`, and `slide-script.test.ts`: message lifetime, capability validation, cleanup, failure recovery and lossless script section editing.
 - `packages/shell/src/lib/__tests__/slide-script.test.ts`, `slide-presenter.test.ts`, `slides-files.test.ts`, `slides-files-bridge.test.ts`, `packages/shell/src/apps/__tests__/slides-center-area.test.tsx` and `packages/shell/src-tauri/src/slides_files_test.rs`: demo-video directive parsing/preservation, ordered state transitions and stale-generation rejection, per-name bounded same-folder reads, iframe transfer, single-src video playback, no narration during video, ended-to-speech handoff and missing/error skip.
 - `packages/shell/src/lib/avatar/nva-speech/__tests__/gateway-aligned-plan.test.ts`, `canonical-speech.test.ts`, `packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts`, `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `packages/shell/src/lib/voice/__tests__/audio-queue.test.ts`, `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/src/lib/__tests__/slides-host-bridge.test.ts`, `slides-host.test.ts`, and `packages/shell/e2e/slides-sidecar.spec.ts`: safe plan/preparation diagnostics, non-overlapping canonical loads, single-page-ahead audio/plan prefetch and reuse/cancellation, default avatar-panel placement and crop at narrow width, with Slides focus controls remaining local to the viewer.
 - `packages/shell/src/apps/__tests__/slides-script-editor.test.tsx`, `slides-center-area.test.tsx` and `generic-installed-slides.test.tsx`: controls, replacement protection, recording-stop retry and installed iframe integration.
-- `packages/shell/src-tauri/src/{slides_import,slides_files,app_assets}_test.rs`: bounded import, note mapping, cache/temporary-file cleanup, source preservation and installed asset recovery.
+- `packages/shell/src-tauri/src/slides_import_test.rs`, `packages/shell/src-tauri/src/slides_files_test.rs`, `packages/shell/src-tauri/src/app_assets_test.rs`: bounded import, note mapping, cache/temporary-file cleanup, source preservation and installed asset recovery.
 
-Run browser checks from `packages/shell` with `pnpm exec playwright test slides-sidecar.spec.ts`; run unit checks with `pnpm test`. Rust module tests are part of the native library test target. A real four-page LibreOffice conversion was also checked with synthetic text, tables, images, a hidden slide and blank notes; original PPTX bytes were unchanged.
+Run browser checks from `packages/shell` with `pnpm exec playwright test` (`packages/shell/e2e/slides-sidecar.spec.ts`); run unit checks with `pnpm test`. Rust module tests are part of the native library test target. A real four-page LibreOffice conversion was also checked with synthetic text, tables, images, a hidden slide and blank notes; original PPTX bytes were unchanged.
 
 Development snapshot verification on 2026-09-09: 1,918 Shell tests, 83 focused tests, 32 Rust module tests and seven browser scenarios passed. Shell/Slides production builds and whole native `cargo check` passed. This record does not claim real speech or recording success: browser speech and native recording IPC are mocked. Native voice/recording, live conversion cancellation/timeout, packaging and Unix execution require separate evidence. Supplemental independent reviews resolved their accepted findings; formal complexity/review eligibility was not CLEAN. Main-branch integration was explicitly requested on 2026-09-10; it does not constitute a store or installer release.
 
@@ -2289,6 +2346,7 @@ Test Coverage Map (P02)
 ## UC-APP-MANIFEST-V2 — 앱 매니페스트 v2 스키마 및 legacy 프로필 호환 (#735)
 
 앱 작성자가 v2 매니페스트(`manifest_version: 2`)를 선언하여 앱을 배포하거나, 기존 구형 매니페스트(`manifest_version` 미선언) 앱을 설치·실행할 때의 동작이다.
+- 앱 작성자는 사용자 누름에 따른 클립보드 쓰기가 필요할 때 `permissions`에 `clipboard.write`를 선언한다. 읽기 권한은 제공하지 않는다.
 - 앱 작성자는 `manifest_version: 2`, `context`, `skills[]`, `permissions`, `host_permissions`, `optional_permissions`, `requires[]`, `help`, `data_use`, `publisher`, `keepAlive`, 도구별 `exported` 등 v2 명세를 선언할 수 있다.
 - v2 매니페스트 앱은 설치 시 엄격한 유효성 검사(`validate_manifest`)를 거치며, 알 수 없는 권한 선언, `context` 길이 상한 초과(800자), 도구 이름 명명 규칙 위반(`skill_` 접두사 누락 또는 중복), `host_permissions` 없는 `browser`/`login-handoff` 권한 선언이 발견되면 설치가 즉시 거부된다.
 - 기존 구형(legacy) 앱(`manifest_version` 없음 또는 1)은 동일한 검사에서 경고(warning)만 남기고 설치와 실행이 기존과 동일하게 유지된다(동작 변화 없음).
@@ -2430,7 +2488,7 @@ Test Coverage Map (P02)
 
 ## UC-NVA-CAMERA-GESTURE-1022 — NVA 화면·동작과 로컬 음성 선택
 
-사용자는 NVA 아바타를 확대·축소하고 이동한 뒤 화면 배치를 저장하거나 초기화한다. NVA 묶음이 제공하는 gesture는 버튼으로 실행하거나 AI 응답의 `[[gesture:key]]` 표기로 실행할 수 있다. gesture 클립은 한 번 무음 재생한 뒤 대기로 돌아가며, Shell 음성이 재생 중이면 gesture 요청은 무시한다. 대기 영상은 발화나 동작이 끝난 뒤 마지막 재생 위치에서 이어진다. gesture가 없는 묶음에는 버튼과 AI 동작 안내를 제공하지 않는다. 사용자가 로컬 음성 엔진 실행 중 TTS 제공자를 Edge로 바꿨다가 다시 local을 선택하면 선택과 저장 설정 모두 local로 돌아간다.
+사용자는 NVA 아바타를 확대·축소하고 이동한 뒤 화면 배치를 저장하거나 초기화한다. 0.2.5에서는 아바타 조작 톱니를 눌러 조작 묶음을 펼친 뒤 사용하며, 다시 누르면 접힌다. 펼침 상태는 저장된다. NVA 묶음이 제공하는 gesture는 버튼으로 실행하거나 AI 응답의 `[[gesture:key]]` 표기로 실행할 수 있다. gesture 클립은 한 번 무음 재생한 뒤 대기로 돌아가며, Shell 음성이 재생 중이면 gesture 요청은 무시한다. 대기 영상은 발화나 동작이 끝난 뒤 마지막 재생 위치에서 이어진다. gesture가 없는 묶음에는 버튼과 AI 동작 안내를 제공하지 않는다. 사용자가 로컬 음성 엔진 실행 중 TTS 제공자를 Edge로 바꿨다가 다시 local을 선택하면 선택과 저장 설정 모두 local로 돌아간다.
 
 | 상태 | 사용자 기대 |
 |---|---|
@@ -2448,7 +2506,19 @@ Test Coverage Map (P02)
 | 기본·휠·0.5~3배 제한·이동 결합·저장·초기화·잘못된 값·좁은 폭 | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` — NVA zoom/pan actions; `packages/shell/src/lib/__tests__/ui-preferences.test.ts` — nvaZoom hydrate/patch; `packages/shell/src/lib/avatar/__tests__/camera-actions.test.ts` — zoom/action bridge; `AiControlBar.test.tsx` — accessible zoom controls | `packages/shell/e2e/nva-prebaked.spec.ts` — zoom buttons, reset, keyboard and 360px layout |
 | 대기 위치 이어 재생·gesture 목록·무음 1회 재생·ended 복귀·말하기 중 무시·없는 key | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts` — idle resume and gesture action cases | `packages/shell/e2e/nva-prebaked.spec.ts` — action button and clip playback call |
 | AI prompt 조건부 안내·완성/분할 gesture 파싱·표시/TTS 제거·gesture 실행 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts` — conditional gesture instructions; `packages/shell/src/lib/avatar/__tests__/nva-gesture-trigger.test.ts` — split marker stream; `packages/shell/src/components/__tests__/ChatArea.test.tsx` — response, display and TTS routing | `packages/shell/e2e/nva-prebaked.spec.ts` — visible action list, empty gesture list and narrow layout |
-| 실행 중 로컬 엔진에서 Edge→local 복귀 및 영속 | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — `SettingsTab` running local voice Edge→local case | `packages/shell/e2e/settings-slots.spec.ts` — running local provider change |
+| 실행 중 로컬 엔진에서 Edge→local 복귀 및 영속 | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — `SettingsTab` running local voice Edge→local case | `packages/shell/e2e/settings-slots.spec.ts` — running local provider change; 직접 시험 절차는 `[직접 시험 T10] UC-NVA-CAMERA-GESTURE-1022` 절 참조 |
+
+### 2026-10-25 캐릭터 카드 설정놀이 설치 앱 (`land.naia.charcard`, D81)
+
+| Scenario | User-observable outcome | Coverage |
+|---|---|---|
+| **UC-CHARCARD-ROLEPLAY** | 사용자가 PNG(`ccv3`·`chara`, CRC32 검증)·JSON(V3·V2·V1)·CHARX(`.charx` ZIP `card.json` 및 내장 아이콘) 캐릭터 카드를 불러와(예시 카드 4종 기본 제공, 보관함 준비 전에는 불러오기 대기·준비 뒤 합침) 목록에서 고르고, 첫 인사와 내 이름을 정해 대화를 시작하면 카드 내용이 선택된 나이아 대화 모델에 함께 전달되어 해당 캐릭터로 연기한다. 연기 끝내기 또는 다른 앱으로의 전환(`naia-app:context-cleared`)은 문맥과 연기 중 배너를 함께 비우고, 가져온 카드는 앱 안 `role="alertdialog"` 확인 뒤에만 지우며 삭제 뒤 초점을 다음(또는 이전) 카드로 옮긴다. 잘못된 파일·손상된 PNG/CHARX·저장소 실패는 복구·재시도 단추로 안내하며 좁은 폭(390px)에서도 가로 넘침 없이 키보드로 조작한다. | `packages/shell/src/apps/charcard/__tests__/card-parser.test.ts`, `packages/shell/src/apps/charcard/__tests__/prompt-builder.test.ts`, `packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx`, `packages/shell/src/apps/generic-installed/__tests__/GenericInstalledApp.context.test.tsx`, `packages/shell/e2e/charcard-app.spec.ts` |
+
+Test Coverage Map (P02) — `UC-CHARCARD-ROLEPLAY`
+
+| UC | 단위·계약 | 실 UI Playwright | 비고 |
+|---|---|---|---|
+| UC-CHARCARD-ROLEPLAY | `packages/shell/src/apps/charcard/__tests__/card-parser.test.ts`, `packages/shell/src/apps/charcard/__tests__/prompt-builder.test.ts`, `packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx`, `packages/shell/src/apps/generic-installed/__tests__/GenericInstalledApp.context.test.tsx` | `packages/shell/e2e/charcard-app.spec.ts` | 기본(예시 4종 PNG/JSON 카드 목록)·진행/성공(보관함 준비 전 대기·합침, 대화 시작·연기 끝내기·앱 전환 시 연기 해제·PNG/JSON/CHARX 카드 불러오기·확인 후 지우기 및 다음 카드 초점 이동)·오류(잘못된 파일·CRC/폭탄 거부·그림 크기 초과 또는 크기 미확인 시 카드 저장과 경고·저장 실패 재시도)·키보드/ARIA(`role="alertdialog"`, Esc)·좁은 폭(390px 가로 넘침 없음) |
 
 ## UC-NVA-ACTION-HOTKEYS-20261025 — 채팅 입력 근처에서 NVA 동작 실행
 
@@ -2544,10 +2614,14 @@ IR 방문자는 시연 깃발을 켠 웹판에서 넥스테인·나이아·성�
 공개용 원고를 로컬 컴파일한 KB를 OPFS에 미리 넣고 데스크톱과 같은 knowledge search/ask 도구로 답변 근거를 제공한다.
 숫자는 기준일과 함께 설명하고 계획은 계획으로 구분한다. 비공개 재무·고객·개인 정보는 번들에 포함하지 않는다.
 
-P02 Test Coverage Map: `kiosk-demo/knowledge.test.ts` — 20문항 관련 카드 검색, 원고/KB 민감 패턴 검사,
+P02 Test Coverage Map: `packages/shell/src/lib/kiosk-demo/knowledge.test.ts` — 20문항 관련 카드 검색, 원고/KB 민감 패턴 검사,
 컴파일 재현, 정상·빈 검색·오류·영속 config·다른 scope·깃발 OFF 무쓰기/명령 차단.
 `e2e/kiosk-knowledge.spec.ts` — 실제 브라우저 OPFS 시드·명령·재읽기.
 UI 컴포넌트/CSS/Rust 변경 없음; 화면 상태·좁은 폭 검토는 기존 UI 계약을 보존한다.
+
+| 시나리오 | 검증 | 시험 |
+|---|---|---|
+| UC-KIOSK-KNOWLEDGE-S1 | 20문항 지식 검색, 민감 패턴 검사, 컴파일 재현 및 깃발 OFF 차단 | `packages/shell/src/lib/kiosk-demo/knowledge.test.ts` |
 
 S1 기존 Worker 앵커 보충: 브라우저 Worker의 읽기 전용 도구·OPFS 스냅샷·대화 relay·로컬/계정 provider 경로는 시연 OFF에서 보존한다.
 검증: 기존 web-runtime/web-worker 단위 시험과 S1 실제 Worker skill-list probe. 새 지식 실행기만 깃발 ON에서 추가한다.
@@ -2562,6 +2636,10 @@ S1 P04 결과: 관련 Vitest 52/52, Kiosk+Worker 72/72, Chromium ON/OFF OPFS 격
 키오스크 투자자는 기본 기억 저장으로 앞 대화와 호칭 게스트님을 새로고침 후에도 회상한다. 일반 웹판은 기존 동작을 유지한다. S3 첫 화면은 `packages/shell/src/lib/kiosk-demo/memory.ts`의 `resetKioskMemory()`를 기다린 뒤 새 대화를 시작한다. 진행 중인 응답은 먼저 취소하고 대화 UI/session도 새로 시작해야 하며, 초기화 뒤 페이지 재로딩으로 이전 Worker와 프롬프트를 폐기하는 방식을 권장한다. 이 함수는 기억만 지우고 로그인·지식·설정은 보존한다. 초기화는 기존 기억·회상을 지우고 게스트 호칭만 남긴다.
 
 Test Coverage Map (P02): `packages/shell/src/lib/kiosk-demo/memory.test.ts` — OPFS 재접속 후 게스트·앞 사용자 발화 회상, 실제 agent handler 턴 전 recall/턴 후 save, 깃발 off의 네 명령 차단·저장 없음, 백업 암호화/복원/잘못된 암호·손상 실패 원자성, 삭제·초기화·진행 중 저장 fencing, 동시 저장. UI/Rust/컴포넌트/CSS 변경 없음: 시각·좁은 폭/키보드 상태는 기존 UI 계약 유지이며 이 작업의 검증 대상은 저장 포트다.
+
+| 시나리오 | 검증 | 시험 |
+|---|---|---|
+| UC-KIOSK-MEMORY-S2 | 게스트·사용자 발화 OPFS 회상/저장, 깃발 OFF 차단, 암호화 백업·복원 원자성 | `packages/shell/src/lib/kiosk-demo/memory.test.ts` |
 
 S2 public function contract (conform gate):
 ```ts
@@ -2590,6 +2668,7 @@ P02 통합: kiosk-demo.spec.ts에서 입장·인사·지식 도구 호출·새�
 | 오류 | 누락/잘못된 열쇠는 차단, 저장 실패는 안전한 안내·재시도 | kiosk-demo.test.ts, KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
 | 좁은 폭 | 360px에서 버튼·제목·안내 순서, 키보드 포커스·ARIA | kiosk-demo.spec.ts |
 | 깃발 꺼짐 | 일반 웹판 페르소나·로그인·온보딩·부팅 경로 보존 | kiosk-demo.test.ts, KioskDemoGate.test.tsx |
+| UC-WEB-KIOSK-S3 | 웹 시연판 부팅·오프닝 게이트 및 일반 웹판 OFF 경로 보존 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/components/__tests__/KioskDemoGate.test.tsx` |
 
 웹 전용 변경이며 Rust/Tauri 배선 변경은 없다. 실 계정/BC250 발화는 S5/S7 운영 수용에서 검증한다.
 
@@ -2614,6 +2693,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 오류 | 열쇠 누락/준비 실패 시 기존 S3 안전 차단·재시도 유지 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 모바일 폭에서 기존 모바일 시트 레이아웃·버튼 가로 넘침 없음 유지 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo()` OFF 시 일반 웹판 기본 아바타(`naia` / VRM) 및 기본 레이아웃 무변경 | `kiosk-demo.test.ts` |
+| UC-WEB-KIOSK-S4 | 시연판 지나 아바타 레이아웃 및 깃발 OFF 기본 아바타 유지 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts` |
 
 ## UC-WEB-KIOSK-S5 — 지나 목소리를 나이아 게이트웨이로 연결 및 8초 브라우저 폴백 (2026-11-05, 2026-11-08 갱신)
 
@@ -2632,6 +2712,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 오류 | 무응답(8초 시간 초과) 또는 HTTP 오류 시 경고 말풍선 주입 없이 브라우저 음성(`speechSynthesis`)으로 폴백하고 화면이 멈추지 않음 | `synthesize.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 1280x800 키오스크 화면 및 360px 폭에서 대화·발화 중 UI 레이아웃과 조작성 유지 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo()`가 거짓인 일반 웹판은 `ttsProvider="browser"` 고정 및 기존 90초 로컬 음성 타임아웃·오류 처리 유지 | `kiosk-demo.test.ts`, `synthesize.test.ts`, `sentence-pipeline.test.ts` |
+| UC-WEB-KIOSK-S5 | 시연판 음성 합성·문장 파이프라인 및 깃발 OFF 브라우저 음성 고정 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/lib/tts/__tests__/synthesize.test.ts`, `packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts` |
 
 ## UC-WEB-KIOSK-FIX — 키오스크 시연판 적대 검수 수정 (2026-11-05)
 
@@ -2657,6 +2738,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 잠시 쉬고 있어요"`·`"오늘 준비한 시연 사용량을 다 썼어요."`·`"부스 직원에게 말씀해 주세요."` 표시 및 `"들어가기"` 단추 숨김, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | 일반 웹판(OFF)에서 WebLLM 등록·표시 유지, 대화 답변 아래 사용량 줄 표시 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-FIX | 시연판 설정·대화 화면 및 깃발 OFF WebLLM·사용량 줄 유지 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/components/__tests__/ChatArea.test.tsx` |
 
 P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx`, `ChatArea.test.tsx`) + `SettingsTab.test.tsx` WebLLM 옵션 숨김 시험 통과, Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과, `nva_matting_hole_measure.py` 몸 구멍 0건 및 닫힌 영역 불투명 배경 픽셀 프레임 0건 통과, `codex-runs/kiosk-agy/fix-chat.png`(`1280x800`) 시각 검토 완료.
 
@@ -2685,6 +2767,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 | 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백, 시연 대화 중 크레딧 소진 시 일반 실패 버블+재시도 대신 `"지금은 시연을 잠시 쉬고 있어요"`·`"오늘 준비한 시연 사용량을 다 썼어요."`·`"부스 직원에게 말씀해 주세요."` 게이트 화면으로 전환(`"들어가기"` 숨김) | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts`, `ChatArea.test.tsx`, `KioskDemoGate.test.tsx` |
 | 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창·잠긴 두뇌 탭 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`codex-runs/kiosk-r3/cap-r7/`) |
 | 깃발 꺼짐 | `isKioskDemo() === false`에서 저장된 공급자·모델·생각 세기·도구·작업 표면 인지·터미널 직접 입력 설정 그대로 전송·유지, 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.test.ts`, `config-seed.test.ts` |
+| UC-WEB-KIOSK-R3 | 시연판 도구·설정·작업공간·대화 흐름 및 깃발 OFF 설정 보존 | `packages/shell/src/components/__tests__/ToolActivity.test.tsx`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/apps/workspace/__tests__/web-workspace-path.test.tsx`, `packages/shell/src/components/__tests__/ChatArea.test.tsx`, `packages/shell/src/lib/__tests__/kiosk-demo.test.ts` |
 
 
 ## UC-NVA-WEB-STUDIO-NAIA — 웹판 기본 나이아 스튜디오 정본 교체 및 `naia-anime` 통합 (2026-11-06)
@@ -2723,6 +2806,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 | 오류 | WebGPU 미지원 기기에서 `"내 PC 에서 대답하기"` 클릭 시 크래시 없이 WebGPU 필요 안내만 표시, `.agents`·`CLAUDE.md` 등 내부 파일은 계속 차단 | `ChatArea.test.tsx`, `web-workspace-path.test.tsx`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | `1280×800` 키오스크 화면(대화창·아바타 비가림) 및 `360px` 모바일 폭에서 레이아웃·키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo() === false` 일반 웹판·데스크톱 동작 무변경 보존 | `kiosk-demo.test.ts`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-ADK-LOCAL | 시연판 로컬 ADK 스냅샷 경로 및 깃발 OFF 무변경 보존 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/apps/workspace/__tests__/web-workspace-path.test.tsx`, `packages/shell/src/components/__tests__/ChatArea.test.tsx` |
 
 ## UC-WEB-KIOSK-S6 — "IR 발표해 줘" → 슬라이드 앱에서 지나가 장마다 설명 (2026-11-07)
 
@@ -2744,6 +2828,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 | 오류 | 잘못된 페이지/빈 입력 방어, 발화 취소·중단 시 늦은 음성 완료 이벤트가 장을 넘기지 않음 | `slides.test.ts`, `ChatArea.test.tsx` |
 | 좁은 폭 / 1280x800 | `1280x800`에서 왼쪽 대화 칸(및 위 지나 아바타)·오른쪽 작업 공간 전체 슬라이드 칸 비겹침 및 글자 잘림 없음, 모바일 폭에서도 컨트롤 접근 가능 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo() === false`일 때 `slides_*` 명령은 기존 `desktop-only` 유지 및 일반 웹/데스크톱 동작 무변경 | `slides.test.ts`, `command-table.test.ts`, `router.test.ts` |
+| UC-WEB-KIOSK-S6 | 시연판 슬라이드 발표·웹 명령 차단 해제 및 깃발 OFF desktop-only 유지 | `packages/shell/src/lib/kiosk-demo/slides.test.ts`, `packages/shell/src/lib/web-runtime/__tests__/router.test.ts` |
 
 ## UC-WEB-KIOSK-STUDIO-NVA — 키오스크 시연판 스튜디오 정본 지나·나이아 NVA 교체, 다중 움직임·발음 입 모양·기본 목소리(`ko-KR-Neural2-A`, 게이트웨이 등록 뒤 `naia-voice:tpl-jina`) 연결 (2026-11-07)
 
@@ -2761,6 +2846,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 | 오류 | 게이트웨이 `/v1/audio/speech` 또는 `/v1/studio/speech-plan/units` 실패 시 브라우저 TTS 및 로컬 한글/영문 G2P 발음 계획으로 즉시 폴백, 재생 전환 중 `AbortError`·세대 전환은 실패로 처리하지 않으며 진짜 미디어 재생 실패 시에만 `failMedia` 호출 및 캔버스 비움·숨김 | `prebaked-renderer.test.ts`, `VideoAvatarCanvas.test.tsx`, `browser-speech-plan.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | `1280x800` 키오스크 표준 화면 및 `360x780` 모바일 화면에서 아바타·대화창·입장 게이트 레이아웃 유지 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo() === false`인 일반 웹판은 기본 `browser` TTS와 기존 설정 동작을 그대로 유지 | `kiosk-demo.test.ts`, `config.test.ts` |
+| UC-WEB-KIOSK-STUDIO-NVA | 시연판 스튜디오 NVA 발화 계획·표정 전환 및 깃발 OFF 기본 동작 유지 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/lib/avatar/nva-speech/__tests__/browser-speech-plan.test.ts` |
 
 ## UC-WEB-KIOSK-MOBILE-FIX — 휴대폰 세로 화면·멈춤 문구·잔액 검증 가드·발표 중간 질문 근거 정돈 (2026-11-07)
 
@@ -2788,6 +2874,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 | 오류 | 잔액 조회에서 크레딧 `<= 0` 확인 시에만 멈춤 화면 전환, 그 외 오류는 1회 재시도 후 `"잠시 문제가 있어요, 다시 말해 주세요."` 대화 안내 | `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 휴대폰 세로(`390x844`, `412x915`)에서 상단 토글 한 줄 축소·지나 머리 비잘림·시트 오버레이 및 `1280x800` 데스크톱 배치 보존 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo() === false` 일반 웹판·데스크톱 동작 무변경 보존 | `kiosk-demo.test.ts`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-MOBILE-FIX | 모바일 세로 배치, 잔액 0 멈춤 조건, 슬라이드 중간 질문 및 단일 원고 근거 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/components/__tests__/ChatArea.test.tsx`, `packages/shell/src/lib/kiosk-demo/slides.test.ts`, `packages/shell/e2e/kiosk-demo.spec.ts` |
 
 ## UC-B2C-026 — NVA 테마와 호환 캐릭터 카드
 
@@ -2931,12 +3018,12 @@ Linux 사용자는 온보딩 NVA 영상이 실패해도 정지 그림을 보고 
 |---|---|---|
 | UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-media.test.ts; packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/src/components/__tests__/ResilientVideo.test.tsx; packages/shell/e2e/onboarding-fresh.spec.ts | 옵션·CI 플러그인 검사, 정상/오류/무응답/모델 전환, 360·1100px 정지 그림·키보드 입력. 빈 모델은 기존 오류 상태, 목록·저장 변경 없음. Rust 변경 없음. |
 
-### UC-B2C-026-R15 — 개발판 Vosk 묶음 보강
+### UC-B2C-026-R15B — 개발판 Vosk 묶음 보강
 개발판 설치 빌드는 productName=Naia-dev여도 검증된 Vosk를 탐색해 Linux 산출물을 만든다.
 
 | UC | Test Coverage Map | 검증 |
 |---|---|---|
-| UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-vosk.test.ts; packages/shell/scripts/__tests__/platform-matrix.test.ts | 실제 ELF DT_NEEDED 탐색 실패→성공, prod/dev·공백 경로·기존 환경 보존·다른 OS 무변경, core build→Tauri 환경 전달 순서. 실 linuxdeploy prod 성공/dev 실패→둘 다 성공은 실행 결과 참조. |
+| UC-B2C-026-R15B | `packages/shell/scripts/__tests__/linux-vosk.test.ts`; `packages/shell/scripts/__tests__/platform-matrix.test.ts` | 실제 ELF DT_NEEDED 탐색 실패→성공, prod/dev·공백 경로·기존 환경 보존·다른 OS 무변경, core build→Tauri 환경 전달 순서. 실 linuxdeploy prod 성공/dev 실패→둘 다 성공은 실행 결과 참조. |
 
 ## UC-B2C-026-R16 (#792)
 설정의 직접 설정 모델 목록이 하나면 이름 표시와 적용 시 main 역할의 모델이 일치한다. 목록 도착 후 설정 이벤트가 빈 모델을 재주입해도 적용 가능하다. 빈 목록/ASR 전용은 대화 모델을 만들지 않고, 두 모델은 선택을 유지한다. 영상 오류는 정지 그림 복구를 유지하며 진단 상태를 기록한다.
@@ -2958,7 +3045,7 @@ Test Coverage Map: SettingsTab.test.tsx 단일 모델+config event→Apply; preb
 | 기억 빈 목록/정리 대기/완료/오류 | SettingsTab, Rust 읽기, 키보드·ARIA·360/1100px UX |
 | Linux 저장 실패 | .deb libsecret-tools, AppImage 기동 검사, 쉬운 말 오류 |
 
-R17 검증 연결: `memory-role-summarizer.contract.test.ts`(재개방 및 대화 처리기), `uc1-memory-process.integration.test.ts`(실 프로세스 재시작, 임베딩 없음/가짜 임베딩), `memory-settings.spec.ts`(360/1100px 빈 목록·대기·성공·오류 복구·로컬 임베딩 설정), `SmallLlmSection.test.tsx`, `linux-media.test.ts`, Rust `r17_pending_tests`. 설치된 준 3090 모델 자체의 정확도와 실 장치 인수는 별도이며 자동 시험의 가짜 답변을 실 모델 품질로 해석하지 않는다.
+R17 검증 연결: 짝 naia-agent 저장소의 memory-role-summarizer.contract.test.ts(재개방 및 대화 처리기), uc1-memory-process.integration.test.ts(실 프로세스 재시작, 임베딩 없음/가짜 임베딩), `packages/shell/e2e/memory-settings.spec.ts`(360/1100px 빈 목록·대기·성공·오류 복구·로컬 임베딩 설정), `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`, `packages/shell/scripts/__tests__/linux-media.test.ts`, Rust `r17_pending_tests`. 설치된 준 3090 모델 자체의 정확도와 실 장치 인수는 별도이며 자동 시험의 가짜 답변을 실 모델 품질로 해석하지 않는다.
 
 R17 exact Agent pin: `c34410479779a8d290eaf819ac18674764103849` (R9의 ecb879b 이력보다 우선). proto SHA는 유지하고 memory는 아래의 R17 exact pin으로 올린다. 로컬 메인 사실 추출의 저장 제한은 30초다.
 
@@ -2966,7 +3053,7 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 
 | UC | 시험 파일 | 확인 |
 |---|---|---|
-| UC-B2C-026-R17 | packages/shell/src/components/__tests__/SmallLlmSection.test.tsx; packages/shell/src/components/__tests__/SettingsTab.test.tsx; packages/shell/e2e/memory-settings.spec.ts | 작은 모델 설정·기억 목록 빈/대기/완료/오류·360/1100px. 저장→재시작→새 대화 회상은 Agent 쪽 memory-role-summarizer.contract·uc1-memory-process.integration |
+| UC-B2C-026-R17 | `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`; `packages/shell/e2e/memory-settings.spec.ts`; `packages/shell/e2e-tauri/specs/91-memory-settings-integration.spec.ts`; `packages/shell/e2e-tauri/specs/96-memory-storage-boundary.spec.ts` | 작은 모델 설정·기억 목록 빈/대기/완료/오류·360/1100px·실 Tauri 기억 설정/저장 경계. 저장→재시작→새 대화 회상은 Agent 쪽 memory-role-summarizer.contract·uc1-memory-process.integration |
 
 ### UC-B2C-026-R18 — 기억 수정 통합과 슬라이드 기본 배치 (#792 P01/P02)
 R17 기억 A→사실>0·대기0→SIGTERM→새 B 회상을 Agent bfa2aa9 / Memory ab1f800의 정확한 API로 검증한다. off·승인 누락·실패 재시도와 0.2.6 설정·캐릭터 제스처를 유지한다. Slides 집중·영상·낭독 중 기본 아바타 칸과 사용자가 선택한 pan/zoom을 유지한다. P02: uc1-memory-process, memory-consolidation, VideoAvatarCanvas, prebaked-renderer, ChatArea, sentence-pipeline 및 slides-sidecar 브라우저/기억 UI 360·1100px 시험에 매핑한다. CSS 배치 fixture는 실 캐릭터 화질/설치판 인수와 구분한다.
@@ -2974,6 +3061,37 @@ R17 기억 A→사실>0·대기0→SIGTERM→새 B 회상을 Agent bfa2aa9 / Mem
 | UC | 시험 파일 | 확인 |
 |---|---|---|
 | UC-B2C-026-R18 | packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts; packages/shell/src/components/__tests__/ChatArea.test.tsx; packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts; packages/shell/e2e/slides-sidecar.spec.ts; packages/shell/e2e/memory-settings.spec.ts | 슬라이드 집중·영상·낭독 중 아바타 칸·pan/zoom 유지, 기억 UI 360·1100px. 기억 통합 회상은 Agent 쪽 uc1-memory-process·memory-consolidation |
+
+### UC-REGRESSION-HOST-BINDING (#853)
+회귀 실행자는 옛 host 필드의 이관 오류, 활성 기계의 누락·빈 값·잘못된 hash, 가상 호스트 불일치를 기록 작성 전에 거부한다. 일치하는 바인딩만 실행할 수 있다.
+
+P02: `src/test/regression-host-privacy.contract.test.ts` — 가상 hostname/platform으로 legacy(정상 hash 동반 포함), 누락, 빈 값, malformed, 불일치, 일치 및 OS 불일치 동작 검증. 공개 기록의 `ranOn.host === machine` 확인. UI/Rust 변경 없음.
+
+Test Coverage Map (P02)
+
+| UC | 시험 파일 | 확인하는 것 |
+|---|---|---|
+| UC-REGRESSION-HOST-BINDING | `src/test/regression-host-privacy.contract.test.ts` | 옛 host 이관 오류, 누락·빈 값·잘못된 hash·불일치 거부, 일치 바인딩만 실행 |
+
+## UC-USAGE-EVENTS — 동의한 셸의 누름·화면 이동 통계
+
+사용자는 첫 실행(기존 설치 포함) ADK 설정 전에 사용 통계 허용/거절을 고르고 설정 일반에서 변경한다. 선택 전에는 통계 번호·사건·대기열·요청이 없다. 거절해도 앱을 계속 사용한다. 끄기는 즉시 모든 창에 반영하고 미전송 사건을 버린다. 도입·설정·대화·기본 앱 제어의 고정 이름표는 [대조표](progress/usage-events/event-inventory.md)를 따른다.
+
+### Usage events Test Coverage Map (P02)
+
+| 시나리오 | 검증 파일 / 그룹 |
+|---|---|
+| UC-USAGE-EVENTS | `packages/shell/src/lib/__tests__/usage-events.test.ts`: 미선택/거절 0건, 허용 후 최초 관측, 끄기·재켜기·창 경합 |
+| 허용 목록·값 검사·본문 2KB·개인 정보 칸 없음, 묶음·실패·포화·만료 | packages/shell/src/lib/__tests__/usage-events.test.ts |
+| 동의 기본/거절/허용/저장 오류·좁은 폭·키보드, 빈 목록/진행은 해당 없음(두 선택 단추), 실제 UI | packages/shell/e2e/usage-events.spec.ts |
+| BroadcastChannel 또는 Web Locks 부재 시 동의·설정 선택 생략 및 저장 없음 | packages/shell/e2e/usage-events.spec.ts |
+| 설정 로그인 성공·잔액 조회 뒤 성공 사건, 브라우저 실패 사건 없음 | packages/shell/src/components/__tests__/SettingsTab.test.tsx |
+| 독립 Slides 실제 빌드의 시작 및 셸 패키지 버전 주입 | packages/shell/e2e/slides-standalone-build.spec.ts |
+| 14개 언어 동일 키·한국어/영어 실제 문구 | packages/shell/src/lib/__tests__/i18n-user-facing.test.ts |
+| 네이티브 분류 | 기존 distribution.rs/배포 시험 재사용, Rust 변경 없음 |
+| DOM 누름 선언과 허용 목록/문서 전수 정합 | packages/shell/src/lib/__tests__/usage-inventory.test.ts |
+
+수신처 미승인 상태에서 Azure 실수신·비용/권한/보고 시험은 완료로 주장하지 않는다.
 
 ## UC-BROADCAST-STREAM-026 — OBS 없이 나이아 쉘에서 바로 방송을 송출한다 (0.2.6)
 
@@ -3015,7 +3133,7 @@ Test Coverage Map (P02)
 
 | UC | 테스트 파일 | 확인 내용 |
 |---|---|---|
-| UC-WIN-RTX2070-R2-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src-tauri/build.rs`, `packages/shell/scripts/stage-runtime.mjs`, `packages/shell/scripts/__tests__/platform-matrix.test.ts`, `packages/shell/src/lib/__tests__/broadcast.test.ts`, `packages/shell/src/components/__tests__/AiControlBar.test.tsx`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/lib/__tests__/config-secrets.test.ts`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/lib/__tests__/asset-protocol-scope.test.ts`, `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx` | 윈도우 `ffmpeg.exe` 스테이징·PE/자리표시 검증 및 런타임 스폰 전 차단(`os error 216` 방지), 14개 로케일 방송 시작 오류 표시, 방송 키 빈 값 저장·`"키 지우기"` 시 `secure-keys.dat` 삭제, 윈도우 방송 확인 단계(서버 주소·키 마스킹·`Naia` 창) 및 리눅스 포털 흐름 유지, 윈도우 역슬래시·드라이브 문자 경로의 `naia-settings\background` asset scope 허용, `naia-autumn-office-live.mp4` 배경 목록·미리보기 제외 및 정규화 |
+| UC-WIN-RTX2070-R2-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src-tauri/build.rs`, `packages/shell/scripts/stage-runtime.mjs`, `packages/shell/scripts/__tests__/platform-matrix.test.ts`, `packages/shell/src/lib/__tests__/broadcast.test.ts`, `packages/shell/src/components/__tests__/AiControlBar.test.tsx`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/lib/__tests__/config-secrets.test.ts`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/lib/__tests__/asset-protocol-scope.test.ts`, `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx`, `packages/shell/e2e/broadcast-transparent-fallback.spec.ts` | 윈도우 `ffmpeg.exe` 스테이징·PE/자리표시 검증 및 런타임 스폰 전 차단(`os error 216` 방지), 14개 로케일 방송 시작 오류 표시, 방송 키 빈 값 저장·`"키 지우기"` 시 `secure-keys.dat` 삭제, 윈도우 방송 확인 단계(서버 주소·키 마스킹·`Naia` 창) 및 리눅스 포털 흐름 유지, 윈도우 역슬래시·드라이브 문자 경로의 `naia-settings\background` asset scope 허용, `naia-autumn-office-live.mp4` 배경 목록·미리보기 제외 및 정규화, 방송 투명 폴백 회귀 |
 
 ## UC-NVA-BROADCAST-HOTFIX — 방송 화면 시험 자산 제거 (#451 후속)
 
@@ -3034,7 +3152,7 @@ Rust 변경 없음. 실제 3090 방송 운영 수용과 브라우저 IPC fixture
 
 P04/P05: 관련 Vitest 35/35, 최종 renderer 22/22, Shell typecheck 통과. Playwright 정상 카드·레이아웃 3/3 및 투명 오류 360/1100px 2/2 통과. 오류 상태는 기존 polite status로 안내하며 이미지와 canvas는 보이지 않고 키보드 입력은 유지된다. 재마운트 시 로딩 상태로 복구한다. 스크린샷·DOM·폭 검토에서 정보 위계와 가로 넘침 이상 없음. 신규 입력/제어 및 Rust 변경 없음. 전체 Shell 실행의 비관련 실패는 결과 보고서에 별도 기록한다.
 
-### UC-NVA-BROADCAST-HOTFIX browser regression verification (#451, #855)
+#### Browser Regression Verification (UC-NVA-BROADCAST-HOTFIX, #451, #855)
 
 P01–P03: preserve authored greeting playback in Linux Chromium while retaining the WebKitGTK MediaSource workaround; a media failure remains transparent with keyboard input usable. Use deterministic avatar crop assets and native workspace boot fixtures. Korean layout is measured after Markdown paints; Slides video labels follow the fixture locale.
 
@@ -3071,13 +3189,14 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | 성공 | 카드 칸 수정 내용이 실제 대화 시스템 프롬프트(`config.persona` / `buildKioskSystemPromptFromSnapshot`)에 반영되고, 다른 카드 적용 후 지나 카드로 돌아오면 지나 테마(`nvaModel: "jina"`, 목소리, 웹 시연판 지나 테마 배경 `naia-autumn-office-live.mp4`) 복원 및 미설치 웹 배경 시 콘솔 경고 후 기본 배경 폴백 | `character-theme.test.ts`, `kiosk-demo.test.ts`, `adk-snapshot-fs.test.ts`, `SettingsTab.test.tsx` |
 | 오류·보안 경계 | 손상된 카드 거절 및 카드가 도구 권한(`enableTools`/`allowedTools`)·모델(`provider`/`model`)·안전 규칙(`AGENTS.md`/`rules/response-rules.md`)을 바꾸지 못함 | `character-theme.test.ts`, `kiosk-demo.test.ts` |
 | 좁은 폭 / 반응형 | 휴대폰 세로(`412x915`), 휴대폰 가로(`915x412`), 데스크톱(`1440x900`)에서 대화 머리 한 줄 유지, 손 전환 배치 전환, 대화창 잘림 없음 | `AiControlBar.test.tsx`, `AppMainContent.test.tsx`, `fix7b-shots` 캡처 |
+| UC-WEB-KIOSK-FIX7B | 모바일·데스크톱 대화 머리 한 줄 유지 및 손 전환 배치 | `packages/shell/src/components/__tests__/AiControlBar.test.tsx`, `packages/shell/src/components/__tests__/AppMainContent.test.tsx` |
 
 ## UC-WEB-KIOSK-FIX7C — 7판 고침 셋째 묶음: 매팅 머리카락·동작 구멍 제거, 캔버스 고화질 버퍼·확대, 슬라이드 앱 노출 (2026-11-08)
 
 7판(`fix7`·`fix7b`) 적용 뒤 발견된 아바타 매팅 구멍, 화면 축소·확대 저해상도 흐림, 웹 시연판 슬라이드 앱 목록 누락을 해결한다:
 1. **머리 위 점 및 동작 클립 구멍 제거(`FR-WEB-KIOSK-FIX7C.1`)**: `nva-chromakey-gl.ts`(`alpha-repair`)와 `nva-stacked-alpha-gl.ts`에서 바깥 윤곽선(어깨·팔·목)의 검은 줄 제거와 색 복원은 유지하되, 어두운 머리카락 안쪽 픽셀을 밝게 띄우거나 침식해 노란·갈색 배경 점이 비치지 않게 하고, 대기(`idle.webm`)·발화(`talking-ko.webm`)·동작 클립(`greeting.webm`·`guidance.webm`·`idea.webm`·`happy.webm`) 전부의 머리카락·몸통 안쪽 구멍을 주변 깨끗한 색으로 메운다. 오목한 바깥 배경(귀·턱·포니테일 틈·고양이 귀 사이)은 메우지 않는다.
 2. **캔버스 버퍼 표시 크기×확대×화소 비율 맞춤 및 `imageSmoothingQuality="high"`(`FR-WEB-KIOSK-FIX7C.2`)**: `VideoAvatarCanvas.tsx`에서 캔버스 버퍼를 고정 `720×1280` + CSS `scale(zoom)`으로 늘리는 대신, `표시 크기 × zoom × min(devicePixelRatio, 2)`로 맞추고 `ResizeObserver`와 `zoom` 변경 때 다시 맞춘다. `VideoAvatarCanvas.tsx`, `prebaked-renderer.ts`(`ctx`·`offscreenCtx`·동작 클립 경로 포함), `nva-procedural-motion.ts` 모든 2D 컨텍스트에 `imageSmoothingEnabled = true; imageSmoothingQuality = "high"`를 적용해 `1920×1080`(화소 비율 1·1.25) 등 축소·확대 화면 모두에서 고화질을 유지한다.
-3. **웹 시연판 앱 목록에 슬라이드 앱 노출(`FR-WEB-KIOSK-FIX7C.3`)**: 이미 있는 `SlidesViewer.tsx`·`SlidesCenterArea.tsx`와 `lib/kiosk-demo/slides.ts`(IR 공개 덱 `ir-public.json`)를 사용해 웹 시연판(`isKioskDemo()`) 시작 시 `land.naia.slides` 앱을 등록하고, 데스크톱 앱 막대(`AppBar`)와 휴대폰 세로 메뉴(`.web-mobile-menu-list`) 모두에서 슬라이드 아이콘을 보여 주며, 열면 IR 공개 덱 첫 장이 뜨고 대화로 `"다음 장"`을 말하면 2장으로 넘어간다.
+3. **웹 시연판 앱 목록에 슬라이드 앱 노출(`FR-WEB-KIOSK-FIX7C.3`)**: 이미 있는 `SlidesViewer.tsx`·`SlidesCenterArea.tsx`와 `packages/shell/src/lib/kiosk-demo/slides.ts`(IR 공개 덱 `ir-public.json`)를 사용해 웹 시연판(`isKioskDemo()`) 시작 시 `land.naia.slides` 앱을 등록하고, 데스크톱 앱 막대(`AppBar`)와 휴대폰 세로 메뉴(`.web-mobile-menu-list`) 모두에서 슬라이드 아이콘을 보여 주며, 열면 IR 공개 덱 첫 장이 뜨고 대화로 `"다음 장"`을 말하면 2장으로 넘어간다.
 
 ### Test Coverage Map — UC-WEB-KIOSK-FIX7C
 
@@ -3089,6 +3208,7 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | 성공 | 슬라이드 앱 열기 후 `"다음 장"` 대화로 2장 전환, 확대(`zoom=2`, `zoom=1.5`) 및 `dpr=2`·`1920x1080`(`dpr=1`·`1.25`)에서 버퍼 크기·화질 확인 | `VideoAvatarCanvas.test.tsx`, `slides.test.ts`, `fix7c-shots` |
 | 오류·보안 경계 | 비시연판 웹 모드에서는 데스크톱 전용 슬라이드 명령 차단 유지, 오목한 바깥 배경(귀·목·포니테일 틈) 오탐 메움 0 | `slides.test.ts`, `fix7c-shots` |
 | 좁은 폭 / 반응형 | 휴대폰 세로(`412x915`) 메뉴에서 슬라이드 앱 열기·닫기(`✕`), 데스크톱(`1440x900`, `1920x1080`) 반응형 확인 | `fix7c-shots` 캡처 |
+| UC-WEB-KIOSK-FIX7C | 웹 시연판 슬라이드 앱 등록·메뉴 노출 및 장 전환 | `packages/shell/src/lib/kiosk-demo/slides.ts`, `packages/shell/src/lib/kiosk-demo/slides.test.ts` |
 
 ## UC-WEB-KIOSK-FIX7D — 웹 시연판 탐색기 배치 유지 및 유튜브 재생 (2026-11-08)
 
@@ -3109,6 +3229,7 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | 성공 | 탐색기 열고 닫은 뒤 `layoutOrientation`·`chatHeight`·`chatHeightRatio`·`naiaWidth`·`chatMode`·`railCollapsed` 값이 그대로 유지되고, 유튜브 재생 중 멈춤(`stop` / `"유튜브 멈춰"`) 시 즉시 정지 | `AppMainContent.test.tsx`, `web-workspace-path.test.tsx`, `bgm-skill.test.ts`, `ChatArea.test.tsx` |
 | 오류·폴백 | 데스크톱 BGM 사이드카(`ensure_bgm_server` / `127.0.0.1:18791`)나 CLI 감지(`cli_detect_refresh`)가 없는 웹 환경에서도 오류 없이 내장 유튜브 카탈로그로 검색·재생되고 `SkillsTab`이 깨끗하게 표시됨 | `bgm-skill.test.ts`, `BgmPlayer.test.tsx`, `SkillsTab.test.tsx` |
 | 좁은 폭 / 반응형 | 데스크톱(`1440x900`)과 휴대폰(`412x915`)에서 탐색기 전후 배치 유지(`before/after-explorer-*.png`) 및 유튜브 재생기 표시(`after-youtube-*.png`) 확인 | `fix7d-shots` 헤드리스 브라우저 캡처 |
+| UC-WEB-KIOSK-FIX7D | 작업공간 탐색기 배치 유지 및 유튜브 재생기 표시 | `packages/shell/src/lib/__tests__/kiosk-demo.test.ts`, `packages/shell/src/apps/workspace/__tests__/web-workspace-path.test.tsx`, `packages/shell/e2e/kiosk-demo.spec.ts` |
 
 ## UC-WEB-KIOSK-FIX7F — 7판 고침 여섯째 묶음: 지나 정수리 들쭉 자국 제거, 지나 애니 머리카락 테두리 점선 제거, 대화창 머리 줄 단추 겹침 방지, 지나 치마·팔 바깥 가장자리 계단 현상 제거 (2026-11-08)
 
@@ -3136,6 +3257,7 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | 성공 | 정수리 2x 지나(`after-head-crown-2x-jina.png`)·정수리 2x 지나 애니(`after-head-crown-2x-jina-anime.png`)·머리어깨 2x 지나 애니(`after-head-shoulder-2x-jina-anime.png`)·휴대폰 세로 첫 화면(`after-mobile-portrait-home.png`) 화소 검증 및 실사 나이아·지나 화질 유지 | `prebaked-renderer.test.ts`, `fix7f-shots` |
 | 오류·보안 경계 | WebGPU 미지원 기기에서 `"내 PC에서 대답하기"` 클릭 시 8GB 안내 배너가 기존과 동일하게 표시되고 오목한 바깥 배경(귀·목·포니테일 틈) 및 몸통 바깥 배경은 메우지 않음 | `ChatArea.test.tsx`, `prebaked-renderer.test.ts` |
 | 좁은 폭 / 반응형 | 데스크톱(`1440x900`), 휴대폰 세로(`412x915`), 초소형 폭(`360px`)에서 대화 머리 줄 단추 경계 상자 교차 `0px` 및 키보드/ARIA 이름 유지 | `ChatArea.test.tsx`, `fix7f-shots` |
+| UC-WEB-KIOSK-FIX7F | 반응형 대화 머리 줄 단추 경계 교차 0px 및 키보드·ARIA 유지 | `packages/shell/src/components/__tests__/ChatArea.test.tsx` |
 
 ## UC-WEB-KIOSK-FIX7G — 7판 고침 일곱째·여덟째 묶음(fix7g·fix7h): 화면 위치·색 문턱 없는 다단계 GPU 외부 연결성 매팅·주 피사체 연결 가는 선 보존·실제 영상 골든 및 반례 GPU 시험 (2026-11-08)
 
@@ -3167,12 +3289,13 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | 성공 | 실제 Chromium WebGL2에서 실제 영상 정수리 ROI 총변동·굴곡량 `≤ fix7f` 및 분리 섬 `0`, 반례 5종(대각선 연결선 `(70,59)` `A=255`, 분리 `2x20` 섬 `A=0`, 3색 구멍 `RGB(20,20,25)`·`(68,68,68)`·`(230,230,220)` 모두 `A=255`, 위치 이동 불변, 바깥 연결 틈 `A=0`) 전부 통과 | `e2e/kiosk-demo.spec.ts`, `prebaked-renderer.test.ts`, `nva-stacked-alpha.test.ts` |
 | 오류·보안 경계 | 바깥 배경과 이어진 오목한 틈 오탐 메움 `0`, WebGL 컨텍스트 유실 시 안전 폴백, 문서·상태 파일 개인 절대 경로 `0건` | `e2e/kiosk-demo.spec.ts`, `prebaked-renderer.test.ts` |
 | 좁은 폭 / 반응형 | `599x800`, `600x800`, `601x800`, `412x915`, `915x412`, `1440x900`에서 대화창 머리 줄 단추 실제 경계 상자 교차 `0px`, 접근성 이름·키보드 동작 및 `412x915` 프레임 처리 시간 확인 | `e2e/kiosk-demo.spec.ts`, `fix7h-shots` |
+| UC-WEB-KIOSK-FIX7G | 경계 폭별 대화창 머리 단추 교차 0px 및 프레임 처리 시간 확인 | `packages/shell/e2e/kiosk-demo.spec.ts` |
 
 ## UC-WEB-KIOSK-FIX7J — 7판 고침 열째 묶음(fix7j): 매 장면 GPU 안팎 판정을 중단하고 원본 해상도 정확한 연결 성분으로 구운 `.stacked.mp4` 알파 재생 (2026-11-09)
 
 `fix7a`~`fix7i` 아홉 차례의 런타임 셰이더 유한 전파·문턱 수정을 끝내고, `result-fix7hrev1.md` 적대 검수 지적 1~7을 구조적으로 해결한다. 안팎(연결성) 판정을 런타임 셰이더에서 빼고, 클립마다 원본 해상도에서 정확한 연결 성분(BFS/라벨링, 반복 횟수 상한 없음)으로 한 번 계산한 알파와 경계 색을 `.stacked.mp4`에 구워 기본 재생한다:
 1. **원본 해상도 정확한 연결 성분 기반 오프라인 알파 굽기(`FR-WEB-KIOSK-FIX7J.1`)**:
-   - `packages/shell/src/lib/avatar/nva-alpha-bake.ts`의 순수 함수(`bakeAvatarFrameRgba`, `bakeAvatarFrameAlpha`)와 `scripts/bake-nva-stacked.mjs` 도구는 원본 해상도(`720x1280` 또는 임의 `width x height`)에서 반복 횟수 상한·절반 해상도 다운샘플·사전 브리지·내부 개구부 시드 없이 정확한 연결 성분을 계산한다.
+   - `packages/shell/src/lib/avatar/nva-alpha-bake.ts`의 순수 함수(`bakeAvatarFrameRgba`, `bakeAvatarFrameAlpha`)와 오프라인 굽기 도구(bake-nva-stacked.mjs, 별도 단계)는 원본 해상도(`720x1280` 또는 임의 `width x height`)에서 반복 횟수 상한·절반 해상도 다운샘플·사전 브리지·내부 개구부 시드 없이 정확한 연결 성분을 계산한다.
    - **바깥 배경**: 캔버스 네 가장자리와 4-연결로 이어진 투명 성분(`alpha < 128`)을 BFS로 끝까지 추적한다. 25회 굽은 4px 미로(`64x256`·`256x256`)와 1px 굽은 외부 통로(`128x256`·`720x256`)는 끝점까지 바깥 배경(`A=0`)으로 남고, 가장자리와 이어지지 않은 닫힌 `30x30` 내부 구멍이나 `alpha=0.84`/`0.86` 벽·방향 수 `n=5`/`6` 안쪽 `4x4` 구멍은 불투명(`A=255`)으로 메워진다.
    - **주 피사체 및 의도된 분리 장식 보존**: 가장 큰 8-연결 불투명 성분을 주 피사체로 선택해 그 성분과 이어진 1px 세로선(`128x256`·`720x256`), `2x20` 세로선, `2x2` `45°` 대각선(`(70,59)`), 대각 한 접점 `2x2` 성분(`(64,54)`, `(65,55)`)을 해상도와 무관하게 보존한다. 주 피사체와 떨어진 `2x20` 섬과 `8x8` 섬(`(61,50,8,8)`) 및 외곽 매팅 부스러기는 제거하되, `jina-anime` `idea` `1.717s` 손가락 위 별 효과(`bbox x[209,250] y[164,210]`) 등 의도된 분리 장식은 규칙으로 보존한다.
    - **경계 알파·색 보정 단계 분리**: 연결성 판정 뒤에 별도 단계로 닫힌 구멍 내부 색 복원과 바깥 경계 다크 매트·청록/주황 스필 제거 및 경계 알파 정제를 수행한다.
@@ -3198,3 +3321,235 @@ P01–P03: preserve authored greeting playback in Linux Chromium while retaining
 | 성공 | `result-fix7hrev1.md` 반례 전수(닫힌 `30x30` 구멍, 1px 굽은 통로 `128`/`720`폭, 25회 4px 미로·`256` 긴 미로, `0.84`/`0.86` 문턱, 방향 수 `n=5`/`6`, 분리 `8x8`·`2x20` 섬 제거, 대각 한 접점 `2x2`·`2x20`·`2x2` 대각선 보존, `jina-anime` `idea` `1.717s` 별 장식 보존) 및 12개 클립 TV/Curv 비퇴행·불필요 섬 `0` 통과 | `nva-alpha-bake.test.ts`, `e2e/kiosk-demo.spec.ts` |
 | 오류·보안 경계 | `?nva_alpha=webm` 또는 `stacked_alpha.clips` 미등록 새 클립에서 원본 `.webm` + `alpha-repair` 폴백 동작 및 한계 문서화, 개인 절대 경로·비밀값 노출 `0건` | `nva-stacked-alpha.test.ts`, `VideoAvatarCanvas.test.tsx`, `prebaked-renderer.test.ts` |
 | 좁은 폭 / 반응형 | `128x256`·`720x256`·`720x1280` 등 다양한 종횡비·해상도에서 1px 통로·1px 선·대각 한 접점 `2x2` 동일 보존 및 `412x915` 모바일 세로·`1440x900` 데스크톱 뷰포트 정상 표시 | `nva-alpha-bake.test.ts`, `nva-stacked-alpha.test.ts`, `e2e/kiosk-demo.spec.ts` |
+| UC-WEB-KIOSK-FIX7J | stacked-alpha 베이크 1px 통로·대각 접점 보존 및 뷰포트 표시 | `packages/shell/src/lib/avatar/__tests__/nva-alpha-bake.test.ts`, `packages/shell/src/lib/avatar/__tests__/nva-stacked-alpha.test.ts`, `packages/shell/e2e/kiosk-demo.spec.ts` |
+
+### UC-FIX-024-I1 — Windows 스토어 창과 설치 갱신
+
+- 사용자가 앱스토어를 열면 `app-store` 창이 열리거나 기존 창에 포커스하고, 메인 창과 스토어 창이 응답해야 한다.
+- 설치 또는 삭제 전에 설치 경로 안의 실행 중인 구성 요소가 종료되어 파일 잠금을 풀고, 경로 밖 프로세스와 사용자 작업 공간은 유지된다.
+- 새 작업 공간은 지정된 기본 아바타와 배경, 음악을 제공한다. 이전 버전의 기본 배경과 기존 사용자 선택을 읽을 수 있다.
+- 저장 배경이 없거나 빈 문자열·공백이면 강변 해돋이를 선택하고, 그 파일이 없으면 이전 기본 배경을 선택한다. 저장된 선택이 목록에 없으면 임의의 다른 배경으로 대체하지 않는다.
+- 온보딩 초기 배경도 강변 해돋이, 이전 기본 배경 순으로 선택하고 둘 다 없으면 목록의 첫 배경을 선택한다.
+
+P02: Rust 창 생성 명령 async 소스 회귀 시험은 확인되지 않아 별도 검증이 필요하다. `packages/shell/scripts/__tests__/platform-matrix.test.ts`는 설치·삭제 훅과 설치 경로 경계를 소스에서 검사한다. `packages/shell/src/lib/__tests__/background-selection.test.ts`는 미설정·빈 문자열·공백·정상 선택·목록에 없는 선택과 기본/대체 순서, 온보딩에서 이전 기본 배경이 뒤에 있는 경우 및 두 기본 배경이 없는 경우를 검증한다. `e2e-tauri/specs/app-store-window.spec.ts`: 실제 앱바 진입, 창 레이블·이동 주소·문서 준비·표시된 콘텐츠, 본 창 응답, 재진입 시 기존 창 포커스와 중복 부재, 닫기 후 응답을 검증한다. P04: Windows NSIS 실 설치·갱신·삭제와 WebView2 실제 창 열기·닫기, Playwright 기본·빈 목록·진행·성공·오류·좁은 폭 및 키보드/ARIA 확인. CI에서 실제 환경으로 검증 전까지 P04 진행 중.
+
+## 0.2.5 직접 시험 순서
+
+시험자는 대표님 또는 시험 담당자다. 같은 후보 커밋과 각 기기의 설치본을 확인하고 윈도우 그래픽 카드 2070, 윈도우 그래픽 카드 4060, 리눅스에서 각각 실행한다. 기기·운영체제·후보 커밋·앱 판·통과/실패/미실시·오류를 따로 적는다. 서버나 상품이 준비되지 않아 실행하지 못하면 미실시로 남긴다. 아래 T1~T11은 0.2.5 출시 계획 6-1절의 번호이고, 단위 시험(UT)·통합 시험(IT)·종단 시험(E2E) 01~07은 앱 통합 요구서 3판의 번호다. P02는 시험 대응표, P04는 실제 통합 확인이다. 인공지능 개발 도구 모음(ADK), 나이아 영상 아바타(NVA), 이동식 문서 형식(PDF)을 뜻한다.
+
+**15분 핵심 — 기기 한 대당:**
+
+1. UC-025-01: 저장된 자막 선택이 없는 새 사용자로 자막이 꺼져 있는지 보고 단추로 켰다가 끈다.
+2. UC-025-02: 음악 막대에 초점을 두고 재생·멈춤과 오른쪽 이동을 누른다.
+3. UC-NVA-CAMERA-GESTURE-1022: 아바타 조작을 펼쳐 확대·축소한다.
+4. UC-025-03: 대시보드를 열어 이름과 화면을 확인한다.
+5. UC-025-04: 작은 파일 하나를 내려받아 ADK의 `downloads`에서 확인한다.
+6. UC-FIX-024-I1: 스토어를 한 번 열고 닫은 뒤 셸이 반응하는지 확인한다.
+7. UC-025-07: 준비된 서명 슬라이드 앱 하나를 설치해 열고 닫는다. 준비되지 않으면 미실시로 적는다.
+
+15분이 지나면 남은 동작은 미실시로 적는다. 이 짧은 확인만으로 전체 시험의 통과를 판정하지 않는다.
+
+**전체:** 위 핵심 이후 UC-025-01~07과 UC-NVA-CAMERA-GESTURE-1022의 아래 절차를 끝까지 실행한다. UC-FIX-024-I1의 스토어 열기·닫기 10회, 배경 확인과 격리 윈도우의 갱신·삭제 시험을 수행한다. 슬라이드는 PDF 쪽 이동·발표 음성·녹화·재생까지 확인한다. 이어서 S-ADK-SOURCE → UC-025-09 → UC-025-10 → UC-025-11 → UC-025-12를 실행한다. 각 앱은 통합 계획의 지정 판과 서명된 개발 스토어 상품이 준비되면 시험한다.
+
+**이번 판에서 뺀 것:** 교육 앱인 블랙잭 코딩 수업과 공공 인공지능 전환(AX) 강의.
+
+### UC-025-01 — 자막과 좁은 화면
+
+- 순서: 저장된 자막 선택이 없는 새 사용자로 자막이 있는 유튜브 영상을 재생하고 자막이 꺼져 있는지 확인한다. 음악 막대의 ‘자막’을 눌러 켠 뒤 셸을 다시 열어 켜진 상태를 확인한다. 자막을 끄고 셸을 다시 열어 꺼진 상태를 확인한다. 창 폭을 약 360픽셀로 줄이고 단추를 누른다.
+- 보여야 할 것: 처음에는 자막이 꺼져 있고 켠 상태와 끈 상태가 각각 재시작 뒤에도 유지된다. 좁은 창에서도 단추를 보고 눌러 상태를 바꿀 수 있다. 영상에 자막이 없으면 자막 있는 영상으로 바꿔 확인한다.
+- 실패: 자막 상태가 바뀌지 않거나 선택이 사라짐, 단추가 잘려 누를 수 없음. 요구 FR-025.1; 시험 T1. 자동 확인 대상: `BgmPlayer.test.tsx`, `e2e/nva-prebaked.spec.ts`.
+
+### UC-025-02 — 음악 키보드 조작
+
+- 순서: 음악을 재생하고 탭 키로 음악 조작 막대 자체에 초점을 둔다. 스페이스 또는 K로 멈추고 다시 재생한다. 좌우 화살표를 각각 누르고 오른쪽을 연속 세 번 누른다. 위아래 화살표와 N·P를 누른다. 채팅 입력칸에 K·N·P를 입력한다.
+- 보여야 할 것: 좌우는 한 번에 5초, 연속 세 번은 합계 15초 이동한다. 위아래는 음량 5%씩, N·P는 다음·이전 곡으로 바뀐다. 입력칸에는 글자가 들어가고 음악은 단축키로 조작되지 않는다. 로컬 음악과 유튜브 각각 확인한다.
+- 실패: 연속 이동이 한 번으로 뭉개지거나 초점 밖 입력이 음악을 움직임. 요구 FR-025.2; 시험 T2. 자동 확인 대상: `BgmPlayer.test.tsx`.
+
+#### [직접 시험 T10] UC-NVA-CAMERA-GESTURE-1022 — 0.2.5 직접 시험
+
+- 순서: 아바타 조작 저장값이 없는 새 시험 프로필에서 NVA를 고르고 조작이 접혀 있는지 확인한다. 아바타 옆 ‘아바타 조작’ 톱니를 눌러 펼친다. +를 두 번, −를 한 번 누른 뒤 양쪽 끝까지 눌러 크기 범위를 확인하고 이동 단추를 끌고 초기화한다. 다시 확대하고 이동해 배치를 바꾼 뒤 톱니를 접었다 다시 펼치고 같은 프로필로 셸을 다시 열어 펼침과 배치가 복원되는지 확인한다. 일반 입체 아바타도 골라 회전·이동을 확인한다. 인공지능(AI) 단추와 음성 단추를 각각 켜고 끄며 그림을 확인한다.
+- 보여야 할 것: 저장값이 없는 새 프로필에서는 조작이 접혀 있고 펼치면 NVA 확대·축소·이동·초기화가 보인다. +·−는 한 번에 0.1배, 범위는 0.5~3배이고 같은 프로필을 다시 열면 저장한 배치와 펼침 선택이 복원된다. 초기화하면 1배·이동 0이다. 일반 입체 아바타에는 회전도 보인다. 인공지능과 음성 그림은 각각 꺼지면 빗금이 생기고 켜지면 사라진다.
+- 실패: 조작이 겹치거나 보이지 않음, 크기가 변하지 않음, 저장·초기화가 어긋남, 인공지능 또는 음성 상태 그림이 바뀌지 않거나 상태와 다름. 요구 FR-NVA-CAMERA.1, FR-025.3; 시험 T10. 자동 확인 대상: `AiControlBar.test.tsx`의 `shows accessible AI and TTS icons with an off slash`, `e2e/nva-prebaked.spec.ts`.
+
+### UC-025-03 — 대시보드 이름
+
+- 순서: 사용자가 앱 막대에서 대시보드를 열고 앱 목록·창 머리·관련 설정을 살펴본 뒤 프로젝트를 선택한다.
+- 보여야 할 것: 앱 이름과 그림이 대시보드로 보이고 선택한 프로젝트의 기존 화면이 열린다. 프로젝트 자체를 가리키는 말은 그대로 쓸 수 있다.
+- 실패: 앱 이름이 옛 ‘프로젝트’로 남거나 기존 프로젝트 화면을 열 수 없음. 요구 FR-025.4, FR-PROJECT-APP.1; 시험 T3. 자동 확인 대상: `ProjectsApp.test.tsx`.
+
+### UC-025-04 — 내장 브라우저 내려받기
+
+- 순서: 사용자가 유효한 ADK 폴더를 선택하고 셸 브라우저에서 작은 시험 파일을 두 번 내려받는다. 파일 관리자로 ADK의 `downloads`를 열어 두 파일과 내용을 확인한다.
+- 보여야 할 것: 첫 파일과 이름에 `(1)`이 붙은 둘째 파일이 모두 있고 첫 파일 내용이 바뀌지 않는다. 리눅스에서도 정상 파일이 열린다.
+- 실패: 파일이 빠지거나 기존 파일을 덮어쓰거나 정상 파일이 열리지 않음. 요구 FR-025.5; 시험 T4. 예외 자동 시험은 `browser_webview.rs`의 `confines_suggested_names_to_download_folder`, `rejects_invalid_adk_directory`, `rejects_downloads_symlink_outside_adk`(유닉스), `rejects_unconvertible_default_download_destination`(리눅스), `chooses_adk_download_folder_and_numbers_collisions`이다. 목적지 설정 실패나 ADK 밖 `downloads` 검사 실패 뒤 기본 위치로 대체하는 전체 연결은 자동 시험 없음, 남은 위험이다.
+
+### S-ADK-SOURCE — 0.2.5 기본 자산 직접 시험
+
+- 순서: 사용자가 새 작업 공간을 준비하고 처음 설정의 아바타·배경과 음악 목록을 연다. 기존 사용자 선택이 있는 작업 공간도 다시 연다.
+- 보여야 할 것: 기본 목록은 입체 아바타 2개, NVA 3개, 배경 6개, 음악 3개다. 음악은 `Afternoon Whispers`와 라디오 영어·한국어 각 1곡이다. 화면의 음악 이름에는 파일 확장자가 붙지 않는다. 썸네일과 선택이 작동하고 기존에 추가한 자산도 선택할 수 있다. 실제 파일은 별도 ADK 배포본에서 확인한다.
+- 실패: 기본 파일이나 미리보기가 빠지거나 기존 선택이 사라짐. 요구 FR-ADK-SRC.1, FR-025.6. 자동 확인 대상: `adk-assets-e2e.test.ts`.
+
+### UC-025-05 — 한국어·영어 라디오 곡
+
+- 순서: 사용자가 음악 목록에서 한국어 곡 `naia-radio-its-okay-to-turn-off-the-light-ko`와 영어 곡 `naia-radio-its-okay-to-turn-off-the-light-en`을 찾아 각각 처음부터 끝까지 듣는다.
+- 보여야 할 것: 나이아 라디오 노래 한국어 한 곡과 영어 한 곡이 목록에 있고 각각 끝까지 재생된다. 기본 목록의 셋째 곡은 별도 배경 음악이다.
+- 실패: 한국어 또는 영어 곡이 목록에 없거나 어느 한 곡이라도 끝까지 재생되지 않음. 요구 FR-025.6; 시험 T5.
+
+#### [직접 시험 T6·T7] UC-FIX-024-I1 — 0.2.5 직접 시험
+
+- 순서: 사용자가 앱 막대의 스토어를 열고 다시 눌러 기존 창을 앞으로 가져온다. 닫고 열기를 10회 반복하며 매번 본 창을 누른다. 별도 시험 작업 공간에서 선택 배경이 없을 때와 기본 배경 파일이 없을 때 처음 설정과 일반 화면을 연다. 저장된 기존 배경도 다시 선택해 연다.
+- 보여야 할 것: 창은 하나이고 열기·닫기마다 두 창이 응답한다. 미설정이면 강변 해돋이, 없으면 이전 기본 배경을 사용한다. 처음 설정에서 둘 다 없으면 목록 첫 배경을 쓴다. 기존에 저장된 선택은 목록에 없어도 임의로 바꾸지 않는다.
+- 실패: 하얀 창이나 멈춤, 기존 선택 덮어쓰기, 대체 순서 불일치. 요구 FR-FIX-024-I1; 시험 T6, T7. 자동 확인 대상: `background-selection.test.ts`, `e2e-tauri/specs/app-store-window.spec.ts`. 설치 경로 파일 잠금은 아래 격리 윈도우 절차로 확인한다.
+
+**설치 경로 파일 잠금 직접 시험 (P04):** 격리된 윈도우 시험 환경에 기존 셸을 설치하고 설치 경로 밖에 시험용 ADK와 작업 공간을 둔다. 두 곳에 알아볼 수 있는 시험 파일을 남겨 내용을 기록한다. 작업 관리자에서 실행 파일 경로와 프로세스 식별자를 확인한다.
+
+1. 설치 경로 안의 셸 실행 파일을 띄우고, 경로 밖에 있는 별도 시험 프로그램도 띄운다. 두 프로세스가 실행 중인지 확인한다.
+2. 후보 설치본으로 갱신 설치한다. 설치가 끝나면 안쪽 프로세스 종료, 바깥 프로세스 생존, ADK와 작업 공간의 시험 파일 및 내용 보존을 확인한다.
+3. 갱신된 설치 경로 안의 셸과 같은 경로 밖 시험 프로그램을 각각 다시 띄우고 실행 중인지 확인한다. 셸 삭제를 실행한다.
+4. 삭제가 끝나면 안쪽 프로세스 종료, 바깥 프로세스 생존, ADK와 작업 공간의 시험 파일 및 내용 보존을 다시 확인한다. 갱신과 삭제의 결과를 따로 기록한다.
+
+통과: 각 작업이 끝나고 안쪽 프로세스는 종료되며 바깥 프로세스와 ADK·작업 공간이 보존된다. 실패: 바깥 프로세스 종료, ADK 또는 작업 공간 손실, 안쪽 프로세스 잔존, 갱신이나 삭제 중단 중 하나라도 발생한다. 근거: `packages/shell/src-tauri/windows/installer-hooks.nsh:23`, `packages/shell/src-tauri/windows/installer-hooks.nsh:70`, `packages/shell/src-tauri/windows/stop-installed-processes.ps1:12-22`.
+
+### UC-025-06 — 출시 소개 글
+
+- 순서: 출시 담당자가 0.2.5 출시 소개 글을 열고 판번호, 대시보드·자막·키보드·아바타·내려받기·라디오 곡 설명을 실제 후보와 비교하고 제외한 교육 앱이 출시 대상으로 소개됐는지 확인한다.
+- 보여야 할 것: 0.2.5와 실제 이름·동작·라디오 노래 한국어 한 곡과 영어 한 곡이 적혀 있다. 글에 나온 다른 출시 범위는 각 근거와 함께 확인한다.
+- 실패: 후보와 다른 곡 수나 기능을 완료된 사실로 소개하거나 뺀 교육 앱인 블랙잭 코딩 수업·공공 인공지능 전환(AX) 강의를 출시 대상으로 소개함. 요구 FR-025.7; 시험 T11. 확인 자료: `releases/v0.2.5.yaml`.
+
+### UC-025-07 — 나이아 슬라이드 0.1.2
+
+- 순서: 사용자가 서명된 앱을 스토어에서 설치해 연다. 두 쪽 이상인 PDF를 열어 1쪽에서 2쪽으로 넘기고 발표 음성 시작·정지와 녹화 시작·종료를 누른 뒤 녹화 파일을 재생하고 앱을 닫는다.
+- 보여야 할 것: 두 쪽과 쪽 번호가 차례로 나타나고 음성·녹화가 시작과 정지에 반응하며 닫은 뒤 셸이 움직인다.
+- 실패: 설치·쪽 이동·음성·녹화가 실패하거나 닫은 뒤 멈춤. 요구 FR-SLIDE.1~4, FR-025.8; 시험 T8, UT-01, IT-01, E2E-01.
+
+추적 관문 P02: `src/test/agent-bench-scenario-source.contract.test.ts`는 UC-025 새 접미 ID와 2~6단 표제의 벤치 계열 누락을 검사한다.
+
+대화 벤치 P02: `src/test/agent-bench-scenario-source.contract.test.ts`는 아래 세 응답 판정 정의의 형식과 정답·오답을 검사한다. 실 모델 대화 및 실 앱 연결은 실행 대기이며 이 형식 시험은 모델 응답 증거가 아니다. 응답 판정 정의는 아직 벤치 실행부에 연결되지 않았다. 카드 순서·역할 설정·앱 질문 정답을 각각 확인하고 나머지 화면·낭독 경계는 별도로 확인한다.
+
+### UC-025-09 — 카페루아 타로 0.1.4
+
+- 순서: 윈도우 2070·4060과 리눅스 각각에서 사용자가 지정 판이 등록되면 설치해 열고 카드 세 장을 순서대로 펼친다. 카드 풀이를 확인하고 책 원문 한 문단을 듣고 다음 낭독을 중지한 뒤 닫는다.
+- 보여야 할 것: 답에 나온 카드와 펼친 순서가 같고 미공개 카드는 나오지 않는다. 원문을 빠짐없이 읽으며 중지·닫기 뒤 소리가 멈춘다.
+- 실패: 카드 지어냄·본문 건너뜀·낭독 지속. 요구 FR-025.10; 시험 UT-02, IT-02, E2E-02, E2E-05. 기준 후보에는 0.1.4 직접 낭독 수신이 없고 점검 당시 개발 스토어는 0.1.3이므로 통합·등록 전에는 미실시 또는 확인된 실패로 남긴다.
+
+### UC-025-10 — 이음오피스 0.1.0
+
+- 순서: 사용자가 소개 앱을 설치해 열고 내려받기 탭에서 주소 복사를 누른다. 빈 글자 칸에 붙여 넣고 나이아 연결 탭을 연 뒤 닫는다.
+- 셸은 `clipboard.write` 권한을 받은 설치 앱의 iframe에만 `clipboard-write`를 위임한다. 사용자 활성화 요구 여부는 WebView 엔진 정책을 따르며 셸이 따로 강제하지 않는다. `clipboard-read`는 위임하지 않는다. 이음오피스 매니페스트의 권한 선언은 앱 저장소 몫이다.
+- 보여야 할 것: 붙인 주소와 화면의 공식 주소가 같고 나이아 연결은 준비 중으로 표시된다.
+- 실패: 주소가 다르거나 복사되지 않음, 연결이 완성된 것처럼 보임. 요구 FR-025.11; 시험 UT-03, IT-03, E2E-03.
+- P02 상태: 기본·빈 목록·진행·성공·오류·좁은 폭과 탭/복사 안내는 앱 소유이며 실 앱 UI 확인 대기. 셸의 변경은 iframe 권한 위임으로 화면 구성·키보드/ARIA를 바꾸지 않는다. P04 실 WebView의 복사·붙여넣기와 시각·UX 확인은 대기한다. 실기 시험 목록(미실시): 권한 있는 앱에서 (a) 입력 없는 쓰기의 실제 결과와 (b) 누름 뒤 쓰기 및 붙여넣기를 확인하고, (c) 권한 없는 앱의 쓰기 거부와 (d) 읽기 거부를 각각 확인한다. 엔진·버전과 결과를 기록한다.
+
+### UC-025-11 — 캐릭터 카드 0.1.0
+
+- 순서: 윈도우 2070·4060과 리눅스 각각에서 지정 판이 등록되면 설치해 예시 카드 하나를 고르고 역할극을 시작해 질문한다. 슬라이드 앱으로 전환해 두 쪽 이상인 시험 자료를 열고 질문한 뒤 일반 대화로 전환해 다시 질문한다. 슬라이드 앱으로 돌아가 열린 자료가 남았는지 확인한다. 카드를 닫은 뒤에도 일반 대화에서 질문한다.
+- 보여야 할 것: 역할극 답은 카드의 이름·설정과 맞는다. 슬라이드로 전환하면 카드 문맥이 슬라이드 문맥으로 바뀌고 일반 대화로 전환하면 앱 문맥이 해제된다. 카드 닫기 뒤 일반 대화에도 카드 역할이 남지 않는다. 앱을 전환한 뒤 슬라이드로 돌아가도 열었던 자료가 유지된다.
+- 실패: 카드 설정이 전달되지 않음, 전환할 때 이전 앱 문맥이 남거나 새 문맥으로 바뀌지 않음, 일반 대화나 카드 닫기 뒤 카드 역할이 남음, 슬라이드 자료가 사라짐. 요구 FR-025.12; 시험 UT-04, IT-04, E2E-04, UT-06, IT-06, E2E-06. 카드 문맥 수신은 자동 시험으로 확인하며 상품 등록과 실기는 아직 대기 중이다.
+
+### UC-025-12 — 기존 기능과 회귀 기록
+
+- 순서: 윈도우 2070·4060과 리눅스 각각에서 사용자가 채팅을 보내고 음성을 듣고 아바타·설정을 바꾼다. 슬라이드를 열고 닫는다. 시험 담당자는 같은 후보의 회귀 묶음을 실행해 기기별 결과를 기록한다. 네 앱이 준비되면 각 설치 목록의 앱 이름·판과 서명 확인도 대조한다. 공용 연결이 준비되면 서명된 시험 앱에서 질문 한 번과 언어 전환을 하고 타로 낭독을 취소한다.
+- 보여야 할 것: 기존 동작이 직전 공개판과 같고 새 오류가 없다. 회귀 기록에 실패와 원인이 남으며 네 앱의 설치·핵심 동작이 같은 후보에서 확인된다. 시험 앱의 질문에 응답하고 언어 전환이 전달되며 낭독 취소가 작동한다.
+- 실패: 기존 기능 회귀, 공용 연결의 질문·언어·취소 실패, 다른 후보의 결과를 가져옴, 실패나 미실시를 통과로 기록함. 요구 FR-025.13, FR-APP-STORE-UPDATE.1; 시험 T8, T9, UT-05, IT-05, E2E-05, UT-07, IT-07, E2E-07. 이 문서의 시험은 실행 전 계획이다.
+### UC-INSTALLED-APP-HOST: 설치 앱 공용 연결과 설치 정보
+
+설치 앱 사용자는 선언된 권한에 따라 셸의 선택 모델로 질문하고 응답 또는 종료 사유를 받으며, 셸 음성으로 문장을 읽거나 취소하고 결과를 받는다. 앱은 셸 언어를 초기 로드와 변경 시 전달받는다. 스토어 설치 대화상자는 현재 언어의 이름·설명과 썸네일을 보여주며 설치 후에도 매니페스트 정보가 보존된다. 다른 앱이나 권한 없는 프레임은 요청·응답을 가로챌 수 없다. Slides 기존 연결은 유지한다.
+
+P02 테스트 매핑: bridge Vitest는 정상 응답, 스트리밍 취소, 음성 모드, 모델 미설정, 비로그인 등 조기 종료, 권한 거부, 앱·요청 분리, 낭독 완료·취소·실패, 초기·변경 언어를 검증한다. 설치 대화상자 Vitest와 Playwright는 다국어·썸네일 및 기본, 빈 정보, 진행, 성공, 오류·재시도, 좁은 폭의 정보 위계·키보드/ARIA를 검증한다. Rust 매니페스트 테스트 및 native Tauri e2e는 설치 정보 보존을 확인한다. 기존 Slides Vitest와 UI 시험은 회귀를 확인한다.
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 파일/그룹 | 실 UI·Tauri e2e |
+|---|---|---|
+| UC-INSTALLED-APP-HOST | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: 권한·출처·질의·낭독·언어 브리지 계약; `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: 상품 정보와 설치 상태; `packages/shell/src-tauri/src/app.rs`: 매니페스트 메타데이터 왕복 | `packages/shell/e2e/467-slide-presenter.spec.ts`: 설치 앱 UI 브리지·Slides 회귀; `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: 네이티브 매니페스트 정보 |
+| 앱 질문·낭독 요청의 권한/출처, 정상·조기 종료·취소, 앱/요청 ID 분리, 언어 초기화·변경 | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: `installed app host bridge`; `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: installed app question/speech cases, 실시간 음성 모델에서 질문 거절 오류의 한국어·영어 문구 | `packages/shell/e2e/467-slide-presenter.spec.ts`: installed app bridge and Slides regression |
+| 설치 화면 다국어 이름·설명·썸네일, 빈 정보, 설치 진행/성공/오류 복구, 좁은 폭·ARIA | `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: store metadata/install states; `packages/shell/src/lib/__tests__/app-store-client.test.ts`: localized product metadata; `packages/shell/src-tauri/src/app.rs`: manifest metadata roundtrip | `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: native manifest metadata; `packages/shell/e2e/467-slide-presenter.spec.ts`: UI install flow |
+
+P04 증거: Shell Vitest 전체 2,558 통과 / 0 실패 / 21 제외, 관련 집중 시험 122 통과 및 다중 문장 ChatArea 84 통과. Playwright 설치 흐름 2 통과(기본·빈 정보·오류 후 재시도·진행·성공·360px·키보드/ARIA), 실 Tauri 매니페스트 IPC 1 통과, Rust 매니페스트 왕복 1 통과. 스크린샷에서 정보 위계와 좁은 폭 배치를 확인했다. 음성 장치·실 모델 계정은 모의했다.
+
+검수 1차 P01/P02: 앱의 중복 요청은 즉시 오류를 받고 기존 요청은 정산된다. 앱 질문에는 이전 대화가 전달되지 않고 앱 이름이 채팅에 표시된다. 권한이 알려진 스토어 상품은 설치 전 사람이 읽는 권한 목록을 표시하며 정보가 없으면 목록을 생략한다. 기본·빈 권한 목록·설치 진행·성공·오류 및 재시도·좁은 폭을 설치 Playwright와 컴포넌트 시험으로 확인하고, iframe 권한 거부·중복 ID·기록 격리·악성 썸네일은 Vitest, 매니페스트 썸네일은 Rust 및 native IPC로 확인한다.
+
+검수 1차 P04: 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과(권한 목록·오류 복구·진행·성공·360px 및 포커스), 실제 Tauri 매니페스트 IPC 1 통과, Rust 썸네일 필터와 매니페스트 왕복 각 1 통과. 좁은 폭 스크린샷에서 정보 위계와 목록 간격을 확인했다. 실 모델 계정·음성 장치는 모의했다. 복원 원본에는 앱 표시가 없어 복원 뒤 앱 턴이 후속 기록에 들어갈 수 있다.
+
+## UC-UI-FONT-SCALE-20261105 — 설정에서 앱 전체 글자 크기를 바꾼다
+
+사용자(방송 진행자·발표자·눈이 불편한 사용자)는 설정 › 일반 탭의 **글자 크기**에서 작게/보통/크게/아주 크게 중 하나를 고른다. 고른 즉시 채팅·메뉴·설정·자막·방송/아바타 화면 오버레이 글자가 함께 커지거나 작아지고, 앱을 다시 켜도 같은 크기로 시작한다. 글자만 커지며 창 배치·아바타 캔버스 크기는 그대로다. 이유: 라이브 방송과 투자자용 화면 캡처에서 글자가 작아 읽기 어렵다는 제품 요청(2026-11-04 실기 관찰 포함).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 저장값이 없으면 `보통`(배율 1.0)이 선택되어 있고 화면은 이전과 같다. |
+| 빈 목록 | 해당 없음 — 선택지는 항상 네 개다. 저장값이 알 수 없는 값이면 `보통`으로 보인다. |
+| 진행 | 선택 단추를 누르거나 방향키로 옮기면 저장 단추 없이 즉시 적용된다. |
+| 성공 | `<html>`의 `--ui-font-scale`이 0.9/1.0/1.25/1.5로 바뀌고 `naia-config`·`ui-config.json`에 `uiFontScale`이 남아 다음 실행 시작 화면에도 적용된다. |
+| 오류 | 저장이 늦거나 실패해도 현재 창의 글자 크기는 바뀐 채 유지된다(설정 저장 경로는 테마와 같다). 알 수 없는 저장값은 `보통`으로 되돌린다. |
+| 좁은 폭 | `아주 크게`에서도 상단 앱 막대의 앱 단추(🖥️🌐📁)는 음악 막대에 가려지지 않고(음악 막대가 줄어든다), 설정 탭 줄(프로파일…일반)은 잘리지 않고 줄바꿈한다. BGM 앱 패널(`.bgm-yt-app`)은 어느 배율·창 폭에서도 화면 안에 열린다. |
+
+Test Coverage Map (P02)
+
+| UC | 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright |
+|---|---|---|---|
+| UC-UI-FONT-SCALE-20261105 | 기본값·알 수 없는 값 정규화, 배율 표, `--ui-font-scale` 적용, 스타일시트 글자 크기 배율 계약 | `packages/shell/src/lib/__tests__/ui-font-scale.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 아주 크게 시작·변경 즉시 적용 |
+| UC-UI-FONT-SCALE-20261105 | 설정 › 일반 라디오 그룹·키보드 이동·즉시 저장(`naia-config`) | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — UI font scale (UC-UI-FONT-SCALE-20261105) | `packages/shell/e2e/ui-font-scale.spec.ts` — 작게 선택 후 저장값·CSS 변수 |
+| UC-UI-FONT-SCALE-20261105 | `ui-config.json` 왕복·agent config 제외 | `packages/shell/src/lib/__tests__/adk-store.test.ts` — writes ALL UI settings | — |
+| UC-UI-FONT-SCALE-20261105 | BGM 앱 패널 위치가 화면 안(가장 큰 배율·좁은 창), 상단 막대·설정 탭 줄 겹침 없음 | `packages/shell/src/lib/__tests__/bgm-app-position.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 1280/1920 폭 아주 크게 배치 |
+
+## 2026-11-18 엣지 데스크톱·온디바이스 1:1 정합 보강 (Spec B.3)
+
+> `docs/requirements.md`의 `FR-LOCAL-LLM-OLLAMA.1~4`, `FR-STT-LOCAL.1~3`, `FR-VOICE.17~22` 및 `src-tauri`·`packages/shell` 구현·시험 자산을 1:1 시나리오·테스트 커버리지로 결속한다.
+
+### UC-LOCAL-LLM-OLLAMA-026 — 온디바이스 Ollama 관리·GPU 인벤토리·VRAM 상호배타 예약
+
+사용자는 설정 › 두뇌 탭에서 로컬 관리형 Ollama 런타임 상태 조회(`ollama_runtime_status`), 기동(`ollama_runtime_start`), 중지(`ollama_runtime_stop`), 제거(`ollama_runtime_remove`), 모델 카탈로그 조회 및 다운로드(`ollama_model_catalog_list` / `ollama_model_pull_*`)를 수행한다. Shell은 `accelerator.rs`의 GPU 인벤토리와 `vram_reservation.rs`의 장치별 lease를 결합해 8 GiB 장치에서 로컬 LLM과 로컬 음성의 동시 구동을 상호 배타로 차단하고, 원격·외부 Ollama 호스트에는 관리형 pull/start/stop을 보내지 않는다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 관리형 Ollama 미기동 시 정지 상태와 가용 장치·초기 Q4_K_M 후보 정책을 표시하고, 원격 호스트 선택 시 원격 연결을 유지한다. |
+| 빈 목록 | 설치된 로컬 모델이 없거나 GPU가 감지되지 않아도 설정 화면이 열리며 확인 가능한 안내와 수동 호스트 입력을 제공한다. |
+| 진행 | `ollama_runtime_start` 또는 `ollama_model_pull_start` 진행 중 중복 중지(`ModelPullActive`)를 거부하고 취소·진행률을 표시한다. |
+| 성공 | 관리형 서버 준비와 `ready` 태그 저장 뒤 대화 `options.num_ctx=8192` 및 VRAM lease 반납·재사용이 일관되게 동작한다. |
+| 오류 | 디스크 2배 여유 미달, active pull 중 중지 시도, 8 GiB 장치 내 음성/LLM 동시 점유 충돌(`policy_undecided`·충돌)을 정직하게 차단한다. |
+| 좁은 폭 | 360px·1100px 설정 화면에서 Ollama 상태·pull 진행·오류 복구 단추가 잘리거나 겹치지 않고 키보드로 조작된다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약·Rust | 실 UI · Tauri E2E |
+|---|---|---|
+| UC-LOCAL-LLM-OLLAMA-026 | `packages/shell/src-tauri/src/ollama_runtime.rs`, `packages/shell/src-tauri/src/accelerator.rs`, `packages/shell/src-tauri/src/vram_reservation.rs`, `packages/shell/src/lib/ollama-runtime.ts`, `packages/shell/src/lib/__tests__/ollama-runtime.test.ts`, `packages/shell/src/lib/__tests__/ollama-chat-admission.test.ts`, `packages/shell/src/lib/__tests__/ollama-thinking-status.test.ts`, `packages/shell/src/lib/__tests__/adk-store-ollama.test.ts`, `packages/shell/src/lib/capabilities/__tests__/vram-tiers.test.ts`, `packages/shell/src/lib/capabilities/__tests__/tier-slots.test.ts`, `packages/shell/src/lib/capabilities/__tests__/gpu.test.ts` | `packages/shell/e2e/ollama-settings.spec.ts`, `packages/shell/e2e/thinking-settings.spec.ts`, `packages/shell/e2e/capability-settings.spec.ts`, `packages/shell/e2e-tauri/specs/97-ollama-runtime-reservation.spec.ts` — 관리형 Ollama 시작·중지·삭제·pull·8 GiB VRAM 상호배타 예약 및 원격 호스트 격리 검증 |
+
+### UC-STT-LOCAL-026 — 온디바이스 오프라인 STT(Vosk/Whisper) · Web Speech · macOS 스텁/TCC 분기
+
+사용자는 설정 › 음성 입력에서 오프라인 STT 모델(`stt_models.rs`, Vosk/Whisper 카탈로그·내려받기·레거시 마이그레이션·삭제)과 실시간 음성 인식(`tauri-plugin-stt` · Web Speech · vLLM ASR)을 선택하고 마이크 입력 테스트를 수행한다. Windows와 Linux에서는 `desktop.rs`가 네이티브 인식을 제공하고, macOS 데스크톱에서는 `stub.rs`가 `available: false` 및 `Denied` 권한을 정직하게 반환해 Web Speech 또는 vLLM ASR 경로로 안전하게 전환한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | OS별 지원 가능한 STT 공급자(Windows/Linux Vosk·Whisper·Web Speech·API, macOS Web Speech·API)만 활성 선택지로 노출된다. |
+| 빈 목록 | 다운로드된 오프라인 모델이 없어도 카탈로그 목록과 모델 내려받기·브라우저 음성 대체 경로를 안내한다. |
+| 진행 | 오프라인 모델 다운로드, 레거시 Vosk 경로 마이그레이션, 마이크 테스트 청취 시작·중지(`start_listening` / `stop_listening`) 상태가 구분된다. |
+| 성공 | 지원 OS에서 선택한 오프라인 모델 또는 Web Speech가 음성 입력을 텍스트로 변환해 대화 입력·음성 파이프라인에 전달한다. |
+| 오류 | macOS `stub.rs` 비지원 반환, 모델 경로 검증 실패(`validate_path` 탈출 차단), 마이크 권한 거부 시 가짜 성공 없이 명확한 안내와 대체 공급자를 제시한다. |
+| 좁은 폭 | 360px·1100px 음성 설정과 마이크 시험 단추가 겹치지 않고 키보드 초점·ARIA 상태를 유지한다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약·Rust | 실 UI · Tauri E2E |
+|---|---|---|
+| UC-STT-LOCAL-026 | `packages/shell/src-tauri/src/stt_models.rs`, `packages/shell/src-tauri/plugins/tauri-plugin-stt/src/lib.rs`, `packages/shell/src-tauri/plugins/tauri-plugin-stt/src/commands.rs`, `packages/shell/src-tauri/plugins/tauri-plugin-stt/src/desktop.rs`, `packages/shell/src-tauri/plugins/tauri-plugin-stt/src/stub.rs`, `packages/shell/src-tauri/plugins/tauri-plugin-stt/src/models.rs`, `packages/shell/src-tauri/plugins/tauri-plugin-stt/src/paths.rs`, `packages/shell/src/lib/stt/index.ts`, `packages/shell/src/lib/stt/registry.ts`, `packages/shell/src/lib/stt/web-speech-stt.ts`, `packages/shell/src/lib/stt/api-stt.ts`, `packages/shell/src/lib/stt/__tests__/web-speech-stt.test.ts`, `packages/shell/scripts/__tests__/linux-vosk.test.ts` | `packages/shell/e2e/qwen3-asr-voice.spec.ts`, `packages/shell/e2e-tauri/specs/77-stt-provider-switching.spec.ts`, `packages/shell/e2e-tauri/specs/85-voice-actual-recording.spec.ts`, `packages/shell/e2e-tauri/specs/99-stt-mic-test.spec.ts` — Windows/Linux 오프라인 STT·마이크 전환 및 macOS 스텁·Web Speech 폴백 검증 |
+
+### UC-WIN-VOICE-6G — 로컬 6GB/Linux VoxCPM2 음성 런타임 설치·공유 캐시·문장 스트리밍 E2E
+
+Windows(`windows_trt_6g`)와 Linux(`linux_trt_6g`)의 지원 GPU(6 GiB 이상) 환경에서 로그인한 사용자는 `voice_runtime.rs`·`voice_cache.rs`가 관리하는 내용 주소 기반 공유 캐시와 `voxcpm2` 런타임을 설치·기동하고, 문장 직렬 합성 및 독립 재생 큐 파이프라인(`sentence-pipeline.ts` · `local-voice-scheduler.ts` · `audio-queue.ts`)으로 음성을 재생한다. macOS(`HostOs` 미지원)에서는 로컬 VoxCPM2를 자동 기동하지 않고 클라우드/Edge/시스템 음성으로 안전하게 폴백한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 로컬 음성 미설치 또는 미실행 시 준비 필요 상태와 설치/시작 동작을 표시하고 무언 폴백을 하지 않는다. |
+| 빈 목록 | 사용자 정의 레퍼런스 음성이 없어도 검증된 기본 음색 팔레트로 미리듣기·합성을 수행한다. |
+| 진행 | 다운로드·엔진 준비 진행률(`voxcpm2_install_progress`)과 문장별 합성·스트리밍·1초 여유 재생 창을 일관되게 표시한다. |
+| 성공 | 공유 캐시(`voice_cache.rs`) 재사용, dev/prod 단일 엔진 입양, 다문장 순서 보존 재생 및 재시작 후 설정 유지를 달성한다. |
+| 오류 | 401/403 인증 거부 시 자격증명 정리 후 로그인 복구, 런타임 종료(`voxcpm2-stderr.log`) 및 타임아웃/429 소진 시 정확한 오류와 롤백을 제공한다. |
+| 좁은 폭 | 음성 설정·음색 목록·진행 막대·음성 칩이 360px·1100px 뷰포트에서 넘치거나 가려지지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약·Rust | 실 UI · Tauri E2E |
+|---|---|---|
+| UC-WIN-VOICE-6G | `packages/shell/src-tauri/src/voice_runtime.rs`, `packages/shell/src-tauri/src/voice_cache.rs`, `packages/shell/scripts/__tests__/stage-voxcpm2-runtime.test.ts`, `packages/shell/src/lib/__tests__/voice-core.test.ts`, `packages/shell/src/lib/voice/__tests__/local-runtime.test.ts`, `packages/shell/src/lib/voice/__tests__/audio-queue.test.ts`, `packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts`, `packages/shell/src/lib/tts/__tests__/synthesize.test.ts`, `packages/shell/src/lib/tts/__tests__/local-voice-scheduler.test.ts`, `packages/shell/src/lib/avatar/__tests__/media-runtime-routing.contract.test.ts`, `packages/shell/src/components/__tests__/RefAudioSection.test.tsx` | `packages/shell/e2e/pipeline-voice.spec.ts`, `packages/shell/e2e/tts-fallback.spec.ts`, `packages/shell/e2e/voxcpm2-cascade.spec.ts`, `packages/shell/e2e/voxcpm2-install-error.spec.ts`, `packages/shell/e2e/voxcpm2-lipsync.spec.ts`, `packages/shell/e2e/voxcpm2-local-voice-journey.spec.ts`, `packages/shell/e2e/voxcpm2-real-voice.spec.ts`, `packages/shell/e2e/voxcpm2-voice-e2e.spec.ts`, `packages/shell/e2e/voxcpm2-warmup.spec.ts`, `packages/shell/e2e-tauri/specs/73-tts-edge-preview.spec.ts`, `packages/shell/e2e-tauri/specs/76-tts-provider-switching.spec.ts`, `packages/shell/e2e-tauri/specs/78-voice-pipeline-mode.spec.ts`, `packages/shell/e2e-tauri/specs/79-pipeline-voice-activation.spec.ts`, `packages/shell/e2e-tauri/specs/94-voice-6g-shell.spec.ts`, `packages/shell/e2e-tauri/specs/95-voice-linux-shell.spec.ts`, `packages/shell/e2e-tauri/specs/96-voice-linux-app-start.spec.ts` — 6GB/Linux VoxCPM2 설치·스트리밍·프로바이더 전환·실 Tauri 셸 음성 E2E 검증 |

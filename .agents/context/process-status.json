@@ -18,6 +18,7 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
+  "last_updated": "2026-11-09T03:27:03.770011+00:00",
   "current_work": {
     "win_rtx2070_r2_026": {
       "issue": 792,
@@ -47,6 +48,41 @@
       "requirements": "docs/requirements.md FR-WIN-RTX2070-R1.1~4",
       "verification": "Shell Vitest 261 files / 2,795 tests passed (22 skipped, 0 failed); targeted regression Vitest 4 files / 221 tests passed; Core contract tests (rust-tokens 37, rust-command-list 6, agent-bench 107) passed; tsc + shell vite build + bundle budget passed. P04/P05 pending (2026-11-13, codex review on #838): CI Rust build/test passes on windows/linux/macos, but still missing (1) RTX2070 and RTX4060 device runs of the #838 head (installer, broadcast confirm, key clear) with captures, (2) Playwright/e2e coverage for the broadcast-confirm and key-clearing flows. Mark done only after those land."
     },
+    "ui_font_scale_20261105": {
+      "issue": null,
+      "title": "설정 › 일반 글자 크기(작게·보통·크게·아주 크게) — 앱 전체 글자 배율, BGM 패널 화면 안 배치, 상단 막대·설정 탭 줄 넘침 정리",
+      "requirements": "docs/requirements.md FR-UI-FONT-SCALE.1~3",
+      "scenario": "docs/user-scenarios.md UC-UI-FONT-SCALE-20261105",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "P04_evidence": "vitest ui-font-scale·bgm-app-position·SettingsTab·adk-store (셸 전체 2621 통과), Playwright e2e/ui-font-scale.spec.ts 3/3 (1920·1280 아주 크게 배치, 키보드 선택·저장·새로고침, 360px), 기본 배율 HEAD 대비 스크린샷 글자 차이 없음. 실 WebKitGTK(Tauri) 확인은 PR 수동 항목으로 남김.",
+      "last_updated": "2026-11-05T00:00:00+09:00"
+    },
+    "usage_events_20261104": {
+      "title": "0.2.6 opt-in anonymous usage events",
+      "branch": "feat/usage-events",
+      "last_updated": "2026-11-09T02:50:39.081075+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-USAGE-EVENTS",
+      "requirements": "docs/requirements.md FR-USAGE-EVENTS",
+      "evidence": "docs/progress/usage-events/event-inventory.md",
+      "status": "implementation_complete_release_gated",
+      "verification": "Usage Vitest 19; focused UI+logic 234 pass/9 skip; browser consent/Steam/two-window/disable/storage recovery/Korean 4 pass; core/Shell/BGM types and Shell bundle budget pass; Rust deep_link 3 and distribution 10 pass. Full Shell 2612 pass/21 skip. Full lint has existing failures (590 vs main 592, no new file/rule errors); existing core failures reproduce on main. See docs/progress/usage-events/verification.md and execution result.md for final full Shell counts. PR #830 review regressions: see verification.md for standalone Slides, settings login, and capability consent tests.",
+      "remaining": "No merge/deploy/Azure resource creation. Actual Azure reception/storage/report, cost/cap/IP/access/privacy/policy gates, native live login paths and 0.2.4 performance comparison remain release gates."
+    },
+    "pr835_main_merge_20261109": {"issue": 835, "title": "Merge main b7401e7b into approved broadcast PR #835", "status": "verified", "verification": "Scenario-source and fixture contracts 29 passed; broadcast suite 8 passed; broadcast name filter 6 passed; adjacent Shell tests 192 passed, 1 failed, 8 skipped; identical SettingsTab failure reproduced on unchanged main. Core TypeScript passed. Shell TypeScript rerun passed after reusing existing bgm-sidecar dependencies. Merge message completion evidence also passed. Completion checks passed for all 9 PR commits.", "last_updated": "2026-11-09T00:42:48.931901+00:00"},
     "b2c_memory_r17": {
       "issue": 792,
       "last_updated": "2026-11-04T06:42:34.198967+00:00",
@@ -109,6 +145,7 @@
       "remaining": "Card library and per-card theme IDs, first greeting assistant turn/TTS, real local Agent dialogue, native persistence/decode/rollback, install-app integration and signed free theme assets.",
       "last_updated": "2026-11-03T11:40:42Z"
     },
+    "fix_024_i1_20261031": {"issue": null, "title": "0.2.4 Windows 앱스토어 창 및 설치기 파일 잠금 수정", "requirements": "docs/requirements.md FR-FIX-024-I1", "scenario": "docs/user-scenarios.md UC-FIX-024-I1", "gates": {"P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending"}, "status": "in_progress", "verification": "Background selection Vitest 5/5; app store Playwright 2/2; shell and WDIO TypeScript and compile integrity pass. Windows native UI and installation validation remain pending; full visual state review remains pending.", "last_updated": "2026-10-31T21:24:58+09:00"},
     "project_panels_class_reset_20261025": {
       "issue": null,
       "title": "프로젝트 앱 문서·작업 탭 정리, 수업용 프로젝트(coding_app·docs_dirs·class.baseline_ref) 문서 미리보기·수업 초기화, 에이전트 아이콘 교체",
@@ -123,6 +160,14 @@
       },
       "status": "implemented",
       "last_updated": "2026-10-25T22:01:00+09:00"
+    },
+    "installed_app_host_bridge_20261029": {
+      "title": "설치 앱 공용 연결 및 설치 화면 다국어·썸네일",
+      "status": "done",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done", "P05": "done" },
+      "verification": "Review fix: final Shell Vitest 2565 passed, 0 failed, 21 skipped; Playwright 2 passed on alternate port; native Tauri metadata 1 passed; Rust thumbnail and metadata tests 1 each passed; cargo check and root/Shell TypeScript passed. Assembly coverage passed; root structure reports existing tmp and tsconfig.build.json. Conform gate inactive on existing main.",
+      "remaining": "Agent memory recall follows ordinary chat; restored agent transcript lacks app attribution and may enter later user history. Live model account and physical audio hardware were not used.",
+      "last_updated": "2026-10-29T10:27:02+09:00"
     },
     "studio_nva_apply_105": {
       "issue": 105,
@@ -1641,6 +1686,5 @@
       "3. sdlc_gates 전체 status → pending으로 리셋",
       "4. resource_registry.violations 초기화"
     ]
-  },
-  "last_updated": "2026-11-09T00:40:44.605043+00:00"
+  }
 }

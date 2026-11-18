@@ -6,7 +6,7 @@
 	"ranOn": {
 		"inventorySha256": "7fb2d7bb35637d0c6d128ef63fa7af5d16007fce5bfb1f7c8e6a1e2bf99e1fb2",
 		"commit": "c41cae5d6d82ee46ac8a4e2c1d195f4a0636807d",
-		"host": "bazzite",
+		"host": "naia-os-3090",
 		"platform": "linux-x64",
 		"node": "v26.7.0"
 	},

@@ -1,6 +1,7 @@
 import type { AgentFact } from "../db";
 import { type WebFs, getWebFs } from "../web-runtime/web-fs";
 import { isKioskDemo } from "./flag";
+import memoryTemplate from "./memory-template.json";
 
 const PATH = "naia-adk/naia-settings/memory/kiosk-store.json";
 export const KIOSK_GUEST_MEMORY_MD_PATH = "naia-adk/memory/guest-memory.md";
@@ -15,18 +16,21 @@ function formatGuestMemoryMarkdown(s: Store): string {
 	const factLines =
 		s.facts.length > 0
 			? s.facts.map((f) => `- ${f.content}`).join("\n")
-			: "- 사용자 호칭은 게스트님이다.";
+			: memoryTemplate.emptyFactsLine;
 	const episodeLines =
 		s.episodes.length > 0
 			? s.episodes
 					.slice(-20)
 					.map(
 						(e) =>
-							`- (${e.role === "user" ? "게스트님" : "지나"}) ${e.content}`,
+							`- (${e.role === "user" ? memoryTemplate.speakerLabels.user : memoryTemplate.speakerLabels.assistant}) ${e.content}`,
 					)
 					.join("\n")
-			: "- 아직 기록된 대화가 없습니다.";
-	return `# 게스트 기억 (Guest Memory)\n\n## 기억된 사실 (Facts)\n${factLines}\n\n## 최근 대화 (Episodes)\n${episodeLines}\n`;
+			: memoryTemplate.emptyEpisodesLine;
+	return memoryTemplate.markdownTemplate.replace(
+		/\{(factLines|episodeLines)\}/g,
+		(_, key) => (key === "factLines" ? factLines : episodeLines),
+	);
 }
 
 export function extractExplicitKioskFacts(userText: string): string[] {
@@ -101,7 +105,7 @@ function empty(): Store {
 	return {
 		version: 1,
 		generation: crypto.randomUUID(),
-		facts: [fact("사용자 호칭은 게스트님이다.", "kiosk-guest")],
+		facts: [fact(memoryTemplate.defaultGuestFact, "kiosk-guest")],
 		episodes: [],
 	};
 }

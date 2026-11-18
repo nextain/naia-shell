@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { validateSpeechAtlasIndex } from "../avatar/nva-speech/vendor/speech-atlas-index.js";
 import {
 	collectNvaManifestClipPaths,
 	defaultClipOf,
@@ -362,12 +363,40 @@ describe("NVA manifest contract (v0.2)", () => {
 			for (const removed of bundle.removedFiles) {
 				expect(existsSync(path.join(bundleDir, "clips", removed))).toBe(false);
 			}
-			expect(existsSync(path.join(bundleDir, "speech", "atlas.bin"))).toBe(
-				true,
+			const atlasIndexPath = path.join(bundleDir, "speech", "atlas-index.json");
+			const generationResultPath = path.join(
+				bundleDir,
+				"speech",
+				"generation-result.json",
 			);
+			expect(existsSync(atlasIndexPath)).toBe(true);
+			expect(existsSync(generationResultPath)).toBe(true);
+			const generationResult = JSON.parse(
+				readFileSync(generationResultPath, "utf8"),
+			) as {
+				assets?: Array<{
+					role?: string;
+					path?: string;
+					sha256?: string;
+					bytes?: number;
+				}>;
+			};
+			const atlasAsset = generationResult.assets?.find(
+				(asset) => asset.role === "speech_atlas",
+			);
+			expect(atlasAsset?.path).toBe(parsed.speech_motion?.atlas);
+			expect(atlasAsset?.sha256).toMatch(/^[a-f0-9]{64}$/);
+			expect(typeof atlasAsset?.bytes).toBe("number");
 			expect(
-				existsSync(path.join(bundleDir, "speech", "atlas-index.json")),
-			).toBe(true);
+				validateSpeechAtlasIndex(
+					JSON.parse(readFileSync(atlasIndexPath, "utf8")),
+					atlasAsset?.bytes ?? -1,
+				),
+			).toEqual({ ok: true, errors: [] });
+			const atlasPath = path.join(bundleDir, "speech", "atlas.bin");
+			if (existsSync(atlasPath)) {
+				expect(statSync(atlasPath).size).toBe(atlasAsset?.bytes);
+			}
 			expect(
 				existsSync(path.join(bundleDir, "speech", "neutral-head.png")),
 			).toBe(true);

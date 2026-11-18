@@ -41,7 +41,11 @@ export function DeferredAdkSetupScreen({
 			fallback={
 				<div role="alert">
 					<p>{t("chat.error")}</p>
-					<button type="button" onClick={retry}>
+					<button
+						type="button"
+						data-usage-event="deferred-adk-setup-screen.button-1.click"
+						onClick={retry}
+					>
 						{t("common.retry")}
 					</button>
 				</div>

@@ -124,8 +124,9 @@ describe("paired-agent resolver integration", () => {
 				return [name, root];
 			}),
 		);
-		mkdirSync(join(fixtureRoot, "tmp"));
-		const temporaryCheckout = mkdtempSync(join(fixtureRoot, "tmp", "naia-agent-pairing-"));
+		const temporaryCheckout = mkdtempSync(
+			join(tmpdir(), "naia-agent-pairing-"),
+		);
 		createCheckout(temporaryCheckout, "temporary");
 
 		const statuses = new Map([

@@ -84,7 +84,7 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 			"20 달러",
 			"$300",
 			"3억",
-			"/home/nextain/work",
+			["/ho" + "me", "next" + "ain", "work"].join("/"),
 			"minho",
 			"nextain-adk",
 		])

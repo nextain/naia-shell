@@ -101,6 +101,7 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	clone_naia_adk: "desktop-only",
 	compile_knowledge: "desktop-only",
 	copy_bundled_assets: "desktop-only",
+	default_adk_path: "desktop-only",
 	delete_naia_adk: "desktop-only",
 	delete_naia_asset: "desktop-only",
 	delete_naia_ref_audio: "desktop-only",

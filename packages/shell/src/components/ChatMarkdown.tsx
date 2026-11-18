@@ -60,6 +60,7 @@ function processFilePaths(text: string): ReactNode[] {
 				key={`file-${part}-${matchIndex}`}
 				type="button"
 				className="chat-file-deeplink"
+				data-usage-event="chat-markdown.open-file-in-workspace-1.click"
 				onClick={() => openFileInWorkspace(part)}
 				title={`워크스페이스에서 열기: ${part}`}
 			>

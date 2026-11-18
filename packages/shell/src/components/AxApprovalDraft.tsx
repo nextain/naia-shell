@@ -81,6 +81,7 @@ export function AxApprovalDraft({
 					: t("axApproval.typePrompt")}
 			</p>
 			<form
+				data-usage-event="ax-approval-draft.v026-add-1.submit"
 				onSubmit={(event) => {
 					event.preventDefault();
 					if (settled || !ready || !capturedRef.current) return;
@@ -114,6 +115,7 @@ export function AxApprovalDraft({
 				<button
 					type="button"
 					disabled={settled}
+					data-usage-event="ax-approval-draft.v026-add-2.click"
 					onClick={() => {
 						adapterRef.current?.invalidate();
 						setInputError(false);

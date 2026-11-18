@@ -52,12 +52,27 @@ const FAMILIES: readonly {
   { prefix: "UC-TOOLS-SURFACE-611", gate: "protocol", requiredEvidence: ["native"] },
   // 서명된 스토어 앱 도구는 모델 도구 경계와 Rust의 설치 영수증 검증을 함께 거친다.
   { prefix: "UC-APPSTORE-DYNAMIC-TOOLS-20261029", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  // 설치 앱 호스트 브리지는 앱 질문·낭독의 mock 계약과 셸의 실제 Tauri 경계를 함께 확인한다.
+  { prefix: "UC-INSTALLED-APP-HOST", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  // 설치 앱 질문의 답변 품질은 실제 모델 응답을 요구한다.
+  { prefix: "UC-025-09", gate: "integration", requiredEvidence: ["native"] },
+  { prefix: "UC-025-11", gate: "integration", requiredEvidence: ["native"] },
+  { prefix: "UC-025-12", gate: "integration", requiredEvidence: ["native"] },
   // 도구 루트 결속(#651)은 실제 Codex app-server 의 cwd·샌드박스로만 확인된다.
   { prefix: "UC-WORKSPACE-BIND-651", gate: "integration", requiredEvidence: ["native"] },
   // 열린 문서·터미널 인지와 제어(#680), 승인 편집(#687)은 실 UI 의 표시·승인과
   // 실제 PTY·디스크 반영을 둘 다 거쳐야 한다.
   { prefix: "UC-WORKSPACE-AI-CONTEXT-AND-CONTROL", gate: "native", requiredEvidence: ["browser", "native"] },
   { prefix: "UC-WORKSPACE-OPEN-FILE-EDIT-687", gate: "native", requiredEvidence: ["browser", "native"] },
+  // 2026-11-18 Spec B.2 — `##` 표제 동기화로 편입된 에이전트·지식·모델·작업자 축.
+  { prefix: "UC-WIRE-V1", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  { prefix: "UC-KB-MANAGE", gate: "integration", requiredEvidence: ["browser", "native"] },
+  { prefix: "UC-CODEX-ROLES", gate: "integration", requiredEvidence: ["mock", "native"] },
+  { prefix: "UC-CODEX-WORKER-LIFECYCLE", gate: "integration", requiredEvidence: ["mock", "native"] },
+  { prefix: "UC-GROK-SUBSCRIPTION", gate: "integration", requiredEvidence: ["browser", "native"] },
+  { prefix: "UC-NAIA-AZURE-MODELS", gate: "integration", requiredEvidence: ["browser", "native"] },
+  { prefix: "UC-LLM-THREE-TIER", gate: "integration", requiredEvidence: ["mock", "native"] },
+  { prefix: "UC-PROACTIVE-COST-CONTROL", gate: "integration", requiredEvidence: ["mock", "native"] },
 ];
 
 /**
@@ -101,7 +116,7 @@ const SCENARIO_OVERRIDES: Readonly<Record<string, readonly EvidenceKind[]>> = {
  */
 export const DEFERRED_SCENARIOS: Readonly<Record<string, never>> = {};
 
-const HEADING = /^###\s+(UC-[A-Z0-9-]+)/gm;
+const HEADING = /^#{2,6}\s+(UC-[A-Z0-9][A-Z0-9-]*)/gm;
 
 /**
  * 이 에픽이 소유하지 않는 UC 접두사. 문서는 여러 슬라이스가 공유하므로,
@@ -117,7 +132,12 @@ const HEADING = /^###\s+(UC-[A-Z0-9-]+)/gm;
 const NOT_OWNED_BY_EPIC: readonly string[] = [
   // Shell card import and avatar/theme settings; deterministic UI/config tests.
   "UC-B2C-026",
-  "UC-DISCORD-",
+  // 셸의 동의·UI 사용 통계이며 에이전트 능력 축이 아니다. P02 표의 시험으로 검증한다.
+  "UC-USAGE-EVENTS",
+  // 웹 키오스크 IR 시연판 흐름은 웹 시연 전용이며 에픽 #497 에이전트 능력 축 밖이다.
+  "UC-KIOSK-",
+  "UC-WEB-KIOSK-",
+  "UC-DISCORD",
   "UC-JEONJU-",
   "UC-V0",
   "UC-PERF-",
@@ -172,18 +192,50 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
+  // 회귀 실행자의 기계 바인딩 검사(#853). 회귀 기록을 쓰기 전 host 필드를 거르는 운영
+  // 계약이고, 결정론 계약 시험(regression-host-privacy.contract)이 검증 수단이다.
+  "UC-REGRESSION-HOST-BINDING",
   // 0.2.6 OBS 없이 쉘에서 바로 방송 송출. 셸 미디어·프로세스·UI 표면 기능이다.
   "UC-BROADCAST-STREAM-026",
   // 0.2.6 Windows RTX 2070 실기 1·2회차 수정. 셸 런타임·설정·온보딩·방송 표면 기능이다.
   "UC-WIN-RTX2070-R1-026",
   "UC-WIN-RTX2070-R2-026",
+  // 자막 표시와 전환이다.
+  "UC-025-01",
+  // 재생 키 조작이다.
+  "UC-025-02",
+  // 대시보드 이름과 화면이다.
+  "UC-025-03",
+  // 브라우저 파일 다운로드다.
+  "UC-025-04",
+  // 라디오 곡 목록과 재생이다.
+  "UC-025-05",
+  // 출시 소개 글 검토다.
+  "UC-025-06",
+  // 슬라이드 설치·화면·음성·녹화 조작이다.
+  "UC-025-07",
+  // 주소 복사와 소개 앱 화면이다.
+  "UC-025-10",
+  // 0.2.4 고침(스토어 창·설치 갱신). 앱 설치 표면이다.
+  "UC-FIX-024-",
+  // 앱 전체 글자 크기 설정(2026-11-05). 화면 표현 설정이다.
+  "UC-UI-FONT-SCALE-20261105",
+  // 온디바이스 Ollama/VRAM 관리·오프라인 STT·6GB/Linux 로컬 음성 런타임 표면(Spec B.3).
+  "UC-LOCAL-LLM-OLLAMA-026",
+  "UC-STT-LOCAL-026",
+  "UC-WIN-VOICE-6G",
+  // `##` 표제 동기화 편입 — 셸 설정/표시/온보딩/Radio DJ UI 표면(Spec B.2).
+  "UC-SETTINGS-ROUNDTRIP",
+  "UC-ONBOARDING-APPEARANCE-VOICE",
+  "UC-NAIA-MODEL-ORDER",
+  "UC-RADIO-DJ-DURABLE",
 ];
 
 export function ownedByEpic(uc: string): boolean {
-  return !NOT_OWNED_BY_EPIC.some((p) => uc.startsWith(p));
+  return !NOT_OWNED_BY_EPIC.some((p) => p.startsWith("UC-025-") ? uc === p : uc.startsWith(p));
 }
 
-/** 문서에 있는 모든 `### UC-` 표제. 계열 판정 전의 날것이다. */
+/** 문서에 있는 모든 `##~###### UC-` 표제. 계열 판정 전의 날것이다. */
 export function allHeadings(markdown: string): readonly string[] {
   const out = new Set<string>();
   for (const match of markdown.matchAll(HEADING)) {
@@ -202,7 +254,7 @@ export function allHeadings(markdown: string): readonly string[] {
 export function familyOf(uc: string): (typeof FAMILIES)[number] | undefined {
   let best: (typeof FAMILIES)[number] | undefined;
   for (const f of FAMILIES) {
-    if (!uc.startsWith(f.prefix)) continue;
+    if (f.prefix.startsWith("UC-025-") ? uc !== f.prefix : !uc.startsWith(f.prefix)) continue;
     if (best === undefined || f.prefix.length > best.prefix.length) best = f;
   }
   return best;
@@ -237,4 +289,34 @@ export class DocumentBenchScenarioSource implements BenchScenarioSourcePort {
   async list(): Promise<readonly BenchScenario[]> {
     return parseScenarios(await readFile(this.path, "utf8"));
   }
+}
+
+/** 실제 응답을 아직 실행하지 않은 설치 앱 대화 벤치의 재현 가능한 입력과 판정. */
+export const INSTALLED_APP_DIALOGUE_CASES = [
+  {
+    uc: "UC-025-09",
+    name: "공개 카드 순서",
+    context: "공개된 카드: 별, 달, 태양. 미공개 카드: 탑. 공개된 카드 이름만 공개 순서대로 쉼표로 구분해 답하세요.",
+    expected: "별, 달, 태양",
+    criterion: "공개한 세 카드만 순서대로 답하고 미공개 카드를 포함하지 않는다",
+  },
+  {
+    uc: "UC-025-11",
+    name: "캐릭터 카드 역할",
+    context: "카드 이름은 루나, 말투는 정중한 해요체입니다. 이름을 밝히고 인사만 한 문장으로 답하세요. 정확한 형식: 저는 [이름]예요. 안녕하세요.",
+    expected: "저는 루나예요. 안녕하세요.",
+    criterion: "카드 이름과 정중한 해요체를 따른다",
+  },
+  {
+    uc: "UC-025-12",
+    name: "설치 앱 질문 응답",
+    context: "설치 앱 질문: 17 더하기 25는 얼마인가요? 숫자만 답하세요.",
+    expected: "42",
+    criterion: "앱의 질문에 맞는 정답을 돌려준다",
+  },
+] as const;
+
+/** 형식이 고정된 fixture의 답을 판정한다. 모델 호출이나 실 앱 증거를 만들지 않는다. */
+export function judgeInstalledAppDialogue(expected: string, answer: string): boolean {
+  return answer.trim() === expected;
 }

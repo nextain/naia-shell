@@ -86,6 +86,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 									type="button"
 									className="web-workspace-btn"
 									data-testid="web-workspace-start-default"
+									data-usage-event="web-workspace-setup.v026-add-1.click"
 									onClick={handleStartDefault}
 									style={{
 										padding: "0.5rem 1.25rem",
@@ -148,6 +149,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 									type="button"
 									className="web-workspace-btn"
 									data-testid="web-workspace-retry"
+									data-usage-event="web-workspace-setup.v026-add-2.click"
 									onClick={handleRetry}
 									style={{
 										padding: "0.5rem 1.25rem",

@@ -6,6 +6,7 @@
 
 import { type NvaManifest, animKind } from "./nva-core";
 import type { NvaGestureAction } from "./camera-actions";
+import nvaGestureAliases from "./nva-gesture-aliases.json";
 import { wordBoundaryForRemovedMarker } from "../text-boundary";
 
 export interface ParsedGesture {
@@ -33,8 +34,12 @@ function addGuidanceFallback(map: Map<string, string>): Map<string, string> {
 	if (!map.has("guidance")) {
 		const fallback = map.get("greeting") ?? map.get("idea");
 		if (fallback) {
-			map.set("guidance", fallback);
-			map.set("반가운 안내", fallback);
+			for (const alias of nvaGestureAliases.guidanceFallbacks) {
+				const key = alias.trim().toLowerCase();
+				if (key && !map.has(key)) {
+					map.set(key, fallback);
+				}
+			}
 		}
 	}
 	return map;

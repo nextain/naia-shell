@@ -12,6 +12,7 @@ import {
 	resetKioskVisit,
 	shouldResetKioskVisitOnEnter,
 } from "../lib/kiosk-demo/entry";
+import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
@@ -130,50 +131,52 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 	}, [enabled, entered]);
 	if (!enabled || entered) return <>{children}</>;
 	return (
-		<main className="kiosk-entry" lang="ko">
+		<main className="kiosk-entry" lang={getLocale()}>
 			<section aria-labelledby="kiosk-title" className="kiosk-entry__card">
 				<p>NAIA · NEXTAIN</p>
 				{phase === "unavailable" ? (
 					<div role="alert" className="kiosk-entry__unavailable">
-						<h1 id="kiosk-title">지금은 시연을 잠시 쉬고 있어요</h1>
-						<p>오늘 준비한 시연 사용량을 다 썼어요.</p>
-						<p>잠시 뒤 다시 들어와 주세요.</p>
+						<h1 id="kiosk-title">{t("kiosk.unavailableTitle")}</h1>
+						<p>{t("kiosk.unavailableBody1")}</p>
+						<p>{t("kiosk.unavailableBody2")}</p>
 					</div>
 				) : (
 					<>
-						<h1 id="kiosk-title">지나와 이야기해 보세요</h1>
+						<h1 id="kiosk-title">{t("kiosk.entryTitle")}</h1>
 						<p>
-							나이아와 넥스테인이 궁금하신가요?
+							{t("kiosk.entrySubtitle1")}
 							<br />
-							게스트님을 따뜻하게 안내해 드릴게요.
+							{t("kiosk.entrySubtitle2")}
 						</p>
 						{phase === "missing-key" ? (
-							<p role="alert">시연 열쇠 없음</p>
+							<p role="alert">{t("kiosk.missingKey")}</p>
 						) : phase === "error" ? (
-							<p role="alert">시연을 준비하지 못했어요. 다시 시도해 주세요.</p>
+							<p role="alert">{t("kiosk.prepareError")}</p>
 						) : (
 							<output>
 								{phase === "preparing"
-									? "지나가 대화를 준비하고 있어요…"
-									: "들어가기를 누르면 음성 안내가 시작됩니다."}
+									? t("kiosk.preparing")
+									: t("kiosk.readyHint")}
 							</output>
 						)}
 						<div className="kiosk-entry__actions">
 							{phase === "error" ? (
 								<button
 									type="button"
+									data-usage-event="kiosk-demo-gate.v026-add-1.click"
 									onClick={() => {
 										setPhase("preparing");
 										preparation.current = prepare();
 										void preparation.current.then(setPhase);
 									}}
 								>
-									다시 시도
+									{t("common.retry")}
 								</button>
 							) : (
 								<button
 									type="button"
 									disabled={phase !== "ready" || resetting}
+									data-usage-event="kiosk-demo-gate.v026-add-2.click"
 									onClick={() => {
 										if (accepted.current) return;
 										accepted.current = true;
@@ -195,13 +198,14 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 										enterNow();
 									}}
 								>
-									들어가기
+									{t("kiosk.enter")}
 								</button>
 							)}
 							<button
 								className="kiosk-entry__reset"
 								type="button"
 								disabled={phase !== "ready" || resetting}
+								data-usage-event="kiosk-demo-gate.v026-add-3.click"
 								onClick={async () => {
 									if (resetPending.current) return;
 									resetPending.current = true;
@@ -222,17 +226,13 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 									}
 								}}
 							>
-								처음으로
+								{t("kiosk.reset")}
 							</button>
 						</div>
 					</>
 				)}
-				{resetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
-				{resetFailed && (
-					<p role="alert">
-						기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.
-					</p>
-				)}
+				{resetting && <p role="status">{t("kiosk.resetting")}</p>}
+				{resetFailed && <p role="alert">{t("kiosk.resetFailed")}</p>}
 			</section>
 		</main>
 	);

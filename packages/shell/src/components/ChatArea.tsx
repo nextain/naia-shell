@@ -234,6 +234,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
+import { usage } from "../lib/usage-runtime";
 import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
@@ -479,6 +480,7 @@ function ChatErrorNotice({
 			<button
 				type="button"
 				className="chat-error-notice__retry"
+				data-usage-event="chat-area.on-retry-1.click"
 				onClick={onRetry}
 			>
 				{t("chat.answerFailed.retry")}
@@ -2236,9 +2238,7 @@ export function ChatArea({
 			setKioskLocalConfirmOpen(false);
 			setKioskLocalAnswerEnabled(false);
 			setKioskLocalAnswer(false);
-			setKioskLocalNotice(
-				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
-			);
+			setKioskLocalNotice(t("kiosk.localNoWebgpu"));
 			return;
 		}
 		setKioskLocalNotice(null);
@@ -2253,9 +2253,7 @@ export function ChatArea({
 		if (!gpuResult.ok) {
 			setKioskLocalAnswerEnabled(false);
 			setKioskLocalAnswer(false);
-			setKioskLocalNotice(
-				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
-			);
+			setKioskLocalNotice(t("kiosk.localNoWebgpu"));
 			return;
 		}
 		setKioskLocalNotice(null);
@@ -2330,6 +2328,7 @@ export function ChatArea({
 	}, []);
 
 	async function handleNewConversation() {
+		usage.record("chat.session.new", "chat");
 		const store = useChatStore.getState();
 		// Stop any TTS still reading the previous conversation.
 		interruptTts();
@@ -2432,7 +2431,7 @@ export function ChatArea({
 		kioskAutoRetriedRef.current = false;
 		useChatStore.getState().addMessage({
 			role: "assistant",
-			content: "잠시 문제가 있어요, 다시 말해 주세요.",
+			content: t("kiosk.turnError"),
 		});
 	}
 
@@ -2459,19 +2458,20 @@ export function ChatArea({
 		const trackTitle =
 			bgmPlayback.current()?.selected.title || "YouTube BGM";
 		const replyText = !ok
-			? "유튜브 재생 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요."
+			? t("webBgm.playError")
 			: action === "stop" || action === "pause"
-				? "유튜브 재생을 멈췄어요."
+				? t("webBgm.stopped")
 				: action === "resume"
-					? `유튜브 '${trackTitle}' 재생을 다시 시작했어요.`
+					? t("webBgm.resumed", { title: trackTitle })
 					: action === "next" || action === "prev"
-						? `유튜브 '${trackTitle}' 곡으로 바꿨어요.`
-						: `유튜브에서 '${trackTitle}' 재생을 시작했어요. 상단 재생 카드에서 곡 목록을 열거나 멈출 수 있어요.`;
+						? t("webBgm.switched", { title: trackTitle })
+						: t("webBgm.started", { title: trackTitle });
 		useChatStore.getState().appendStreamChunk(replyText);
 		useChatStore.getState().finishStreaming();
 		return true;
 	}
 
+	const usageUserTurn = useRef<string | null>(null);
 	async function handleSend(
 		overrideText?: string,
 		installedAppTurn = false,
@@ -2502,6 +2502,10 @@ export function ChatArea({
 			settleInstalledAppReply("", t("apps.voiceModeBlocked"));
 			return;
 		}
+		usage.record("chat.message.send", "text");
+		usageUserTurn.current = usage.choice()?.enabled
+			? (usage.choice()?.epoch ?? null)
+			: null;
 		pendingAiGestureActionRef.current = null;
 		if (!installedAppTurn && (await handleSpeechProfilePhrase(text))) return;
 		if (
@@ -3579,6 +3583,7 @@ export function ChatArea({
 	function appendCleanVisibleResponseText(cleanText: string): void {
 		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
+		if (usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "text"); usageUserTurn.current = null; }
 		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
 			ttsTextSyncRef.current.canonical += visible;
@@ -4123,6 +4128,7 @@ export function ChatArea({
 	}
 
 	async function handleVoiceToggle() {
+		usage.record("chat.voice.toggle", "chat");
 		if (voiceMode !== "off") pendingAiGestureActionRef.current = null;
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
@@ -4733,6 +4739,7 @@ export function ChatArea({
 			) => {
 				playFirstGestureAction(gestures, liveGestureActionPlayed);
 				if (!cleanText && !recordEmpty) return;
+				if (cleanText && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
 				outputAccum += cleanText;
 				const { emotion, cleanText: displayText } =
 					extractExpression(outputAccum);
@@ -4749,8 +4756,12 @@ export function ChatArea({
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
 
-			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
+			session.onAudio = (pcmBase64) => {
+				if (pcmBase64 && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
+				player.enqueue(pcmBase64);
+			};
 			session.onInputTranscript = (text) => {
+				if (!inputTurnDirty && text) { usage.record("chat.message.send", "voice"); usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null; }
 				pendingAiGestureActionRef.current = null;
 				const store = useChatStore.getState();
 				if (!inputTurnDirty) setEmotion("think");
@@ -5129,6 +5140,7 @@ export function ChatArea({
 	}
 
 	function handleVoiceCancel() {
+		usage.record("chat.voice.cancel", "chat");
 		// Cancel an in-progress cold-start. disconnect() breaks naia-omni's retry
 		// loop (abortableSleep → AbortError) and fires abandonPod to release the
 		// warming Pod; the connect() catch then runs cleanup and clears the banner.
@@ -5318,6 +5330,7 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
 							data-chat-tab="chat"
+							data-usage-event="chat-area.handle-tab-change-2.click"
 							onClick={() => handleTabChange("chat")}
 							title={t("progress.tabChat")}
 							aria-label={t("progress.tabChat")}
@@ -5332,6 +5345,7 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
 							data-chat-tab="history"
+							data-usage-event="chat-area.handle-tab-change-3.click"
 							onClick={() => handleTabChange("history")}
 							title={t("history.tabHistory")}
 							aria-label={t("history.tabHistory")}
@@ -5354,28 +5368,31 @@ export function ChatArea({
 									className={`settings-icon-btn kiosk-local-answer-toggle${kioskLocalAnswer ? " active" : ""}`}
 									data-testid="kiosk-local-answer-toggle"
 									aria-pressed={kioskLocalAnswer}
-									aria-label="내 PC 에서 대답하기"
-									title="내 PC 에서 대답하기 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+									aria-label={t("kiosk.localAnswerAria")}
+									title={t("kiosk.localAnswerTitle")}
+									data-usage-event="chat-area.v026-add-1.click"
 									onClick={() => void handleKioskLocalAnswerToggle()}
 									disabled={kioskResetting}
 								>
-									<span className="kiosk-local-answer-label-prefix">내 PC</span>
+									<span className="kiosk-local-answer-label-prefix">
+										{t("kiosk.localAnswerPrefix")}
+									</span>
 									<span className="kiosk-local-answer-label-suffix">
 										{" "}
-										에서 대답하기
+										{t("kiosk.localAnswerSuffix")}
 									</span>
 								</button>
 								<span
 									className="kiosk-local-answer-hint"
 									data-testid="kiosk-local-answer-hint"
 								>
-									그래픽 메모리 8GB 이상 기기에서만 됩니다
+									{t("kiosk.localAnswerHint")}
 								</span>
 							</div>
 						)}
 						{isKioskDemo() && (
-							<button type="button" className="settings-icon-btn kiosk-chat-reset" onClick={handleKioskReset} disabled={kioskResetting}>
-								처음으로
+							<button type="button" className="settings-icon-btn kiosk-chat-reset" data-usage-event="chat-area.v026-add-2.click" onClick={handleKioskReset} disabled={kioskResetting}>
+								{t("kiosk.reset")}
 							</button>
 						)}
 
@@ -5386,6 +5403,7 @@ export function ChatArea({
 								<button
 									type="button"
 									className="cost-badge session-cost cost-badge-clickable"
+									data-usage-event="chat-area.set-show-cost-dashboard-4.click"
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
 									{formatUsageTotal(
@@ -5397,6 +5415,7 @@ export function ChatArea({
 						<button
 							type="button"
 							className="settings-icon-btn new-chat-btn"
+							data-usage-event="chat-area.handle-new-conversation-5.click"
 							onClick={handleNewConversation}
 							title={t("chat.newConversation")}
 							disabled={isStreaming}
@@ -5410,13 +5429,11 @@ export function ChatArea({
 					<div
 						role="dialog"
 						aria-modal="false"
-						aria-label="내 PC 모델 내려받기 확인"
+						aria-label={t("kiosk.localConfirmAria")}
 						className="kiosk-local-answer-notice kiosk-local-answer-confirm"
 						data-testid="kiosk-local-answer-confirm"
 					>
-						<span>
-							내 PC에서 대답하려면 AI 모델(약 2.5GB)을 처음 한 번 내려받아요. 지금 내려받을까요?
-						</span>
+						<span>{t("kiosk.localConfirmDesc")}</span>
 						<div
 							className="kiosk-local-answer-confirm__actions"
 							style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}
@@ -5425,17 +5442,19 @@ export function ChatArea({
 								type="button"
 								className="settings-icon-btn kiosk-local-answer-toggle active"
 								data-testid="kiosk-local-answer-confirm-accept"
+								data-usage-event="chat-area.v026-add-3.click"
 								onClick={() => void handleConfirmKioskLocalAnswer()}
 							>
-								확인
+								{t("onboard.connect.okBadge")}
 							</button>
 							<button
 								type="button"
 								className="settings-icon-btn kiosk-local-answer-toggle"
 								data-testid="kiosk-local-answer-confirm-cancel"
+								data-usage-event="chat-area.v026-add-4.click"
 								onClick={handleCancelKioskLocalAnswer}
 							>
-								취소
+								{t("settings.cancel")}
 							</button>
 						</div>
 					</div>
@@ -5450,15 +5469,20 @@ export function ChatArea({
 						<button
 							type="button"
 							className="kiosk-local-answer-notice__close"
-							aria-label="안내 닫기"
+							aria-label={t("kiosk.dismissNotice")}
+							data-usage-event="chat-area.v026-add-5.click"
 							onClick={() => setKioskLocalNotice(null)}
 						>
 							×
 						</button>
 					</div>
 				)}
-				{isKioskDemo() && kioskResetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
-				{isKioskDemo() && kioskResetFailed && <p role="alert">기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.</p>}
+				{isKioskDemo() && kioskResetting && (
+					<p role="status">{t("kiosk.resetting")}</p>
+				)}
+				{isKioskDemo() && kioskResetFailed && (
+					<p role="alert">{t("kiosk.resetFailed")}</p>
+				)}
 				<Suspense fallback={null}>
 					{/* Progress tab */}
 					{activeTab === "progress" && <WorkProgressArea />}
@@ -5522,6 +5546,7 @@ export function ChatArea({
 						<button
 							type="button"
 							aria-label="dismiss"
+							data-usage-event="chat-area.set-compaction-notice-6.click"
 							onClick={() => setCompactionNotice(null)}
 						>
 							×
@@ -5599,7 +5624,7 @@ export function ChatArea({
 											className="kiosk-local-answer-badge"
 											data-testid="kiosk-local-answer-badge"
 										>
-											내 PC 에서 나온 답
+											{t("kiosk.localAnswerBadge")}
 										</span>
 									)}
 								{isKioskDemo() &&
@@ -5610,13 +5635,16 @@ export function ChatArea({
 											className="chat-kiosk-evidence"
 											data-testid="chat-kiosk-evidence"
 										>
-											<span className="chat-kiosk-evidence__label">근거:</span>
+											<span className="chat-kiosk-evidence__label">
+												{t("kiosk.evidenceLabel")}
+											</span>
 											{resolveKioskEvidenceFiles(msg).map((evidencePath) => (
 												<button
 													key={evidencePath}
 													type="button"
 													className="chat-kiosk-evidence__chip"
 													data-evidence-path={evidencePath}
+													data-usage-event="chat-area.v026-add-6.click"
 													onClick={() =>
 														handleOpenKioskEvidenceFile(evidencePath)
 													}
@@ -5724,6 +5752,7 @@ export function ChatArea({
 							<button
 								type="button"
 								className="voice-status-cancel"
+								data-usage-event="chat-area.handle-voice-cancel-7.click"
 								onClick={handleVoiceCancel}
 							>
 								{t("chat.voiceColdStartCancel")}
@@ -5753,6 +5782,7 @@ export function ChatArea({
 					<button
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
+						data-usage-event="chat-area.handle-voice-toggle-8.click"
 						onClick={handleVoiceToggle}
 						disabled={
 							voiceMode === "connecting" ||
@@ -5825,6 +5855,7 @@ export function ChatArea({
 					{isStreaming || outputStage !== null || ttsPlaying ? (
 						<button
 							type="button"
+							data-usage-event="chat-area.handle-cancel-streaming-9.click"
 							onClick={handleCancelStreaming}
 							className="chat-send-btn chat-cancel-btn"
 							title="ESC"
@@ -5834,6 +5865,7 @@ export function ChatArea({
 					) : (
 						<button
 							type="button"
+							data-usage-event="chat-area.handle-send-10.click"
 							onClick={() => handleSend()}
 							disabled={
 								!input.trim() || webSendBlocked || characterTransitionPending
@@ -5849,10 +5881,12 @@ export function ChatArea({
 			{showNoAuthModal && (
 				<div
 					className="sync-dialog-overlay"
+					data-usage-event="chat-area.set-show-no-auth-modal-11.click"
 					onClick={() => setShowNoAuthModal(false)}
 				>
 					<div
 						className="sync-dialog-card"
+						data-usage-event="chat-area.stop-propagation-12.click"
 						onClick={(e) => e.stopPropagation()}
 						style={{ maxWidth: 360 }}
 					>
@@ -5869,6 +5903,7 @@ export function ChatArea({
 							<button
 								type="button"
 								className="onboarding-next-btn"
+								data-usage-event="chat-area.set-show-no-auth-modal-13.click"
 								onClick={() => {
 									setShowNoAuthModal(false);
 									useAppStore.getState().setActiveApp("settings");

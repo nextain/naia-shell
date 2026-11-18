@@ -26,7 +26,7 @@ vi.mock("../../lib/app-loader", () => ({
 }));
 vi.mock("../../lib/app-store-client", () => ({
 	getStoreGatewayUrl: vi.fn(() => "https://api-dev.naia.land"),
-	getStoreProductName: vi.fn().mockResolvedValue("나이아 슬라이드"),
+	getStoreProductMetadata: vi.fn().mockResolvedValue({ name: "Naia Slides", description: "Present slides", thumbnailUrl: "/thumbnail.png" }),
 	hasStoreEntitlement: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("../../lib/logger", () => ({
@@ -43,6 +43,7 @@ vi.mock("../../stores/app", () => {
 });
 
 import { AppInstallDialog } from "../AppInstallDialog";
+import { getStoreProductMetadata } from "../../lib/app-store-client";
 
 const addButton = () =>
 	screen.getByRole("button", { name: "추가" }) as HTMLButtonElement;
@@ -72,6 +73,33 @@ describe("AppInstallDialog — zip gating (#358 / #359)", () => {
 describe("AppInstallDialog — storefront install (#471)", () => {
 	beforeEach(() => vi.clearAllMocks());
 	afterEach(() => cleanup());
+
+	it("shows localized catalog copy and the product thumbnail", async () => {
+		render(<AppInstallDialog request={{appId: "land.naia.slides", state: "state", storeOrigin: "https://dev.naia.land"}} onClose={() => {}} />);
+		await waitFor(() => expect(screen.getByText("Present slides")).toBeTruthy());
+		expect(screen.getByAltText("").getAttribute("src")).toBe("https://dev.naia.land/thumbnail.png");
+	});
+
+	it.each(["javascript:alert(1)", "data:image/png;base64,AAAA", "file:///tmp/a.png"])("rejects unsafe thumbnail %s", async (thumbnailUrl) => {
+		vi.mocked(getStoreProductMetadata).mockResolvedValueOnce({name: "Slides", description: "Unsafe image", thumbnailUrl, permissions: null});
+		render(<AppInstallDialog request={{appId: "app", state: "state", storeOrigin: "https://dev.naia.land"}} onClose={() => {}} />);
+		await screen.findByText("Unsafe image");
+		expect(screen.queryByAltText("")).toBeNull();
+	});
+
+	it("shows declared permissions and omits the list when unavailable", async () => {
+		vi.mocked(getStoreProductMetadata).mockResolvedValueOnce({name: "Slides", description: "With permissions", thumbnailUrl: null, permissions: ["model.ask", "speech", "locale"]});
+		const request = {appId: "app", state: "state", storeOrigin: "https://dev.naia.land"};
+		const view = render(<AppInstallDialog request={request} onClose={() => {}} />);
+		await screen.findByText("With permissions");
+		expect(screen.getByText("Ask the selected AI model")).toBeTruthy();
+		expect(screen.getByText("Read text aloud")).toBeTruthy();
+		view.unmount();
+		vi.mocked(getStoreProductMetadata).mockResolvedValueOnce({name: "Slides", description: "Without permissions", thumbnailUrl: null, permissions: null});
+		render(<AppInstallDialog request={request} onClose={() => {}} />);
+		await screen.findByText("Without permissions");
+		expect(screen.queryByRole("region", {name: "App permissions"})).toBeNull();
+	});
 
 	it("shows exactly one requested app and installs only after confirmation", async () => {
 		render(

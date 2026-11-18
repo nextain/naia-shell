@@ -282,14 +282,15 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			{naiaVisible && (
 				<>
-					{webMode && (activeApp === "workspace" || activeApp === "settings" || activeApp === "land.naia.slides") && <button type="button" className="web-mobile-workspace-close" aria-label="Close" onClick={() => setActiveApp(null)}>✕</button>}
+					{webMode && (activeApp === "workspace" || activeApp === "settings" || activeApp === "land.naia.slides") && <button type="button" className="web-mobile-workspace-close" aria-label="Close" data-usage-event="app-main-content.v026-add-1.click" onClick={() => setActiveApp(null)}>✕</button>}
 					{webMode && !showOnboarding && <div className="web-mobile-menu">
-						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
+						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} data-usage-event="app-main-content.v026-add-2.click" onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
 						{mobileMenu && <div className="web-mobile-menu-list">
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
+							<button type="button" data-usage-event="app-main-content.v026-add-3.click" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
+							<button type="button" data-usage-event="app-main-content.v026-add-4.click" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
 							<button
 								type="button"
+								data-usage-event="app-main-content.v026-add-5.click"
 								onClick={() => {
 									const next = toggleLayoutOrientation(layoutOrientation);
 									if (isKioskDemo()) {
@@ -303,13 +304,14 @@ export function AppMainContent(props: AppMainContentProps) {
 								}}
 							>
 								{layoutOrientation === "portrait"
-									? "가로 배치로 전환"
-									: "세로 배치로 전환"}
+									? t("ui.switchToLandscape")
+									: t("ui.switchToPortrait")}
 							</button>
 							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => (
 								<button
 									type="button"
 									key={key}
+									data-usage-event="app-main-content.v026-add-6.click"
 									onClick={() => {
 										const camera = getCameraActions();
 										camera.zoom(key === "ai.avatarZoomIn" ? 0.1 : -0.1);
@@ -320,10 +322,10 @@ export function AppMainContent(props: AppMainContentProps) {
 									{t(key)}
 								</button>
 							))}
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
-							<button type="button" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
-							{isKioskDemo() && <button type="button" data-app-id="land.naia.slides" onClick={() => { setActiveApp("land.naia.slides"); setMobileMenu(false); }}>▣ {t("slides.title")}</button>}
-							<button type="button" onClick={() => { setActiveApp("settings"); setMobileMenu(false); }}>⚙ {t("settings.title")}</button>
+							<button type="button" data-usage-event="app-main-content.v026-add-7.click" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
+							<button type="button" data-usage-event="app-main-content.v026-add-8.click" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
+							{isKioskDemo() && <button type="button" data-app-id="land.naia.slides" data-usage-event="app-main-content.v026-add-9.click" onClick={() => { setActiveApp("land.naia.slides"); setMobileMenu(false); }}>▣ {t("slides.title")}</button>}
+							<button type="button" data-usage-event="app-main-content.v026-add-10.click" onClick={() => { setActiveApp("settings"); setMobileMenu(false); }}>⚙ {t("settings.title")}</button>
 						</div>}
 					</div>}
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
@@ -391,7 +393,7 @@ export function AppMainContent(props: AppMainContentProps) {
 								className={`naia-chat-modes${avatarCornerOpen ? " naia-chat-modes--open" : ""}`}
 								// biome-ignore lint/a11y/useSemanticElements: preserve the existing DOM/CSS contract during extraction.
 								role="group"
-								aria-label="아바타 및 대화창 조절"
+								aria-label={t("ai.avatarAndChatControls")}
 							>
 								{avatarCornerOpen && (
 									<div
@@ -404,6 +406,7 @@ export function AppMainContent(props: AppMainContentProps) {
 											className="naia-chat-mode"
 											aria-label={t("ai.avatarZoomIn")}
 											title={t("ai.avatarZoomIn")}
+											data-usage-event="app-main-content.v026-add-11.click"
 											onClick={() => {
 												const camera = getCameraActions();
 												camera.zoom(0.1);
@@ -418,6 +421,7 @@ export function AppMainContent(props: AppMainContentProps) {
 											className="naia-chat-mode"
 											aria-label={t("ai.avatarZoomOut")}
 											title={t("ai.avatarZoomOut")}
+											data-usage-event="app-main-content.v026-add-12.click"
 											onClick={() => {
 												const camera = getCameraActions();
 												camera.zoom(-0.1);
@@ -462,6 +466,7 @@ export function AppMainContent(props: AppMainContentProps) {
 												avatarPanRef.current.active = false;
 												setAvatarPanActive(false);
 											}}
+											data-usage-event="app-main-content.v026-add-13.click"
 											onClick={() => {
 												if (avatarPanRef.current.moved) {
 													avatarPanRef.current.moved = false;
@@ -513,6 +518,7 @@ export function AppMainContent(props: AppMainContentProps) {
 											className="naia-chat-mode"
 											aria-label={t("ai.avatarReset")}
 											title={t("ai.avatarReset")}
+											data-usage-event="app-main-content.v026-add-14.click"
 											onClick={() => getCameraActions().reset()}
 										>
 											⌂
@@ -524,6 +530,7 @@ export function AppMainContent(props: AppMainContentProps) {
 													className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
 													title="왼쪽 소형"
 													aria-pressed={uiMode === "app"}
+													data-usage-event="app-main-content.set-chat-mode-1.click"
 													onClick={() => setChatMode("app")}
 												>
 													▖
@@ -533,6 +540,7 @@ export function AppMainContent(props: AppMainContentProps) {
 													className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
 													title="왼쪽 채움"
 													aria-pressed={uiMode === "workspace"}
+													data-usage-event="app-main-content.set-chat-mode-2.click"
 													onClick={() => setChatMode("workspace")}
 												>
 													▌
@@ -546,8 +554,9 @@ export function AppMainContent(props: AppMainContentProps) {
 									data-testid="avatar-controls-toggle"
 									className={`naia-chat-mode naia-avatar-corner-trigger${avatarCornerOpen ? " naia-chat-mode--active" : ""}`}
 									aria-expanded={avatarCornerOpen}
-									aria-label="아바타 화면 조절"
-									title="아바타 화면 조절"
+									aria-label={t("ai.avatarDisplayControls")}
+									title={t("ai.avatarDisplayControls")}
+									data-usage-event="app-main-content.v026-add-15.click"
 									onClick={() => setAvatarCornerOpen((open) => !open)}
 								>
 									<svg
@@ -572,7 +581,10 @@ export function AppMainContent(props: AppMainContentProps) {
 									variant={chatVariant}
 									headerControls={
 										<Suspense fallback={null}>
-											<AiControlBar showCameraControls={false} />
+											<AiControlBar
+												showCameraControls={false}
+												isNva={avatarProvider === "naia-video-avatar"}
+											/>
 										</Suspense>
 									}
 								/>
@@ -585,6 +597,7 @@ export function AppMainContent(props: AppMainContentProps) {
 				<button
 					type="button"
 					className={`ws-rail-toggle${railCollapsed ? " ws-rail-toggle--collapsed" : ""}`}
+					data-usage-event="app-main-content.toggle-rail-collapsed-3.click"
 					onClick={toggleRailCollapsed}
 					title={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}
 					aria-label={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}

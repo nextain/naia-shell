@@ -8,6 +8,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setLocale } from "../../lib/i18n";
 import { KioskDemoGate } from "../KioskDemoGate";
 const mocks = vi.hoisted(() => ({
 	auth: vi.fn(),
@@ -42,7 +43,8 @@ vi.mock("../../lib/kiosk-demo/entry", async () => ({
 vi.mock("../../lib/kiosk-demo/memory", () => ({
 	resetKioskMemory: mocks.resetMemory,
 }));
-beforeEach(() => {
+beforeEach(async () => {
+	await setLocale("ko");
 	localStorage.clear();
 	sessionStorage.clear();
 	vi.stubEnv("MODE", "web");
@@ -53,9 +55,10 @@ beforeEach(() => {
 	mocks.prep.mockResolvedValue(undefined);
 	mocks.clearConversations.mockResolvedValue(undefined);
 });
-afterEach(() => {
+afterEach(async () => {
 	cleanup();
 	vi.unstubAllEnvs();
+	await setLocale("en");
 });
 const mount = () =>
 	render(

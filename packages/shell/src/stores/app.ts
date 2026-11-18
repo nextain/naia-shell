@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AppContext } from "../lib/app-registry";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { usage, usageAppScreen } from "../lib/usage-runtime";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 
 function requestBrowserVisibilitySync() {
@@ -74,6 +75,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			return;
 		}
 		const current = get().activeApp;
+		if (current !== id) usage.record("app.screen.view", usageAppScreen(id));
 		if (!isWebMode() && current === "browser" && id !== "browser") {
 			invoke("browser_wv_hide").catch(() => {});
 		}

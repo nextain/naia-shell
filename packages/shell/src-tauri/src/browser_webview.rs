@@ -14,10 +14,11 @@
 //! registered on the Tauri builder, bypassing mixed-content restrictions
 //! that would block HTTP fetch from HTTPS pages on WebKitGTK.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use tauri::webview::Color;
+use tauri::webview::{Color, DownloadEvent};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
 use tokio::sync::oneshot;
 
@@ -45,6 +46,179 @@ fn pending_evals() -> PendingMap {
     PENDING_EVALS
         .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
         .clone()
+}
+
+// Keep concurrent downloads from choosing the same destination before either
+// webview has created its file. Entries last for the process lifetime because
+// macOS does not report a destination in the finished event.
+static DOWNLOAD_DESTINATIONS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+fn available_download_path<F>(folder: &Path, suggested: &Path, mut occupied: F) -> PathBuf
+where
+    F: FnMut(&Path) -> bool,
+{
+    let filename = suggested
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("download"));
+    let filename = Path::new(filename);
+    let stem = filename
+        .file_stem()
+        .unwrap_or_else(|| std::ffi::OsStr::new("download"))
+        .to_string_lossy();
+    let extension = filename
+        .extension()
+        .map(|ext| format!(".{}", ext.to_string_lossy()))
+        .unwrap_or_default();
+    let mut candidate = folder.join(filename);
+    let mut number = 1_u64;
+    while occupied(&candidate) {
+        candidate = folder.join(format!("{stem} ({number}){extension}"));
+        number += 1;
+    }
+    candidate
+}
+
+fn default_download_destination(destination: &mut PathBuf) -> bool {
+    // GTK expects a URI even when the supplied default is a filesystem path.
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(uri) = url::Url::from_file_path(&*destination) else {
+            log::warn!("Browser download: cannot convert default destination to a file URI");
+            return false;
+        };
+        *destination = PathBuf::from(uri.as_str());
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = destination;
+    true
+}
+
+fn configure_download_destination(destination: &mut PathBuf) -> bool {
+    let Ok(adk) = crate::current_adk_path() else {
+        return default_download_destination(destination);
+    };
+    match configure_adk_download_destination(destination, &adk) {
+        Ok(()) => true,
+        Err(reason) => {
+            log::warn!("Browser download: {reason}; using the default destination");
+            default_download_destination(destination)
+        }
+    }
+}
+
+fn configure_adk_download_destination(destination: &mut PathBuf, adk: &str) -> Result<(), String> {
+    let root = Path::new(adk);
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("invalid ADK directory".into());
+    }
+    let folder = root.join("downloads");
+    std::fs::create_dir_all(&folder)
+        .map_err(|error| format!("cannot create downloads directory: {error}"))?;
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve ADK directory: {error}"))?;
+    let folder = folder
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve downloads directory: {error}"))?;
+    if !folder.starts_with(&root) {
+        return Err("downloads directory is outside ADK".into());
+    }
+    let reserved = DOWNLOAD_DESTINATIONS.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut reserved = reserved
+        .lock()
+        .map_err(|_| "download reservation lock failed")?;
+    let path = available_download_path(&folder, destination, |candidate| {
+        candidate.symlink_metadata().is_ok() || reserved.contains(candidate)
+    });
+    #[cfg(target_os = "linux")]
+    let output = url::Url::from_file_path(&path)
+        .map(|uri| PathBuf::from(uri.as_str()))
+        .map_err(|_| "cannot convert ADK destination to a file URI")?;
+    #[cfg(not(target_os = "linux"))]
+    let output = path.clone();
+    reserved.insert(path);
+    *destination = output;
+    Ok(())
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::available_download_path;
+    use std::path::Path;
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_a_broken_symlink_in_the_download_folder() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let folder = directory.path();
+        symlink(folder.join("missing"), folder.join("report.pdf")).unwrap();
+        let next = available_download_path(folder, Path::new("report.pdf"), |candidate| {
+            candidate.symlink_metadata().is_ok()
+        });
+        assert_eq!(next, folder.join("report (1).pdf"));
+    }
+
+    #[test]
+    fn rejects_invalid_adk_directory() {
+        let mut destination = Path::new("report.pdf").to_path_buf();
+        assert!(super::configure_adk_download_destination(&mut destination, "relative").is_err());
+        assert_eq!(destination, Path::new("report.pdf"));
+    }
+
+    #[test]
+    fn confines_suggested_names_to_download_folder() {
+        let folder = Path::new("/adk/downloads");
+        assert_eq!(
+            available_download_path(folder, Path::new("../report.pdf"), |_| false),
+            folder.join("report.pdf")
+        );
+        assert_eq!(
+            available_download_path(folder, Path::new("../"), |_| false),
+            folder.join("download")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_downloads_symlink_outside_adk() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        symlink(outside.path(), root.path().join("downloads")).unwrap();
+        let mut destination = Path::new("report.pdf").to_path_buf();
+        let error = super::configure_adk_download_destination(
+            &mut destination,
+            root.path().to_str().unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error, "downloads directory is outside ADK");
+        assert_eq!(destination, Path::new("report.pdf"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rejects_unconvertible_default_download_destination() {
+        let mut destination = Path::new("relative/report.pdf").to_path_buf();
+        assert!(!super::default_download_destination(&mut destination));
+        assert_eq!(destination, Path::new("relative/report.pdf"));
+    }
+
+    #[test]
+    fn chooses_adk_download_folder_and_numbers_collisions() {
+        let folder = Path::new("/adk/downloads");
+        let first = available_download_path(folder, Path::new("/old/report.pdf"), |_| false);
+        assert_eq!(first, folder.join("report.pdf"));
+        let next = available_download_path(folder, Path::new("/old/report.pdf"), |p| {
+            p == folder.join("report.pdf") || p == folder.join("report (1).pdf")
+        });
+        assert_eq!(next, folder.join("report (2).pdf"));
+        let no_extension =
+            available_download_path(folder, Path::new("README"), |p| p == folder.join("README"));
+        assert_eq!(no_extension, folder.join("README (1)"));
+    }
 }
 
 // ─── Initialization script ────────────────────────────────────────────────────
@@ -328,6 +502,12 @@ pub async fn browser_wv_create(
             .add_child(
                 WebviewBuilder::new(BROWSER_LABEL, start_url)
                     .initialization_script(&init_script)
+                    .on_download(|_webview, event| match event {
+                        DownloadEvent::Requested { destination, .. } => {
+                            configure_download_destination(destination)
+                        }
+                        _ => true,
+                    })
                     // Many websites assume the root background is white. If a
                     // page leaves areas transparent, a dark webview background
                     // makes normal black text unreadable.

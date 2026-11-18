@@ -757,3 +757,10 @@ export async function stopBroadcast(): Promise<BroadcastStatusPayload> {
 		throw error;
 	}
 }
+export async function toggleBroadcast(): Promise<BroadcastStatusPayload> {
+	const current = getBroadcastBridgeSnapshot();
+	if (isBroadcastActive(current.state)) {
+		return stopBroadcast();
+	}
+	return startBroadcast();
+}

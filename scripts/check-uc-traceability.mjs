@@ -100,8 +100,11 @@ const hasCoverageRow = (uc) => {
 	);
 	return describes.length > 0 || describesInline;
 };
-const byBenchFamily = (uc) => families.some((prefix) => uc.startsWith(prefix));
-const outsideEpic = (uc) => notOwned.some((prefix) => uc.startsWith(prefix));
+// UC-025의 개별 선언만 정확히 일치한다. 나머지 기존 계열은 접두사다.
+const matchesDeclaration = (uc, declaration) =>
+	declaration.startsWith("UC-025-") ? uc === declaration : uc.startsWith(declaration);
+const byBenchFamily = (uc) => families.some((prefix) => matchesDeclaration(uc, prefix));
+const outsideEpic = (uc) => notOwned.some((prefix) => matchesDeclaration(uc, prefix));
 
 /**
  * 에픽 밖이라는 선언과 어디서 검증되는지 적혔다는 것은 다른 질문이다.
@@ -142,21 +145,7 @@ const benchTitles = [
  * 여기에 이름을 더해서 통과시키는 것은 빚을 늘리는 일이므로, 목록이
  * 문서와 어긋나면(이미 등록됐는데 남아 있으면) 그것도 붉어진다.
  */
-const BENCH_ORPHAN_BASELINE = [
-	"UC-CODEX-ROLES",
-	"UC-CODEX-WORKER-LIFECYCLE",
-	"UC-DISCORD",
-	"UC-GROK-SUBSCRIPTION",
-	"UC-KB-MANAGE",
-	"UC-LLM-THREE-TIER",
-	"UC-NAIA-AZURE-MODELS",
-	"UC-NAIA-MODEL-ORDER",
-	"UC-ONBOARDING-APPEARANCE-VOICE",
-	"UC-PROACTIVE-COST-CONTROL",
-	"UC-RADIO-DJ-DURABLE",
-	"UC-SETTINGS-ROUNDTRIP",
-	"UC-WIRE-V1",
-];
+const BENCH_ORPHAN_BASELINE = [];
 
 const benchOrphansAll = benchTitles.filter(
 	(uc) => !byBenchFamily(uc) && !outsideEpic(uc),
@@ -170,31 +159,7 @@ const staleBenchBaseline = BENCH_ORPHAN_BASELINE.filter(
 );
 
 // 오늘의 상태. 줄이는 것이 목표이고, 늘리는 것은 이 게이트가 막는다.
-const BASELINE = [
-	"UC-DISCORD",
-	"UC-GROK-SUBSCRIPTION",
-	"UC-KB-MANAGE",
-	"UC-LLM-THREE-TIER",
-	"UC-NAIA-MODEL-ORDER",
-	"UC-ONBOARDING-APPEARANCE-VOICE",
-	"UC-PROACTIVE-COST-CONTROL",
-	"UC-RADIO-DJ-DURABLE",
-	"UC-WIRE-V1",
-	// 아래 열하나는 "에픽 밖" 선언 하나로 커버리지 표까지 면제받고 있던
-	// 것들이다. 그 두 가지를 분리하자 드러났다 — 새로 끊긴 것이 아니라
-	// 원래 끊겨 있었는데 보이지 않았다. 표를 채우는 일이 남았다.
-	"UC-JEONJU-COURSE-READINESS",
-	"UC-JEONJU-COURSE-WORKER",
-	"UC-JEONJU-DISCORD-COURSE-TARGET",
-	"UC-DISCORD-1",
-	"UC-DISCORD-2",
-	"UC-DISCORD-3",
-	"UC-V022-TTS-TEXT-NORMALIZATION",
-	"UC-VOICE-TEXT-SPEECH-CLEANUP",
-	"UC-V022-CHAT-RICH-MARKDOWN",
-	"UC-V022-PERMISSION-SHORTCUTS",
-	"UC-V022-LOCAL-RELEASE-ACCEPTANCE",
-];
+const BASELINE = [];
 
 const added = untracked.filter((uc) => !BASELINE.includes(uc));
 // 목록에 적어 두었는데 이제 걸리지 않는 것. 남겨 두면 다음에 같은 이름으로
@@ -272,7 +237,9 @@ if (added.length) {
 // 가리키던 그 화면의 단위 테스트 둘을 표에서 뺐다.
 // 32 에서 29 로 줄였다. 경로가 낡은 둘(apps/workspace)을 고치고, 지워진 시험
 // (700f855c·2c218adb)을 가리키던 줄은 지워짐으로 적었다.
-const BASELINE_BROKEN_REFS = 29;
+// main(22) 병합 후 실재 경로 셋(knowledge.test.ts, slides.ts, slides-host*.test.ts)을
+// 정식 경로로 되살리고 0.2.6 agent/외부 참조 셋을 포함해 21로 맞춘다.
+const BASELINE_BROKEN_REFS = 0;
 if (brokenRefs.length > BASELINE_BROKEN_REFS) {
 	console.error(`  ❌ 표가 가리키는데 없는 파일이 늘었다(${brokenRefs.length} > ${BASELINE_BROKEN_REFS}):`);
 	for (const ref of brokenRefs.slice(0, 10)) console.error(`     ${ref}`);

@@ -28,6 +28,8 @@ describe("app-permissions", () => {
 	it("identifies known and unknown permissions correctly", () => {
 		expect(isKnownPermission("fullscreen")).toBe(true);
 		expect(isKnownPermission("speech")).toBe(true);
+		expect(isKnownPermission("clipboard.write")).toBe(true);
+		expect(isKnownPermission("clipboard.read")).toBe(false);
 		expect(isKnownPermission("browser")).toBe(true);
 		expect(isKnownPermission("unknown.permission")).toBe(false);
 		expect(isKnownPermission("")).toBe(false);

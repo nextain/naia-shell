@@ -21,6 +21,7 @@ import {
 import { graphFromKbJson, type KnowledgeGraph } from "../lib/knowledge-result";
 import { Logger } from "../lib/logger";
 import { KnowledgeGraphOverlay } from "./KnowledgeGraphOverlay";
+import { scaledFontSize } from "../lib/ui-font-scale";
 
 /** 설정>지식 탭 — 지식 소스(다중 폴더)·스코프 관리 + 컴파일 트리거 (FR-KB-OS.5~9, UC-KB-MANAGE).
  *  설정 정본 = naia-settings/knowledge.json(셸 전용 write). 컴파일/답변 지능 = naia-agent(별 레포). */
@@ -213,6 +214,7 @@ export function KnowledgeSettingsTab() {
 										type="button"
 										className="knowledge-source-remove"
 										data-testid="knowledge-source-remove"
+										data-usage-event="knowledge-settings-tab.handle-remove-1.click"
 										onClick={() => handleRemove(src.path)}
 									>
 										{t("settings.knowledgeRemove")}
@@ -227,6 +229,7 @@ export function KnowledgeSettingsTab() {
 						type="button"
 						className="knowledge-add-folder"
 						data-testid="knowledge-add-folder"
+						data-usage-event="knowledge-settings-tab.handle-add-folder-2.click"
 						onClick={handleAddFolder}
 					>
 						{t("settings.knowledgeAddFolder")}
@@ -239,7 +242,11 @@ export function KnowledgeSettingsTab() {
 					className="settings-field kiosk-knowledge-browser"
 					data-testid="kiosk-knowledge-browser"
 				>
-					<label>시연 지식 원고 ({kioskManuscripts.length}개)</label>
+					<label>
+						{t("settings.kioskManuscriptsCount", {
+							count: kioskManuscripts.length,
+						})}
+					</label>
 					<div
 						style={{
 							display: "grid",
@@ -271,6 +278,7 @@ export function KnowledgeSettingsTab() {
 											type="button"
 											data-testid={`kiosk-knowledge-item-${item.name}`}
 											aria-pressed={active}
+											data-usage-event="knowledge-settings-tab.v026-add-1.click"
 											onClick={() => setSelectedManuscriptName(item.name)}
 											style={{
 												width: "100%",
@@ -355,7 +363,7 @@ export function KnowledgeSettingsTab() {
 								</div>
 								<article
 									className="workspace-editor__preview"
-									aria-label="Markdown 미리보기"
+									aria-label={t("settings.markdownPreviewAria")}
 									style={{
 										padding: "4px 2px",
 										fontSize: "13px",
@@ -398,6 +406,7 @@ export function KnowledgeSettingsTab() {
 						className="knowledge-compile"
 						data-testid="knowledge-compile"
 						disabled={compiling || config.sources.length === 0}
+						data-usage-event="knowledge-settings-tab.handle-compile-3.click"
 						onClick={handleCompile}
 					>
 						{compiling
@@ -423,6 +432,7 @@ export function KnowledgeSettingsTab() {
 						type="button"
 						className="knowledge-graph-open"
 						data-testid="knowledge-graph-open"
+						data-usage-event="knowledge-settings-tab.set-graph-open-4.click"
 						onClick={() => setGraphOpen(true)}
 						style={{
 							background: "rgba(76,139,245,0.12)",
@@ -430,7 +440,7 @@ export function KnowledgeSettingsTab() {
 							borderRadius: 8,
 							color: "var(--cream, #e8e0d0)",
 							padding: "6px 12px",
-							fontSize: 12,
+							fontSize: scaledFontSize(12),
 							cursor: "pointer",
 						}}
 					>

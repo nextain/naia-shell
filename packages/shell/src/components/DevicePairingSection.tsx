@@ -112,6 +112,7 @@ export function DevicePairingSection() {
 				<button
 					type="button"
 					data-testid="device-request-pair"
+					data-usage-event="device-pairing-section.set-once-secret-1.click"
 					onClick={() =>
 						run(async () => {
 							const created = await invoke<PairRequestCreated>(
@@ -148,6 +149,7 @@ export function DevicePairingSection() {
 							<span className="device-node-platform">{node.platform}</span>
 							<button
 								type="button"
+								data-usage-event="device-pairing-section.button-2.click"
 								onClick={() =>
 									run(async () => {
 										await invoke("device_rename", {
@@ -162,6 +164,7 @@ export function DevicePairingSection() {
 							<button
 								type="button"
 								data-testid="device-rotate"
+								data-usage-event="device-pairing-section.set-once-secret-3.click"
 								onClick={() =>
 									run(async () => {
 										const token = await invoke<string>("device_token_rotate", {
@@ -176,6 +179,7 @@ export function DevicePairingSection() {
 							<button
 								type="button"
 								data-testid="device-revoke"
+								data-usage-event="device-pairing-section.button-4.click"
 								onClick={() =>
 									run(async () => {
 										if (!globalThis.confirm(t("settings.deviceRevokeConfirm"))) return;
@@ -215,6 +219,7 @@ export function DevicePairingSection() {
 										<button
 											type="button"
 											data-testid="device-verify"
+											data-usage-event="device-pairing-section.set-verify-code-5.click"
 											onClick={() =>
 												run(async () => {
 													await invoke("device_pair_verify", {
@@ -230,6 +235,7 @@ export function DevicePairingSection() {
 										<button
 											type="button"
 											className="device-pair-reject"
+											data-usage-event="device-pairing-section.button-6.click"
 											onClick={() =>
 												run(async () => {
 													await invoke("device_pair_reject", {
@@ -247,6 +253,7 @@ export function DevicePairingSection() {
 										type="button"
 										className="device-pair-approve"
 										data-testid="device-approve"
+										data-usage-event="device-pairing-section.set-once-secret-7.click"
 										onClick={() =>
 											run(async () => {
 												const approved = await invoke<ApprovedNode>(

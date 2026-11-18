@@ -8,6 +8,7 @@ import {
 } from "./character-theme";
 import type { AppConfig } from "./config";
 import { isKioskDemo } from "./kiosk-demo/flag";
+import jinaPersona from "./kiosk-demo/jina-persona.json";
 import {
 	WEB_DEFAULT_NVA,
 	isLegacyWebNaiaSelection,
@@ -276,13 +277,13 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 	const model = resolveKioskDemoMainModel(null);
 	const jinaCardPatch = characterCardPatch(
 		libraryCard(KIOSK_JINA_SAVED_CARD),
-		"게스트",
+		jinaPersona.defaultUserName,
 		"ko",
 	);
 	return buildSeedShellConfig({
 		agentName: jinaCardPatch.patch.agentName,
-		userName: "게스트",
-		honorific: "님",
+		userName: jinaPersona.defaultUserName,
+		honorific: jinaPersona.defaultHonorific,
 		speechStyle: "formal",
 		locale: "ko",
 		persona: jinaCardPatch.patch.persona,

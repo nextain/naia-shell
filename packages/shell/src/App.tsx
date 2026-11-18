@@ -42,6 +42,7 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
+import { selectBackground } from "./lib/background-selection";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import {
@@ -93,6 +94,7 @@ import {
 	shouldShowStartupUpdatePrompt,
 } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
+import { applyUiFontScale } from "./lib/ui-font-scale";
 import {
 	UI_PREFERENCE_KEYS,
 	hydrateUiPreferences,
@@ -125,17 +127,18 @@ export async function restoreStartupBackground(options: {
 	// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
 	// normalizeBackgroundVideoFilename: 아바타가 박힌 구 배경 파일명이 저장돼 있으면
 	// 순수 배경 에셋으로 되돌린다 (라디오 통합 가지 #026-r2).
-	const saved =
-		normalizeBackgroundVideoFilename(
-			config?.backgroundVideo as string | undefined,
-		) ?? (isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
-	let match = paths.find((p) => p.endsWith(saved));
+	const normalized = normalizeBackgroundVideoFilename(
+		config?.backgroundVideo as string | undefined,
+	);
+	let match = isWebMode()
+		? paths.find((p) => p.endsWith(normalized ?? WEB_DEFAULT_BACKGROUND))
+		: selectBackground(paths, normalized);
 	if (!match && isWebMode()) {
 		Logger.warn(
 			"App",
 			"saved background not found in web assets; falling back to default background",
 			{
-				requestedBackground: saved,
+				requestedBackground: normalized ?? WEB_DEFAULT_BACKGROUND,
 				fallbackBackground: WEB_DEFAULT_BACKGROUND,
 			},
 		);
@@ -143,7 +146,9 @@ export async function restoreStartupBackground(options: {
 	}
 	if (!match) {
 		match =
-			paths.find((p) => p.endsWith(DEFAULT_BG_VIDEO)) ?? paths[0];
+			selectBackground(paths, undefined) ??
+			paths.find((p) => p.endsWith(DEFAULT_BG_VIDEO)) ??
+			paths[0];
 	}
 	if (!match || isStale()) return;
 	const blobUrl = await toLocalBlobUrl(match);
@@ -158,6 +163,7 @@ function applyPersistedPresentationConfig(
 	setWidth: (width: number) => void,
 ): void {
 	applyTheme(config?.theme ?? "midnight");
+	applyUiFontScale(config?.uiFontScale);
 	if (config?.deletedApps?.length) {
 		for (const id of config.deletedApps) appRegistry.unregister(id);
 	}
@@ -627,8 +633,7 @@ export function App() {
 
 	// Load background from naia-settings/background/. May be a video (.mp4) or a
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
-	// #342 / #447-3: default to the naia-dawn-city still when no saved preference
-	// (this default had regressed back to morning-coffee).
+	// Keep saved background paths intact; use the new still for fresh settings.
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
@@ -1348,7 +1353,7 @@ export function App() {
 						zIndex: 99999,
 					}}
 					role="alert"
-					onClick={() => setGlobalToast(null)}
+					data-usage-event="shell.set-global-toast-1.click" onClick={() => setGlobalToast(null)}
 				>
 					{globalToast}
 				</div>

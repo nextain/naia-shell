@@ -31,6 +31,7 @@ export function NvaGestureActions({ onManualAction }: Props) {
 						aria-label={accessibleName}
 						title={accessibleName}
 						data-nva-gesture-key={action.key}
+						data-usage-event="nva-gesture-actions.on-manual-action-1.click"
 						onClick={() => {
 							const cameraActions = getCameraActions();
 							if (!useCascadeAvatarStore.getState().renderer) return;

@@ -92,8 +92,8 @@ export function bestSnippet(card: ServiceCard, q: string, max = 300): string {
 }
 
 export interface KnowledgeServiceOptions {
-  answerThreshold?: number; // 기권 임계(질의-카드 관련성). 기본 0.4
-  generate?: GeneratePort; // 주입 시 추출 대신 LLM grounded 생성(선택)
+  answerThreshold?: number; // Abstention threshold (query-card relevance), default 0.4
+  generate?: GeneratePort; // Optional LLM grounded generation instead of extraction
 }
 
 /** 빌드된 KB + RetrievalPort 를 감싼 서빙 서비스. agent/omni/CMS 공용. */
@@ -134,7 +134,7 @@ export class KnowledgeService {
       return false;
     });
     if (!best) {
-      return { abstained: true, answer: "관련 근거를 찾지 못했습니다.", sources: [] };
+      return { abstained: true, answer: "No relevant evidence found.", sources: [] };
     }
     const sources = hits.slice(0, 3).map((c) => ({ title: c.title, sourceUris: c.sourceUris }));
     if (this.opts.generate) {

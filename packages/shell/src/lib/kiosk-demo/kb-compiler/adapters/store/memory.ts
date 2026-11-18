@@ -18,7 +18,7 @@ export class MemoryStoreAdapter implements StorePort {
   }
   async import(json: string): Promise<void> {
     const parsed = JSON.parse(json) as { version: number; kb: Kb };
-    if (!parsed.kb) throw new Error("잘못된 KB export 포맷");
+    if (!parsed.kb) throw new Error("Invalid KB export format");
     this.kb = parsed.kb;
   }
 }

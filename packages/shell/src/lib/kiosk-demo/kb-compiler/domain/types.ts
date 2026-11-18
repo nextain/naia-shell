@@ -6,7 +6,7 @@ export interface SourceInput {
   kind: SourceKind;
   uri?: string;
   title?: string;
-  text?: string; // kind=text 또는 미리 추출된 본문
+  text?: string; // kind=text or pre-extracted body text
 }
 
 export interface Source {
@@ -29,7 +29,7 @@ export interface Relation {
   from: string;
   type: string; // requires_document | handled_by | has_condition | costs | refers_to | mentions | co_occurs
   to: string;
-  weight?: number; // 관계 강도(예: co_occurs 공출현 횟수). 옵션 — 미설정 시 1로 취급.
+  weight?: number; // Relation weight (e.g. co_occurs count); defaults to 1 if unset.
 }
 
 /** draft = compiled, unverified · accepted = gold-QA verified (D04) · gap = failed/blocked, not served.
@@ -42,7 +42,7 @@ export interface ServiceCard {
   title: string;
   fields: Record<string, string>; // eligibility/documents/department/fee/hours/url ...
   sourceUris: string[];
-  confidence: number; // 0..1 (자동추출 신뢰도)
+  confidence: number; // 0..1 (auto-extracted confidence)
   effectiveDate?: string;
   expiryDate?: string;
   status: CardStatus;
@@ -71,7 +71,7 @@ export interface Gap {
 }
 
 export interface VerifyResult {
-  score: number; // gold 재현율 0..1
+  score: number; // gold recall 0..1
   acceptedCardIds: string[];
   gaps: Gap[];
 }
@@ -81,7 +81,7 @@ export type SafetyMode = "warn" | "redact" | "block";
 export interface CompileInput {
   sources: SourceInput[];
   goldQA?: GoldQA[];
-  lowConfidenceThreshold?: number; // 기본 0.5
+  lowConfidenceThreshold?: number; // default 0.5
   /** 개인정보·대외비 처리: warn(경고만, 기본) | redact(PII 마스킹 후 추출) | block(발견 시 중단). */
   safety?: SafetyMode;
 }

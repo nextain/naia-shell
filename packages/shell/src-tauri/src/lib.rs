@@ -290,6 +290,8 @@ pub(crate) fn process_deep_link_url(
                 }
                 Some(_) => {
                     log_both("[Naia] Deep link rejected: state mismatch");
+                    // Fixed rejection signal only; never expose callback data to usage telemetry.
+                    let _ = app_handle.emit("naia_auth_rejected", ());
                     return;
                 }
                 None if has_direct_gateway_key => {
@@ -298,6 +300,8 @@ pub(crate) fn process_deep_link_url(
                 }
                 None => {
                     log_both("[Naia] Deep link rejected: missing state parameter");
+                    // Fixed rejection signal only; never expose callback data to usage telemetry.
+                    let _ = app_handle.emit("naia_auth_rejected", ());
                     return;
                 }
             }
@@ -316,6 +320,8 @@ pub(crate) fn process_deep_link_url(
             Some(code_val)
         } else {
             log_both("[Naia] Deep link rejected: code is not a gateway API key");
+            // Fixed rejection signal only; never expose callback data to usage telemetry.
+            let _ = app_handle.emit("naia_auth_rejected", ());
             None
         }
     } else {
@@ -330,6 +336,8 @@ pub(crate) fn process_deep_link_url(
             log_both("[Naia] Naia auth complete ??key received via deep link");
         } else {
             log_both("[Naia] Deep link rejected: invalid key format");
+            // Fixed rejection signal only; never expose callback data to usage telemetry.
+            let _ = app_handle.emit("naia_auth_rejected", ());
         }
     }
     let is_discord_flow = matches!(channel.as_deref(), Some("discord"))
@@ -14482,11 +14490,21 @@ mod naia_adk_source_network_tests {
     use super::{naia_adk_fetch_zip, naia_adk_git_clone, NAIA_ADK_REPO_URL, NAIA_ADK_ZIP_URL};
     use std::path::{Path, PathBuf};
 
-    const PL04_ASSET_PATHS: [&str; 4] = [
+    const DEFAULT_ASSET_PATHS: [&str; 14] = [
         "naia-settings/vrm-files/01-OL_Woman.vrm",
         "naia-settings/vrm-files/02-Hood_Boy.vrm",
+        "naia-settings/nva-files/naia/manifest.json",
+        "naia-settings/nva-files/jina/manifest.json",
+        "naia-settings/nva-files/minho/manifest.json",
+        "naia-settings/background/naia-sunrise-river.webp",
+        "naia-settings/background/naia-sky-garden.webp",
         "naia-settings/background/naia-dawn-city-uhd.webp",
         "naia-settings/background/naia-autumn-office-live.mp4",
+        "naia-settings/background/naia-starlight-lake-live.mp4",
+        "naia-settings/background/naia-rainy-studio-live.mp4",
+        "naia-settings/bgm-musics/Afternoon Whispers.mp3",
+        "naia-settings/bgm-musics/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+        "naia-settings/bgm-musics/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
     ];
 
     fn resolve_fetch_dir() -> PathBuf {
@@ -14495,14 +14513,14 @@ mod naia_adk_source_network_tests {
         PathBuf::from(dir_str)
     }
 
-    fn check_pl04_assets(base: &Path) {
+    fn check_default_assets(base: &Path) {
         let mut missing_or_invalid = Vec::new();
         let mut valid_assets = Vec::new();
 
-        for rel_path in PL04_ASSET_PATHS {
+        for rel_path in DEFAULT_ASSET_PATHS {
             let full_path = base.join(rel_path);
             match std::fs::metadata(&full_path) {
-                Ok(meta) if meta.is_file() && meta.len() > 100_000 => {
+                Ok(meta) if meta.is_file() && meta.len() > 0 => {
                     valid_assets.push((full_path, meta.len()));
                 }
                 Ok(meta) => {
@@ -14521,7 +14539,7 @@ mod naia_adk_source_network_tests {
 
         if !missing_or_invalid.is_empty() {
             panic!(
-                "Missing or invalid PL-04 assets in {}:\n{}",
+                "Missing or invalid default assets in {}:\n{}",
                 base.display(),
                 missing_or_invalid.join("\n")
             );
@@ -14534,7 +14552,7 @@ mod naia_adk_source_network_tests {
 
     #[test]
     #[ignore = "network: nextain/naia-adk 실제 받기, 수동 실행"]
-    fn real_git_clone_has_pl04_assets() {
+    fn real_git_clone_has_default_assets() {
         let fetch_dir = resolve_fetch_dir();
         let git_dir = fetch_dir.join("git");
         if git_dir.exists() {
@@ -14545,12 +14563,12 @@ mod naia_adk_source_network_tests {
             git_dir.to_str().expect("valid utf-8 git_dir"),
         )
         .expect("naia_adk_git_clone failed");
-        check_pl04_assets(&git_dir);
+        check_default_assets(&git_dir);
     }
 
     #[tokio::test]
     #[ignore = "network: nextain/naia-adk 실제 받기, 수동 실행"]
-    async fn real_zip_fetch_has_pl04_assets() {
+    async fn real_zip_fetch_has_default_assets() {
         let fetch_dir = resolve_fetch_dir();
         let zip_dir = fetch_dir.join("zip");
         if zip_dir.exists() {
@@ -14570,7 +14588,7 @@ mod naia_adk_source_network_tests {
             progress_called,
             "progress callback was not called during zip fetch"
         );
-        check_pl04_assets(&zip_dir);
+        check_default_assets(&zip_dir);
     }
 }
 

@@ -27,7 +27,7 @@ export interface RetrievalPort {
 export interface StorePort {
   save(kb: Kb): Promise<void>;
   load(): Promise<Kb>;
-  export(): Promise<string>; // 표준 JSON (무손실, 가반)
+  export(): Promise<string>; // Standard JSON (lossless, portable)
   import(json: string): Promise<void>;
 }
 

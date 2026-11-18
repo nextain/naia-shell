@@ -336,3 +336,271 @@ describe("nva-alpha-bake exact connected-component counterexamples (result-fix7h
 		expect(pixelAt(packed, 4, 0, 4)).toEqual([0, 0, 0, 255]);
 	});
 });
+
+describe("nva-alpha-bake topology, boundary, and contract counterexamples", () => {
+	it("removes standalone 8x8, thin 2x200, low-alpha shred, and transparent frames when no eligible subject exists", () => {
+		const empty = createSyntheticCanvas(64, 64);
+		const emptyOut = bakeAvatarFrameRgba(empty.rgba, empty.width, empty.height);
+		expect(emptyOut.every((v) => v === 0)).toBe(true);
+
+		const lone8x8 = createSyntheticCanvas(64, 64);
+		lone8x8.fillRect(28, 28, 8, 8, 235, 235, 235, 255);
+		const lone8x8Out = bakeAvatarFrameRgba(
+			lone8x8.rgba,
+			lone8x8.width,
+			lone8x8.height,
+		);
+		expect(lone8x8Out.every((v) => v === 0)).toBe(true);
+
+		const loneThin = createSyntheticCanvas(64, 256);
+		loneThin.fillRect(30, 10, 2, 200, 20, 20, 25, 255);
+		const loneThinOut = bakeAvatarFrameRgba(
+			loneThin.rgba,
+			loneThin.width,
+			loneThin.height,
+		);
+		expect(loneThinOut.every((v) => v === 0)).toBe(true);
+
+		const loneShred = createSyntheticCanvas(64, 64);
+		loneShred.fillRect(10, 10, 30, 30, 100, 180, 120, 35);
+		const loneShredOut = bakeAvatarFrameRgba(
+			loneShred.rgba,
+			loneShred.width,
+			loneShred.height,
+		);
+		expect(loneShredOut.every((v) => v === 0)).toBe(true);
+	});
+
+	it("does not resurrect ghost foreground inside deleted hollow ring noise islands or leak deleted island colors into subject holes", () => {
+		// Standalone hollow 20x20 2px-walled ring must vanish completely (including its interior)
+		const loneRing = createSyntheticCanvas(64, 64);
+		loneRing.fillRect(20, 20, 20, 20, 220, 40, 40, 255);
+		loneRing.clearRect(22, 22, 16, 16);
+		const loneRingOut = bakeAvatarFrameRgba(
+			loneRing.rgba,
+			loneRing.width,
+			loneRing.height,
+		);
+		expect(loneRingOut.every((v) => v === 0)).toBe(true);
+
+		// Detached hollow 32x32 3px-walled ring next to a 48x48 subject
+		const c = createSyntheticCanvas(128, 256);
+		c.fillRect(20, 140, 48, 48, 20, 20, 25, 255);
+		c.clearRect(36, 156, 16, 16);
+		// Trapped magenta 4x4 noise speck inside the subject's enclosed hole
+		c.fillRect(42, 162, 4, 4, 255, 0, 255, 255);
+		// Rejected 32x32 3px-walled hollow ring in exterior
+		c.fillRect(70, 30, 32, 32, 180, 220, 180, 255);
+		c.clearRect(73, 33, 26, 26);
+
+		const out = bakeAvatarFrameRgba(c.rgba, c.width, c.height);
+		// Rejected ring wall and its interior must both be completely transparent and zeroed
+		expect(pixelAt(out, c.width, 71, 31)).toEqual([0, 0, 0, 0]);
+		expect(pixelAt(out, c.width, 86, 46)).toEqual([0, 0, 0, 0]);
+		expect(pixelAt(out, c.width, 80, 40)).toEqual([0, 0, 0, 0]);
+
+		// Subject's enclosed hole and trapped speck site must fill cleanly from subject color, not magenta
+		expect(pixelAt(out, c.width, 38, 158)).toEqual([20, 20, 25, 255]);
+		expect(pixelAt(out, c.width, 44, 164)).toEqual([20, 20, 25, 255]);
+	});
+
+	it("handles alpha threshold boundaries (16/17 and 127/128) and preserves semi-transparent connected strands", () => {
+		const c = createSyntheticCanvas(128, 128);
+		c.fillRect(20, 20, 48, 48, 40, 50, 60, 255);
+		// Connected 1px semi-transparent strand (A=64, in overlap 17..127 and exposed to E)
+		c.fillRect(68, 44, 18, 1, 40, 50, 60, 64);
+		// Connected 1px threshold-17 strand (A=17 > 16) vs detached A=16 speck
+		c.fillRect(68, 50, 10, 1, 40, 50, 60, 17);
+		c.fillRect(90, 50, 6, 6, 40, 50, 60, 16);
+		// Attached pocket closed by a 1px top bridge of A=127 (< 128, must stay open to E)
+		// Connected to main body via left leg at x=20..29, y=68..89 while y=68..69 above bridge is open to E
+		c.fillRect(20, 68, 10, 22, 40, 50, 60, 255);
+		c.fillRect(30, 70, 10, 1, 40, 50, 60, 127);
+		c.fillRect(40, 70, 10, 20, 40, 50, 60, 255);
+		c.fillRect(30, 89, 10, 1, 40, 50, 60, 255);
+		// Enclosed pocket at (35, 78) has top bridge A=127 (< 128), so E passes through
+
+		for (const refineBoundary of [false, true]) {
+			const out = bakeAvatarFrameRgba(c.rgba, c.width, c.height, {
+				refineBoundary,
+			});
+			expect(pixelAt(out, c.width, 75, 44)).toEqual([40, 50, 60, 64]);
+			expect(pixelAt(out, c.width, 72, 50)).toEqual([40, 50, 60, 17]);
+			expect(pixelAt(out, c.width, 92, 52)).toEqual([0, 0, 0, 0]);
+			expect(pixelAt(out, c.width, 35, 70)).toEqual([40, 50, 60, 127]);
+			expect(pixelAt(out, c.width, 35, 78)[3]).toBe(0);
+		}
+
+		// Raise that single top bridge to A=128 -> must block E and fill pocket to A=255
+		c.fillRect(30, 70, 10, 1, 40, 50, 60, 128);
+		const closedOut = bakeAvatarFrameRgba(c.rgba, c.width, c.height);
+		expect(pixelAt(closedOut, c.width, 35, 78)).toEqual([40, 50, 60, 255]);
+	});
+
+	it("does not leak 4-connected exterior background through 1px diagonal corners of an 8-connected wall", () => {
+		const c = createSyntheticCanvas(128, 128);
+		// Main body base + 1px diagonal-cornered diamond wall enclosing an interior cavity
+		c.fillRect(20, 20, 40, 40, 90, 120, 150, 255);
+		// Diamond cavity centered around (90, 40) attached to main body at x=59..86
+		c.fillRect(60, 39, 25, 3, 90, 120, 150, 255);
+		for (let d = 0; d <= 5; d++) {
+			c.fillRect(85 + d, 40 - d, 1, 1, 90, 120, 150, 255);
+			c.fillRect(85 + d, 40 + d, 1, 1, 90, 120, 150, 255);
+			c.fillRect(95 - d, 40 - d, 1, 1, 90, 120, 150, 255);
+			c.fillRect(95 - d, 40 + d, 1, 1, 90, 120, 150, 255);
+		}
+		const out = bakeAvatarFrameRgba(c.rgba, c.width, c.height);
+		expect(pixelAt(out, c.width, 90, 40)).toEqual([90, 120, 150, 255]);
+		expect(pixelAt(out, c.width, 90, 37)).toEqual([90, 120, 150, 255]);
+		// Outside the diagonal wall remains transparent
+		expect(pixelAt(out, c.width, 96, 40)).toEqual([0, 0, 0, 0]);
+	});
+
+	it("propagates nearest multi-color boundary RGB into enclosed holes without exterior bleed or row wraparound", () => {
+		const c = createSyntheticCanvas(128, 128);
+		// Left half crimson, right half cobalt
+		c.fillRect(30, 30, 24, 48, 200, 30, 40, 255);
+		c.fillRect(54, 30, 24, 48, 30, 60, 210, 255);
+		// Enclosed 6x6 hole straddling the seam at x=51..56, y=50..55
+		c.clearRect(51, 50, 6, 6);
+		// Detached 8x8 island ending at right edge (127, 29), adjacent in linear memory to (0, 30)
+		c.fillRect(120, 22, 8, 8, 255, 255, 0, 255);
+		// Subject touches left edge at y=30 only via a separate test block at (0, 30)
+		c.fillRect(0, 30, 30, 20, 200, 30, 40, 255);
+
+		const out = bakeAvatarFrameRgba(c.rgba, c.width, c.height);
+		// Left side of hole receives nearest crimson wall, right side receives nearest cobalt wall
+		expect(pixelAt(out, c.width, 51, 52)).toEqual([200, 30, 40, 255]);
+		expect(pixelAt(out, c.width, 56, 52)).toEqual([30, 60, 210, 255]);
+		// Right-edge 8x8 island touching (127, 29) must NOT wrap around to (0, 30)
+		expect(pixelAt(out, c.width, 127, 29)).toEqual([0, 0, 0, 0]);
+		expect(pixelAt(out, c.width, 123, 25)).toEqual([0, 0, 0, 0]);
+		expect(pixelAt(out, c.width, 0, 30)).toEqual([200, 30, 40, 255]);
+	});
+
+	it("preserves intentional detached decorations invariant of position, color, and scale while removing same-color noise", () => {
+		for (const [starX, starY, starW, starH, rgb] of [
+			[60, 950, 34, 38, [238, 240, 106]],
+			[560, 220, 24, 24, [80, 200, 240]],
+		] as const) {
+			const c = createSyntheticCanvas(720, 1280);
+			c.fillRect(240, 160, 220, 880, 50, 44, 42, 255);
+			c.fillRect(starX, starY, starW, starH, rgb[0], rgb[1], rgb[2], 255);
+			// Same-color small noise island and thin strip
+			c.fillRect(100, 100, 10, 10, rgb[0], rgb[1], rgb[2], 255);
+			c.fillRect(620, 600, 2, 120, rgb[0], rgb[1], rgb[2], 255);
+
+			const alpha = bakeAvatarFrameAlpha(c.rgba, c.width, c.height);
+			expect(
+				alphaAt(
+					alpha,
+					c.width,
+					starX + Math.floor(starW / 2),
+					starY + Math.floor(starH / 2),
+				),
+			).toBe(255);
+			expect(alphaAt(alpha, c.width, 105, 105)).toBe(0);
+			expect(alphaAt(alpha, c.width, 620, 650)).toBe(0);
+		}
+	});
+
+	it("keeps exact topology identical between refineBoundary false and true while correcting dark/green outer spill only when true", () => {
+		const c = createSyntheticCanvas(128, 128);
+		// Burgundy subject with 4x4 interior hole, 1px connected hair line, and 2x2 diagonal touch
+		c.fillRect(30, 30, 40, 40, 72, 9, 16, 255);
+		c.clearRect(48, 48, 4, 4);
+		c.fillRect(50, 70, 1, 20, 72, 9, 16, 255);
+		c.fillRect(70, 70, 2, 2, 72, 9, 16, 255);
+		// Dark matte fringe at right outer edge (x=70, y=35..55)
+		c.fillRect(70, 35, 1, 20, 8, 9, 14, 240);
+		// Green matte spill fringe at left outer edge (x=29, y=35..55)
+		c.fillRect(29, 35, 1, 20, 45, 130, 55, 160);
+
+		const snapshot = new Uint8ClampedArray(c.rgba);
+		const outFalse = bakeAvatarFrameRgba(c.rgba, c.width, c.height, {
+			refineBoundary: false,
+		});
+		const outTrue = bakeAvatarFrameRgba(c.rgba, c.width, c.height, {
+			refineBoundary: true,
+		});
+
+		// Input buffer must remain completely immutable
+		expect(c.rgba).toEqual(snapshot);
+
+		// Alpha channel must be byte-for-byte identical between refineBoundary false and true
+		for (let i = 0; i < c.width * c.height; i++) {
+			expect(outTrue[i * 4 + 3]).toBe(outFalse[i * 4 + 3]);
+		}
+
+		// Connected 1px line, 2x2 diagonal touch, and interior hole preserved identically
+		expect(pixelAt(outTrue, c.width, 50, 85)).toEqual([72, 9, 16, 255]);
+		expect(pixelAt(outTrue, c.width, 71, 71)).toEqual([72, 9, 16, 255]);
+		expect(pixelAt(outTrue, c.width, 50, 50)).toEqual([72, 9, 16, 255]);
+
+		// refineBoundary: false keeps original edge RGB untouched
+		expect(pixelAt(outFalse, c.width, 70, 45)).toEqual([8, 9, 14, 240]);
+		expect(pixelAt(outFalse, c.width, 29, 45)).toEqual([45, 130, 55, 160]);
+
+		// refineBoundary: true moves dark fringe & green spill RGB toward burgundy interior while preserving alpha
+		const refinedDark = pixelAt(outTrue, c.width, 70, 45);
+		expect(refinedDark[3]).toBe(240);
+		expect(refinedDark[0]).toBeGreaterThanOrEqual(60);
+		expect(refinedDark[0]).toBeGreaterThan(refinedDark[2] * 3);
+
+		const refinedGreen = pixelAt(outTrue, c.width, 29, 45);
+		expect(refinedGreen[3]).toBe(160);
+		expect(refinedGreen[1]).toBeLessThan(40);
+		expect(refinedGreen[0]).toBeGreaterThan(refinedGreen[1] * 2);
+	});
+
+	it("validates dimensions and buffer lengths across all three APIs and supports Uint8Array, excess buffers, and output independence", () => {
+		const validBuf = new Uint8Array(64 * 64 * 4);
+		for (const badDim of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+			expect(() => bakeAvatarFrameRgba(validBuf, badDim, 64)).toThrow(
+				RangeError,
+			);
+			expect(() => bakeAvatarFrameRgba(validBuf, 64, badDim)).toThrow(
+				RangeError,
+			);
+			expect(() => bakeAvatarFrameAlpha(validBuf, badDim, 64)).toThrow(
+				RangeError,
+			);
+			expect(() => packStackedAlphaFrameRgba(validBuf, 64, badDim)).toThrow(
+				RangeError,
+			);
+		}
+
+		// Overflow check
+		expect(() =>
+			bakeAvatarFrameRgba(validBuf, 1_000_000_000, 1_000_000_000),
+		).toThrow(RangeError);
+
+		// Short buffer check in all three functions
+		const shortBuf = new Uint8ClampedArray(64 * 64 * 4 - 1);
+		expect(() => bakeAvatarFrameRgba(shortBuf, 64, 64)).toThrow(RangeError);
+		expect(() => bakeAvatarFrameAlpha(shortBuf, 64, 64)).toThrow(RangeError);
+		expect(() => packStackedAlphaFrameRgba(shortBuf, 64, 64)).toThrow(
+			RangeError,
+		);
+
+		// Uint8Array + trailing excess bytes + immutability + output independence
+		const c = createSyntheticCanvas(40, 40);
+		c.fillRect(5, 5, 30, 30, 120, 80, 40, 255);
+		const excess = new Uint8Array(40 * 40 * 4 + 32);
+		excess.set(c.rgba, 0);
+		excess.fill(99, 40 * 40 * 4);
+		const excessCopy = new Uint8Array(excess);
+
+		const rgbaOut = bakeAvatarFrameRgba(excess, 40, 40);
+		const alphaOut = bakeAvatarFrameAlpha(excess, 40, 40);
+		const packedOut = packStackedAlphaFrameRgba(rgbaOut, 40, 40);
+
+		expect(rgbaOut.length).toBe(40 * 40 * 4);
+		expect(alphaOut.length).toBe(40 * 40);
+		expect(packedOut.length).toBe(40 * 80 * 4);
+		expect(excess).toEqual(excessCopy);
+
+		rgbaOut[0] = 250;
+		expect(excess[0]).toBe(0);
+	});
+});

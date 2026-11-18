@@ -210,14 +210,15 @@ pub async fn slides_recording_start(adk_path: String) -> Result<(), String> {
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_secs();
     let output = folder.join(format!("naia-presentation-{timestamp}.mp4"));
-    let ffmpeg = std::env::var_os("NAIA_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
+    let ffmpeg = crate::broadcast::resolve_ffmpeg_path(None);
+    crate::broadcast::validate_ffmpeg_executable(&ffmpeg)?;
     let args = ffmpeg_args(&target, &audio, &output);
     crate::log_both(&format!("[slides-recording] start {target:?} audio={audio:?}"));
     tauri::async_runtime::spawn_blocking(move || {
         let recording = RECORDING.get_or_init(|| Mutex::new(None));
         let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
         if recording.is_some() { return Err("recording already active".into()); }
-        *recording = Some(Recorder::start(&ffmpeg, &args, output, STARTUP_PROBE)?);
+        *recording = Some(Recorder::start(ffmpeg.as_os_str(), &args, output, STARTUP_PROBE)?);
         Ok(())
     })
     .await

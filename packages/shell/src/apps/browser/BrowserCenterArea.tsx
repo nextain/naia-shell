@@ -884,6 +884,7 @@ return {
 					type="button"
 					className="browser-app__nav-btn"
 					title="뒤로"
+					data-usage-event="browser-center-area.button-1.click"
 					onClick={() => invoke("browser_wv_back").catch(() => {})}
 				>
 					‹
@@ -892,6 +893,7 @@ return {
 					type="button"
 					className="browser-app__nav-btn"
 					title="앞으로"
+					data-usage-event="browser-center-area.button-2.click"
 					onClick={() => invoke("browser_wv_forward").catch(() => {})}
 				>
 					›
@@ -900,12 +902,14 @@ return {
 					type="button"
 					className="browser-app__nav-btn"
 					title="새로고침"
+					data-usage-event="browser-center-area.button-3.click"
 					onClick={() => invoke("browser_wv_reload").catch(() => {})}
 				>
 					↻
 				</button>
 				<form
 					className="browser-app__url-form"
+					data-usage-event="browser-center-area.handle-navigate-4.submit"
 					onSubmit={(e) => {
 						e.preventDefault();
 						handleNavigate(inputUrl);
@@ -931,6 +935,7 @@ return {
 					type="button"
 					className="browser-app__nav-btn"
 					title="바로가기 추가"
+					data-usage-event="browser-center-area.handle-add-shortcut-5.click"
 					onClick={handleAddShortcut}
 				>
 					↗
@@ -939,6 +944,7 @@ return {
 					type="button"
 					className="browser-app__nav-btn"
 					title="북마크 추가"
+					data-usage-event="browser-center-area.handle-add-bookmark-6.click"
 					onClick={handleAddBookmark}
 				>
 					★
@@ -947,6 +953,7 @@ return {
 					type="button"
 					className={`browser-app__nav-btn${bookmarksOpen ? " browser-app__nav-btn--active" : ""}`}
 					title="북마크 리스트"
+					data-usage-event="browser-center-area.toggle-bookmark-list-7.click"
 					onClick={toggleBookmarkList}
 				>
 					≡
@@ -967,6 +974,7 @@ return {
 					<button
 						type="button"
 						className="browser-app__install-btn"
+						data-usage-event="browser-center-area.button-8.click"
 						onClick={initWebview}
 					>
 						{t("common.retry")}
@@ -1016,6 +1024,7 @@ return {
 							type="button"
 							className="browser-app__ai-collapse"
 							title="AI 도구 설정 펼치기"
+							data-usage-event="browser-center-area.toggle-toolbar-9.click"
 							onClick={toggleToolbar}
 						>
 							▲ AI
@@ -1035,6 +1044,7 @@ return {
 									ref={(el) => {
 										if (el) el.indeterminate = !allEnabled && someEnabled;
 									}}
+									data-usage-event="browser-center-area.toggle-all-10.select"
 									onChange={(e) => toggleAll(e.target.checked)}
 								/>
 								<span className="browser-app__ai-toggle-label">전체</span>
@@ -1052,6 +1062,7 @@ return {
 										type="checkbox"
 										className="browser-app__ai-switch"
 										checked={toolPerms[key]}
+										data-usage-event="browser-center-area.set-one-11.select"
 										onChange={(e) => setOne(key, e.target.checked)}
 									/>
 									<span className="browser-app__ai-toggle-label">
@@ -1064,6 +1075,7 @@ return {
 								type="button"
 								className="browser-app__ai-collapse"
 								title="AI 도구 설정 접기"
+								data-usage-event="browser-center-area.toggle-toolbar-12.click"
 								onClick={toggleToolbar}
 							>
 								▼

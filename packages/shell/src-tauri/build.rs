@@ -97,11 +97,6 @@ fn main() {
 
     // os <-> agent gRPC client codegen. The proto must come from the
     // explicitly paired naia-agent worktree; never fall back to a sibling repo.
-    use std::{
-        collections::BTreeSet,
-        env,
-        path::{Path, PathBuf},
-    };
     // The manifest is the shared source for native code generation and CI.
     // (agent-pairing.json 단일 정본: src/test/agent-pairing-drift.contract.test.ts 가
     // build.rs·워크플로와 갈라지는 것을 막는다.)

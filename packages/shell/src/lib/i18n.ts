@@ -1,3 +1,4 @@
+import { isKioskDemo } from "./kiosk-demo/flag";
 import englishTranslations from "./locales/en";
 import type { TranslationKey } from "./locales/keys";
 
@@ -58,6 +59,7 @@ function detectLocale(): Locale {
 	} catch {
 		// Fall through to the browser locale.
 	}
+	if (isKioskDemo()) return "ko";
 
 	const code = navigator.language.toLowerCase().split("-")[0] as Locale;
 	return Object.prototype.hasOwnProperty.call(localeLoaders, code)

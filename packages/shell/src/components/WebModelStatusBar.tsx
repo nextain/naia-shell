@@ -98,6 +98,7 @@ export function WebModelStatusBar(props: {
 							type="button"
 							className="chat-error-notice__retry"
 							data-testid="web-model-fallback"
+							data-usage-event="web-model-status-bar.v026-add-1.click"
 							onClick={() => handleSwitchModel(fallbackModel)}
 						>
 							{t("webModel.useFallback", {
@@ -109,6 +110,7 @@ export function WebModelStatusBar(props: {
 						type="button"
 						className="chat-error-notice__retry"
 						data-testid="web-model-retry"
+						data-usage-event="web-model-status-bar.v026-add-2.click"
 						onClick={handleRetry}
 					>
 						{t("webModel.retry")}
@@ -160,6 +162,7 @@ export function WebModelStatusBar(props: {
 								type="button"
 								className="chat-error-notice__retry"
 								data-testid="web-model-back-to-default"
+								data-usage-event="web-model-status-bar.v026-add-3.click"
 								onClick={() => handleSwitchModel(WEB_LLM_MODEL_ID)}
 							>
 								{t("webModel.backToDefault", {

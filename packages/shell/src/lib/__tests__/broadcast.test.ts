@@ -213,7 +213,6 @@ describe("UC-BROADCAST-STREAM-026: broadcast session log calculation and YouTube
 		expect(guardWhenIdle.forcedMode).toBe("youtube");
 		expect(guardWhenIdle.noticeKey).toBeNull();
 	});
-
 	it("formats broadcast_start errors across all 14 locales, maps os error 216 / placeholder ffmpeg to broadcast.errorFfmpegInvalid, and redacts stream keys", async () => {
 		expect(ALL_LOCALES).toHaveLength(14);
 		for (const loc of ALL_LOCALES) {

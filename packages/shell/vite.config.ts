@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin, searchForWorkspaceRoot } from "vite";
+import packageJson from "./package.json";
 import { resolveWebAgentDir } from "./scripts/web-agent-dir.mjs";
 import { buildWebAdkBundle } from "./scripts/web-adk-bundle.mjs";
 import { WEB_CSP } from "./src/lib/web-runtime/csp";
@@ -181,6 +182,7 @@ export default defineConfig(async ({ mode, command }) => {
 			manifest: true,
 		},
 		define: {
+			__USAGE_VERSION__: JSON.stringify(packageJson.version),
 			__WEB_VERSION__: JSON.stringify(`0.2.5-dev (${revision})`),
 			__BUILD_ID__: JSON.stringify(
 				new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),

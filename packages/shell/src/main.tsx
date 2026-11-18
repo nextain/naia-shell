@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
+import { UsageConsentGate } from "./components/UsageConsentGate";
 import { bootstrapAdkPath } from "./lib/adk-store";
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
@@ -53,7 +54,9 @@ async function bootstrap() {
 			createRoot(document.getElementById("root")!).render(
 				<StrictMode>
 					<KioskDemoGate>
-						<App />
+						<UsageConsentGate>
+							<App />
+						</UsageConsentGate>
 					</KioskDemoGate>
 				</StrictMode>,
 			);
@@ -94,6 +97,6 @@ void bootstrap().catch((error: unknown) => {
 	const alert = document.createElement("p");
 	alert.setAttribute("role", "alert");
 	alert.textContent =
-		"Cannot read workspace selection. Check data home permissions and restart. / 작업 경로를 읽을 수 없습니다. 데이터 홈 권한을 확인하고 다시 시작하세요.";
+		"Cannot read workspace selection. Check data home permissions and restart.";
 	root.replaceChildren(alert);
 });

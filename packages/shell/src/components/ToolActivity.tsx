@@ -75,7 +75,9 @@ export function ToolActivity({ tool }: Props) {
 		const kioskStatus = tool.status === "running" ? "running" : "success";
 		const kioskIcon = STATUS_ICON[kioskStatus];
 		const kioskLabel =
-			tool.status === "running" ? "자료 찾는 중" : "자료 찾음";
+			tool.status === "running"
+				? t("kiosk.toolSearching")
+				: t("kiosk.toolFound");
 		const kioskFiles = extractKioskToolFiles(tool);
 		return (
 			<div
@@ -122,6 +124,7 @@ export function ToolActivity({ tool }: Props) {
 			<button
 				type="button"
 				className="tool-activity-header"
+				data-usage-event="tool-activity.set-expanded-1.click"
 				onClick={() => setExpanded((v) => !v)}
 			>
 				<span className="tool-status-icon">{icon}</span>

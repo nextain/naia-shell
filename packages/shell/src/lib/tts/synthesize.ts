@@ -297,7 +297,7 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	if (contentType.startsWith("audio/")) {
 		const buf = await resp.arrayBuffer();
 		if (buf.byteLength === 0) {
-			throw new Error("Naia TTS 오디오를 수신하지 못했습니다.");
+			throw new Error("Naia TTS returned empty audio.");
 		}
 		return { audioBase64: arrayBufferToBase64(buf) };
 	}

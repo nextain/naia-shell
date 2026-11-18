@@ -1,4 +1,3 @@
-import { installInstalledAppContextBridge } from "./installed-app-context-bridge";
 import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -11,6 +10,7 @@ import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
+import { installInstalledAppContextBridge } from "./installed-app-context-bridge";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -61,17 +61,17 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
-			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, htmlEntry);
+			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, frameSrc);
 			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
 			return () => {
-				disposeContextBridge();
 				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
+				disposeContextBridge();
 			};
 		}, [htmlEntry, frameSrc, appId, permissions]);
 
@@ -134,7 +134,9 @@ export function createGenericInstalledApp(
 				}),
 			);
 
-			return () => unsubs.forEach((u) => u());
+			return () => {
+				for (const u of unsubs) u();
+			};
 		}, [naia, htmlEntry, tools]);
 
 		if (htmlEntry) {
@@ -144,6 +146,7 @@ export function createGenericInstalledApp(
 					className="generic-installed-app__iframe"
 					src={frameSrc}
 					title="App"
+					allow={permissions.includes("clipboard.write") ? "clipboard-write" : undefined}
 					sandbox={
 						trustedSlides
 							? "allow-scripts allow-same-origin allow-downloads allow-modals"

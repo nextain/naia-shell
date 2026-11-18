@@ -41,6 +41,7 @@ export function DocTabBar({
 						tabIndex={0}
 						aria-selected={path === activeDoc}
 						className={`doc-tab${path === activeDoc ? " doc-tab--active" : ""}`}
+						data-usage-event="doc-tab-bar.on-select-1.click"
 						onClick={() => onSelect(path)}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" || e.key === " ") onSelect(path);
@@ -53,6 +54,7 @@ export function DocTabBar({
 							className="doc-tab__ask"
 							title="이 문서를 AI에게 질의"
 							aria-label={`AI에게 질의: ${basename(path)}`}
+							data-usage-event="doc-tab-bar.stop-propagation-2.click"
 							onClick={(e) => {
 								e.stopPropagation();
 								onAskAi(path);
@@ -64,6 +66,7 @@ export function DocTabBar({
 							type="button"
 							className="doc-tab__close"
 							aria-label={`문서 닫기: ${basename(path)}`}
+							data-usage-event="doc-tab-bar.stop-propagation-3.click"
 							onClick={(e) => {
 								e.stopPropagation();
 								onClose(path);

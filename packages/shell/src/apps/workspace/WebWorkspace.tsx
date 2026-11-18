@@ -132,8 +132,10 @@ function Directory({
 }) {
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [error, setError] = useState(false);
+	const [reloadEpoch, setReloadEpoch] = useState(0);
 	useEffect(() => {
 		let active = true;
+		setError(false);
 		(async () => {
 			try {
 				const found: Entry[] = [];
@@ -150,8 +152,21 @@ function Directory({
 		return () => {
 			active = false;
 		};
-	}, [dir, path]);
-	if (error) return <p role="alert">Unable to read directory</p>;
+	}, [dir, path, reloadEpoch]);
+	if (error) {
+		return (
+			<div role="alert">
+				<p>Unable to read directory</p>
+				<button
+					type="button"
+					data-usage-event="web-workspace.v026-add-10.click"
+					onClick={() => setReloadEpoch((n) => n + 1)}
+				>
+					{t("common.retry")}
+				</button>
+			</div>
+		);
+	}
 	return (
 		<ul className="web-workspace-list">
 			{entries.map((entry) =>
@@ -169,6 +184,7 @@ function Directory({
 						<button
 							type="button"
 							aria-pressed={activeFile === `${path}/${entry.name}`}
+							data-usage-event="web-workspace.v026-add-1.click"
 							onClick={() => onOpen(`${path}/${entry.name}`)}
 						>
 							📄 {entry.name}
@@ -381,6 +397,7 @@ export default function WebWorkspace() {
 							type="button"
 							className="herdr-workspace__toggle-btn"
 							aria-expanded={showPath}
+							data-usage-event="web-workspace.v026-add-2.click"
 							onClick={() => setShowPath(!showPath)}
 						>
 							{t("webExplorer.title")}
@@ -390,10 +407,11 @@ export default function WebWorkspace() {
 								type="button"
 								className="web-workspace-tree-collapse"
 								data-testid="web-workspace-tree-collapse"
-								aria-label="파일 탐색기 닫기"
+								aria-label={t("webExplorer.collapseAria")}
+								data-usage-event="web-workspace.v026-add-3.click"
 								onClick={() => setExplorerOpen(false)}
 							>
-								접기
+								{t("webExplorer.collapse")}
 							</button>
 						)}
 					</header>
@@ -402,6 +420,7 @@ export default function WebWorkspace() {
 							type="button"
 							data-testid="web-workspace-tab-offline"
 							aria-pressed={activeTab === "offline"}
+							data-usage-event="web-workspace.v026-add-4.click"
 							onClick={() => setActiveTab("offline")}
 						>
 							{t("webExplorer.offline")}
@@ -411,6 +430,7 @@ export default function WebWorkspace() {
 								type="button"
 								data-testid="web-workspace-tab-knowledge"
 								aria-pressed={activeTab === "knowledge"}
+								data-usage-event="web-workspace.v026-add-5.click"
 								onClick={() => {
 									setActiveTab("knowledge");
 									if (
@@ -435,6 +455,7 @@ export default function WebWorkspace() {
 									<button
 										type="button"
 										aria-pressed={file === item.uri}
+										data-usage-event="web-workspace.v026-add-6.click"
 										onClick={() => setFile(item.uri)}
 									>
 										📄 {item.title} ({item.name})
@@ -467,7 +488,7 @@ export default function WebWorkspace() {
 						<div
 							role="separator"
 							aria-orientation="vertical"
-							aria-label="탐색기 폭 조절"
+							aria-label={t("webExplorer.resizeAria")}
 							className="web-workspace-resizer"
 							data-testid="web-workspace-resizer"
 							onMouseDown={handleResizerMouseDown}
@@ -481,6 +502,7 @@ export default function WebWorkspace() {
 								data-testid="web-workspace-tree-toggle"
 								aria-expanded={showExplorer}
 								aria-pressed={showExplorer}
+								data-usage-event="web-workspace.v026-add-7.click"
 								onClick={() => setExplorerOpen((prev) => !prev)}
 							>
 								📁 {t("webExplorer.title")}
@@ -488,11 +510,12 @@ export default function WebWorkspace() {
 							<code title={file}>
 								{file.split("/").filter(Boolean).pop() ?? file}
 							</code>
-							<button type="button" onClick={() => void download()}>
+							<button type="button" data-usage-event="web-workspace.v026-add-8.click" onClick={() => void download()}>
 								{t("webExplorer.download")}
 							</button>
 							<button
 								type="button"
+								data-usage-event="web-workspace.v026-add-9.click"
 								onClick={() => setFile("")}
 								aria-label={t("webExplorer.close")}
 							>

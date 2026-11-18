@@ -104,9 +104,15 @@ export function QuickOpen({
 	}
 
 	return (
-		<div className="quick-open-overlay" onClick={onClose} onKeyDown={() => {}}>
+		<div
+			className="quick-open-overlay"
+			data-usage-event="quick-open.on-close-1.click"
+			onClick={onClose}
+			onKeyDown={() => {}}
+		>
 			<div
 				className="quick-open"
+				data-usage-event="quick-open.stop-propagation-2.click"
 				onClick={(e) => e.stopPropagation()}
 				onKeyDown={() => {}}
 			>
@@ -127,6 +133,7 @@ export function QuickOpen({
 						<div
 							key={r.path}
 							className={`quick-open__item${i === selectedIndex ? " quick-open__item--selected" : ""}`}
+							data-usage-event="quick-open.handle-select-3.click"
 							onClick={() => handleSelect(r.path)}
 							onKeyDown={() => {}}
 						>

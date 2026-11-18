@@ -8,7 +8,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listNaiaAssets, toLocalBlobUrl } from "../../lib/adk-store";
+import { listNaiaAssets, toLocalBlobUrl, writeNaiaUiConfig } from "../../lib/adk-store";
 import { onAiInterferenceEvent } from "../../lib/ai-interference";
 import { bgmPlayback } from "../../lib/bgm-playback";
 import { loadBgmLibraryFromSandbox, resetBgmLibraryCache } from "../../lib/bgm-library-store";
@@ -27,6 +27,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 vi.mock("../../lib/adk-store", () => ({
 	getAdkPath: vi.fn().mockReturnValue(null),
+	writeNaiaUiConfig: vi.fn().mockResolvedValue(true),
 	listNaiaAssets: vi.fn().mockResolvedValue([]),
 	toLocalBlobUrl: vi.fn().mockResolvedValue("blob:mock"),
 }));
@@ -39,6 +40,7 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 import * as chatService from "../../lib/chat-service";
 import { Logger } from "../../lib/logger";
 import { BgmPlayer } from "../BgmPlayer";
+import { hydrateUiPreferences, resetUiPreferencesForTests } from "../../lib/ui-preferences";
 
 function bgmCommandHandler() {
 	const handler = listeners.get("bgm_command");
@@ -62,6 +64,23 @@ async function enqueueTrack(videoId: string, title: string) {
 	await act(async () => {
 		await Promise.resolve();
 	});
+}
+
+/** Open the music app panel (YouTube tab is the default) and return the
+ * "Show captions" checkbox that sits next to "Show background video". */
+function openCaptionsToggle(container: HTMLElement): HTMLInputElement {
+	const hiddenApp = document.querySelector(".bgm-yt-app--hidden");
+	if (hiddenApp) {
+		expect(hiddenApp).toHaveAttribute("inert");
+		fireEvent.click(container.querySelector(".bgm-icon")!);
+	}
+	expect(document.querySelector(".bgm-yt-app")).not.toHaveAttribute("inert");
+	const toggle = screen.getByRole("checkbox", { name: "Show captions" });
+	expect(toggle.closest("[data-bgm-captions-toggle]")).not.toBeNull();
+	expect(
+		toggle.closest(".bgm-yt-options")?.textContent,
+	).toContain("Show background video");
+	return toggle as HTMLInputElement;
 }
 
 /** Attach a `.app-bg-iframe` matching the current playbackId, the way the
@@ -135,6 +154,7 @@ function confirmCurrentFrame(
 
 describe("BgmPlayer YouTube playback state machine", () => {
 	beforeEach(() => {
+		resetUiPreferencesForTests();
 		bgmPlayback.reset();
 		useAppStore.setState({ aiInterferenceEnabled: true });
 	});
@@ -150,6 +170,142 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		for (const iframe of document.querySelectorAll(".app-bg-iframe"))
 			iframe.remove();
 		localStorage.clear();
+	});
+
+	it("controls YouTube only when the music group has focus", async () => {
+		render(<><BgmPlayer /><textarea aria-label="chat" /></>);
+		await startTrack("keyboard", "Keyboard Song");
+		const iframe = attachIframeForCurrentPlayback();
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		confirmCurrentFrame();
+		const group = screen.getByRole("group", { name: /Music controls/ });
+		group.focus();
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
+		postYtMessage({ event: "infoDelivery", info: { currentTime: 0 } });
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [10, true] }), "*");
+		postYtMessage({ event: "infoDelivery", info: { currentTime: 10 } });
+		fireEvent.keyDown(group, { key: "ArrowLeft" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
+		fireEvent.keyDown(group, { key: "ArrowUp" });
+		await waitFor(() => expect(post).toHaveBeenCalledWith(expect.stringContaining('"func":"setVolume"'), "*"));
+		fireEvent.keyDown(group, { key: "k" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "stopVideo", args: [] }), "*");
+		post.mockClear();
+		const chat = screen.getByRole("textbox", { name: "chat" });
+		chat.focus();
+		fireEvent.keyDown(chat, { key: "k" });
+		fireEvent.keyDown(chat, { key: "ArrowRight" });
+		expect(post).not.toHaveBeenCalled();
+	});
+
+	it("uses the observed time again after a pending keyboard seek expires", async () => {
+		render(<BgmPlayer />);
+		await startTrack("keyboard-expiry", "Keyboard Expiry");
+		const iframe = attachIframeForCurrentPlayback();
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		confirmCurrentFrame();
+		const group = screen.getByRole("group", { name: /Music controls/ });
+		group.focus();
+		const now = vi.spyOn(Date, "now");
+		now.mockReturnValue(1000);
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		postYtMessage({ event: "infoDelivery", info: { currentTime: 1 } });
+		now.mockReturnValue(2600);
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		expect(post).toHaveBeenLastCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [6, true] }), "*");
+		now.mockRestore();
+	});
+
+	it("defaults captions off, toggles them from the YouTube tab checkbox, and restores the saved choice on a new video", async () => {
+		await hydrateUiPreferences(
+			{ uiPreferences: {} },
+			{ adkPath: "/fixture", canPersist: true },
+		);
+		const view = render(<BgmPlayer />);
+		const captionsToggle = openCaptionsToggle(view.container);
+		expect(captionsToggle).not.toBeChecked();
+		await startTrack("captions1", "Captions One");
+		const iframe = attachIframeForCurrentPlayback();
+		expect(new URL(iframe.src).searchParams.get("cc_load_policy")).toBe("0");
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		expect(post).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "command",
+				func: "unloadModule",
+				args: ["captions"],
+			}),
+			"https://www.youtube-nocookie.com",
+		);
+		fireEvent.click(captionsToggle);
+		expect(post).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "command",
+				func: "loadModule",
+				args: ["captions"],
+			}),
+			"https://www.youtube-nocookie.com",
+		);
+		await waitFor(() =>
+			expect(writeNaiaUiConfig).toHaveBeenCalledWith(
+				{ uiPreferences: { youtubeCaptions: true } },
+				"/fixture",
+			),
+		);
+		post.mockClear();
+		fireEvent.click(captionsToggle);
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "unloadModule", args: ["captions"] }), "https://www.youtube-nocookie.com");
+		expect(captionsToggle).not.toBeChecked();
+		fireEvent.click(captionsToggle);
+		await waitFor(() => expect(writeNaiaUiConfig).toHaveBeenLastCalledWith({ uiPreferences: { youtubeCaptions: true } }, "/fixture"));
+		const saved = vi.mocked(writeNaiaUiConfig).mock.lastCall![0];
+		view.unmount();
+		iframe.remove();
+		resetUiPreferencesForTests();
+		await hydrateUiPreferences(
+			saved,
+			{ adkPath: "/fixture", canPersist: true },
+		);
+		const restored = render(<BgmPlayer />);
+		await startTrack("captions2", "Captions Two");
+		const next = attachIframeForCurrentPlayback();
+		const nextPost = vi.spyOn(next.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		expect(openCaptionsToggle(restored.container)).toBeChecked();
+		expect(screen.queryByRole("button", { name: /captions|^CC$/i })).toBeNull();
+		expect(nextPost).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "command",
+				func: "loadModule",
+				args: ["captions"],
+			}),
+			"https://www.youtube-nocookie.com",
+		);
+	});
+
+	it("requests captions at load and re-applies them once playback is confirmed when captions are on", async () => {
+		await hydrateUiPreferences(
+			{ uiPreferences: { youtubeCaptions: true } },
+			{ adkPath: "/fixture", canPersist: true },
+		);
+		render(<BgmPlayer />);
+		await startTrack("v1", "Captioned Song");
+		const iframe = attachIframeForCurrentPlayback();
+		// The YouTube player ignores loadModule("captions") before playback has
+		// started, so the embed itself must ask for captions.
+		expect(new URL(iframe.src).searchParams.get("cc_load_policy")).toBe("1");
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		post.mockClear();
+		confirmCurrentFrame("v1", "Captioned Song");
+		postYtMessage({ event: "onStateChange", info: 1 });
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		expect(post).toHaveBeenCalledWith(
+			JSON.stringify({ event: "command", func: "loadModule", args: ["captions"] }),
+			"https://www.youtube-nocookie.com",
+		);
 	});
 
 	it("finalizes an unresponsive load on timeout with track_error(timeout) and advances to the prepared next candidate once (FR-RADIO-DJ.2·16)", async () => {
@@ -644,6 +800,12 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		fireEvent.click(screen.getByRole("button", { name: /First/ }));
 		expect(bgmPlayback.current()?.selected.videoId).toBe("first");
 		fireEvent.click(screen.getByTitle("Next"));
+		expect(bgmPlayback.current()?.selected.videoId).toBe("second");
+		const group = screen.getByRole("group", { name: /Music controls/ });
+		group.focus();
+		fireEvent.keyDown(group, { key: "p" });
+		expect(bgmPlayback.current()?.selected.videoId).toBe("first");
+		fireEvent.keyDown(group, { key: "n" });
 		expect(bgmPlayback.current()?.selected.videoId).toBe("second");
 	});
 

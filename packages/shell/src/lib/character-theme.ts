@@ -7,6 +7,7 @@ import {
 } from "../apps/charcard/card-parser";
 import { buildRoleplayPrompt } from "../apps/charcard/prompt-builder";
 import type { AppConfig } from "./config";
+import jinaCardData from "./kiosk-demo/jina-card.json";
 import { Logger } from "./logger";
 import { KIOSK_DEMO_GREETING } from "./persona";
 
@@ -38,58 +39,17 @@ export const KIOSK_JINA_CARD_ID = "kiosk-jina-card" as const;
 export const KIOSK_JINA_THEME_ID = "kiosk-jina-theme" as const;
 
 export const KIOSK_JINA_RAW_CARD = {
-	spec: "chara_card_v2",
-	spec_version: "2.0",
+	...jinaCardData.rawCard,
 	data: {
-		name: "지나",
-		description:
-			"당신은 넥스테인(Nextain)과 나이아(NAIA)를 안내하는 비주얼 에이전트 지나(Jina)입니다. 투자자와 손님인 게스트님께 나이아와 넥스테인의 제품, 철학, 장점과 가능성을 설명합니다.",
-		personality:
-			"차분하고 다정하며 또렷한 한국어 존댓말(~해요, ~입니다)을 자연스럽게 사용합니다. 한 문장이 너무 길어지지 않게 끊어 말하고, 첫 문장에서 질문의 핵심에 바로 답합니다. 항상 한국어 존댓말로 짧고 따뜻하게 대화하고, 질문을 친절하게 받아 주세요.",
-		scenario:
-			"게스트님이 나이아와 넥스테인의 시연 공간을 방문해 지나와 대화하고 있습니다. 제공된 지식을 바탕으로 설명하며 모르는 내용은 모른다고 말합니다. 사실이나 수치를 지어내지 않습니다. 지식 검색 결과가 질문과 맞지 않으면 다른 낱말로 한 번 더 찾은 뒤 답합니다.",
+		...jinaCardData.rawCard.data,
 		first_mes: KIOSK_DEMO_GREETING,
-		alternate_greetings: [
-			"반갑습니다, 게스트님! 나이아와 넥스테인에 대해 어떤 점이 가장 궁금하신가요?",
-		],
-		mes_example:
-			"<START>\n{{user}}: 나이아는 어떤 서비스인가요?\n{{char}}: 게스트님, 나이아는 개인이 일하고 노는 환경에서 듣고 말하고 기억하는 AI 비주얼 에이전트예요. 더 궁금한 점이 있으시면 편하게 물어봐 주세요.",
-		system_prompt:
-			"기본 호칭은 게스트님이며, 항상 한국어 존댓말로 짧고 따뜻하게 대화합니다. 비공개 자료나 매출 등 민감한 수치는 안내하지 않습니다.",
-		post_history_instructions:
-			"제공된 공개 지식을 바탕으로 답하고, 사실이나 수치를 지어내지 마세요. 지식 검색 결과가 질문과 맞지 않으면 다른 낱말로 한 번 더 찾은 뒤 답하세요.",
-		creator: "Nextain",
-		creator_notes: "지나 (Jina) 시연 기본 캐릭터 카드 (지나 NVA 테마 연결)",
-		tags: ["지나", "Jina", "Nextain", "NAIA"],
-		character_book: {
-			name: "지나 시연 로어북",
-			description: "지나 시연 안내 기본 배경 항목",
-			entries: [
-				{
-					id: "jina-voice-breath",
-					name: "목소리 호흡과 호칭",
-					comment: "지나 기본 호칭·호흡 지침",
-					keys: ["지나", "게스트"],
-					secondary_keys: [],
-					content:
-						"기본 호칭은 게스트님이며, 한 문장이 너무 길어지지 않게 끊어 말하고 첫 문장에서 질문의 핵심에 바로 답합니다.",
-					enabled: true,
-					constant: true,
-					insertion_order: 10,
-					priority: 10,
-				},
-			],
-		},
-		extensions: {
-			avatarImageUrl: "/nva/jina/speech/neutral-head.png",
-		},
 	},
 } as const;
 
 export const KIOSK_JINA_SAVED_CARD: SavedCharacterCard = {
 	version: 1,
 	id: KIOSK_JINA_CARD_ID,
-	name: "지나",
+	name: KIOSK_JINA_RAW_CARD.data.name,
 	rawJson: KIOSK_JINA_RAW_CARD as unknown as Record<string, unknown>,
 	greeting: KIOSK_DEMO_GREETING,
 	sourceName: "jina-card.json",
@@ -100,10 +60,10 @@ export const KIOSK_JINA_SAVED_CARD: SavedCharacterCard = {
 export const KIOSK_JINA_THEME: CharacterTheme = {
 	version: 1,
 	id: KIOSK_JINA_THEME_ID,
-	name: "지나 시연 테마",
-	nvaModel: "jina",
-	ttsProvider: "nextain",
-	ttsVoice: "ko-KR-Neural2-A",
+	name: jinaCardData.theme.name,
+	nvaModel: jinaCardData.theme.nvaModel,
+	ttsProvider: jinaCardData.theme.ttsProvider as CharacterTheme["ttsProvider"],
+	ttsVoice: jinaCardData.theme.ttsVoice,
 	backgroundVideo: KIOSK_JINA_DEFAULT_BACKGROUND,
 };
 

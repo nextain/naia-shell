@@ -106,6 +106,7 @@ export function WebLoginScreen({
 					data-testid="web-login-submit"
 					className="voice-preview-btn"
 					disabled={redirecting}
+					data-usage-event="web-login-screen.v026-add-1.click"
 					onClick={handleLogin}
 					style={{
 						width: "100%",

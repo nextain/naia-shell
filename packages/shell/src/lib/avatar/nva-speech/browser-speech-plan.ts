@@ -1,6 +1,7 @@
 import { LAB_GATEWAY_URL, loadConfig } from "../../config";
 import { Logger } from "../../logger";
 import { getSecretKey } from "../../secure-store";
+import koSpeechUnits from "./ko-speech-units.json";
 import {
 	SPEECH_UNITS,
 	type SpeechPlan,
@@ -11,8 +12,8 @@ import {
 const LOG_NS = "NvaSpeech";
 const CANONICAL_SPEECH_UNITS = new Set<string>(SPEECH_UNITS);
 
-// Moved from /home/nextain/work/naia-land-footer/src/features/studio-v2/live/engine/nva-speech/browser-speech-plan.ts
-// (naia.land commit 8d5f3725a2facfc9db39212a893f90d389f4ec26).
+// Ported from naia.land studio-v2 live engine (src/features/studio-v2/live/engine/nva-speech/browser-speech-plan.ts,
+// naia.land commit 8d5f3725a2facfc9db39212a893f90d389f4ec26).
 
 export interface SpeechPlanUnitsWord {
 	word: string;
@@ -359,49 +360,11 @@ export interface BrowserTimedSpeechController {
 	): SpeechPlan | null;
 }
 
-const KO_SPEECH_UNITS_WORD_READINGS: Readonly<Record<string, string>> = {
-	nextain: "넥스테인",
-	naia: "나이아",
-	ai: "에이아이",
-	ir: "아이알",
-	gpu: "지피유",
-	webgpu: "웹지피유",
-	web: "웹",
-	pc: "피씨",
-	pdf: "피디에프",
-	tts: "티티에스",
-	api: "에이피아이",
-	app: "앱",
-};
+const KO_SPEECH_UNITS_WORD_READINGS: Readonly<Record<string, string>> =
+	koSpeechUnits.wordReadings;
 
-const KO_SPEECH_UNITS_LETTER_READINGS: Readonly<Record<string, string>> = {
-	a: "에이",
-	b: "비",
-	c: "씨",
-	d: "디",
-	e: "이",
-	f: "에프",
-	g: "지",
-	h: "에이치",
-	i: "아이",
-	j: "제이",
-	k: "케이",
-	l: "엘",
-	m: "엠",
-	n: "엔",
-	o: "오",
-	p: "피",
-	q: "큐",
-	r: "알",
-	s: "에스",
-	t: "티",
-	u: "유",
-	v: "브이",
-	w: "더블유",
-	x: "엑스",
-	y: "와이",
-	z: "지",
-};
+const KO_SPEECH_UNITS_LETTER_READINGS: Readonly<Record<string, string>> =
+	koSpeechUnits.letterReadings;
 
 export function replaceLatinWithHangulForSpeechUnits(text: string): string {
 	return text.replace(/[A-Za-z]+/g, (chunk) => {

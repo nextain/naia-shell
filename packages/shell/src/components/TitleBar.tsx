@@ -39,6 +39,7 @@ export function TitleBar({
 				<button
 					type="button"
 					className="titlebar-btn"
+					data-usage-event="title-bar.on-toggle-app-1.click"
 					onClick={onToggleApp}
 					title={appVisible ? "채팅 숨기기 (Ctrl+B)" : "채팅 보이기 (Ctrl+B)"}
 				>
@@ -61,6 +62,7 @@ export function TitleBar({
 				<button
 					type="button"
 					className="titlebar-btn"
+					data-usage-event="title-bar.button-2.click"
 					onClick={() => appWindow.minimize()}
 					title="최소화"
 				>
@@ -69,6 +71,7 @@ export function TitleBar({
 				<button
 					type="button"
 					className="titlebar-btn"
+					data-usage-event="title-bar.button-3.click"
 					onClick={async () => {
 						if (await appWindow.isMaximized()) {
 							appWindow.unmaximize();
@@ -83,6 +86,7 @@ export function TitleBar({
 				<button
 					type="button"
 					className="titlebar-btn titlebar-btn-close"
+					data-usage-event="title-bar.button-4.click"
 					onClick={() => appWindow.close()}
 					title="닫기"
 				>

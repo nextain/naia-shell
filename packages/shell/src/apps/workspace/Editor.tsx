@@ -796,6 +796,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					<button
 						type="button"
 						className="workspace-editor__view-btn workspace-editor__copy-path-btn"
+						data-usage-event="editor.button-1.click"
 						onClick={() => void navigator.clipboard.writeText(filePath)}
 						title="경로 복사"
 					>
@@ -806,6 +807,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					<p>파일을 열 수 없습니다: {loadError}</p>
 					<button
 						type="button"
+						data-usage-event="editor.button-2.click"
 						onClick={() => void reloadFile()}
 						disabled={reloading}
 					>
@@ -832,6 +834,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 				<button
 					type="button"
 					className="workspace-editor__view-btn workspace-editor__copy-path-btn"
+					data-usage-event="editor.button-3.click"
 					onClick={() => void navigator.clipboard.writeText(filePath)}
 					title="경로 복사"
 				>
@@ -841,6 +844,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 				<button
 					type="button"
 					className="workspace-editor__view-btn workspace-editor__reload-btn"
+					data-usage-event="editor.button-4.click"
 					onClick={() => void reloadFile()}
 					disabled={reloading}
 					title="디스크에서 다시 읽기"
@@ -860,6 +864,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					<button
 						type="button"
 						className="workspace-editor__view-btn"
+						data-usage-event="editor.set-view-mode-5.click"
 						onClick={() => setViewMode("split")}
 						title="편집 모드로 전환"
 					>
@@ -871,6 +876,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<button
 							type="button"
 							className="workspace-editor__view-btn"
+							data-usage-event="editor.set-view-mode-6.click"
 							onClick={() => setViewMode("preview")}
 							title="미리보기만 표시"
 						>
@@ -879,6 +885,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<button
 							type="button"
 							className="workspace-editor__view-btn workspace-editor__view-btn--active"
+							data-usage-event="editor.set-view-mode-7.click"
 							onClick={() => setViewMode("editor")}
 							title="편집기만 표시"
 						>
@@ -890,6 +897,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					<button
 						type="button"
 						className="workspace-editor__view-btn"
+						data-usage-event="editor.set-view-mode-8.click"
 						onClick={() => setViewMode("preview")}
 						title="미리보기 모드로 전환"
 					>
@@ -899,6 +907,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 				<button
 					type="button"
 					className="workspace-editor__view-btn workspace-editor__print-btn"
+					data-usage-event="editor.set-view-mode-9.click"
 					onClick={() => {
 						if (isMd && viewMode !== "preview") {
 							const prev = viewMode;
@@ -964,6 +973,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						재생 속도
 						<select
 							value={playbackRate}
+							data-usage-event="editor.set-playback-rate-10.select"
 							onChange={(event) => {
 								const rate = Number(event.target.value);
 								setPlaybackRate(rate);
@@ -992,6 +1002,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<button
 							type="button"
 							className={`workspace-editor__image-btn${imageZoom === "fit" ? " workspace-editor__image-btn--active" : ""}`}
+							data-usage-event="editor.set-image-zoom-11.click"
 							onClick={() => setImageZoom("fit")}
 							title="화면 맞춤"
 						>
@@ -1000,6 +1011,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<button
 							type="button"
 							className={`workspace-editor__image-btn${imageZoom === "original" ? " workspace-editor__image-btn--active" : ""}`}
+							data-usage-event="editor.set-image-zoom-12.click"
 							onClick={() => setImageZoom("original")}
 							title="원본 크기"
 						>
@@ -1008,6 +1020,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<button
 							type="button"
 							className="workspace-editor__image-btn"
+							data-usage-event="editor.set-image-zoom-13.click"
 							onClick={() =>
 								setImageZoom((prev) => {
 									const current =
@@ -1029,6 +1042,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<button
 							type="button"
 							className="workspace-editor__image-btn"
+							data-usage-event="editor.set-image-zoom-14.click"
 							onClick={() =>
 								setImageZoom((prev) => {
 									const current =
@@ -1156,6 +1170,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 												// biome-ignore lint/suspicious/noArrayIndexKey: CSV columns have no natural key
 												key={i}
 												className="workspace-editor__csv-th"
+												data-usage-event="editor.toggle-sort-15.click"
 												onClick={toggleSort}
 												onKeyDown={(e) => {
 													if (e.key === "Enter" || e.key === " ") {
