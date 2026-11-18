@@ -1,3 +1,37 @@
+import { resetKioskMemory } from "../lib/kiosk-demo/memory";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	buildKioskSlideQuestionPrompt,
+	buildKioskSlideReferencePrompt,
+	getActiveKioskIrSlide,
+	handleKioskSlidesChatTurn,
+	isKioskSlideQuestionTurnActive,
+	notifyKioskSlidesTurnSettled,
+} from "../lib/kiosk-demo/slides";
+import {
+	consumeKioskGreeting,
+	notifyKioskDemoUnavailable,
+	recordKioskVisitActivity,
+	requestKioskGreeting,
+	resetKioskVisit,
+} from "../lib/kiosk-demo/entry";
+import {
+	KIOSK_DEMO_LLM_PROVIDER,
+	KIOSK_DEMO_THINKING_LEVEL,
+	applyKioskDemoMainModel,
+	isKioskLocalAnswerEnabled,
+	setKioskLocalAnswerEnabled,
+} from "../lib/config-seed";
+import { KIOSK_DEMO_GREETING } from "../lib/persona";
+import { verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
+import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
+import { startWebModel } from "../lib/web-runtime/model-start";
+import { WEB_LLM_MODEL_ID } from "../lib/web-runtime/webllm-model";
+import {
+	checkWebGpu,
+	readNavigatorGpu,
+} from "../lib/web-runtime/webgpu-check";
+import { openWebWorkspaceFile } from "../apps/workspace/WebWorkspace";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -26,6 +60,14 @@ import {
 	INSTALLED_APP_SPEECH_RESULT_EVENT,
 } from "../apps/generic-installed/installed-app-host-bridge";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
+import { WebModelStatusBar, useWebModelStatus } from "./WebModelStatusBar";
+import { WebWorkspaceSetup, useWebAdkStatus } from "./WebWorkspaceSetup";
+import {
+	getWebModelStatus,
+	isWebSendBlocked,
+} from "../lib/web-runtime/web-model-status";
+import { getWebAdkStatus } from "../lib/web-runtime/web-adk-status";
+
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -42,9 +84,11 @@ import {
 import { NvaGestureRateLimiter } from "../lib/avatar/nva-gesture-rate-limiter";
 import { GestureTriggerStream } from "../lib/avatar/nva-gesture-trigger";
 import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
+import { bgmPlayback } from "../lib/bgm-playback";
 import {
 	BGM_APP_ID,
 	SKILL_YOUTUBE_BGM,
+	classifyWebBgmIntent,
 	executeBgmSkill,
 	shouldActivateRadioDj,
 } from "../lib/bgm-skill";
@@ -165,7 +209,9 @@ import {
 	createApiSttSession,
 	createWebSpeechSttSession,
 	getSttProvider,
+	isWebSpeechAvailable,
 } from "../lib/stt";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
@@ -174,6 +220,7 @@ import {
 } from "../lib/tts/reveal-guard";
 import {
 	type PipelineVoiceConfig,
+	type SentenceTtsOutcome,
 	type SentenceTtsPipeline,
 	type TtsSynthesisResult,
 	createSentenceTtsPipeline,
@@ -187,7 +234,6 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
-import { usage } from "../lib/usage-runtime";
 import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
@@ -211,6 +257,7 @@ import {
 } from "../lib/voice/index";
 import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
+import { resolveEffectiveTtsProvider } from "../lib/tts/resolve-web-tts-provider";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
 import { isNaiaAuthWireError, wireErrorMessage } from "../lib/wire-errors";
@@ -227,7 +274,10 @@ import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import type { AtMentionHandle, AtMentionResult } from "./AtMentionPopover";
 import { NvaGestureActions } from "./NvaGestureActions";
-import { formatStructuredAgentChunk } from "./chat-presentation";
+import {
+	formatStructuredAgentChunk,
+	resolveKioskEvidenceFiles,
+} from "./chat-presentation";
 import {
 	buildEnvironmentSegments,
 	buildMemoryContext,
@@ -271,6 +321,37 @@ const WorkProgressArea = lazy(() =>
 		default: WorkProgressArea,
 	})),
 );
+
+export interface WebSpeakingSttHooks {
+	isSpeaking: boolean;
+	pipelineActive: boolean;
+	hasActiveSpeechActivity: boolean;
+	clearCooldownTimer: () => void;
+	pauseStt: () => void;
+	scheduleResumeStt: (delayMs: number) => void;
+}
+
+/**
+ * 웹판 브라우저 TTS 발화 시작·종료 시에만 마이크(Web Speech STT)를 일시 정지·재개한다.
+ * 데스크톱(`!isWebMode()`)에서는 기준 동작(`4f06f040`)과 같게 아무 동작도 하지 않는다.
+ */
+export function syncWebSttOnSpeakingChange(hooks: WebSpeakingSttHooks): void {
+	if (!isWebMode()) return;
+	if (hooks.isSpeaking) {
+		hooks.clearCooldownTimer();
+		if (hooks.pipelineActive) {
+			try {
+				if (shouldPauseSttForTts(hooks.hasActiveSpeechActivity)) {
+					hooks.pauseStt();
+				}
+			} catch {
+				// 마이크 일시정지 실패는 2차 텍스트 필터가 방어
+			}
+		}
+	} else if (hooks.pipelineActive) {
+		hooks.scheduleResumeStt(800);
+	}
+}
 const ChatMarkdown = lazy(() =>
 	import("./ChatMarkdown").then(({ ChatMarkdown }) => ({
 		default: ChatMarkdown,
@@ -344,13 +425,15 @@ function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 }
 
 function unavailableModelToolMessage(toolName: string): string {
-	const inactiveSignedOwner = appRegistry.list().some(
-		(app) =>
-			app.source === "installed" &&
-			app.storeSignatureVerified === true &&
-			app.id !== useAppStore.getState().activeApp &&
-			app.tools?.some((tool) => tool.name === toolName),
-	);
+	const inactiveSignedOwner = appRegistry
+		.list()
+		.some(
+			(app) =>
+				app.source === "installed" &&
+				app.storeSignatureVerified === true &&
+				app.id !== useAppStore.getState().activeApp &&
+				app.tools?.some((tool) => tool.name === toolName),
+		);
 	return `Tool is not available: ${toolName}${inactiveSignedOwner ? ". Open the app first." : ""}`;
 }
 
@@ -397,7 +480,6 @@ function ChatErrorNotice({
 			<button
 				type="button"
 				className="chat-error-notice__retry"
-				data-usage-event="chat-area.on-retry-1.click"
 				onClick={onRetry}
 			>
 				{t("chat.answerFailed.retry")}
@@ -446,11 +528,22 @@ export async function loadOrCreateSession(): Promise<void> {
 		if (currentStore.localSessionId !== storedKey) return;
 		currentStore.setSessionId("agent:main:main");
 		if (history.length > 0) {
-			if (currentStore.messages.length === 0) {
-				currentStore.setMessages(history);
+			const onlyKioskGreeting =
+				isKioskDemo() &&
+				currentStore.messages.length === 1 &&
+				currentStore.messages[0]?.role === "assistant" &&
+				currentStore.messages[0]?.content === KIOSK_DEMO_GREETING;
+			if (currentStore.messages.length === 0 || onlyKioskGreeting) {
+				const restored =
+					onlyKioskGreeting &&
+					history[0]?.content !== KIOSK_DEMO_GREETING &&
+					currentStore.messages[0]
+						? [currentStore.messages[0], ...history]
+						: history;
+				currentStore.setMessages(restored);
 				Logger.info("ChatArea", "Restored local conversation transcript", {
 					sessionId: storedKey,
-					messageCount: history.length,
+					messageCount: restored.length,
 				});
 			}
 		} else {
@@ -470,7 +563,13 @@ export function ChatArea({
 	variant = "floating",
 	headerControls,
 }: { variant?: ChatVariant; headerControls?: ReactNode } = {}) {
+	const webModelStatus = useWebModelStatus();
+	const webAdkStatus = useWebAdkStatus();
+	const webSendBlocked =
+		import.meta.env.MODE === "web" &&
+		isWebSendBlocked(webModelStatus, webAdkStatus, loadConfig()?.provider);
 	const [input, setInput] = useState("");
+	const [greetingPreparing, setGreetingPreparing] = useState(false);
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
 	// True while the local voice ENGINE is still booting (synthesize retries
@@ -539,16 +638,28 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
-	const installedAppRequestRef = useRef<{ appId: string; requestId: string } | null>(null);
+	const installedAppRequestRef = useRef<{
+		appId: string;
+		requestId: string;
+	} | null>(null);
 	const installedAppTurnRef = useRef(false);
-	const installedAppSendRef = useRef<((prompt: string) => Promise<void>) | null>(null);
+	const installedAppSendRef = useRef<
+		((prompt: string) => Promise<void>) | null
+	>(null);
 	const installedAppVoiceBlockedRef = useRef(false);
 	const installedAppConfig = loadConfig();
-	const installedAppMainRole = installedAppConfig ? effectiveMainRole(installedAppConfig) : {};
-	const installedAppProvider = installedAppMainRole.provider ?? installedAppConfig?.provider;
-	const installedAppModel = installedAppMainRole.model ?? installedAppConfig?.model;
-	installedAppVoiceBlockedRef.current = voiceMode !== "off" ||
-		(installedAppProvider === "nextain" && !!installedAppModel && isOmniModel(installedAppProvider, installedAppModel));
+	const installedAppMainRole = installedAppConfig
+		? effectiveMainRole(installedAppConfig)
+		: {};
+	const installedAppProvider =
+		installedAppMainRole.provider ?? installedAppConfig?.provider;
+	const installedAppModel =
+		installedAppMainRole.model ?? installedAppConfig?.model;
+	installedAppVoiceBlockedRef.current =
+		voiceMode !== "off" ||
+		(installedAppProvider === "nextain" &&
+			!!installedAppModel &&
+			isOmniModel(installedAppProvider, installedAppModel));
 	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
 	const gestureActionPlayedRef = useRef(false);
 	const pendingAiGestureActionRef = useRef<string | null>(null);
@@ -637,15 +748,32 @@ export function ChatArea({
 	// calls the public interface. The pipeline owns the request lifecycle, the
 	// one-time local-voice notice, and the recent-utterance ring (echo filter).
 	const sentencePipelineRef = useRef<SentenceTtsPipeline | null>(null);
-	const activeSlidePresenterSpeechRef =
-		useRef<(SlidePresenterSpeechRequest & { appId?: string; started?: boolean }) | null>(null);
+	const activeSlidePresenterSpeechRef = useRef<
+		(SlidePresenterSpeechRequest & { appId?: string; started?: boolean }) | null
+	>(null);
+	const slideSpeechProgressRef = useRef<{
+		requestId: string;
+		total: number;
+		settled: Set<number>;
+	} | null>(null);
+	const queuedSlidePrefetchRef = useRef<{
+		sourceRequestId: string;
+		id: string;
+		page: number;
+		text: string;
+		started: boolean;
+		cancelled: boolean;
+	} | null>(null);
+	const activeSlidePrefetchIdsRef = useRef(new Set<string>());
+	const invalidSlideSpeechGenerationsRef = useRef(new Set<number>());
+	const kioskAutoRetriedRef = useRef(false);
 	if (!sentencePipelineRef.current) {
 		sentencePipelineRef.current = createSentenceTtsPipeline({
-				onPlaybackFailure: () => {
-					if (!activeSlidePresenterSpeechRef.current?.appId) return;
-					settleSlidePresenterSpeech("failed", "tts_failed");
-					interruptTts();
-				},
+			onPlaybackFailure: () => {
+				if (!activeSlidePresenterSpeechRef.current?.appId) return;
+				settleSlidePresenterSpeech("failed", "tts_failed");
+				interruptTts();
+			},
 			generateRequestId,
 			// #423: a reveal that fires while nothing is speaking anymore (failure
 			// paths, playback-unavailable) must also settle the held expression —
@@ -657,7 +785,13 @@ export function ChatArea({
 					settleAvatarEmotionIfIdle();
 				};
 			},
-			getRenderer: () => useCascadeAvatarStore.getState().renderer,
+			getRenderer: () => {
+				const renderer = useCascadeAvatarStore.getState().renderer;
+				const config = loadConfig();
+				return renderer?.modelId && renderer.modelId !== config?.nvaModel
+					? null
+					: renderer;
+			},
 			beginCascadeJob: () => beginCascadeTtsJob(),
 			setOutputStage: (stage) => {
 				if (acceptPipelineOutputStage(ttsTextSyncRef.current))
@@ -683,11 +817,63 @@ export function ChatArea({
 						});
 					}
 				}
-				if (on && activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
-				// #423: browser speech end/error releases the held expression.
+				if (on && activeSlidePresenterSpeechRef.current?.appId)
+					activeSlidePresenterSpeechRef.current.started = true;
+				syncWebSttOnSpeakingChange({
+					isSpeaking: on,
+					pipelineActive: pipelineActiveRef.current,
+					hasActiveSpeechActivity: activeSpeechActivityRef.current !== null,
+					clearCooldownTimer: () => {
+						if (sttCooldownTimerRef.current) {
+							clearTimeout(sttCooldownTimerRef.current);
+							sttCooldownTimerRef.current = null;
+						}
+					},
+					pauseStt: () => {
+						sttPauseRef.current?.();
+					},
+					scheduleResumeStt: (delayMs) => {
+						ttsCooldownUntilRef.current = Date.now() + delayMs;
+						setSttState("initializing");
+						if (sttCooldownTimerRef.current)
+							clearTimeout(sttCooldownTimerRef.current);
+						sttCooldownTimerRef.current = setTimeout(() => {
+							setSttState("listening");
+							sttCooldownTimerRef.current = null;
+							if (pipelineActiveRef.current) {
+								try {
+									sttResumeRef.current?.();
+								} catch {
+									// 재개 실패 시 다음 발화 토글로 복구
+								}
+							}
+						}, delayMs);
+					},
+				});
 				if (!on) {
+					// #423: browser speech end/error releases the held expression.
 					settleAvatarEmotionIfIdle();
-					settleSlidePresenterSpeech("finished");
+				}
+			},
+			onPlaybackStart: () => {
+				const pending = queuedSlidePrefetchRef.current;
+				const active = activeSlidePresenterSpeechRef.current;
+				if (
+					!pending ||
+					pending.cancelled ||
+					pending.started ||
+					active?.requestId !== pending.sourceRequestId
+				)
+					return;
+				pending.started = true;
+				const pieces = splitSlideNarration(pending.text);
+				for (let index = 0; index < pieces.length; index++) {
+					if (pending.cancelled) return;
+					void sentencePipelineRef.current?.prefetchSentence(pieces[index], {
+						prefetchId: `${pending.id}/${index}`,
+						prefetchGroupId: pending.id,
+						prepareAvatar: false,
+					});
 				}
 			},
 			getLocalRefAudioB64: () => getLocalRefAudioB64(),
@@ -727,6 +913,7 @@ export function ChatArea({
 	const [bgmSidecarError, setBgmSidecarError] = useState<string | null>(null);
 
 	useEffect(() => {
+		if (import.meta.env.MODE === "web") return;
 		let cancelled = false;
 		void ensureBgmSidecar()
 			.then(() => {
@@ -746,6 +933,7 @@ export function ChatArea({
 
 	const messages = useChatStore((s) => s.messages);
 	const isStreaming = useChatStore((s) => s.isStreaming);
+	const characterTransitionPending = useChatStore((s) => s.characterTransitionPending);
 	const streamingContent = useChatStore((s) => s.streamingContent);
 	const streamingThinking = useChatStore((s) => s.streamingThinking);
 	const streamingToolCalls = useChatStore((s) => s.streamingToolCalls);
@@ -835,6 +1023,11 @@ export function ChatArea({
 		if (!isAvatarSpeechIdle()) return;
 		setEmotion("neutral");
 		flushPendingAiGestureAction();
+		if (activeSlidePresenterSpeechRef.current?.appId) {
+			settleSlidePresenterSpeech("finished");
+		} else if (!activeSlidePresenterSpeechRef.current) {
+			notifyKioskSlidesTurnSettled();
+		}
 	}
 
 	function scheduleNextQueuedMessage() {
@@ -885,8 +1078,9 @@ export function ChatArea({
 		// fallback audio from the response the user just stopped.
 		interruptTts();
 		const reqId = currentRequestId.current;
+		let cancellation: Promise<void> | undefined;
 		if (reqId) {
-			cancelChat(reqId).catch((err) => {
+			cancellation = cancelChat(reqId).catch((err) => {
 				Logger.warn("ChatArea", "Failed to cancel stream", {
 					error: String(err),
 				});
@@ -898,6 +1092,7 @@ export function ChatArea({
 		commitPendingCost();
 		setEmotion("neutral");
 		completeCurrentRequest(reqId);
+		return cancellation;
 	}
 
 	// ESC key to cancel streaming
@@ -1119,14 +1314,28 @@ export function ChatArea({
 		error?: string,
 	): void {
 		const active = activeSlidePresenterSpeechRef.current;
-		if (!active || (status === "finished" && active.appId &&
-			(!active.started || sentencePipelineRef.current?.hasActiveRequests() ||
-				cascadeTtsJobsRef.current > 0 || audioQueueRef.current?.isActive))) return;
+		if (
+			!active ||
+			(status === "finished" &&
+				active.appId &&
+				(!active.started ||
+					sentencePipelineRef.current?.hasActiveRequests() ||
+					cascadeTtsJobsRef.current > 0 ||
+					audioQueueRef.current?.isActive))
+		) {
+			return;
+		}
 		activeSlidePresenterSpeechRef.current = null;
+		slideSpeechProgressRef.current = null;
 		window.dispatchEvent(
-			new CustomEvent(active.appId ? INSTALLED_APP_SPEECH_RESULT_EVENT : SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
-				detail: { ...active, status, error },
-			}),
+			new CustomEvent(
+				active.appId
+					? INSTALLED_APP_SPEECH_RESULT_EVENT
+					: SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
+				{
+					detail: { ...active, status, error },
+				},
+			),
 		);
 		Logger.info("ChatArea", "slide narration settled", {
 			page: active.page,
@@ -1135,9 +1344,43 @@ export function ChatArea({
 		});
 	}
 
-	function interruptTts(): void {
+	function settleSlideNarrationSentence(
+		requestId: string,
+		index: number,
+		_outcome: SentenceTtsOutcome,
+	): void {
+		const progress = slideSpeechProgressRef.current;
+		if (
+			!progress ||
+			progress.requestId !== requestId ||
+			activeSlidePresenterSpeechRef.current?.requestId !== requestId
+		)
+			return;
+		progress.settled.add(index);
+		if (progress.settled.size >= progress.total)
+			settleSlidePresenterSpeech("finished");
+	}
+
+	function interruptTts(preservePrefetchId?: string): void {
 		pendingAiGestureActionRef.current = null;
 		settleSlidePresenterSpeech("cancelled");
+		const queuedPrefetch = queuedSlidePrefetchRef.current;
+		if (queuedPrefetch && queuedPrefetch.id !== preservePrefetchId) {
+			queuedPrefetch.cancelled = true;
+			queuedSlidePrefetchRef.current = null;
+		}
+		if (preservePrefetchId) {
+			for (const id of activeSlidePrefetchIdsRef.current) {
+				if (id !== preservePrefetchId)
+					sentencePipelineRef.current?.cancelPrefetch(id);
+			}
+			activeSlidePrefetchIdsRef.current.clear();
+			activeSlidePrefetchIdsRef.current.add(preservePrefetchId);
+		} else {
+			if (queuedPrefetch) queuedPrefetch.cancelled = true;
+			queuedSlidePrefetchRef.current = null;
+			activeSlidePrefetchIdsRef.current.clear();
+		}
 		// Reveal the canonical response immediately on interruption and invalidate
 		// late playback callbacks from the superseded turn.
 		commitStrandedCanonical(); // #513
@@ -1156,7 +1399,7 @@ export function ChatArea({
 		localVoiceSchedulerRef.current?.interrupt();
 		// Drop pending requests, cancel in-flight TTS fetch/WS, and stop any
 		// live browser utterance — all pipeline-owned lifecycle (#363, Phase 3).
-		sentencePipelineRef.current?.interrupt();
+		sentencePipelineRef.current?.interrupt({ preservePrefetchId });
 		// cascade 토킹 아바타 활성 시 발화 스트림도 중단(barge-in) — 오버레이 즉시 종료.
 		useCascadeAvatarStore.getState().renderer?.interrupt();
 		ttsPlayingRef.current = false;
@@ -1182,7 +1425,8 @@ export function ChatArea({
 
 	function beginCascadeTtsJob(): () => void {
 		const generation = ttsTextSyncRef.current.generation;
-		if (activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
+		if (activeSlidePresenterSpeechRef.current?.appId)
+			activeSlidePresenterSpeechRef.current.started = true;
 		let ended = false;
 		cascadeTtsJobsRef.current++;
 		ttsPlayingRef.current = true;
@@ -1196,7 +1440,6 @@ export function ChatArea({
 				ttsPlayingRef.current = false;
 				setTtsPlaying(false);
 				settleAvatarEmotionIfIdle();
-				settleSlidePresenterSpeech("finished");
 			}
 		};
 	}
@@ -1228,13 +1471,17 @@ export function ChatArea({
 	 * store immediately — the same rule as an ordinary answer (#571) — and only
 	 * the voice progress indicator waits for playback.
 	 */
-	function beginProactiveTtsTextSync(text: string): number {
+	function beginProactiveTtsTextSync(
+		text: string,
+		recordTranscript = true,
+	): number {
 		beginTtsTextSync();
 		const sync = ttsTextSyncRef.current;
 		sync.canonical = text;
 		sync.llmFinished = true;
 		setOutputStage("tts");
-		useChatStore.getState().addMessage({ role: "assistant", content: text });
+		if (recordTranscript)
+			useChatStore.getState().addMessage({ role: "assistant", content: text });
 		return sync.generation;
 	}
 
@@ -1379,7 +1626,8 @@ export function ChatArea({
 			audioQueueRef.current = new AudioQueue({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
 				onPlaybackStart: () => {
-					if (activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
+					if (activeSlidePresenterSpeechRef.current?.appId)
+						activeSlidePresenterSpeechRef.current.started = true;
 					useAvatarStore.getState().setSpeaking(true);
 					ttsPlayingRef.current = true;
 					setTtsPlaying(true);
@@ -1391,29 +1639,131 @@ export function ChatArea({
 					setTtsPlaying(false);
 					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 					settleAvatarEmotionIfIdle();
-					settleSlidePresenterSpeech("finished");
 				},
 			});
 		}
+		const resolvedNaiaKey =
+			config.naiaKey ||
+			(isWebMode() && typeof localStorage !== "undefined"
+				? localStorage.getItem("naia-remote-key")?.trim() || undefined
+				: undefined);
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
+		const effectiveTtsProvider = resolveEffectiveTtsProvider(
+			config,
+			resolvedNaiaKey,
+		);
 		pipelineVoiceConfigRef.current = {
-			voice: resolveTtsVoiceId(config),
-			ttsProvider: config.ttsProvider || "edge",
+			voice: resolveTtsVoiceId({
+				...config,
+				ttsProvider: effectiveTtsProvider,
+			}),
+			ttsProvider: effectiveTtsProvider,
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
-			naiaKey: config.naiaKey,
+			naiaKey: resolvedNaiaKey,
 			gatewayUrl: LAB_GATEWAY_URL,
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 			vllmTtsHost: config.vllmTtsHost,
 		};
 	}
 
+	// Warm canonical speech assets (speech/atlas.bin, etc.) immediately when the avatar renderer is ready.
+	useEffect(() => {
+		let speechWarmed = false;
+		const runWarmSpeechAssets = (
+			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
+		): boolean => {
+			if (speechWarmed || !renderer?.warmSpeechAssets) return false;
+			speechWarmed = true;
+			void renderer.warmSpeechAssets();
+			return true;
+		};
+		if (runWarmSpeechAssets(useCascadeAvatarStore.getState().renderer)) {
+			return;
+		}
+		const unsubWarmRenderer = useCascadeAvatarStore.subscribe((state) => {
+			if (runWarmSpeechAssets(state.renderer)) {
+				unsubWarmRenderer();
+			}
+		});
+		return () => {
+			unsubWarmRenderer();
+		};
+	}, []);
+
+	// The entry gesture authorizes this greeting. Consume synchronously before
+	// any await so StrictMode cannot speak twice; use the shared TTS/avatar lane.
+	useEffect(() => {
+		if (!isKioskDemo() || !consumeKioskGreeting()) return;
+		recordKioskVisitActivity();
+		const config = loadConfig();
+		if (!config) return;
+		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
+		if (
+			!useChatStore
+				.getState()
+				.messages.some(
+					(m) => m.role === "assistant" && m.content === KIOSK_DEMO_GREETING,
+				)
+		) {
+			useChatStore
+				.getState()
+				.addMessage({ role: "assistant", content: KIOSK_DEMO_GREETING });
+		}
+		initializeSpeechTts(config);
+		let greetingMotionTriggered = false;
+		const tryTriggerGreetingMotion = (
+			renderer: ReturnType<typeof useCascadeAvatarStore.getState>["renderer"],
+		): boolean => {
+			if (greetingMotionTriggered || !renderer) return false;
+			greetingMotionTriggered = true;
+			void renderer.warmSpeechAssets?.();
+			const withGreeting = renderer as typeof renderer & {
+				playGreetingAction?: () => Promise<string | null>;
+			};
+			if (typeof withGreeting.playGreetingAction === "function") {
+				void withGreeting.playGreetingAction();
+			} else {
+				void getCameraActions().playAction("greeting");
+			}
+			return true;
+		};
+		let unsubRenderer: (() => void) | null = null;
+		let rendererWaitTimer: ReturnType<typeof setTimeout> | null = null;
+		if (!tryTriggerGreetingMotion(useCascadeAvatarStore.getState().renderer)) {
+			unsubRenderer = useCascadeAvatarStore.subscribe((state) => {
+				if (tryTriggerGreetingMotion(state.renderer)) {
+					unsubRenderer?.();
+					unsubRenderer = null;
+					if (rendererWaitTimer) clearTimeout(rendererWaitTimer);
+				}
+			});
+			rendererWaitTimer = setTimeout(() => {
+				unsubRenderer?.();
+				unsubRenderer = null;
+			}, 4000);
+		}
+		sentencePipelineRef.current?.sendSentence(KIOSK_DEMO_GREETING, {
+			skipSpeechPlan: true,
+		});
+		finishLocalVoicePrebuffer();
+		return () => {
+			if (sentencePipelineRef.current?.hasActiveRequests()) {
+				requestKioskGreeting();
+			}
+			unsubRenderer?.();
+			if (rendererWaitTimer) clearTimeout(rendererWaitTimer);
+		};
+	}, []);
+
 	// Slides requests narration but never synthesizes or plays audio itself.
 	// This bridge is the only presentation entry into the Shell TTS pipeline.
 	useEffect(() => {
 		let disposed = false;
 		const handleSpeak = (event: Event) => {
-			const detail = (event as CustomEvent<SlidePresenterSpeechRequest & { appId?: string }>).detail;
+			const detail = (
+				event as CustomEvent<SlidePresenterSpeechRequest & { appId?: string }>
+			).detail;
 			if (
 				!detail?.requestId ||
 				!Number.isSafeInteger(detail.generation) ||
@@ -1422,8 +1772,27 @@ export function ChatArea({
 			) {
 				return;
 			}
-			interruptTts();
+			if (!detail.appId && invalidSlideSpeechGenerationsRef.current.has(detail.generation)) {
+				Logger.debug("ChatArea", "ignored stale slide narration generation", {
+					generation: detail.generation,
+					page: detail.page,
+				});
+				return;
+			}
+			interruptTts(detail.prefetchId);
 			activeSlidePresenterSpeechRef.current = detail;
+			if (detail.prefetchId)
+				activeSlidePrefetchIdsRef.current.add(detail.prefetchId);
+			queuedSlidePrefetchRef.current = detail.nextPrefetch
+				? {
+						sourceRequestId: detail.requestId,
+						...detail.nextPrefetch,
+						started: false,
+						cancelled: false,
+					}
+				: null;
+			if (detail.nextPrefetch)
+				activeSlidePrefetchIdsRef.current.add(detail.nextPrefetch.id);
 			void (async () => {
 				for (
 					let attempt = 0;
@@ -1447,7 +1816,11 @@ export function ChatArea({
 					return;
 				}
 				const config = await loadConfigWithSecrets();
-				if (activeSlidePresenterSpeechRef.current !== detail) return;
+				if (
+					disposed ||
+					activeSlidePresenterSpeechRef.current?.requestId !== detail.requestId
+				)
+					return;
 				if (!config || config.ttsEnabled !== true) {
 					settleSlidePresenterSpeech("failed", "tts_disabled");
 					return;
@@ -1458,8 +1831,44 @@ export function ChatArea({
 				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼
 				// 조각으로 나눠 순서대로 넣으면 첫 조각부터 재생된다. 조각 단위는
 				// VITE_NAIA_SLIDES_TTS_CHUNK = word | phrase | sentence (기본 sentence).
-				for (const piece of splitSlideNarration(detail.text.trim())) {
-					sendSentenceToTts(piece);
+				const pieces = splitSlideNarration(detail.text.trim());
+				slideSpeechProgressRef.current = {
+					requestId: detail.requestId,
+					total: pieces.length,
+					settled: new Set(),
+				};
+				if (pieces.length === 0) {
+					settleSlidePresenterSpeech("finished");
+					return;
+				}
+				const prepareNextPageSpeechStage = () => {
+					const pending = queuedSlidePrefetchRef.current;
+					if (
+						!pending ||
+						pending.cancelled ||
+						!pending.started ||
+						activeSlidePresenterSpeechRef.current?.requestId !==
+							pending.sourceRequestId
+					)
+						return;
+					void sentencePipelineRef.current?.preparePrefetchedSpeechTiming(
+						`${pending.id}/0`,
+					);
+				};
+				for (let index = 0; index < pieces.length; index++) {
+					const lastSentencePlaybackStarted =
+						index === pieces.length - 1
+							? prepareNextPageSpeechStage
+							: undefined;
+					sendSentenceToTts(
+						pieces[index],
+						detail.prefetchId ? `${detail.prefetchId}/${index}` : undefined,
+						{
+							onSentenceSettled: (outcome) =>
+								settleSlideNarrationSentence(detail.requestId, index, outcome),
+							onPlaybackStarted: lastSentencePlaybackStarted,
+						},
+					);
 				}
 				finishLocalVoicePrebuffer();
 				Logger.info("ChatArea", "slide narration entered TTS pipeline", {
@@ -1471,16 +1880,54 @@ export function ChatArea({
 				if (
 					activeSlidePresenterSpeechRef.current?.requestId === detail.requestId
 				) {
-					settleSlidePresenterSpeech("failed", String(error));
+					Logger.warn("ChatArea", "App narration failed", {
+						error: String(error),
+					});
+					settleSlidePresenterSpeech("failed", t("apps.speechFailed"));
 				}
 			});
 		};
 		const handleCancel = (event: Event) => {
 			const detail = (
-				event as CustomEvent<{ appId?: string; requestId?: string; generation?: number }>
+				event as CustomEvent<{
+					appId?: string;
+					requestId?: string;
+					generation?: number;
+					prefetchId?: string;
+					invalidateGeneration?: boolean;
+				}>
 			).detail;
+			const installed = event.type === INSTALLED_APP_CANCEL_EVENT;
+			if (installed && activeSlidePresenterSpeechRef.current?.appId !== detail?.appId) return;
+			if (!installed && activeSlidePresenterSpeechRef.current?.appId) return;
+			if (detail?.prefetchId) {
+				sentencePipelineRef.current?.cancelPrefetch(detail.prefetchId);
+				activeSlidePrefetchIdsRef.current.delete(detail.prefetchId);
+				const pending = queuedSlidePrefetchRef.current;
+				if (pending?.id === detail.prefetchId) {
+					pending.cancelled = true;
+					queuedSlidePrefetchRef.current = null;
+				}
+			}
+			if (
+				!installed && (detail?.invalidateGeneration === true ||
+				detail?.requestId)
+			) {
+				const invalidGeneration = detail.generation;
+				if (invalidGeneration != null) {
+					invalidSlideSpeechGenerationsRef.current.add(invalidGeneration);
+					while (invalidSlideSpeechGenerationsRef.current.size > 128) {
+						const oldest = invalidSlideSpeechGenerationsRef.current.values().next()
+							.value;
+						if (oldest === undefined) break;
+						invalidSlideSpeechGenerationsRef.current.delete(oldest);
+					}
+				}
+			}
 			const active = activeSlidePresenterSpeechRef.current;
 			if (!active || active.appId !== detail?.appId) return;
+			if (!installed && !detail?.requestId && detail?.invalidateGeneration !== true)
+				return;
 			if (detail?.requestId && detail.requestId !== active.requestId) return;
 			if (detail?.generation != null && detail.generation !== active.generation)
 				return;
@@ -1496,7 +1943,11 @@ export function ChatArea({
 			window.removeEventListener(INSTALLED_APP_SPEAK_EVENT, handleSpeak);
 			window.removeEventListener(INSTALLED_APP_CANCEL_EVENT, handleCancel);
 			window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
-			if (activeSlidePresenterSpeechRef.current) interruptTts();
+			if (
+				activeSlidePresenterSpeechRef.current ||
+				activeSlidePrefetchIdsRef.current.size > 0
+			)
+				interruptTts();
 		};
 	}, []);
 
@@ -1759,8 +2210,130 @@ export function ChatArea({
 		};
 	}, []);
 
+	const [kioskResetting, setKioskResetting] = useState(false);
+	const [kioskResetFailed, setKioskResetFailed] = useState(false);
+	const kioskResetPending = useRef(false);
+	const [kioskLocalAnswer, setKioskLocalAnswer] = useState(() =>
+		isKioskLocalAnswerEnabled(),
+	);
+	const [kioskLocalNotice, setKioskLocalNotice] = useState<string | null>(null);
+	const [kioskLocalConfirmOpen, setKioskLocalConfirmOpen] = useState(false);
+
+	async function handleKioskLocalAnswerToggle() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		if (kioskLocalAnswer) {
+			setKioskLocalConfirmOpen(false);
+			setKioskLocalAnswerEnabled(false);
+			setKioskLocalAnswer(false);
+			setKioskLocalNotice(null);
+			useChatStore.getState().setProvider(KIOSK_DEMO_LLM_PROVIDER);
+			const current = loadConfig();
+			if (current) {
+				saveConfig(applyKioskDemoMainModel(current));
+			}
+			getStartableAgentBridge().start({ model: null });
+			return;
+		}
+		const gpu = readNavigatorGpu();
+		const gpuResult = await checkWebGpu(gpu);
+		if (!gpuResult.ok) {
+			setKioskLocalConfirmOpen(false);
+			setKioskLocalAnswerEnabled(false);
+			setKioskLocalAnswer(false);
+			setKioskLocalNotice(
+				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
+			);
+			return;
+		}
+		setKioskLocalNotice(null);
+		setKioskLocalConfirmOpen(true);
+	}
+
+	async function handleConfirmKioskLocalAnswer() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		setKioskLocalConfirmOpen(false);
+		const gpu = readNavigatorGpu();
+		const gpuResult = await checkWebGpu(gpu);
+		if (!gpuResult.ok) {
+			setKioskLocalAnswerEnabled(false);
+			setKioskLocalAnswer(false);
+			setKioskLocalNotice(
+				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
+			);
+			return;
+		}
+		setKioskLocalNotice(null);
+		setKioskLocalAnswerEnabled(true);
+		setKioskLocalAnswer(true);
+		useChatStore.getState().setProvider("webllm");
+		const current = loadConfig();
+		if (current) {
+			saveConfig(
+				applyKioskDemoMainModel({
+					...current,
+					provider: "webllm",
+					model: WEB_LLM_MODEL_ID,
+					llmRoles: {
+						...current.llmRoles,
+						main: {
+							...(current.llmRoles?.main ?? {}),
+							provider: "webllm",
+							model: WEB_LLM_MODEL_ID,
+							thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+						},
+					},
+				}),
+			);
+		}
+		await startWebModel({
+			gpu,
+			storage: typeof localStorage !== "undefined" ? localStorage : null,
+			engineKind: import.meta.env.VITE_NAIA_WEB_LLM,
+			buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
+			bridge: getStartableAgentBridge(),
+		});
+	}
+
+	function handleCancelKioskLocalAnswer() {
+		setKioskLocalConfirmOpen(false);
+	}
+
+	function handleOpenKioskEvidenceFile(filePath: string) {
+		useAppStore.getState().setActiveApp("workspace");
+		openWebWorkspaceFile(filePath);
+	}
+
+	async function handleKioskReset() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		kioskResetPending.current = true;
+		setKioskResetting(true);
+		setKioskResetFailed(false);
+		Logger.debug("ChatArea", "kiosk reset requested");
+		try {
+			await resetKioskVisit({
+				cancel: handleCancelStreaming,
+				resetMemory: resetKioskMemory,
+				newConversation: () => useChatStore.getState().newConversation(),
+				reload: () => window.location.reload(),
+			});
+		} catch {
+			Logger.debug("ChatArea", "kiosk reset failed");
+			setKioskResetFailed(true);
+			kioskResetPending.current = false;
+			setKioskResetting(false);
+		}
+	}
+
+	useEffect(() => {
+		const start = () => {
+			void handleNewConversation();
+		};
+		window.addEventListener("naia-character-new-conversation", start);
+		return () =>
+			window.removeEventListener("naia-character-new-conversation", start);
+	}, []);
+
 	async function handleNewConversation() {
-		usage.record("chat.session.new", "chat");
 		const store = useChatStore.getState();
 		// Stop any TTS still reading the previous conversation.
 		interruptTts();
@@ -1769,6 +2342,64 @@ export function ChatArea({
 		// per app session — parity with the pipeline path's reset.
 		sentencePipelineRef.current?.rearmLocalVoiceNotice();
 		store.newConversation();
+		const greetingSession = useChatStore.getState().localSessionId;
+		setGreetingPreparing(true);
+		const greeting = useChatStore.getState().messages[0]?.content;
+		const generation = ttsTextSyncRef.current.generation;
+		// Use fresh secrets/voice after a card's linked theme has been persisted.
+		void loadConfigWithSecrets()
+			.then(async (config) => {
+				// A theme config update can precede the new renderer's React effect.
+				// Wait for that bundle rather than playing an old theme's authored clip.
+				if (
+					config?.ttsEnabled &&
+					config.avatarProvider === "naia-video-avatar" &&
+					config.uiPreferences?.b2cGreetingAutoplay !== false &&
+					greeting
+				) {
+					const until = Date.now() + 3000;
+					while (
+						useCascadeAvatarStore.getState().renderer?.modelId !==
+							config.nvaModel &&
+						Date.now() < until
+					) {
+						if (
+							ttsTextSyncRef.current.generation !== generation ||
+							useCascadeAvatarStore.getState().nvaLoadError
+						)
+							break;
+						await new Promise((resolve) => setTimeout(resolve, 25));
+					}
+				}
+				if (
+					!config ||
+					config.ttsEnabled !== true ||
+					config.uiPreferences?.b2cGreetingAutoplay === false ||
+					loadConfig()?.uiPreferences?.b2cGreetingAutoplay === false ||
+					loadConfig()?.nvaModel !== config.nvaModel ||
+					!greeting ||
+					useChatStore.getState().localSessionId !== greetingSession ||
+					ttsTextSyncRef.current.generation !== generation ||
+					useChatStore.getState().messages.length !== 1
+				)
+					return;
+				initializeSpeechTts(config);
+				beginProactiveTtsTextSync(greeting, false);
+				// Preserve an exact authored utterance as a single canonical A/V clip.
+				const renderer = useCascadeAvatarStore.getState().renderer;
+				const pieces =
+					(!renderer?.modelId || renderer.modelId === config.nvaModel) &&
+					renderer?.hasAuthoredClip?.(greeting)
+						? [greeting]
+						: splitSlideNarration(greeting);
+				for (const piece of pieces) sendSentenceToTts(piece);
+				finishLocalVoicePrebuffer();
+			})
+			.catch(() => Logger.warn("ChatArea", "card greeting voice unavailable"))
+			.finally(() => {
+				if (useChatStore.getState().localSessionId === greetingSession)
+					setGreetingPreparing(false);
+			});
 
 		// Reset Gateway session and set local session ID
 		try {
@@ -1782,19 +2413,119 @@ export function ChatArea({
 		}
 	}
 
-	const usageUserTurn = useRef<string | null>(null);
-	async function handleSend(overrideText?: string, installedAppTurn = false) {
+	async function handleKioskTurnFailure(
+		retryText: string,
+		installedAppTurn: boolean,
+	): Promise<void> {
+		if (typeof verifyKioskDemoWebAuth === "function") {
+			try {
+				const v = await verifyKioskDemoWebAuth();
+				if (!v.ok && v.reason === "unavailable") {
+					notifyKioskDemoUnavailable();
+					return;
+				}
+			} catch {
+				// Balance lookup failed -> do not pause; proceed to 1x retry / chat error message
+			}
+		}
+		if (!kioskAutoRetriedRef.current && retryText) {
+			kioskAutoRetriedRef.current = true;
+			await handleSend(retryText, installedAppTurn, true);
+			return;
+		}
+		kioskAutoRetriedRef.current = false;
+		useChatStore.getState().addMessage({
+			role: "assistant",
+			content: "잠시 문제가 있어요, 다시 말해 주세요.",
+		});
+	}
+
+	async function handleWebBgmChatTurn(rawText: string): Promise<boolean> {
+		if (import.meta.env.MODE !== "web") return false;
+		const bgmArgs = classifyWebBgmIntent(rawText);
+		if (!bgmArgs) return false;
+		const store = useChatStore.getState();
+		store.addMessage({ role: "user", content: rawText });
+		const toolCallId = `bgm-${Date.now()}`;
+		store.startStreaming();
+		store.addStreamingToolUse(toolCallId, SKILL_YOUTUBE_BGM.name, bgmArgs);
+		let output: string;
+		let ok = true;
+		try {
+			output = await executeBgmSkill(bgmArgs);
+			ok = !output.startsWith("Error:");
+		} catch (err) {
+			output = `Error: ${String(err)}`;
+			ok = false;
+		}
+		useChatStore.getState().updateStreamingToolResult(toolCallId, ok, output);
+		const action = String(bgmArgs.action ?? "play");
+		const trackTitle =
+			bgmPlayback.current()?.selected.title || "YouTube BGM";
+		const replyText = !ok
+			? "유튜브 재생 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요."
+			: action === "stop" || action === "pause"
+				? "유튜브 재생을 멈췄어요."
+				: action === "resume"
+					? `유튜브 '${trackTitle}' 재생을 다시 시작했어요.`
+					: action === "next" || action === "prev"
+						? `유튜브 '${trackTitle}' 곡으로 바꿨어요.`
+						: `유튜브에서 '${trackTitle}' 재생을 시작했어요. 상단 재생 카드에서 곡 목록을 열거나 멈출 수 있어요.`;
+		useChatStore.getState().appendStreamChunk(replyText);
+		useChatStore.getState().finishStreaming();
+		return true;
+	}
+
+	async function handleSend(
+		overrideText?: string,
+		installedAppTurn = false,
+		isKioskAutoRetry = false,
+	) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (
+			import.meta.env.MODE === "web" &&
+			isWebSendBlocked(
+				getWebModelStatus(),
+				getWebAdkStatus(),
+				loadConfig()?.provider,
+			)
+		)
+			return;
+		if (useChatStore.getState().characterTransitionPending) {
+			Logger.debug("ChatArea", "retain input while card commit is pending");
+			if (installedAppTurn) {
+				installedAppTurnRef.current = true;
+				settleInstalledAppReply("", t("apps.requestBusy"));
+			}
+			return;
+		}
+		const sendSession = useChatStore.getState().localSessionId;
 		if (installedAppTurn && installedAppVoiceBlockedRef.current) {
 			installedAppTurnRef.current = true;
 			settleInstalledAppReply("", t("apps.voiceModeBlocked"));
 			return;
 		}
-		usage.record("chat.message.send", "text");
-		usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null;
 		pendingAiGestureActionRef.current = null;
-		if (!installedAppTurn && await handleSpeechProfilePhrase(text)) return;
+		if (!installedAppTurn && (await handleSpeechProfilePhrase(text))) return;
+		if (
+			!installedAppTurn &&
+			isKioskDemo() &&
+			(await handleKioskSlidesChatTurn(text))
+		) {
+			setInput("");
+			return;
+		}
+		if (!installedAppTurn && (await handleWebBgmChatTurn(text))) {
+			setInput("");
+			return;
+		}
+		// A card can commit while command classification yields to the event loop.
+		if (
+			useChatStore.getState().characterTransitionPending ||
+			useChatStore.getState().localSessionId !== sendSession
+		)
+			return;
 		if (isRadioDjLabObserverAttached()) {
 			const activeConfig = loadConfig();
 			if (
@@ -1820,7 +2551,7 @@ export function ChatArea({
 		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
 			if (installedAppTurn) {
 				installedAppTurnRef.current = true;
-				settleInstalledAppReply("", "Naia is busy with another reply. Please retry.");
+				settleInstalledAppReply("", t("apps.requestBusy"));
 				return;
 			}
 			useChatStore.getState().enqueueMessage(text);
@@ -1873,11 +2604,19 @@ export function ChatArea({
 		// #572 — 실패했을 때 "같은 입력을 다시" 를 제안하려면 그 입력을 알아야 한다.
 		lastSentTextRef.current = text;
 
-		setInput("");
-		const appName = installedAppTurn && installedAppRequestRef.current
-			? appRegistry.get(installedAppRequestRef.current.appId)?.name || installedAppRequestRef.current.appId
-			: undefined;
-		useChatStore.getState().addMessage({ role: "user", content: text, appName });
+		const appName =
+			installedAppTurn && installedAppRequestRef.current
+				? appRegistry.get(installedAppRequestRef.current.appId)?.name ||
+					installedAppRequestRef.current.appId
+				: undefined;
+		if (!isKioskAutoRetry) {
+			kioskAutoRetriedRef.current = false;
+			setKioskLocalNotice(null);
+			setInput("");
+			useChatStore
+				.getState()
+				.addMessage({ role: "user", content: text, appName });
+		}
 
 		useChatStore.getState().startStreaming(appName);
 		// New turn supersedes any in-flight TTS: stop the previous response's
@@ -1888,7 +2627,8 @@ export function ChatArea({
 
 		const store = useChatStore.getState();
 
-		const config = await loadConfigWithSecrets();
+		const rawConfig = await loadConfigWithSecrets();
+		const config = rawConfig ? applyKioskDemoMainModel(rawConfig) : null;
 		// Structured llmRoles.main is the source of truth. The flat provider/model
 		// fields remain a compatibility mirror and may be stale or absent after an
 		// ADK seed, so route the turn from the same effective role as Settings.
@@ -1897,7 +2637,10 @@ export function ChatArea({
 		const configuredModel = mainRole.model ?? config?.model;
 		// FR-LLM-LOGOUT.2: 제공자가 없으면 보내지 않고 세 갈래 안내를 답변 자리에 보인다.
 		// 채팅 저장소의 기본 제공자로 대신 보내면 지원하지 않는 곳으로 나갈 수 있다.
-		if (config && (!configuredProvider || (installedAppTurn && !configuredModel))) {
+		if (
+			config &&
+			(!configuredProvider || (installedAppTurn && !configuredModel))
+		) {
 			settleInstalledAppReply("", t("chat.noLlm"));
 			useChatStore.getState().appendStreamChunk(t("chat.noLlm"));
 			useChatStore.getState().finishStreaming();
@@ -1905,13 +2648,14 @@ export function ChatArea({
 			return;
 		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
-		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
+		if (
+			!isNewCore() &&
+			!isKioskDemo() &&
+			configuredProvider === "nextain" &&
+			!config?.naiaKey
+		) {
 			settleInstalledAppReply("", t("apps.loginRequired"));
-			useChatStore
-				.getState()
-				.appendStreamChunk(
-					t("apps.loginRequired"),
-				);
+			useChatStore.getState().appendStreamChunk(t("apps.loginRequired"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
 			return;
@@ -1985,6 +2729,34 @@ export function ChatArea({
 
 		const memoryCtx = await buildMemoryContext();
 		memoryCtx.avatarGestures = getCameraActions().getGestureActions();
+		const kioskSlideTurnActive = isKioskSlideQuestionTurnActive();
+		const activeKioskSlide = getActiveKioskIrSlide();
+		if (activeKioskSlide) {
+			const slidePrompt = kioskSlideTurnActive
+				? buildKioskSlideQuestionPrompt(activeKioskSlide, text)
+				: buildKioskSlideReferencePrompt(activeKioskSlide, text);
+			memoryCtx.appContexts = [
+				...(memoryCtx.appContexts ?? []),
+				{
+					type: "Active IR Slide Context",
+					data: {
+						page: activeKioskSlide.page,
+						title: activeKioskSlide.title,
+						subtitle: activeKioskSlide.subtitle,
+						source: activeKioskSlide.source,
+						bullets: activeKioskSlide.bullets,
+						script: activeKioskSlide.script,
+						restrictToSlide: kioskSlideTurnActive,
+						instructions: slidePrompt,
+					},
+				},
+			];
+			if (kioskSlideTurnActive) {
+				useChatStore
+					.getState()
+					.setStreamingEvidenceFiles([`knowledge/${activeKioskSlide.source}`]);
+			}
+		}
 		Logger.info("ChatArea", "handleSend → sendChatMessage", {
 			pipelineActive: pipelineActiveRef.current,
 			chatTtsEnabled,
@@ -2040,7 +2812,7 @@ export function ChatArea({
 				ready: bgmSkillReady,
 				requestId,
 			});
-			if (!bgmSkillReady) {
+			if (!bgmSkillReady && import.meta.env.MODE !== "web") {
 				throw new Error("skill_youtube_bgm_registration_failed");
 			}
 			// #502 (FR-ENV-ATTENTION.5): 싣기 직전에 관측을 갱신한다.
@@ -2112,6 +2884,7 @@ export function ChatArea({
 				}
 			}
 			await sendChatMessage({
+				...(appName !== undefined ? { appName } : {}),
 				message: text,
 				provider: {
 					provider: activeProvider,
@@ -2156,7 +2929,7 @@ export function ChatArea({
 				),
 				enableTools:
 					config.enableTools === true
-						? boundary!.toolsAllowed
+						? boundary!.toolsAllowed || isKioskDemo()
 						: config.enableTools,
 				enableThinking: resolveThinkingLevel(config) !== "off",
 				thinking: { level: resolveThinkingLevel(config) },
@@ -2169,6 +2942,15 @@ export function ChatArea({
 									...boundary!.disabledSkills,
 									...((config.disabledGestures ?? []).includes("youtube")
 										? ["skill_youtube_bgm"]
+										: []),
+									...(kioskSlideTurnActive
+										? [
+												"skill_knowledge_search",
+												"skill_knowledge_ask",
+												"read_file",
+												"list_dir",
+												"search_files",
+											]
 										: []),
 								]),
 							]
@@ -2186,7 +2968,14 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
-			settleInstalledAppReply("", errStr);
+			settleInstalledAppReply("", t("apps.requestFailed"));
+			if (isKioskDemo()) {
+				finishStreamingWithVoiceTail();
+				finishLocalVoicePrebuffer();
+				completeCurrentRequest(requestId);
+				await handleKioskTurnFailure(text, installedAppTurn);
+				return;
+			}
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
@@ -2201,7 +2990,9 @@ export function ChatArea({
 					? t(admissionKey)
 					: errStr.includes("ollama_context_policy_unavailable")
 						? t("settings.ollamaContextPolicyUnavailable")
-						: errStr;
+						: installedAppTurn
+							? t("apps.requestFailed")
+							: errStr;
 				useChatStore.getState().appendStreamChunk(`
 [${t("chat.error")}] ${message}`);
 				finishStreamingWithVoiceTail();
@@ -2217,59 +3008,117 @@ export function ChatArea({
 		const { appId, requestId } = request;
 		installedAppRequestRef.current = null;
 		installedAppTurnRef.current = false;
-		Logger.debug("ChatArea", "Installed app request settled", { requestId, error: !!error });
-		window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
-			detail: { appId, requestId, text, ...(error ? { error } : {}) },
-		}));
+		Logger.debug("ChatArea", "Installed app request settled", {
+			requestId,
+			error: !!error,
+		});
+		window.dispatchEvent(
+			new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
+				detail: { appId, requestId, text, ...(error ? { error } : {}) },
+			}),
+		);
 	}
 
 	installedAppSendRef.current = (prompt) => handleSend(prompt, true);
 	useEffect(() => {
 		const onAbort = (event: Event) => {
-			const detail = (event as CustomEvent<{ appId: string; requestId: string }>).detail;
-			if (detail?.appId !== installedAppRequestRef.current?.appId || detail?.requestId !== installedAppRequestRef.current?.requestId) return;
-			if (installedAppTurnRef.current && currentRequestId.current) handleCancelStreaming();
+			const detail = (
+				event as CustomEvent<{ appId: string; requestId: string }>
+			).detail;
+			if (
+				detail?.appId !== installedAppRequestRef.current?.appId ||
+				detail?.requestId !== installedAppRequestRef.current?.requestId
+			)
+				return;
+			if (installedAppTurnRef.current && currentRequestId.current)
+				handleCancelStreaming();
 			installedAppRequestRef.current = null;
 			installedAppTurnRef.current = false;
 		};
 		const onRequest = (event: Event) => {
-			const detail = (event as CustomEvent<{ appId?: string; requestId?: string; prompt?: string }>).detail;
-			if (!detail || typeof detail.appId !== "string" || typeof detail.requestId !== "string" ||
-				typeof detail.prompt !== "string" || !detail.prompt.trim() || detail.prompt.length > 9_000) return;
-			const respondError = (error: string) => window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
-				detail: { appId: detail.appId, requestId: detail.requestId, text: "", error },
-			}));
-			Logger.debug("ChatArea", "Installed app request received", { requestId: detail.requestId });
+			const detail = (
+				event as CustomEvent<{
+					appId?: string;
+					requestId?: string;
+					prompt?: string;
+				}>
+			).detail;
+			if (
+				!detail ||
+				typeof detail.appId !== "string" ||
+				typeof detail.requestId !== "string" ||
+				typeof detail.prompt !== "string" ||
+				!detail.prompt.trim() ||
+				detail.prompt.length > 9_000
+			)
+				return;
+			const respondError = (error: string) =>
+				window.dispatchEvent(
+					new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
+						detail: {
+							appId: detail.appId,
+							requestId: detail.requestId,
+							text: "",
+							error,
+						},
+					}),
+				);
+			Logger.debug("ChatArea", "Installed app request received", {
+				requestId: detail.requestId,
+			});
 			if (installedAppVoiceBlockedRef.current) {
 				respondError(t("apps.voiceModeBlocked"));
 				return;
 			}
 			if (installedAppRequestRef.current) {
-				respondError("Naia is busy with another reply. Please retry.");
+				respondError(t("apps.requestBusy"));
 				return;
 			}
-			installedAppRequestRef.current = { appId: detail.appId, requestId: detail.requestId };
+			installedAppRequestRef.current = {
+				appId: detail.appId,
+				requestId: detail.requestId,
+			};
 			setActiveTab("chat");
 			void (async () => {
 				let ready = false;
 				try {
-					ready = await sendAppSkills(detail.appId!, appRegistry.get(detail.appId!)?.tools ?? [], { awaitAck: true });
+					ready = await sendAppSkills(
+						detail.appId!,
+						appRegistry.get(detail.appId!)?.tools ?? [],
+						{ awaitAck: true },
+					);
 				} catch (error) {
-					Logger.warn("ChatArea", "Installed app tools registration failed", { error: String(error) });
+					Logger.warn("ChatArea", "Installed app tools registration failed", {
+						error: String(error),
+					});
 				}
-				if (installedAppRequestRef.current?.appId !== detail.appId || installedAppRequestRef.current?.requestId !== detail.requestId) return;
-				if (!ready || !installedAppSendRef.current || installedAppVoiceBlockedRef.current) {
+				if (
+					installedAppRequestRef.current?.appId !== detail.appId ||
+					installedAppRequestRef.current?.requestId !== detail.requestId
+				)
+					return;
+				if (
+					!ready ||
+					!installedAppSendRef.current ||
+					installedAppVoiceBlockedRef.current
+				) {
 					installedAppTurnRef.current = true;
-					settleInstalledAppReply("", installedAppVoiceBlockedRef.current
-						? t("apps.voiceModeBlocked")
-						: ready ? "Naia chat is unavailable." : "Naia could not register the app tools. Please retry.");
+					settleInstalledAppReply(
+						"",
+						installedAppVoiceBlockedRef.current
+							? t("apps.voiceModeBlocked")
+							: t("apps.requestUnavailable"),
+					);
 					return;
 				}
 				try {
 					await installedAppSendRef.current(detail.prompt!);
 				} catch (error) {
 					installedAppTurnRef.current = true;
-					settleInstalledAppReply("", String(error));
+					Logger.warn("ChatArea", "Installed app request failed", {
+						error: String(error),
+					});
+					settleInstalledAppReply("", t("apps.requestFailed"));
 				}
 			})();
 		};
@@ -2459,13 +3308,32 @@ export function ChatArea({
 		// App tools use the same answer stream as model tool rounds. Preserve a
 		// boundary even for tools that do not expose a streaming tool-call row.
 		useChatStore.getState().markStreamingToolBoundary();
-		if (!isModelFacingToolAllowed(req.toolName)) {
-			const unavailableStoreApp = appRegistry.list().find(
-				(app) =>
-					app.source === "installed" &&
-					(app.tools?.some((tool) => tool.name === req.toolName) ||
-						app.revokedStoreToolNames?.includes(req.toolName)),
+		if (
+			isWebMode() &&
+			(req.toolName.startsWith("skill_browser_") ||
+				isBrowserHostTool(req.toolName))
+		) {
+			Logger.warn("ChatArea", "blocked browser tool in web mode", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available in web mode: ${req.toolName}`,
+				false,
+				req.activityId,
 			);
+			return;
+		}
+		if (!isModelFacingToolAllowed(req.toolName)) {
+			const unavailableStoreApp = appRegistry
+				.list()
+				.find(
+					(app) =>
+						app.source === "installed" &&
+						(app.tools?.some((tool) => tool.name === req.toolName) ||
+							app.revokedStoreToolNames?.includes(req.toolName)),
+				);
 			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
 				tool: req.toolName,
 			});
@@ -2480,19 +3348,27 @@ export function ChatArea({
 			);
 			return;
 		}
-		const signedStoreOwner = appRegistry.list().find(
-			(app) =>
-				app.source === "installed" &&
-				app.storeSignatureVerified === true &&
-				app.tools?.some((tool) => tool.name === req.toolName),
-		);
+		const signedStoreOwner = appRegistry
+			.list()
+			.find(
+				(app) =>
+					app.source === "installed" &&
+					app.storeSignatureVerified === true &&
+					app.tools?.some((tool) => tool.name === req.toolName),
+			);
 		if (signedStoreOwner) {
-			const { ensureStoreAppVerificationFresh } = await import("../lib/app-loader");
+			const { ensureStoreAppVerificationFresh } = await import(
+				"../lib/app-loader"
+			);
 			if (!(await ensureStoreAppVerificationFresh(signedStoreOwner.id))) {
-				Logger.warn("ChatArea", "blocked Store app tool after Rust verification", {
-					appId: signedStoreOwner.id,
-					tool: req.toolName,
-				});
+				Logger.warn(
+					"ChatArea",
+					"blocked Store app tool after Rust verification",
+					{
+						appId: signedStoreOwner.id,
+						tool: req.toolName,
+					},
+				);
 				void sendAppToolResult(
 					req.requestId,
 					req.toolCallId,
@@ -2555,6 +3431,11 @@ export function ChatArea({
 			// Activity-owned playback (for example Radio DJ change_vibe) replaces
 			// the current track immediately unless preserveActive is set (autonomous
 			// DJ startup while a user-chosen song is already playing).
+			if (!req.activityId) {
+				useChatStore
+					.getState()
+					.addStreamingToolUse(req.toolCallId, req.toolName, req.args ?? {});
+			}
 			const radioDjRequested = shouldActivateRadioDj(req.args);
 			Promise.resolve()
 				.then(() => (radioDjRequested ? activateRadioDjFromSkill() : undefined))
@@ -2567,6 +3448,15 @@ export function ChatArea({
 				)
 				.then((result) => {
 					Logger.info("ChatArea", "bgm skill result", { result });
+					if (!req.activityId) {
+						useChatStore
+							.getState()
+							.updateStreamingToolResult(
+								req.toolCallId,
+								!result.startsWith("Error:"),
+								result,
+							);
+					}
 					return sendAppToolResult(
 						req.requestId,
 						req.toolCallId,
@@ -2577,6 +3467,11 @@ export function ChatArea({
 				})
 				.catch((err) => {
 					Logger.warn("ChatArea", "bgm skill error", { error: String(err) });
+					if (!req.activityId) {
+						useChatStore
+							.getState()
+							.updateStreamingToolResult(req.toolCallId, false, String(err));
+					}
 					return sendAppToolResult(
 						req.requestId,
 						req.toolCallId,
@@ -2593,15 +3488,17 @@ export function ChatArea({
 		const isShellModelTool = MODEL_FACING_TOOL_KEEP_LIST.some(
 			(name) => name === req.toolName,
 		);
-		const ownerApp = appRegistry.list().find(
-			(p) =>
-				p.tools?.some((t) => t.name === req.toolName) &&
-				(isLegacyAppTool
-					? p.storeSignatureVerified === true
-					: isShellModelTool
-						? p.source !== "installed"
-						: p.storeSignatureVerified === true),
-		);
+		const ownerApp = appRegistry
+			.list()
+			.find(
+				(p) =>
+					p.tools?.some((t) => t.name === req.toolName) &&
+					(isLegacyAppTool
+						? p.storeSignatureVerified === true
+						: isShellModelTool
+							? p.source !== "installed"
+							: p.storeSignatureVerified === true),
+			);
 		// Tool-level auto app switch (user request): if the tool belongs to a
 		// app that isn't currently active, bring it forward before running.
 		if (ownerApp && useAppStore.getState().activeApp !== ownerApp.id) {
@@ -2612,15 +3509,27 @@ export function ChatArea({
 			});
 		}
 		const bridge = ownerApp ? getBridgeForApp(ownerApp.id) : activeBridge;
-		const declaredTool = ownerApp?.tools?.find((tool) => tool.name === req.toolName);
+		const declaredTool = ownerApp?.tools?.find(
+			(tool) => tool.name === req.toolName,
+		);
 		const parameterError = validateAppToolParameters(declaredTool, req.args);
 		if (parameterError) {
-			Logger.warn("ChatArea", "blocked app tool with invalid declared parameters", {
-				appId: ownerApp?.id,
-				tool: req.toolName,
-				error: parameterError,
-			});
-			void sendAppToolResult(req.requestId, req.toolCallId, parameterError, false, req.activityId);
+			Logger.warn(
+				"ChatArea",
+				"blocked app tool with invalid declared parameters",
+				{
+					appId: ownerApp?.id,
+					tool: req.toolName,
+					error: parameterError,
+				},
+			);
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				parameterError,
+				false,
+				req.activityId,
+			);
 			return;
 		}
 		Logger.info("ChatArea", "app_tool_call dispatch", {
@@ -2658,6 +3567,9 @@ export function ChatArea({
 	}
 
 	function dispatchAppControl(req: { action: string; appId?: string }) {
+		if (isWebMode() && req.action === "switch" && req.appId === "browser") {
+			return;
+		}
 		const { setActiveApp } = useAppStore.getState();
 		if (req.action === "switch" && req.appId) {
 			setActiveApp(req.appId);
@@ -2671,7 +3583,6 @@ export function ChatArea({
 	function appendCleanVisibleResponseText(cleanText: string): void {
 		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
-		if (usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "text"); usageUserTurn.current = null; }
 		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
 			ttsTextSyncRef.current.canonical += visible;
@@ -2909,6 +3820,7 @@ export function ChatArea({
 				break;
 			}
 			case "finish":
+				kioskAutoRetriedRef.current = false;
 				flushThinkingStream();
 				flushGestureTriggerStream();
 				settleInstalledAppReply(useChatStore.getState().streamingContent);
@@ -2986,7 +3898,10 @@ export function ChatArea({
 			case "processing_disclosure":
 				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
 				break;
-			case "error":
+			case "error": {
+				const failureDetail = installedAppTurnRef.current
+					? t("apps.requestFailed")
+					: wireErrorMessage(chunk.code, chunk.message);
 				Logger.warn("ChatArea", "Agent error chunk", {
 					message: chunk.message,
 				});
@@ -3003,7 +3918,7 @@ export function ChatArea({
 				}
 				flushThinkingStream();
 				flushGestureTriggerStream();
-				settleInstalledAppReply("", wireErrorMessage(chunk.code, chunk.message));
+				settleInstalledAppReply("", t("apps.requestFailed"));
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
@@ -3019,17 +3934,27 @@ export function ChatArea({
 				// #572 — 원시 오류를 답변 자리에 흘리지 않는다. 지금까지 온 본문이
 				// 있으면 그대로 보존하고, 실패는 재시도를 낀 별도 알림으로 세운다.
 				finishStreamingWithVoiceTail();
+				if (isKioskDemo()) {
+					finishLocalVoicePrebuffer();
+					completeCurrentRequest(chunk.requestId);
+					void handleKioskTurnFailure(
+						lastSentTextRef.current,
+						installedAppTurnRef.current,
+					);
+					break;
+				}
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: "",
 					failure: {
-						detail: wireErrorMessage(chunk.code, chunk.message),
+						detail: failureDetail,
 						retryText: lastSentTextRef.current,
 					},
 				});
 				finishLocalVoicePrebuffer();
 				completeCurrentRequest(chunk.requestId);
 				break;
+			}
 		}
 	}
 
@@ -3048,6 +3973,9 @@ export function ChatArea({
 	// Cleanup voice session on unmount
 	useEffect(() => {
 		return () => {
+			ttsTextSyncRef.current.generation++;
+			sentencePipelineRef.current?.dispose();
+			audioQueueRef.current?.destroy();
 			if (queuedSendTimerRef.current) {
 				clearTimeout(queuedSendTimerRef.current);
 				queuedSendTimerRef.current = null;
@@ -3125,11 +4053,21 @@ export function ChatArea({
 	}
 
 	/** Route one sentence to the configured voice output. */
-	function sendSentenceToTts(sentence: string): void {
+	function sendSentenceToTts(
+		sentence: string,
+		prefetchId?: string,
+		callbacks?: {
+			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
+			onPlaybackStarted?: () => void;
+		},
+	): void {
 		// FR-VOICE.16 (#420): all synthesized speech goes through the single
 		// sentence TTS pipeline (lib/tts/sentence-pipeline). Do not add speech
 		// side channels here — renderers and skills consume real playback only.
-		sentencePipelineRef.current?.sendSentence(sentence);
+		sentencePipelineRef.current?.sendSentence(sentence, {
+			prefetchId,
+			...callbacks,
+		});
 	}
 
 	/** Clean up pipeline voice resources. */
@@ -3189,7 +4127,6 @@ export function ChatArea({
 	}
 
 	async function handleVoiceToggle() {
-		usage.record("chat.voice.toggle", "chat");
 		if (voiceMode !== "off") pendingAiGestureActionRef.current = null;
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
@@ -3345,12 +4282,25 @@ export function ChatArea({
 				pipelineActiveRef.current = true;
 				// Re-arm the local-voice-unavailable notice for this new session.
 				sentencePipelineRef.current?.rearmLocalVoiceNotice();
+				const resolvedSessionNaiaKey =
+					config.naiaKey ||
+					(isWebMode() && typeof localStorage !== "undefined"
+						? localStorage.getItem("naia-remote-key")?.trim() || undefined
+						: undefined);
+				const effectiveSessionTtsProvider = resolveEffectiveTtsProvider(
+					config,
+					resolvedSessionNaiaKey,
+				);
 				pipelineVoiceConfigRef.current = {
-					voice: resolveTtsVoiceId(config) ?? config.voice,
-					ttsProvider: config.ttsProvider || "edge",
+					voice:
+						resolveTtsVoiceId({
+							...config,
+							ttsProvider: effectiveSessionTtsProvider,
+						}) ?? config.voice,
+					ttsProvider: effectiveSessionTtsProvider,
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
-					naiaKey: config.naiaKey,
+					naiaKey: resolvedSessionNaiaKey,
 					gatewayUrl: LAB_GATEWAY_URL,
 					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 					vllmTtsHost: config.vllmTtsHost,
@@ -3360,7 +4310,11 @@ export function ChatArea({
 				setSttState("initializing");
 				try {
 					const sttLang = localeToSttLanguage(getLocale());
-					const sttEngine = isAsrModel ? "vllm" : config.sttProvider || "vosk";
+					const sttEngine = isWebMode()
+						? "web-speech"
+						: isAsrModel
+							? "vllm"
+							: config.sttProvider || "vosk";
 					const sttMeta = getSttProvider(sttEngine);
 					const isApiBased =
 						sttMeta?.engineType === "api" || sttMeta?.engineType === "vllm";
@@ -3434,6 +4388,13 @@ export function ChatArea({
 											"Skipping duplicate send (already streaming)",
 											{ text },
 										);
+										return;
+									}
+									if (
+										import.meta.env.MODE === "web" &&
+										isWebSendBlocked(getWebModelStatus(), getWebAdkStatus(), loadConfig()?.provider)
+									) {
+										setInput(text);
 										return;
 									}
 									handleSend(text);
@@ -3780,7 +4741,6 @@ export function ChatArea({
 			) => {
 				playFirstGestureAction(gestures, liveGestureActionPlayed);
 				if (!cleanText && !recordEmpty) return;
-				if (cleanText && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
 				outputAccum += cleanText;
 				const { emotion, cleanText: displayText } =
 					extractExpression(outputAccum);
@@ -3797,12 +4757,8 @@ export function ChatArea({
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
 
-			session.onAudio = (pcmBase64) => {
-				if (pcmBase64 && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
-				player.enqueue(pcmBase64);
-			};
+			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
 			session.onInputTranscript = (text) => {
-				if (!inputTurnDirty && text) { usage.record("chat.message.send", "voice"); usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null; }
 				pendingAiGestureActionRef.current = null;
 				const store = useChatStore.getState();
 				if (!inputTurnDirty) setEmotion("think");
@@ -4181,7 +5137,6 @@ export function ChatArea({
 	}
 
 	function handleVoiceCancel() {
-		usage.record("chat.voice.cancel", "chat");
 		// Cancel an in-progress cold-start. disconnect() breaks naia-omni's retry
 		// loop (abortableSleep → AbortError) and fires abandonPod to release the
 		// warming Pod; the connect() catch then runs cleanup and clears the banner.
@@ -4371,7 +5326,6 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
 							data-chat-tab="chat"
-							data-usage-event="chat-area.handle-tab-change-2.click"
 							onClick={() => handleTabChange("chat")}
 							title={t("progress.tabChat")}
 							aria-label={t("progress.tabChat")}
@@ -4381,11 +5335,11 @@ export function ChatArea({
 								{TAB_ICONS.chat}
 							</span>
 						</button>
+						{/* Item 4: Show persistent OPFS conversation history in web mode. */}
 						<button
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
 							data-chat-tab="history"
-							data-usage-event="chat-area.handle-tab-change-3.click"
 							onClick={() => handleTabChange("history")}
 							title={t("history.tabHistory")}
 							aria-label={t("history.tabHistory")}
@@ -4398,13 +5352,48 @@ export function ChatArea({
 					</div>
 					{headerControls}
 					<div className="chat-header-right">
+						{isKioskDemo() && (
+							<div
+								className="kiosk-local-answer-header"
+								data-testid="kiosk-local-answer-header"
+							>
+								<button
+									type="button"
+									className={`settings-icon-btn kiosk-local-answer-toggle${kioskLocalAnswer ? " active" : ""}`}
+									data-testid="kiosk-local-answer-toggle"
+									aria-pressed={kioskLocalAnswer}
+									aria-label="내 PC 에서 대답하기"
+									title="내 PC 에서 대답하기 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+									onClick={() => void handleKioskLocalAnswerToggle()}
+									disabled={kioskResetting}
+								>
+									<span className="kiosk-local-answer-label-prefix">내 PC</span>
+									<span className="kiosk-local-answer-label-suffix">
+										{" "}
+										에서 대답하기
+									</span>
+								</button>
+								<span
+									className="kiosk-local-answer-hint"
+									data-testid="kiosk-local-answer-hint"
+								>
+									그래픽 메모리 8GB 이상 기기에서만 됩니다
+								</span>
+							</div>
+						)}
+						{isKioskDemo() && (
+							<button type="button" className="settings-icon-btn kiosk-chat-reset" onClick={handleKioskReset} disabled={kioskResetting}>
+								처음으로
+							</button>
+						)}
+
 						{totalSessionCost > 0 &&
+							!isKioskDemo() &&
 							provider !== "ollama" &&
 							provider !== "vllm" && (
 								<button
 									type="button"
 									className="cost-badge session-cost cost-badge-clickable"
-									data-usage-event="chat-area.set-show-cost-dashboard-4.click"
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
 									{formatUsageTotal(
@@ -4416,7 +5405,6 @@ export function ChatArea({
 						<button
 							type="button"
 							className="settings-icon-btn new-chat-btn"
-							data-usage-event="chat-area.handle-new-conversation-5.click"
 							onClick={handleNewConversation}
 							title={t("chat.newConversation")}
 							disabled={isStreaming}
@@ -4426,6 +5414,59 @@ export function ChatArea({
 					</div>
 				</div>
 
+				{isKioskDemo() && kioskLocalConfirmOpen && (
+					<div
+						role="dialog"
+						aria-modal="false"
+						aria-label="내 PC 모델 내려받기 확인"
+						className="kiosk-local-answer-notice kiosk-local-answer-confirm"
+						data-testid="kiosk-local-answer-confirm"
+					>
+						<span>
+							내 PC에서 대답하려면 AI 모델(약 2.5GB)을 처음 한 번 내려받아요. 지금 내려받을까요?
+						</span>
+						<div
+							className="kiosk-local-answer-confirm__actions"
+							style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}
+						>
+							<button
+								type="button"
+								className="settings-icon-btn kiosk-local-answer-toggle active"
+								data-testid="kiosk-local-answer-confirm-accept"
+								onClick={() => void handleConfirmKioskLocalAnswer()}
+							>
+								확인
+							</button>
+							<button
+								type="button"
+								className="settings-icon-btn kiosk-local-answer-toggle"
+								data-testid="kiosk-local-answer-confirm-cancel"
+								onClick={handleCancelKioskLocalAnswer}
+							>
+								취소
+							</button>
+						</div>
+					</div>
+				)}
+				{isKioskDemo() && kioskLocalNotice && (
+					<div
+						role="status"
+						className="kiosk-local-answer-notice"
+						data-testid="kiosk-local-answer-notice"
+					>
+						<span>{kioskLocalNotice}</span>
+						<button
+							type="button"
+							className="kiosk-local-answer-notice__close"
+							aria-label="안내 닫기"
+							onClick={() => setKioskLocalNotice(null)}
+						>
+							×
+						</button>
+					</div>
+				)}
+				{isKioskDemo() && kioskResetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
+				{isKioskDemo() && kioskResetFailed && <p role="alert">기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.</p>}
 				<Suspense fallback={null}>
 					{/* Progress tab */}
 					{activeTab === "progress" && <WorkProgressArea />}
@@ -4453,7 +5494,7 @@ export function ChatArea({
 
 					{/* Settings tab */}
 
-					{/* History tab */}
+					{/* History tab (item 4: mount persistent OPFS history in web mode) */}
 					{activeTab === "history" && (
 						<HistoryTab onLoadSession={() => setActiveTab("chat")} />
 					)}
@@ -4489,7 +5530,6 @@ export function ChatArea({
 						<button
 							type="button"
 							aria-label="dismiss"
-							data-usage-event="chat-area.set-compaction-notice-6.click"
 							onClick={() => setCompactionNotice(null)}
 						>
 							×
@@ -4501,7 +5541,12 @@ export function ChatArea({
 					className="chat-messages"
 					style={{ display: activeTab === "chat" ? "flex" : "none" }}
 				>
-					{messages
+					{import.meta.env.MODE === "web" &&
+					webAdkStatus.phase !== "ready" ? (
+						<WebWorkspaceSetup status={webAdkStatus} />
+					) : (
+						<>
+							{messages
 						.filter((msg) => {
 							if (
 								msg.role === "user" &&
@@ -4556,7 +5601,43 @@ export function ChatArea({
 										)}
 									</div>
 								)}
-								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
+								{msg.role === "assistant" &&
+									(msg.localAnswer || msg.cost?.provider === "webllm") && (
+										<span
+											className="kiosk-local-answer-badge"
+											data-testid="kiosk-local-answer-badge"
+										>
+											내 PC 에서 나온 답
+										</span>
+									)}
+								{isKioskDemo() &&
+									msg.role === "assistant" &&
+									!msg.failure &&
+									resolveKioskEvidenceFiles(msg).length > 0 && (
+										<div
+											className="chat-kiosk-evidence"
+											data-testid="chat-kiosk-evidence"
+										>
+											<span className="chat-kiosk-evidence__label">근거:</span>
+											{resolveKioskEvidenceFiles(msg).map((evidencePath) => (
+												<button
+													key={evidencePath}
+													type="button"
+													className="chat-kiosk-evidence__chip"
+													data-evidence-path={evidencePath}
+													onClick={() =>
+														handleOpenKioskEvidenceFile(evidencePath)
+													}
+												>
+													{evidencePath}
+												</button>
+											))}
+										</div>
+									)}
+								{msg.cost &&
+									!isKioskDemo() &&
+									provider !== "ollama" &&
+									provider !== "vllm" && (
 									<span className="cost-badge">
 										{formatUsageCost(msg.cost.cost, msg.cost.provider)} ·{" "}
 										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
@@ -4614,6 +5695,8 @@ export function ChatArea({
 							</span>
 						</output>
 					)}
+						</>
+					)}
 
 					<div ref={messagesEndRef} />
 				</div>
@@ -4649,7 +5732,6 @@ export function ChatArea({
 							<button
 								type="button"
 								className="voice-status-cancel"
-								data-usage-event="chat-area.handle-voice-cancel-7.click"
 								onClick={handleVoiceCancel}
 							>
 								{t("chat.voiceColdStartCancel")}
@@ -4662,6 +5744,15 @@ export function ChatArea({
 					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
+				{(import.meta.env.MODE === "web" || isKioskDemo()) &&
+					activeTab === "chat" &&
+					(kioskLocalAnswer || loadConfig()?.provider === "webllm") && (
+						<WebModelStatusBar />
+					)}
+
+				{(characterTransitionPending || greetingPreparing) && (
+					<output role="status">{t("chat.cardPreparing")}</output>
+				)}
 				{/* Input (chat tab only) */}
 				<div
 					className="chat-input-bar"
@@ -4670,17 +5761,26 @@ export function ChatArea({
 					<button
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
-						data-usage-event="chat-area.handle-voice-toggle-8.click"
 						onClick={handleVoiceToggle}
-						disabled={voiceMode === "connecting"}
+						disabled={
+							voiceMode === "connecting" ||
+							(isWebMode() && !isWebSpeechAvailable())
+						}
+						aria-label={
+							isWebMode() && !isWebSpeechAvailable()
+								? t("webSpeech.recognitionUnsupported")
+								: undefined
+						}
 						title={
-							voiceMode === "off"
-								? t("chat.voiceStart")
-								: voiceMode === "connecting"
-									? t("chat.voiceConnecting")
-									: ttsPlaying
-										? "끼어들기 (TTS 중단)"
-										: t("chat.voiceEnd")
+							isWebMode() && !isWebSpeechAvailable()
+								? t("webSpeech.recognitionUnsupported")
+								: voiceMode === "off"
+									? t("chat.voiceStart")
+									: voiceMode === "connecting"
+										? t("chat.voiceConnecting")
+										: ttsPlaying
+											? t("webSpeech.interrupt")
+											: t("chat.voiceEnd")
 						}
 					>
 						<span className="voice-bar" />
@@ -4733,7 +5833,6 @@ export function ChatArea({
 					{isStreaming || outputStage !== null || ttsPlaying ? (
 						<button
 							type="button"
-							data-usage-event="chat-area.handle-cancel-streaming-9.click"
 							onClick={handleCancelStreaming}
 							className="chat-send-btn chat-cancel-btn"
 							title="ESC"
@@ -4743,9 +5842,11 @@ export function ChatArea({
 					) : (
 						<button
 							type="button"
-							data-usage-event="chat-area.handle-send-10.click"
 							onClick={() => handleSend()}
-							disabled={!input.trim()}
+							disabled={
+								!input.trim() || webSendBlocked || characterTransitionPending
+							}
+							aria-describedby={webSendBlocked ? "web-model-status" : undefined}
 							className="chat-send-btn"
 						>
 							↑
@@ -4756,12 +5857,10 @@ export function ChatArea({
 			{showNoAuthModal && (
 				<div
 					className="sync-dialog-overlay"
-					data-usage-event="chat-area.set-show-no-auth-modal-11.click"
 					onClick={() => setShowNoAuthModal(false)}
 				>
 					<div
 						className="sync-dialog-card"
-						data-usage-event="chat-area.stop-propagation-12.click"
 						onClick={(e) => e.stopPropagation()}
 						style={{ maxWidth: 360 }}
 					>
@@ -4778,7 +5877,6 @@ export function ChatArea({
 							<button
 								type="button"
 								className="onboarding-next-btn"
-								data-usage-event="chat-area.set-show-no-auth-modal-13.click"
 								onClick={() => {
 									setShowNoAuthModal(false);
 									useAppStore.getState().setActiveApp("settings");
