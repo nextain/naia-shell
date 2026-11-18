@@ -224,6 +224,8 @@ const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
 export default defineConfig(async ({ mode, command }) => {
+	// Never embed a kiosk demo credential into built JS bundles even if exported in the build shell.
+	Reflect.deleteProperty(process.env, "VITE_NAIA_KIOSK_DEMO_KEY");
 	const isWeb = mode === "web";
 	let revision = "unknown";
 	try {
@@ -264,6 +266,7 @@ export default defineConfig(async ({ mode, command }) => {
 			__BUILD_ID__: JSON.stringify(
 				new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
 			),
+			"import.meta.env.VITE_NAIA_KIOSK_DEMO_KEY": "undefined",
 		},
 		test: {
 			exclude: [

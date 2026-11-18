@@ -33,6 +33,20 @@ test.beforeEach(async ({ page }) => {
 		/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::|\/|$))/,
 		(route) => route.abort(),
 	);
+	await page.route("**/v1/demo/session", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				token: "demo.e2e-session-fixture.signature",
+				expires_at: new Date(Date.now() + 1_800_000).toISOString(),
+				ttl_seconds: 1800,
+				max_chat_turns: 40,
+				remaining_chat_turns: 40,
+				credits: 40,
+			}),
+		});
+	});
 	await page.route("**/v1/profile/balance", async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -42,14 +56,23 @@ test.beforeEach(async ({ page }) => {
 	});
 });
 
-// Run with VITE_NAIA_KIOSK_DEMO=1 in web mode. Only synthetic credentials are used.
-test("S3 missing build credential stops even with a previous login", async ({
+// Run with VITE_NAIA_KIOSK_DEMO=1 in web mode. Zero bundle credentials; demo sessions are minted by the gateway.
+test("S3 unconfigured gateway demo session stops even with a previous login", async ({
 	page,
 }) => {
 	await page.addInitScript(() => {
 		localStorage.setItem("naia-remote-key", "test-personal-fixture-only");
 	});
-	await page.goto(process.env.S3_MISSING_KEY_URL || "http://localhost:1433");
+	await page.route("**/v1/demo/session", async (route) => {
+		await route.fulfill({
+			status: 503,
+			contentType: "application/json",
+			body: JSON.stringify({
+				detail: { error_code: "demo_not_configured" },
+			}),
+		});
+	});
+	await page.goto(process.env.S3_MISSING_KEY_URL || "/");
 	await expect(page.getByRole("alert")).toHaveText("시연 열쇠 없음");
 	await expect(
 		page.getByRole("button", { name: "들어가기", exact: true }),

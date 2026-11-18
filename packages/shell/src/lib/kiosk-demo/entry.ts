@@ -1,6 +1,7 @@
 import { type AppConfig, saveConfig } from "../config";
 import { buildKioskDemoConfigSeed } from "../config-seed";
 import { Logger } from "../logger";
+import { restoreKioskAdkOriginals } from "../web-runtime/web-adk-edit";
 import { webAdkOpfsPath } from "../web-runtime/web-adk-path";
 import { getWebFs } from "../web-runtime/web-fs";
 import {
@@ -8,8 +9,8 @@ import {
 	clearWebConversations,
 } from "../web-runtime/web-workspace-commands";
 import { WEB_LLM_MODEL_PREF_KEY } from "../web-runtime/webllm-model";
+import { clearKioskDemoSessionStorage } from "./demo-session";
 import { isKioskDemo } from "./flag";
-import { restoreKioskAdkOriginals } from "../web-runtime/web-adk-edit";
 import { seedKioskAdkWorkspace } from "./knowledge";
 
 export const KIOSK_VISIT_ACTIVE_SESSION_KEY = "naia-kiosk-visit-active";
@@ -23,9 +24,8 @@ const KIOSK_CREDIT_EXHAUSTED_RE =
 let greetingPending = false;
 
 export function getKioskIdleTimeoutMs(): number {
-	const override = (
-		globalThis as { __NAIA_KIOSK_IDLE_TIMEOUT_MS__?: unknown }
-	).__NAIA_KIOSK_IDLE_TIMEOUT_MS__;
+	const override = (globalThis as { __NAIA_KIOSK_IDLE_TIMEOUT_MS__?: unknown })
+		.__NAIA_KIOSK_IDLE_TIMEOUT_MS__;
 	return typeof override === "number" &&
 		Number.isFinite(override) &&
 		override > 0
@@ -51,6 +51,7 @@ export function recordKioskVisitActivity(now: number = Date.now()): void {
 }
 
 export function clearKioskVisitActivity(): void {
+	clearKioskDemoSessionStorage();
 	try {
 		if (typeof sessionStorage !== "undefined") {
 			sessionStorage.removeItem(KIOSK_VISIT_ACTIVE_SESSION_KEY);

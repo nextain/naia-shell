@@ -59,7 +59,7 @@ beforeEach(() => {
 	vi.stubEnv("MODE", "web");
 	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 	vi.clearAllMocks();
-	mocks.auth.mockReturnValue(true);
+	mocks.auth.mockResolvedValue(true);
 	mocks.verifyAuth.mockResolvedValue({ ok: true, credits: 100 });
 	mocks.prep.mockResolvedValue(undefined);
 	mocks.clearConversations.mockResolvedValue(undefined);
@@ -85,7 +85,7 @@ it("OFF renders the ordinary app without seeding or greeting", () => {
 	expect(mocks.greeting).not.toHaveBeenCalled();
 });
 it("blocks missing key without mounting the app or starting the model", async () => {
-	mocks.auth.mockReturnValue(false);
+	mocks.auth.mockResolvedValueOnce(false);
 	mount();
 	expect(await screen.findByRole("alert")).toHaveProperty(
 		"textContent",
@@ -93,6 +93,22 @@ it("blocks missing key without mounting the app or starting the model", async ()
 	);
 	expect(screen.queryByText("conversation")).toBeNull();
 	expect(mocks.boot).not.toHaveBeenCalled();
+});
+it("offers retry when demo session lookup fails transiently instead of claiming missing key", async () => {
+	mocks.auth.mockResolvedValueOnce(false);
+	mocks.verifyAuth.mockResolvedValueOnce({
+		ok: false,
+		reason: "lookup-failed",
+	});
+	mount();
+	expect((await screen.findByRole("alert")).textContent).toContain("다시 시도");
+	expect(mocks.boot).not.toHaveBeenCalled();
+	fireEvent.click(screen.getByText("다시 시도"));
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
 });
 it("waits for preparation and opens once only after a gesture", async () => {
 	let finish!: () => void;
@@ -359,6 +375,9 @@ it("asks a 4-digit passcode with a numeric keypad before the entry screen", asyn
 	expect(input.getAttribute("maxlength")).toBe("4");
 	expect(screen.queryByRole("button", { name: "들어가기" })).toBeNull();
 	expect(screen.queryByText("conversation")).toBeNull();
+	// Do not mint a gateway demo session before the visitor passes the passcode gate.
+	expect(mocks.auth).not.toHaveBeenCalled();
+	expect(mocks.verifyAuth).not.toHaveBeenCalled();
 });
 it("keeps the gate closed on a wrong passcode and lets the visitor type again", async () => {
 	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);

@@ -4314,7 +4314,6 @@ describe("ChatArea", () => {
 	it("FR-WEB-KIOSK-S6 sends active slide body, speaker script, and rules in model input during slide questions and attaches only the active slide manuscript file as evidence", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "naia_test_kiosk_fixture_123456");
 		setWebModelStatus({ phase: "ready" });
 		setWebAdkStatus({ phase: "ready" });
 		localStorage.setItem("naia-remote-key", "naia_test_kiosk_fixture_123456");
@@ -4442,7 +4441,6 @@ describe("ChatArea", () => {
 	it("P2-1 & P2-2 preserves past message evidence chips when slides open or change pages, and enables knowledge search with slide reference when presentation is completed or paused", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "naia_test_kiosk_fixture_123456");
 		setWebModelStatus({ phase: "ready" });
 		setWebAdkStatus({ phase: "ready" });
 		localStorage.setItem("naia-remote-key", "naia_test_kiosk_fixture_123456");
@@ -4675,7 +4673,6 @@ describe("ChatArea", () => {
 	it("handles conversational YouTube play and stop requests in web kiosk mode via skill_youtube_bgm tool call (fix7d)", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "naia_test_kiosk_fixture_123456");
 		const { bgmPlayback } = await import("../../lib/bgm-playback");
 		setWebModelStatus({ phase: "ready" });
 		setWebAdkStatus({ phase: "ready" });
@@ -4741,7 +4738,6 @@ describe("ChatArea", () => {
 	it("renders the local-answer toggle as plain \"내 기기(웹GPU)\" without 처음으로 (r15)", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "naia_test_kiosk_fixture_123456");
 		const { readFileSync } = await import("node:fs");
 		const { resolve } = await import("node:path");
 

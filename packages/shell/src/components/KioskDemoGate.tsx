@@ -1,7 +1,6 @@
-import { unlockAudioContext } from "../lib/voice/audio-queue";
-import { useAppStore } from "../stores/app";
-import { useChatStore } from "../stores/chat";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { prewarmWebSpeechAssets } from "../lib/avatar/nva-speech/speech-asset-prewarm";
+import { loadConfig } from "../lib/config";
 import {
 	KIOSK_DEMO_UNAVAILABLE_EVENT,
 	getKioskIdleTimeoutMs,
@@ -11,8 +10,6 @@ import {
 	resetKioskVisit,
 	shouldResetKioskVisitOnEnter,
 } from "../lib/kiosk-demo/entry";
-import { prewarmWebSpeechAssets } from "../lib/avatar/nva-speech/speech-asset-prewarm";
-import { loadConfig } from "../lib/config";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	KIOSK_PASSCODE_LENGTH,
@@ -23,15 +20,18 @@ import {
 } from "../lib/kiosk-demo/passcode";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
-import { restoreKioskAdkOriginals } from "../lib/web-runtime/web-adk-edit";
 import { resolveEffectiveLayoutOrientation } from "../lib/ui-preferences";
+import { unlockAudioContext } from "../lib/voice/audio-queue";
 import { bootWebRuntimeAndModel } from "../lib/web-runtime/auto-install";
 import { installWebRuntime } from "../lib/web-runtime/install";
+import { restoreKioskAdkOriginals } from "../lib/web-runtime/web-adk-edit";
 import {
 	seedKioskDemoWebAuth,
 	verifyKioskDemoWebAuth,
 } from "../lib/web-runtime/web-auth";
 import { clearWebConversations } from "../lib/web-runtime/web-workspace-commands";
+import { useAppStore } from "../stores/app";
+import { useChatStore } from "../stores/chat";
 import "./KioskDemoGate.css";
 
 type Phase = "preparing" | "ready" | "missing-key" | "unavailable" | "error";
@@ -47,34 +47,53 @@ async function cleanupExpiredPreviousVisit(): Promise<void> {
 }
 
 type AccessRefusal = "missing-key" | "unavailable";
+interface AccessCheckOutcome {
+	refusal: AccessRefusal | null;
+	lookupFailed: boolean;
+}
 
 /**
- * Gateway's word on the demo key. It runs beside the local preparation and
- * never holds the entry button: a slow or failed balance lookup lets the
- * visitor in, and a refusal that lands later closes the gate again.
+ * Gateway's word on the demo session. It runs beside the local preparation and
+ * never holds the entry button on a slow balance lookup: once a valid session
+ * token is acquired, a slow balance lookup lets the visitor in, and a refusal
+ * that lands later closes the gate again.
  */
-async function checkAccess(): Promise<AccessRefusal | null> {
-	if (typeof verifyKioskDemoWebAuth !== "function") return null;
+async function checkAccess(): Promise<AccessCheckOutcome> {
+	if (typeof verifyKioskDemoWebAuth !== "function") {
+		return { refusal: null, lookupFailed: false };
+	}
 	try {
 		const verified = await verifyKioskDemoWebAuth();
-		if (
-			!verified.ok &&
-			(verified.reason === "missing-key" || verified.reason === "unavailable")
-		) {
-			return verified.reason;
+		if (!verified.ok) {
+			if (
+				verified.reason === "missing-key" ||
+				verified.reason === "unavailable"
+			) {
+				return { refusal: verified.reason, lookupFailed: false };
+			}
+			return { refusal: null, lookupFailed: true };
 		}
 	} catch {
 		// Do not log arbitrary provider exceptions: they may contain credentials.
 		Logger.debug("KioskDemo", "access check failed");
+		return { refusal: null, lookupFailed: true };
 	}
-	return null;
+	return { refusal: null, lookupFailed: false };
 }
 
-async function prepare(refused: () => AccessRefusal | null): Promise<Phase> {
+async function prepare(
+	refused: () => AccessRefusal | null,
+	waitAccess: () => Promise<AccessCheckOutcome>,
+): Promise<Phase> {
 	try {
-		if (!seedKioskDemoWebAuth()) return "missing-key";
 		installWebRuntime();
 		await cleanupExpiredPreviousVisit();
+		const seeded = await seedKioskDemoWebAuth();
+		if (!seeded) {
+			const outcome = await waitAccess();
+			if (outcome.refusal) return outcome.refusal;
+			return outcome.lookupFailed ? "error" : "missing-key";
+		}
 		await prepareKioskDemoOnboarding();
 		// R3: 부팅 때마다 시연 ADK 원본(AGENTS.md 등)을 되돌려 안내와 일치시킨다.
 		await restoreKioskAdkOriginals();
@@ -181,22 +200,27 @@ export function KioskDemoGate({
 	const [entered, setEntered] = useState(false);
 	const resetPending = useRef(false);
 	const preparation = useRef<Promise<Phase> | null>(null);
-	const access = useRef<Promise<AccessRefusal | null> | null>(null);
+	const access = useRef<Promise<AccessCheckOutcome> | null>(null);
 	const refused = useRef<AccessRefusal | null>(null);
 	const accepted = useRef(false);
 	useEffect(() => {
-		if (!enabled) return;
+		if (!enabled || !passcodePassed) return;
 		let active = true;
-		access.current ??= checkAccess().then((refusal) => {
-			refused.current = refusal;
-			return refusal;
+		access.current ??= checkAccess().then((outcome) => {
+			refused.current = outcome.refusal;
+			return outcome;
 		});
-		preparation.current ??= prepare(() => refused.current);
-		void access.current.then((refusal) => {
-			if (!active || !refusal) return;
+		preparation.current ??= prepare(
+			() => refused.current,
+			() =>
+				access.current ??
+				Promise.resolve({ refusal: null, lookupFailed: false }),
+		);
+		void access.current.then((outcome) => {
+			if (!active || !outcome.refusal) return;
 			accepted.current = false;
 			setEntered(false);
-			setPhase(refusal);
+			setPhase(outcome.refusal);
 		});
 		void preparation.current.then((next) => {
 			if (active) setPhase(refused.current ?? next);
@@ -204,7 +228,7 @@ export function KioskDemoGate({
 		return () => {
 			active = false;
 		};
-	}, [enabled]);
+	}, [enabled, passcodePassed]);
 	useEffect(() => {
 		if (!enabled || typeof window === "undefined") return;
 		const onUnavailable = () => {
@@ -293,7 +317,23 @@ export function KioskDemoGate({
 									type="button"
 									onClick={() => {
 										setPhase("preparing");
-										preparation.current = prepare(() => refused.current);
+										refused.current = null;
+										access.current = checkAccess().then((outcome) => {
+											refused.current = outcome.refusal;
+											return outcome;
+										});
+										preparation.current = prepare(
+											() => refused.current,
+											() =>
+												access.current ??
+												Promise.resolve({ refusal: null, lookupFailed: false }),
+										);
+										void access.current.then((outcome) => {
+											if (!outcome.refusal) return;
+											accepted.current = false;
+											setEntered(false);
+											setPhase(outcome.refusal);
+										});
 										void preparation.current.then((next) =>
 											setPhase(refused.current ?? next),
 										);

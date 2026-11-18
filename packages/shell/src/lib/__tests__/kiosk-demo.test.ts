@@ -78,14 +78,25 @@ vi.mock("../web-runtime/web-fs", () => ({
 	}),
 }));
 
+const syntheticDemoSessionFetch = (async () =>
+	new Response(
+		JSON.stringify({
+			token: "demo.test-kiosk-fixture-only.sig",
+			ttl_seconds: 1800,
+			max_chat_turns: 40,
+			remaining_chat_turns: 40,
+			credits: 40,
+		}),
+		{ status: 200, headers: { "Content-Type": "application/json" } },
+	)) as unknown as typeof fetch;
+
 beforeEach(() => {
 	localStorage.clear();
+	sessionStorage.clear();
 	memory.clear();
 	provision.mockClear();
 	vi.stubEnv("MODE", "web");
 	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-	// Synthetic fixture, never a real account credential.
-	vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "test-kiosk-fixture-only");
 });
 afterEach(() => {
 	setWebAssetsModeForTests(null);
@@ -119,7 +130,7 @@ describe("S3 kiosk isolation", () => {
 				"naia-video-avatar",
 			);
 			expect(INITIAL_WEB_WORKSPACE_CONFIG.nvaModel).toBe(WEB_DEFAULT_NVA);
-			expect(seedKioskDemoWebAuth()).toBe(false);
+			expect(await seedKioskDemoWebAuth()).toBe(false);
 			await prepareKioskDemoOnboarding();
 			expect(provision).not.toHaveBeenCalled();
 			expect(memory.size).toBe(0);
@@ -161,18 +172,35 @@ describe("S3 kiosk isolation", () => {
 		])
 			expect(prompt).toContain(text);
 	});
-	it.each(["", "bad key", "short"])(
-		"missing or invalid build key fails closed even with an existing personal login (%s)",
-		(key) => {
-			vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", key);
+	it.each([503, 401])(
+		"unconfigured or rejected gateway demo session fails closed even with an existing personal login (%s)",
+		async (status) => {
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "legacy-bundle-key-ignored");
 			localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, "test-personal-fixture");
-			expect(seedKioskDemoWebAuth()).toBe(false);
+			expect(
+				await seedKioskDemoWebAuth({
+					gatewayUrl: "http://localhost:9999",
+					fetchSession: (async () =>
+						new Response(
+							JSON.stringify({
+								detail: { error_code: "demo_not_configured" },
+							}),
+							{ status, headers: { "Content-Type": "application/json" } },
+						)) as unknown as typeof fetch,
+				}),
+			).toBe(false);
+			expect(localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)).toBeNull();
 		},
 	);
-	it("stores demo auth only in the existing web credential slot", () => {
-		expect(seedKioskDemoWebAuth()).toBe(true);
+	it("stores short-lived gateway demo auth only in the existing web credential slot", async () => {
+		expect(
+			await seedKioskDemoWebAuth({
+				gatewayUrl: "http://localhost:9999",
+				fetchSession: syntheticDemoSessionFetch,
+			}),
+		).toBe(true);
 		expect(localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)).toBe(
-			"test-kiosk-fixture-only",
+			"demo.test-kiosk-fixture-only.sig",
 		);
 		expect(localStorage.getItem("naia-config")).toBeNull();
 	});
@@ -514,15 +542,17 @@ describe("S3 kiosk isolation", () => {
 		expect(getLlmProvider("webllm")).toBeDefined();
 		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(true);
 	});
-	it("verifies gateway key and credits on entry, retries transient lookup failure once, and only marks unavailable when credits <= 0", async () => {
+	it("verifies gateway demo session and credits on entry, retries transient lookup failure once, and only marks unavailable when credits <= 0", async () => {
 		const okResult = await verifyKioskDemoWebAuth({
 			gatewayUrl: "http://localhost:9999",
+			fetchSession: syntheticDemoSessionFetch,
 			fetchBalance: async () => ({ credits: 42 }),
 		});
 		expect(okResult).toEqual({ ok: true, credits: 42 });
 
 		const zeroCredits = await verifyKioskDemoWebAuth({
 			gatewayUrl: "http://localhost:9999",
+			fetchSession: syntheticDemoSessionFetch,
 			fetchBalance: async () => ({ credits: 0 }),
 		});
 		expect(zeroCredits).toEqual({ ok: false, reason: "unavailable" });
@@ -530,6 +560,7 @@ describe("S3 kiosk isolation", () => {
 		let attempts = 0;
 		const recoveredAfterRetry = await verifyKioskDemoWebAuth({
 			gatewayUrl: "http://localhost:9999",
+			fetchSession: syntheticDemoSessionFetch,
 			fetchBalance: async () => {
 				attempts += 1;
 				if (attempts === 1) throw new Error("network timeout");
@@ -542,6 +573,7 @@ describe("S3 kiosk isolation", () => {
 		let failAttempts = 0;
 		const lookupFailed = await verifyKioskDemoWebAuth({
 			gatewayUrl: "http://localhost:9999",
+			fetchSession: syntheticDemoSessionFetch,
 			fetchBalance: async () => {
 				failAttempts += 1;
 				throw new Error("HTTP 502");
@@ -550,9 +582,15 @@ describe("S3 kiosk isolation", () => {
 		expect(failAttempts).toBe(2);
 		expect(lookupFailed).toEqual({ ok: false, reason: "lookup-failed" });
 
-		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "");
+		sessionStorage.clear();
+		localStorage.clear();
 		const missingKey = await verifyKioskDemoWebAuth({
 			gatewayUrl: "http://localhost:9999",
+			fetchSession: (async () =>
+				new Response(
+					JSON.stringify({ detail: { error_code: "demo_not_configured" } }),
+					{ status: 503, headers: { "Content-Type": "application/json" } },
+				)) as unknown as typeof fetch,
 			fetchBalance: async () => ({ credits: 100 }),
 		});
 		expect(missingKey).toEqual({ ok: false, reason: "missing-key" });
@@ -567,7 +605,10 @@ describe("S3 kiosk isolation", () => {
 			"../kiosk-demo/knowledge"
 		);
 
-		seedKioskDemoWebAuth();
+		await seedKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchSession: syntheticDemoSessionFetch,
+		});
 		await expect(
 			saveSecretKeyAtPath(
 				"apiKey",
@@ -587,9 +628,9 @@ describe("S3 kiosk isolation", () => {
 				"opfs://naia-adk/data-private/secure-keys.dat",
 			),
 		).resolves.toBeUndefined();
-		// In kiosk mode, deleting naiaKey must not wipe the shared kiosk demo key
+		// In kiosk mode, deleting naiaKey must not wipe the active kiosk demo session token
 		expect(localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)).toBe(
-			"test-kiosk-fixture-only",
+			"demo.test-kiosk-fixture-only.sig",
 		);
 
 		const manuscripts = listKioskKnowledgeManuscripts();

@@ -1,9 +1,14 @@
 import { useChatStore } from "../../stores/chat";
 import { LAB_GATEWAY_URL, loadConfig, saveConfig } from "../config";
 import { getLocale } from "../i18n";
+import {
+	type KioskDemoSessionOptions,
+	ensureKioskDemoSession,
+} from "../kiosk-demo/demo-session";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import {
 	fetchLabBalancePayload,
+	isLabBalanceUnauthorized,
 	parseLabCredits,
 	primeLabCredits,
 } from "../lab-balance";
@@ -362,17 +367,23 @@ export function logoutWebSession(): void {
 	}
 }
 
-/** No OAuth event or credential-bearing result/log: the demo key stays in auth storage. */
-export function seedKioskDemoWebAuth(): boolean {
+function notifyRuntimeDemoTokenRefresh(token: string): void {
+	void import("../chat-service")
+		.then(({ sendAuthUpdate }) => sendAuthUpdate(token))
+		.catch(() => {});
+}
+
+/**
+ * Acquires a short-lived demo session token from the gateway (`/v1/demo/session`)
+ * and stores it in browser auth storage without embedding any key in the bundle.
+ */
+export async function seedKioskDemoWebAuth(
+	opts?: KioskDemoSessionOptions,
+): Promise<boolean> {
 	if (!isKioskDemo()) return false;
-	const key = (
-		import.meta.env.VITE_NAIA_KIOSK_DEMO_KEY as string | undefined
-	)?.trim();
-	Logger.debug("WebAuth", "kiosk credential seed requested");
-	if (!key || !isValidWebAuthKey(key)) return false;
-	localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, key);
-	localStorage.removeItem(WEB_REMOTE_USER_ID_STORAGE_KEY);
-	return true;
+	Logger.debug("WebAuth", "kiosk demo session seed requested");
+	const session = await ensureKioskDemoSession(opts);
+	return session.ok;
 }
 
 export type KioskDemoAuthVerification =
@@ -380,32 +391,30 @@ export type KioskDemoAuthVerification =
 	| { ok: false; reason: "missing-key" | "unavailable" | "lookup-failed" };
 
 /**
- * 시연 전용 열쇠로 게이트웨이 잔액(`/v1/profile/balance`)을 확인해
+ * 시연 단기 세션 토큰(`/v1/demo/session`)을 확보하고 게이트웨이 잔액(`/v1/profile/balance`)을 확인해
  * 크레딧이 0 이하임이 확인될 때만 시연 불가(`unavailable`)를 반환한다.
- * 잔액 조회가 실패하면 1회 다시 시도하고, 그래도 실패하면 `lookup-failed`를 반환한다.
+ * 만료된 세션(401)은 1회 새 단기 토큰을 재발급하며, 일시 조회 실패 시 1회 재시도 후 `lookup-failed`를 반환한다.
  */
 export async function verifyKioskDemoWebAuth(opts?: {
 	gatewayUrl?: string;
+	fetchSession?: typeof fetch;
 	fetchBalance?: (gatewayUrl: string, naiaKey: string) => Promise<unknown>;
 }): Promise<KioskDemoAuthVerification> {
-	const envKey = import.meta.env.VITE_NAIA_KIOSK_DEMO_KEY as
-		| string
-		| undefined;
-	if (envKey !== undefined && !seedKioskDemoWebAuth()) {
-		return { ok: false, reason: "missing-key" };
-	}
-	if (envKey === undefined) {
-		seedKioskDemoWebAuth();
-	}
-	const key =
-		typeof localStorage !== "undefined"
-			? (localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)?.trim() ?? "")
-			: "";
-	if (!key || !isValidWebAuthKey(key)) {
-		return { ok: false, reason: "missing-key" };
-	}
 	const gatewayUrl = (opts?.gatewayUrl || LAB_GATEWAY_URL).trim();
+	let session = await ensureKioskDemoSession({
+		gatewayUrl,
+		fetchSession: opts?.fetchSession,
+	});
+	if (!session.ok) {
+		return { ok: false, reason: session.reason };
+	}
+	let key = session.token;
+	if (!isValidWebAuthKey(key)) {
+		return { ok: false, reason: "missing-key" };
+	}
+
 	const fetchBalance = opts?.fetchBalance ?? fetchLabBalancePayload;
+	let refreshedAfter401 = false;
 	for (let attempt = 0; attempt < 2; attempt += 1) {
 		try {
 			const payload = await fetchBalance(gatewayUrl, key);
@@ -417,8 +426,21 @@ export async function verifyKioskDemoWebAuth(opts?: {
 				primeLabCredits(credits);
 				return { ok: true, credits };
 			}
-		} catch {
-			// retry once on transient balance lookup failure
+		} catch (err) {
+			if (!refreshedAfter401 && isLabBalanceUnauthorized(err)) {
+				refreshedAfter401 = true;
+				session = await ensureKioskDemoSession({
+					gatewayUrl,
+					forceRefresh: true,
+					fetchSession: opts?.fetchSession,
+				});
+				if (!session.ok) {
+					return { ok: false, reason: session.reason };
+				}
+				key = session.token;
+				notifyRuntimeDemoTokenRefresh(key);
+			}
+			// retry once on transient balance lookup failure or after 401 refresh
 		}
 	}
 	return { ok: false, reason: "lookup-failed" };
