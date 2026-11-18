@@ -1472,3 +1472,23 @@
 	font-size: 11px;
 	line-height: 1.3;
 }
+
+/* While setup occupies the gesture row, keep the composer reachable. The full
+   model details remain scrollable, including by keyboard, until setup completes. */
+[data-naia-web="true"] .chat-app--workspace-pending {
+	overflow-y: auto;
+}
+[data-naia-web="true"] .chat-app--workspace-pending .chat-messages {
+	min-height: 0;
+}
+[data-naia-web="true"] .chat-app--workspace-pending #web-model-status {
+	min-height: 24px;
+	max-height: 56px;
+	overflow-y: auto;
+	flex-shrink: 0;
+}
+
+/* Kiosk's compact layout normally hides overflow; setup still needs scrolling. */
+[data-naia-web="true"] .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app--workspace-pending {
+	overflow-y: auto;
+}

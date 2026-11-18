@@ -4,7 +4,7 @@ import type {
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import slidesIconSvg from "../apps/slides/package-public/icon.svg?raw";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
@@ -25,9 +25,11 @@ import {
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
 import {
+	isNarrowPortraitScreen,
 	isWebMode,
 	syncWebModeRootAttribute,
 } from "../lib/web-runtime/web-assets";
+import { getWebAdkStatus, subscribeWebAdkStatus } from "../lib/web-runtime/web-adk-status";
 import { useAppStore } from "../stores/app";
 import { useChatStore } from "../stores/chat";
 import { AppBar } from "./AppBar";
@@ -205,18 +207,33 @@ export function AppMainContent(props: AppMainContentProps) {
 		"collapsed" | "half" | "expanded"
 	>(hasMessages ? "half" : "collapsed");
 	const previousHasMessages = useRef(hasMessages);
-	useEffect(() => {
-		if (hasMessages !== previousHasMessages.current) {
-			setMobileSheet(hasMessages ? "half" : "collapsed");
-			previousHasMessages.current = hasMessages;
-		}
-	}, [hasMessages]);
+	const setupSheetTouched = useRef(false);
 	const ttsEnabled = useAppStore((state) => state.ttsEnabled);
 	const aiInterferenceEnabled = useAppStore(
 		(state) => state.aiInterferenceEnabled,
 	);
 	const paymentLinksHidden = usePaymentLinksHidden();
 	const layoutOrientation = useEffectiveLayoutOrientation();
+	const webWorkspacePhase = useSyncExternalStore(subscribeWebAdkStatus, () => getWebAdkStatus().phase);
+	useEffect(() => {
+		if (hasMessages !== previousHasMessages.current) {
+			setMobileSheet((current) => {
+				if (webMode && webWorkspacePhase !== "ready" && setupSheetTouched.current) return current;
+				const setupNeedsRoom = webMode && webWorkspacePhase !== "ready" && layoutOrientation === "portrait" && isNarrowPortraitScreen();
+				return hasMessages || setupNeedsRoom ? "half" : "collapsed";
+			});
+			previousHasMessages.current = hasMessages;
+		}
+	}, [hasMessages, webMode, webWorkspacePhase, layoutOrientation]);
+	useEffect(() => {
+		if (!webMode || webWorkspacePhase === "ready") {
+			setupSheetTouched.current = false;
+			return;
+		}
+		if ((webWorkspacePhase === "needs-setup" || webWorkspacePhase === "error") && !setupSheetTouched.current && layoutOrientation === "portrait" && isNarrowPortraitScreen()) {
+			setMobileSheet((current) => current === "collapsed" ? "half" : current);
+		}
+	}, [webMode, webWorkspacePhase, layoutOrientation]);
 	const showNarrowMobileChrome = webMode || layoutOrientation === "portrait";
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
@@ -526,6 +543,12 @@ export function AppMainContent(props: AppMainContentProps) {
 								type="button"
 								className="web-mobile-sheet-handle"
 								aria-label="Resize conversation"
+								onClick={(event) => {
+									// Pointer gestures are handled on pointerup; detail=0 is a keyboard or assistive activation.
+									if (event.detail !== 0) return;
+									if (webMode && webWorkspacePhase !== "ready") setupSheetTouched.current = true;
+									setMobileSheet((state) => state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half");
+								}}
 								onPointerDown={(event) => {
 									mobileStart.current = {
 										y: event.clientY,
@@ -554,6 +577,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									);
 								}}
 								onPointerUp={(event) => {
+									if (webMode && webWorkspacePhase !== "ready") setupSheetTouched.current = true;
 									const delta =
 										((mobileStart.current?.y ?? event.clientY) -
 											event.clientY) /

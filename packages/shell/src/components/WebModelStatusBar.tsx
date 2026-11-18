@@ -22,6 +22,7 @@ export const useWebModelStatus: () => WebModelStatus =
 		: () => DESKTOP_MODEL_STATUS;
 
 export function WebModelStatusBar(props: {
+	scrollDuringSetup?: boolean;
 	onSwitchModel?: (model: WebLlmModelId) => void;
 	onRetry?: () => void;
 }) {
@@ -84,6 +85,7 @@ export function WebModelStatusBar(props: {
 			<div
 				id="web-model-status"
 				data-testid="web-model-status"
+				tabIndex={props.scrollDuringSetup ? 0 : undefined}
 				data-phase={status.phase}
 				data-model={status.model}
 				data-error-kind={status.errorKind}
@@ -130,6 +132,7 @@ export function WebModelStatusBar(props: {
 		<div
 			id="web-model-status"
 			data-testid="web-model-status"
+			tabIndex={props.scrollDuringSetup ? 0 : undefined}
 			data-phase={status.phase}
 			data-model={status.model}
 			className="chat-compaction-notice"
