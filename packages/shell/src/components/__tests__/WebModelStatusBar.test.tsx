@@ -76,6 +76,14 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.textContent).toContain(t("webModel.fallbackActive"));
+		const details = screen.getByTestId("web-model-ready-details") as HTMLDetailsElement;
+		const summary = details.querySelector("summary");
+		expect(details.open).toBe(false);
+		expect(summary?.textContent).toContain(t("webModel.fallbackActive"));
+		expect(summary?.textContent).toContain("Qwen3 4B (4bit f32)");
+		if (!summary) throw new Error("model details summary missing");
+		fireEvent.click(summary);
+		expect(details.open).toBe(true);
 
 		const backBtn = screen.getByTestId("web-model-back-to-default");
 		expect(backBtn.textContent).toContain("Qwen3 4B (4bit f16)");

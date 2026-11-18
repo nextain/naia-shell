@@ -1492,3 +1492,23 @@
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app--workspace-pending {
 	overflow-y: auto;
 }
+
+/* Keep model details and long errors from consuming the entire conversation.
+   The status itself and, if necessary, the whole chat can be scrolled by
+   keyboard; the message viewport remains available after setup completes. */
+[data-naia-web="true"] .chat-app:not(.chat-app--workspace-pending) {
+	overflow-y: auto;
+}
+[data-naia-web="true"] .chat-app:not(.chat-app--workspace-pending) .chat-messages {
+	min-height: 4rem;
+	flex-shrink: 0;
+}
+[data-naia-web="true"] .chat-app:not(.chat-app--workspace-pending) #web-model-status {
+	max-height: 56px;
+	overflow-y: auto;
+	overflow-wrap: anywhere;
+	flex-shrink: 0;
+}
+[data-naia-web="true"] .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app:not(.chat-app--workspace-pending) {
+	overflow-y: auto;
+}
