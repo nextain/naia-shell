@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { t } from "../lib/i18n";
 import {
 	fallbackModelFor,
@@ -27,6 +27,10 @@ export function WebModelStatusBar(props: {
 	onRetry?: () => void;
 }) {
 	const status = useWebModelStatus();
+	const [readyDetailsOpen, setReadyDetailsOpen] = useState(false);
+	useEffect(() => {
+		setReadyDetailsOpen(false);
+	}, [status.phase]);
 
 	const handleSwitchModel = (model: WebLlmModelId) => {
 		if (props.onSwitchModel) {
@@ -132,7 +136,7 @@ export function WebModelStatusBar(props: {
 		<div
 			id="web-model-status"
 			data-testid="web-model-status"
-			tabIndex={0}
+			tabIndex={props.scrollDuringSetup || (status.phase === "ready" && readyDetailsOpen) ? 0 : undefined}
 			data-phase={status.phase}
 			data-model={status.model}
 			className="chat-compaction-notice"
@@ -153,7 +157,10 @@ export function WebModelStatusBar(props: {
 				</>
 			)}
 			{status.phase === "ready" && (
-				<details data-testid="web-model-ready-details">
+				<details
+					data-testid="web-model-ready-details"
+					onToggle={(event) => setReadyDetailsOpen(event.currentTarget.open)}
+				>
 					<summary>
 						{t("webModel.ready", { model: modelLabel })}
 						{status.model !== WEB_LLM_MODEL_ID && (
