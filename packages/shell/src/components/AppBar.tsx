@@ -33,6 +33,7 @@ import { appRegistry } from "../lib/app-registry";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { AppStoreIcon } from "./AppStoreIcon";
+import { WebCreditChip } from "./WebCreditChip";
 
 const BgmPlayer = lazy(() =>
 	import("./BgmPlayer").then((module) => ({
@@ -777,6 +778,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
 			<Suspense fallback={null}><BgmPlayer naia={bgmBridge} /></Suspense>
+			<WebCreditChip />
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

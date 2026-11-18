@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
+const web = vi.hoisted(() => ({ mode: false }));
+vi.mock("../web-runtime/web-assets", () => ({ isWebMode: () => web.mode }));
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => invokeMock(...args),
 }));
@@ -15,7 +17,15 @@ import {
 describe("distribution channel (#727)", () => {
 	beforeEach(() => {
 		invokeMock.mockReset();
+		web.mode = false;
 		resetDistributionChannelForTests();
+	});
+
+	it("is standard on the web build without asking the native side", async () => {
+		web.mode = true;
+		await expect(loadDistributionChannel()).resolves.toBe("standard");
+		expect(invokeMock).not.toHaveBeenCalled();
+		expect(paymentLinksHiddenNow()).toBe(false);
 	});
 
 	it("is steam when the native side reports steam (marker file present)", async () => {

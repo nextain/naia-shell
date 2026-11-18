@@ -12610,3 +12610,101 @@ body.resizing-col * {
 	.app-bar { min-width: 0; width: 100%; box-sizing: border-box; }
 	.app-bar-settings { flex-shrink: 0; min-width: 40px; min-height: 40px; }
 }
+
+/* Web build credit balance in the app bar (SP-00) and zero-credit card (SP-10) */
+.web-credit {
+	position: relative;
+	flex-shrink: 0;
+}
+
+.web-credit__chip {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid var(--border-color);
+	border-radius: 14px;
+	background: transparent;
+	color: var(--cream);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+}
+
+.web-credit__chip:hover {
+	background: var(--hover-bg);
+}
+
+.web-credit__chip--low,
+.web-credit__value--low {
+	color: var(--amber);
+}
+
+.web-credit__chip--empty,
+.web-credit__value--empty {
+	color: var(--error);
+}
+
+.web-credit__chip--low,
+.web-credit__chip--empty {
+	border-color: currentColor;
+}
+
+.web-credit__popover,
+.web-credit__empty {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 1000;
+	min-width: 220px;
+	padding: 12px;
+	border: 1px solid var(--glass-border);
+	border-radius: 10px;
+	background: var(--bg-surface);
+	color: var(--cream);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+	font-size: 13px;
+}
+
+.web-credit__empty {
+	width: 280px;
+}
+
+.web-credit__empty p {
+	margin: 0 0 10px;
+	line-height: 1.5;
+}
+
+.web-credit__row {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+
+.web-credit__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.web-credit__actions button {
+	padding: 5px 10px;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	background: transparent;
+	color: var(--cream);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.web-credit__actions button:hover {
+	background: var(--hover-bg);
+}
+
+.web-credit__actions .web-credit__primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #fff;
+}

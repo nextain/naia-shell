@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { isWebMode } from "./web-runtime/web-assets";
 
 /**
  * Distribution channel of this build (#727). The Steam depot is the same
@@ -18,8 +19,11 @@ let inflight: Promise<DistributionChannel> | null = null;
 export function loadDistributionChannel(): Promise<DistributionChannel> {
 	if (cachedChannel) return Promise.resolve(cachedChannel);
 	if (!inflight) {
+		// The web build is never a Steam depot and has no native side to ask.
 		inflight = Promise.resolve()
-			.then(() => invoke<string>("get_distribution_channel"))
+			.then(() =>
+				isWebMode() ? "standard" : invoke<string>("get_distribution_channel"),
+			)
 			.then(
 				(value): DistributionChannel =>
 					value === "steam" || value === "standard" ? value : "unknown",
