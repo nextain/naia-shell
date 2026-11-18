@@ -67,4 +67,11 @@ export default {
 	"webStorage.checking": "Checking persistent storage…",
 	"webStorage.summary": "{status} · {usage}",
 	"webModel.providerDescription": "Browser WebGPU local model",
+	"webUsage.title": "WebGPU usage statistics",
+	"webUsage.description": "Share anonymous counts about model setup and the first reply. Questions and answers are never sent. The model works whether you allow or decline.",
+	"webUsage.allow": "Allow statistics",
+	"webUsage.decline": "Decline",
+	"webUsage.manage": "Usage data",
+	"webUsage.allowed": "Statistics allowed",
+	"webUsage.denied": "Statistics declined",
 } as const;

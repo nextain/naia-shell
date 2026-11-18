@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-09T00:40:44.605043+00:00",
+  "last_updated": "2026-11-18T15:12:54Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -732,27 +732,15 @@
       "boundary": "#417은 Workspace 통합 P1·P2를 소유하고 이 에픽은 P3·P4 실행을 소유한다. #434는 #502가 승계한다.",
       "layer_boundary_2026_08_26": "루크 결정(2026-08-26): naia-agent 가 뇌이자 naia 백엔드이고 정보의 취합·결정·오케스트레이션은 전부 거기서 한다. Herdr 는 UI 라 사이드카이며 결정 주체가 아니다(프로토콜 19 에 issue·plan·verify·assign·budget·approve 0건). naia-agent 는 셸을 통해 Herdr 를 외부 환경으로 부른다 — 셸이 90개 메서드를 흡수하고 뇌에는 의도만 노출. 근거: naia-agent domain/chat.ts 가 workspaceContext 의 클라 주입을 이미 금지하고 EnvironmentSegment 화이트리스트(avatarEmotion|panel|responseStyle)만 허용한다. naia-shell 에 남는 것: #502 Herdr 관측·조작면, #499 브라우저·터미널 원시 도구, 파일 읽기 원시 능력, 컨텍스트 패널 UI. naia-agent 로 갈 것: #501 도메인(진입점 해석·선택·근거·개정), #500 전체, #503 전체.",
       "children": {
-        "501": {
-          "scope": "워크스페이스 컨텍스트 해석",
-          "scenario": "docs/user-scenarios.md UC-WORKSPACE-CONTEXT-*",
-          "requirements": "docs/requirements.md FR-WORKSPACE-CONTEXT.1~9",
+        "498": {
+          "scope": "검증·벤치마크 하네스",
+          "scenario": "docs/user-scenarios.md UC-AGENT-BENCH-*",
+          "requirements": "docs/requirements.md NFR-AGENT-BENCH.1~7",
           "P01_user_scenarios": "done",
           "P02_test_coverage_map": "done",
           "P03_requirements": "done",
           "P04_integration_test": "in_progress",
-          "P04_note": "코어·어댑터·UI·E2E 완료 — domain·ports·app/control, src/main/adapters/node/workspace-context-fs.ts(node 하네스용), src/main/adapters/workspace-context-observe.ts(셸용, F2 관측 포트 재사용), packages/shell/src/apps/workspace/WorkspaceContextPanel.tsx, 레일 세 번째 탭. 계약 테스트 10건 + 셸 단위 12건 + Playwright 4건 통과. 실 UI E2E 가 계약 테스트가 못 잡은 결함 둘을 잡았다(같은 경로 중복 적재, 병합 시 근거 출처 덮어쓰기) — 둘 다 수정하고 회귀 테스트 추가. 남은 것: 주제 태그 선택 문서를 선언하는 진입점 절 형식 미정(어댑터의 선택 문서는 항상 비어 있음), 관측 포트 지문은 크기 기반이라 같은 크기 편집을 자동 감지하지 못함(사용자 다시 읽기로 보완), core 진단 조치 문구가 한국어 고정이라 공개 저장소 i18n 미적용, e2e-tauri 스펙 미작성",
-          "P04_blocked_note": "이 에픽에서 진행 중단(루크 결정 2026-08-26) — 진입점 해석·필수 인덱스 판정·의도 기반 선택·근거 추적·개정 무효화는 취합과 결정이라 naia-agent 몫이다. naia-agent domain/chat.ts 가 workspaceContext 의 클라 주입을 코어 SoT 로 금지하고 있어 셸이 조립해 올리는 경로 자체가 막혀 있다. 셸에 남는 것은 원시 파일 능력(src/main/adapters/workspace-context-observe.ts, F2 관측 포트)과 사용자가 보는 패널 UI 뿐이다. 도메인과 계약 테스트는 이식 대상으로 보존.",
-          "P05_complete": "pending"
-        },
-        "502": {
-          "scope": "Herdr 제어면 (#434 승계)",
-          "scenario": "docs/user-scenarios.md UC-HERDR-CONTROL-*",
-          "requirements": "docs/requirements.md FR-HERDR-CONTROL.1~10",
-          "P01_user_scenarios": "done",
-          "P02_test_coverage_map": "done",
-          "P03_requirements": "done",
-          "P04_integration_test": "in_progress",
-          "P04_note": "슬라이스 1(관측→의도→번역→전달) 진행 중. 사슬 전체를 밟았다 — 계약(docs/progress/issue-497-universal-agent.md 슬라이스 1 전달 경계), UC(UC-ENV-SURFACE-* 4건 + UC-ENV-DISPATCH-* 3건), UC 테스트(커버리지 맵), FE(FR-ENV-SURFACE.1~9 + FR-ENV-DISPATCH.1~7), FE 테스트, 구현, 검증. ⚠️ environment-intent.ts 와 herdr-environment.ts 만 UC·FE 보다 먼저 쓰였다(P03 위반, 문서로 뒤늦게 닫음). 산출물: domain/environment-intent.ts, domain/environment-translation.ts, adapters/herdr-environment.ts, app/control/environment-dispatch.ts, ports/environment-dispatch.ts, Rust herdr_run_pane·herdr_send_keys. 검증: 계약 테스트 4건(106 tests) + Rust 단위 4건 + e2e-tauri 스펙. 살아 있는 herdr 0.8.0 대상 8건 포함. 실측이 설계를 세 번 정정했다 — 표면=pane, 레이블 없는 pane 대체 경로, CLI 절대 포커스 부재(pane focus 는 --direction 필수라 일반 터미널 포커스는 도달 불가로 거절). 미완: 보고를 뇌로 올리는 EnvironmentSegment kind(naia-agent#112), UI 표면. 확인 못 한 것: pane send-keys 키 표기법(verified=false 로 값에 남김). e2e-tauri: 실 백엔드가 한 번 응답해 15개 중 8개 통과 — 명령 등록 2건과 식별자 형식 검증 5건(FR-ENV-DISPATCH.4·7)이 증명됐다. 나머지 7건은 webview origin 불안정과 Vite 미기동으로 실패했고 이는 이 머신의 하네스 문제다(Xvfb 부재, wdio.conf 가 주석에 적어 둔 알려진 취약점). 같은 검증이 cargo test --lib herdr::api 로는 4/4 결정론 통과. P04 는 완료로 표시하지 않는다.",
+          "P04_note": "결정론 부분 완료 — domain·ports·app/control 과 src/main/adapters/workspace-fixture.ts, src/main/adapters/agent-bench-scenarios.ts, 계약 테스트 5건(60 tests) 통과. 시나리오 목록은 docs/user-scenarios.md 를 직접 읽으므로 UC 를 추가하고 시나리오를 빠뜨리면 테스트가 깨진다(현재 23건). 미완: 시나리오를 실제로 밟는 실행 포트 구현이 없다 — 지금은 판정 규칙과 목록만 서 있다. packages/shell/e2e-tauri/specs/agent-bench.spec.ts 미작성이라 네 게이트 중 native 계열은 실행 불가.",
           "P05_complete": "pending"
         },
         "499": {
@@ -778,6 +766,29 @@
           "P04_blocked_note": "이 에픽에서 진행 중단 — naia-agent origin/main 에 orchestration.ts·issue-orchestration.ts·issue-team.ts·durable-supervisor.ts·fs-sandbox.ts 로 이미 존재하는 것의 재구현이었다. 셸 코드는 이식 대상으로 보존한다. 재개 조건: NFR-HERDR-SOT 대 naia-agent#107 의 이슈 오케스트레이션 소유자 충돌이 사람 결정으로 풀릴 것.",
           "P05_complete": "pending"
         },
+        "501": {
+          "scope": "워크스페이스 컨텍스트 해석",
+          "scenario": "docs/user-scenarios.md UC-WORKSPACE-CONTEXT-*",
+          "requirements": "docs/requirements.md FR-WORKSPACE-CONTEXT.1~9",
+          "P01_user_scenarios": "done",
+          "P02_test_coverage_map": "done",
+          "P03_requirements": "done",
+          "P04_integration_test": "in_progress",
+          "P04_note": "코어·어댑터·UI·E2E 완료 — domain·ports·app/control, src/main/adapters/node/workspace-context-fs.ts(node 하네스용), src/main/adapters/workspace-context-observe.ts(셸용, F2 관측 포트 재사용), packages/shell/src/apps/workspace/WorkspaceContextPanel.tsx, 레일 세 번째 탭. 계약 테스트 10건 + 셸 단위 12건 + Playwright 4건 통과. 실 UI E2E 가 계약 테스트가 못 잡은 결함 둘을 잡았다(같은 경로 중복 적재, 병합 시 근거 출처 덮어쓰기) — 둘 다 수정하고 회귀 테스트 추가. 남은 것: 주제 태그 선택 문서를 선언하는 진입점 절 형식 미정(어댑터의 선택 문서는 항상 비어 있음), 관측 포트 지문은 크기 기반이라 같은 크기 편집을 자동 감지하지 못함(사용자 다시 읽기로 보완), core 진단 조치 문구가 한국어 고정이라 공개 저장소 i18n 미적용, e2e-tauri 스펙 미작성",
+          "P04_blocked_note": "이 에픽에서 진행 중단(루크 결정 2026-08-26) — 진입점 해석·필수 인덱스 판정·의도 기반 선택·근거 추적·개정 무효화는 취합과 결정이라 naia-agent 몫이다. naia-agent domain/chat.ts 가 workspaceContext 의 클라 주입을 코어 SoT 로 금지하고 있어 셸이 조립해 올리는 경로 자체가 막혀 있다. 셸에 남는 것은 원시 파일 능력(src/main/adapters/workspace-context-observe.ts, F2 관측 포트)과 사용자가 보는 패널 UI 뿐이다. 도메인과 계약 테스트는 이식 대상으로 보존.",
+          "P05_complete": "pending"
+        },
+        "502": {
+          "scope": "Herdr 제어면 (#434 승계)",
+          "scenario": "docs/user-scenarios.md UC-HERDR-CONTROL-*",
+          "requirements": "docs/requirements.md FR-HERDR-CONTROL.1~10",
+          "P01_user_scenarios": "done",
+          "P02_test_coverage_map": "done",
+          "P03_requirements": "done",
+          "P04_integration_test": "in_progress",
+          "P04_note": "슬라이스 1(관측→의도→번역→전달) 진행 중. 사슬 전체를 밟았다 — 계약(docs/progress/issue-497-universal-agent.md 슬라이스 1 전달 경계), UC(UC-ENV-SURFACE-* 4건 + UC-ENV-DISPATCH-* 3건), UC 테스트(커버리지 맵), FE(FR-ENV-SURFACE.1~9 + FR-ENV-DISPATCH.1~7), FE 테스트, 구현, 검증. ⚠️ environment-intent.ts 와 herdr-environment.ts 만 UC·FE 보다 먼저 쓰였다(P03 위반, 문서로 뒤늦게 닫음). 산출물: domain/environment-intent.ts, domain/environment-translation.ts, adapters/herdr-environment.ts, app/control/environment-dispatch.ts, ports/environment-dispatch.ts, Rust herdr_run_pane·herdr_send_keys. 검증: 계약 테스트 4건(106 tests) + Rust 단위 4건 + e2e-tauri 스펙. 살아 있는 herdr 0.8.0 대상 8건 포함. 실측이 설계를 세 번 정정했다 — 표면=pane, 레이블 없는 pane 대체 경로, CLI 절대 포커스 부재(pane focus 는 --direction 필수라 일반 터미널 포커스는 도달 불가로 거절). 미완: 보고를 뇌로 올리는 EnvironmentSegment kind(naia-agent#112), UI 표면. 확인 못 한 것: pane send-keys 키 표기법(verified=false 로 값에 남김). e2e-tauri: 실 백엔드가 한 번 응답해 15개 중 8개 통과 — 명령 등록 2건과 식별자 형식 검증 5건(FR-ENV-DISPATCH.4·7)이 증명됐다. 나머지 7건은 webview origin 불안정과 Vite 미기동으로 실패했고 이는 이 머신의 하네스 문제다(Xvfb 부재, wdio.conf 가 주석에 적어 둔 알려진 취약점). 같은 검증이 cargo test --lib herdr::api 로는 4/4 결정론 통과. P04 는 완료로 표시하지 않는다.",
+          "P05_complete": "pending"
+        },
         "503": {
           "scope": "채널 중립 세션",
           "scenario": "docs/user-scenarios.md UC-CHANNEL-SESSION-*",
@@ -788,17 +799,6 @@
           "P04_integration_test": "in_progress",
           "P04_note": "결정론 부분 완료 — src/main/domain/channel-session.ts, src/main/ports/channel-session.ts, src/main/app/control/channel-session.ts 와 계약 테스트 5건(43 tests) 통과. 미완: Discord·음성 어댑터 없음. 채널별 공개 범위 표는 현재 도메인 상수이며 운영에서 정할 값이므로 사람 확인이 필요하다. packages/shell/e2e-tauri/specs/channel-reboot.spec.ts, channel-continuity.spec.ts 미작성.",
           "P04_blocked_note": "이 에픽에서 진행 중단 — naia-agent origin/main 의 multi-issue-session.ts(SessionSourceKind 가 shell 을 출처로 모델링)·discord-ingress-policy.ts 와 겹친다. 채널 중립 정체성은 뇌 쪽 관할이다. 셸 코드는 이식 대상으로 보존한다.",
-          "P05_complete": "pending"
-        },
-        "498": {
-          "scope": "검증·벤치마크 하네스",
-          "scenario": "docs/user-scenarios.md UC-AGENT-BENCH-*",
-          "requirements": "docs/requirements.md NFR-AGENT-BENCH.1~7",
-          "P01_user_scenarios": "done",
-          "P02_test_coverage_map": "done",
-          "P03_requirements": "done",
-          "P04_integration_test": "in_progress",
-          "P04_note": "결정론 부분 완료 — domain·ports·app/control 과 src/main/adapters/workspace-fixture.ts, src/main/adapters/agent-bench-scenarios.ts, 계약 테스트 5건(60 tests) 통과. 시나리오 목록은 docs/user-scenarios.md 를 직접 읽으므로 UC 를 추가하고 시나리오를 빠뜨리면 테스트가 깨진다(현재 23건). 미완: 시나리오를 실제로 밟는 실행 포트 구현이 없다 — 지금은 판정 규칙과 목록만 서 있다. packages/shell/e2e-tauri/specs/agent-bench.spec.ts 미작성이라 네 게이트 중 native 계열은 실행 불가.",
           "P05_complete": "pending"
         }
       },
@@ -1266,6 +1266,25 @@
       "verification": "Step 5 implementation: stacked compositor no longer remattes; all-browser stacked preference; unchanged WebM fallback. Vitest 23 files: 238 passed, 9 existing RED bake-stub failures, 1 skipped. New regression RED 3 failures before change; all changed suites passed after. Chromium GPU 1 passed. Shell tsc blocked by missing bgm-sidecar msedge-tts/youtubei.js types and derived TS7006 (3 errors). Additional layout acceptance blocked by missing NAIA_WEB_AGENT_DIR; stop per task instruction.",
       "evidence": "packages/shell/src/lib/avatar/__tests__/nva-stacked-alpha.test.ts; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts; packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/e2e/kiosk-demo.spec.ts",
       "last_updated": "2026-11-09T00:40:44.605043+00:00"
+    },
+    "usage_stats_r1_20261118": {
+      "work_id": "USAGE-STATS-R1-2026-11-18",
+      "status": "in_progress",
+      "branch": "naia/usage-stats-r1-20261118",
+      "base": "feat/026-webgpu-r13-clean",
+      "scenario": "docs/user-scenarios.md UC-WEBGPU-USAGE-STATS-R1",
+      "requirements": "docs/requirements.md FR-USAGE-STATS-WEBGPU-R1.1~3; external US-01~05, US-07, T-01, T-03, T-05, GAP-03",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Draft PR https://github.com/nextain/naia-shell/pull/882 targets feat/026-webgpu-r13-clean. T-01/T-03/T-05 Playwright 2/2 passed with mock receiver (T-01 0 requests; withdrawal/reload 0 new requests); focused Vitest 5 files/124 passed; tsc and focused Biome passed. Full Vitest: 317 files passed, 4 failed, 1 skipped (3492 passed, 20 failed, 26 skipped). build:web stopped at missing jina/speech/atlas.bin; no live GA4/Azure resources.",
+      "evidence": "docs/progress/usage-stats/implementation-r1-20261118.md",
+      "last_updated": "2026-11-18T15:12:54Z"
     }
   },
   "sdlc_gates": {

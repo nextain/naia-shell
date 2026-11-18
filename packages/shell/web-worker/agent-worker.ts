@@ -75,7 +75,23 @@ const diag: DiagnosticLog = {
 };
 
 let lastReportedProgress = -1;
+let modelEngineLoading = false;
+let modelDownloadStarted = false;
+let modelDownloadCompleted = false;
+const nativeWorkerFetch = self.fetch.bind(self);
+self.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+	if (modelEngineLoading && !modelDownloadStarted) {
+		modelDownloadStarted = true;
+		self.postMessage({ kind: "engine-download-start" });
+	}
+	return nativeWorkerFetch(input, init);
+};
+
 function handleProgress(p: { progress: number; text: string }): void {
+	if (p.progress >= 1 && modelDownloadStarted && !modelDownloadCompleted) {
+		modelDownloadCompleted = true;
+		self.postMessage({ kind: "engine-download-complete" });
+	}
 	if (p.progress - lastReportedProgress >= 0.05 || p.progress === 1) {
 		lastReportedProgress = p.progress;
 		self.postMessage({
@@ -103,8 +119,12 @@ async function loadEngine(model: WebLlmModelId): Promise<WebLLMEngineLike> {
 			!import.meta.env.VITE_NAIA_WEB_LLM ||
 			import.meta.env.VITE_NAIA_WEB_LLM === "webllm"
 		) {
+			modelEngineLoading = true;
+			modelDownloadStarted = false;
+			modelDownloadCompleted = false;
 			const { createWebLLMEngine } = await import("./webllm-engine");
 			const engine = await createWebLLMEngine(model, handleProgress);
+			modelEngineLoading = false;
 			self.postMessage({
 				kind: "engine-ready",
 				model,
@@ -116,6 +136,10 @@ async function loadEngine(model: WebLlmModelId): Promise<WebLLMEngineLike> {
 			`알 수 없는 VITE_NAIA_WEB_LLM: ${import.meta.env.VITE_NAIA_WEB_LLM}`,
 		);
 	} catch (err: unknown) {
+		modelEngineLoading = false;
+		if (modelDownloadStarted && !modelDownloadCompleted) {
+			self.postMessage({ kind: "engine-download-fail" });
+		}
 		const message = err instanceof Error ? err.message : String(err);
 		const name = err instanceof Error ? err.name : "Error";
 		self.postMessage({ kind: "engine-error", name, message });

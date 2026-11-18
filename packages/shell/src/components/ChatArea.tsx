@@ -67,6 +67,12 @@ import {
 	getWebModelStatus,
 	isWebSendBlocked,
 } from "../lib/web-runtime/web-model-status";
+import {
+	beginFirstWebGpuReply,
+	cancelFirstWebGpuReply,
+	failFirstWebGpuReply,
+	finishFirstWebGpuReply,
+} from "../lib/web-runtime/usage-analytics";
 import { getWebAdkStatus } from "../lib/web-runtime/web-adk-status";
 
 import {
@@ -678,6 +684,7 @@ export function ChatArea({
 	// isChatRequestActive 가 이어받아 새 글은 줄로 간다.
 	const sendingRef = useRef(false);
 	const sendingTextRef = useRef("");
+	const webGpuReplyTurnRef = useRef(false);
 	const activeSpeechActivityRef = useRef<{
 		activityId: string;
 		profileGeneration: number;
@@ -1081,6 +1088,10 @@ export function ChatArea({
 		// cannot block the next turn forever.
 		const ttsVisualStateActive = outputStage !== null;
 		if (!store.isStreaming && !ttsActive && !ttsVisualStateActive) return;
+		if (webGpuReplyTurnRef.current) {
+			cancelFirstWebGpuReply();
+			webGpuReplyTurnRef.current = false;
+		}
 		settleInstalledAppReply("", t("apps.requestCancelled"));
 		// A cancelled response may never deliver its terminal `finish` chunk.
 		// Do not let an unfinished reasoning block hide the next request.
@@ -2575,6 +2586,11 @@ export function ChatArea({
 			}
 			return;
 		}
+		const sendConfig = loadConfig();
+		const sendMainRole = sendConfig ? effectiveMainRole(sendConfig) : {};
+		webGpuReplyTurnRef.current =
+			isWebMode() && (sendMainRole.provider ?? sendConfig?.provider) === "webllm";
+		if (webGpuReplyTurnRef.current) beginFirstWebGpuReply();
 		sendingRef.current = true;
 		sendingTextRef.current = text;
 		// 첫 await 전에 입력칸을 비워, 기다리는 동안 같은 글이 다시 보내지지 않게 한다.
@@ -2585,6 +2601,10 @@ export function ChatArea({
 		try {
 			await runSendTurn(text, installedAppTurn, false, restoreInput);
 		} catch (err) {
+			if (webGpuReplyTurnRef.current) {
+				failFirstWebGpuReply();
+				webGpuReplyTurnRef.current = false;
+			}
 			restoreInput();
 			Logger.warn("ChatArea", "send turn failed before reply", {
 				error: err instanceof Error ? err.message : String(err),
@@ -3083,6 +3103,10 @@ export function ChatArea({
 				// app startup / settings save (#260). Not transmitted per-chat.
 			});
 		} catch (err) {
+			if (webGpuReplyTurnRef.current) {
+				failFirstWebGpuReply();
+				webGpuReplyTurnRef.current = false;
+			}
 			const errStr = String(err);
 			settleInstalledAppReply("", t("apps.requestFailed"));
 			if (isKioskDemo()) {
@@ -3700,6 +3724,10 @@ export function ChatArea({
 		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
 		useChatStore.getState().appendStreamChunk(visible);
+		if (webGpuReplyTurnRef.current) {
+			finishFirstWebGpuReply();
+			webGpuReplyTurnRef.current = false;
+		}
 		if (ttsTextSyncRef.current.active) {
 			ttsTextSyncRef.current.canonical += visible;
 		}
@@ -3939,6 +3967,10 @@ export function ChatArea({
 				kioskAutoRetriedRef.current = false;
 				flushThinkingStream();
 				flushGestureTriggerStream();
+				if (webGpuReplyTurnRef.current) {
+					failFirstWebGpuReply();
+					webGpuReplyTurnRef.current = false;
+				}
 				settleInstalledAppReply(useChatStore.getState().streamingContent);
 				// Flush remaining text to TTS (both pipeline and chat mode)
 				if (sentenceChunkerRef.current) {
@@ -4015,6 +4047,10 @@ export function ChatArea({
 				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
 				break;
 			case "error": {
+				if (webGpuReplyTurnRef.current) {
+					failFirstWebGpuReply();
+					webGpuReplyTurnRef.current = false;
+				}
 				const failureDetail = installedAppTurnRef.current
 					? t("apps.requestFailed")
 					: wireErrorMessage(chunk.code, chunk.message);

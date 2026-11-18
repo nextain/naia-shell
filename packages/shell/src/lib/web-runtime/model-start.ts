@@ -8,6 +8,7 @@ import {
 	type WebLlmModelId,
 } from "./webllm-model";
 import { setWebModelStatus } from "./web-model-status";
+import { trackWebGpuAnalyticsEvent } from "./usage-analytics";
 
 export async function startWebModel(deps: {
 	gpu: GpuLike | undefined;
@@ -34,6 +35,7 @@ export async function startWebModel(deps: {
 
 		const result = await checkWebGpu(deps.gpu);
 		if (!result.ok) {
+			trackWebGpuAnalyticsEvent("webgpu_unsupported");
 			setWebModelStatus({
 				phase: "error",
 				errorKind: "no-webgpu",
@@ -50,6 +52,7 @@ export async function startWebModel(deps: {
 				model = to;
 				Logger.info("WebModel", "auto-selected f32 model", { from, to });
 			} else {
+				trackWebGpuAnalyticsEvent("webgpu_unsupported");
 				setWebModelStatus({
 					phase: "error",
 					errorKind: "no-shader-f16",

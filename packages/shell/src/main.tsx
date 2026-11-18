@@ -44,7 +44,9 @@ if ("__TAURI_INTERNALS__" in window) {
 }
 
 async function bootstrap() {
-	if ("__TAURI_INTERNALS__" in window) await bootstrapAdkPath();
+	if (import.meta.env.MODE !== "web" && "__TAURI_INTERNALS__" in window) {
+		await bootstrapAdkPath();
+	}
 	const { App } = await import("./App");
 	await bootstrapShell({
 		initializeI18n,

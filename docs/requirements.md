@@ -1982,3 +1982,13 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 | 공개 지식에 웹 시험판과 앱 우선 기능, 자체 음성의 한계, 단일 GPU 성능, 웹 접근성·브라우저 기억·공개 하네스를 한영으로 안내하고 기존 미수정 원고를 갱신한다. | Done |
 | 입장 첫 인사에서 회사 소개 슬라이드 발표를 한영으로 안내한다. | Done |
 | 웹은 저장된 수동 방향 대신 창 크기에 따라 배치를 갱신하고 모바일 대화창을 화면 너비에 맞춘다. 네이티브 수동 배치는 유지한다. 이는 FR-WEB-KIOSK-FIX7D.1의 웹 수동 방향 부분을 대체한다. | Done |
+
+## FR-USAGE-STATS-WEBGPU-R1 — 웹GPU 사용 통계 로컬 범위 (2026-11-18)
+
+요구서 참조: 외부 사용 통계 요구서 US-01~05·US-07, T-01·T-03·T-05, GAP-03.
+
+| ID | 요구사항 | P02 검증 | 상태 |
+|---|---|---|---|
+| FR-USAGE-STATS-WEBGPU-R1.1 | 웹GPU는 `webgpu_model_download_start`, `webgpu_model_download_complete`, `webgpu_model_ready`, `webgpu_model_download_fail`, `webgpu_unsupported`, `webgpu_first_reply`, `webgpu_reply_fail`만 보낸다. 받기 시작은 모델 엔진이 실제 파일 `fetch`를 시작할 때만 보내 캐시 적중을 제외한다. 첫 답변은 최초 사용자 전송부터 화면에 표시된 답변까지의 유한한 0 이상 초 숫자만 보낸다. | `usage-analytics.test.ts`, 실제 WebGPU 파일 받기는 기존 Worker 경로 대조 | In Progress |
+| FR-USAGE-STATS-WEBGPU-R1.2 | 미선택·거절에서는 Google 태그·사건·식별자·대기열·요청이 0이다. 모델 준비와 대화 기능은 동의 여부와 독립이다. 허용 뒤 철회는 현재/다른 탭 및 재방문에서 추가 요청을 중지하고, 로딩 중 대기한 사건을 폐기한다. | `webgpu-usage-stats.spec.ts`: T-01·T-03, 두 탭·새로고침 | In Progress |
+| FR-USAGE-STATS-WEBGPU-R1.3 | 수신 ID는 `VITE_WEBGPU_GA4_MEASUREMENT_ID` 빌드 환경값 하나로 정한다. 유효한 개발 ID가 없으면 전송하지 않는다. 질문·답변·자유 입력·주소·모델/GPU명·오류 원문은 전송하지 않고 첫 답변에는 초 숫자 외 속성을 금한다. | `usage-analytics.test.ts`, `webgpu-usage-stats.spec.ts`: T-05, 모의 수신 본문 검사 | In Progress |

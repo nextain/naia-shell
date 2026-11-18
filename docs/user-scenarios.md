@@ -3216,3 +3216,9 @@ P02 검증: 기본·빈 대화·진행·성공·오류 복구·좁은 폭 상태
 | `src/lib/kiosk-demo/knowledge.test.ts` | 지식 컴파일, 기존 원고 갱신과 방문자 수정 보존 |
 | `src/components/__tests__/ChatArea.test.tsx` | 첫 인사, 음성·입 모양 및 실패 대체 |
 | `src/components/__tests__/AppMainContent.test.tsx`, `e2e/web-mobile-r12.spec.ts` | 창 크기 변경, 저장된 방향, 좁은 폭·메뉴·대화창 조작 |
+
+## UC-WEBGPU-USAGE-STATS-R1 — 웹GPU 사용 통계 동의·철회 (2026-11-18)
+
+웹판 방문자는 모델을 쓰기 전에 사용 통계 수집 여부를 고른다. 거절하거나 아직 고르지 않아도 모델 준비와 대화를 계속 사용할 수 있다. 허용한 경우에만 모델 받기·준비·첫 답변의 고정 사건이 개발 수신처로 전송된다. 질문·답변·주소·GPU 식별값은 전송하지 않는다. 방문자는 언제든 통계를 끄고, 철회는 열린 탭·다른 탭·새로고침 뒤에도 추가 요청을 막는다.
+
+P02 Test Coverage Map: `packages/shell/src/lib/web-runtime/__tests__/usage-analytics.test.ts` — ID 없음·동의 전 0, 고정 이름표와 첫 답변 숫자 초 정제, 허용 외 값 제거, 로딩 중 철회 후 대기 사건 폐기. `packages/shell/e2e/webgpu-usage-stats.spec.ts` — 모의 GTM 수신기·`page.on('request')`로 미선택/거절 0건, 두 탭·철회·새로고침 0건, 금지 표식 미포함. 기본/선택/철회/좁은 화면에서 동의 안내가 핵심 채팅 동작을 가리지 않는지 P04에서 확인한다.
