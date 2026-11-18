@@ -17,6 +17,7 @@ export const useWebAdkStatus: () => WebAdkStatus =
 
 
 export interface WebWorkspaceSetupProps {
+	compact?: boolean;
 	status?: WebAdkStatus;
 	onStartDefault?: () => void;
 	onRetry?: () => void;
@@ -47,17 +48,20 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 			className="web-workspace-setup"
 			data-testid="web-workspace-setup"
 			data-phase={status.phase}
+			aria-busy={status.phase === "checking" || status.phase === "installing"}
 			style={{
 				display: "flex",
 				flexDirection: "column",
 				alignItems: "center",
-				justifyContent: "center",
-				padding: "2rem",
+				justifyContent: props.compact ? "flex-start" : "center",
+				padding: props.compact ? "4px 12px" : "2rem",
 				textAlign: "center",
-				gap: "1.25rem",
-				flex: 1,
+				gap: props.compact ? "0.25rem" : "1.25rem",
+				flex: props.compact ? "none" : 1,
 				width: "100%",
-				minHeight: "200px",
+				minHeight: props.compact ? 0 : "200px",
+				maxHeight: props.compact ? "min(40%, 10rem)" : undefined,
+				overflowY: props.compact ? "auto" : undefined,
 			}}
 		>
 			{status.phase === "needs-setup" && (
@@ -67,12 +71,12 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 						display: "flex",
 						flexDirection: "column",
 						alignItems: "center",
-						gap: "1rem",
+						gap: props.compact ? "0.25rem" : "1rem",
 					}}
 				>
 					<p
 						className="web-workspace-description"
-						style={{ fontSize: "0.95rem", color: "var(--color-text-secondary, #888)", margin: 0 }}
+						style={{ fontSize: props.compact ? "0.75rem" : "0.95rem", color: "var(--color-text-secondary, #888)", margin: 0, overflowWrap: "anywhere" }}
 					>
 						{t("webWorkspace.description")}
 					</p>
@@ -113,7 +117,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 						gap: "0.75rem",
 					}}
 				>
-					<p className="web-workspace-installing" style={{ fontSize: "0.95rem", margin: 0 }}>
+					<p className="web-workspace-installing" role="status" aria-live="polite" style={{ fontSize: "0.95rem", margin: 0 }}>
 						{t("webWorkspace.installing", {
 							done: status.done ?? 0,
 							total: status.total ?? 0,
@@ -127,14 +131,15 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 					className="web-workspace-setup-body"
 					style={{
 						display: "flex",
-						flexDirection: "column",
+						flexDirection: props.compact ? "row" : "column",
 						alignItems: "center",
-						gap: "1rem",
+						gap: props.compact ? "0.5rem" : "1rem",
 					}}
 				>
 					<p
 						className="web-workspace-error-reason"
-						style={{ fontSize: "0.9rem", color: "var(--color-error, #e53e3e)", margin: 0 }}
+						role="alert"
+						style={{ fontSize: "0.9rem", color: "var(--color-error, #e53e3e)", margin: 0, overflowWrap: "anywhere", maxHeight: props.compact ? "3em" : undefined, overflowY: props.compact ? "auto" : undefined }}
 					>
 						{status.reason}
 					</p>

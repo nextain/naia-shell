@@ -576,6 +576,8 @@ export function ChatArea({
 }: { variant?: ChatVariant; headerControls?: ReactNode } = {}) {
 	const webModelStatus = useWebModelStatus();
 	const webAdkStatus = useWebAdkStatus();
+	const webWorkspacePending =
+		import.meta.env.MODE === "web" && webAdkStatus.phase !== "ready";
 	const webSendBlocked =
 		import.meta.env.MODE === "web" &&
 		isWebSendBlocked(webModelStatus, webAdkStatus, loadConfig()?.provider);
@@ -5728,10 +5730,7 @@ export function ChatArea({
 					className="chat-messages"
 					style={{ display: activeTab === "chat" ? "flex" : "none" }}
 				>
-					{import.meta.env.MODE === "web" &&
-					webAdkStatus.phase !== "ready" ? (
-						<WebWorkspaceSetup status={webAdkStatus} />
-					) : (
+					{webWorkspacePending ? null : (
 						<>
 							{messages
 						.filter((msg) => {
@@ -5928,7 +5927,11 @@ export function ChatArea({
 				)}
 
 				{activeTab === "chat" && (
-					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
+					webWorkspacePending ? (
+						<WebWorkspaceSetup compact status={webAdkStatus} />
+					) : (
+						<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
+					)
 				)}
 
 				{(import.meta.env.MODE === "web" || isKioskDemo()) &&
