@@ -43,6 +43,7 @@ for (const viewport of [
 		await expect(page.locator(".splash-screen")).toHaveCount(0);
 		await page.getByTestId("web-workspace-start-default").click();
 		await expect.poll(() => page.evaluate(() => window.__NAIA_WEB_ADK_STATUS__?.().phase), { timeout: 120_000 }).toBe("ready");
+		await expect(page.getByTestId("web-model-status")).toHaveAttribute("data-phase", "ready");
 		await page.evaluate(async () => {
 			const statusSource = "/src/lib/web-runtime/web-model-status.ts";
 			const status = await import(/* @vite-ignore */ statusSource);
