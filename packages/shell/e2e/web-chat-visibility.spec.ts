@@ -90,6 +90,27 @@ for (const viewport of [
 			await focusWithTab(page, control);
 			await expectPointerTarget(control);
 		}
+		if (viewport.width === 800) {
+			// A real drag opts out of the automatic minimum; the user's explicit
+			// sizing and the existing hide/show control must still work.
+			const wrapper = page.locator(".naia-chat-wrapper");
+			const toggle = page.locator(".naia-chat-toggle");
+			const before = await wrapper.boundingBox();
+			const handle = await toggle.boundingBox();
+			if (!before || !handle) throw new Error("missing chat resize geometry");
+			await expectPointerTarget(toggle);
+			await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+			await page.mouse.down();
+			await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 + 110, { steps: 8 });
+			await page.mouse.up();
+			await expect(wrapper).toHaveAttribute("data-chat-user-sized", "true");
+			await expect.poll(async () => (await wrapper.boundingBox())?.height ?? before.height).toBeLessThan(before.height - 50);
+			await toggle.click();
+			await expect(wrapper).toHaveClass(/naia-chat-wrapper--hidden/);
+			await toggle.click();
+			await expect(wrapper).not.toHaveClass(/naia-chat-wrapper--hidden/);
+			await expect(wrapper).toHaveAttribute("data-chat-user-sized", "true");
+		}
 		await context.close();
 	});
 }

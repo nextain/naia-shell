@@ -1512,3 +1512,12 @@
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app:not(.chat-app--workspace-pending) {
 	overflow-y: auto;
 }
+
+/* On short landscape windows the default 40%-height chat cannot fit the
+   message, controls and composer together. Respect a user-resized or hidden
+   chat, and leave the independently managed workspace and kiosk layouts alone. */
+@media (min-width: 601px) and (max-height: 600px) and (orientation: landscape) {
+	[data-naia-web="true"]:not([data-layout-orientation="portrait"]) .app-root:not([data-kiosk-demo="true"]):not([data-ui-mode="workspace"]) .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):not([data-chat-user-sized="true"]) {
+		min-height: min(360px, calc(100dvh - 48px));
+	}
+}
