@@ -45,15 +45,16 @@ for (const viewport of [
 		await expect.poll(() => page.evaluate(() => window.__NAIA_WEB_ADK_STATUS__?.().phase), { timeout: 120_000 }).toBe("ready");
 		await page.evaluate(async () => {
 			const statusSource = "/src/lib/web-runtime/web-model-status.ts";
-			const chatSource = "/src/stores/chat.ts";
 			const status = await import(/* @vite-ignore */ statusSource);
 			status.setWebModelStatus({ phase: "ready", progress: 1, model: "Qwen3-4B-q4f32_1-MLC", adapter: { vendor: "nvidia", architecture: "ampere", description: "NVIDIA GeForce RTX 3090" }, shaderF16: false });
-			const { useChatStore } = await import(/* @vite-ignore */ chatSource);
-			useChatStore.setState({ messages: [{ id: "a", role: "user", content: "화면 메시지 검증", timestamp: 1 }, { id: "b", role: "assistant", content: "두 번째 대화가 보이는지 확인합니다.", timestamp: 2 }] });
 		});
+		const input = page.locator(".naia-chat-area .chat-input");
+		await input.fill("화면 메시지 검증");
+		await expect(page.locator(".naia-chat-area .chat-send-btn")).toBeEnabled();
+		await input.press("Enter");
 		const messages = page.locator(".chat-messages");
 		const last = page.locator(".chat-message").last();
-		await expect(last).toContainText("두 번째 대화가 보이는지 확인합니다.");
+		await expect(last).toContainText("웹 가짜 엔진 응답입니다.");
 		await expect.poll(() => messages.evaluate((el) => el.clientHeight)).toBeGreaterThanOrEqual(64);
 		// Do not scroll here: the newest message must be visible immediately
 		// after it is added, before the user manipulates the chat container.
@@ -77,7 +78,6 @@ for (const viewport of [
 		const returnButton = page.getByTestId("web-model-back-to-default");
 		await focusWithTab(page, returnButton);
 		await expectPointerTarget(returnButton);
-		const input = page.locator(".naia-chat-area .chat-input");
 		await focusWithTab(page, input);
 		await expectPointerTarget(input);
 		await page.evaluate(async () => {
