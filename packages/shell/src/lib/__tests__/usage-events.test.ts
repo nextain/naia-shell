@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usageControlAliases } from "../usage-control-aliases";
 import {
+	USAGE_SEMANTIC_EVENTS,
 	USAGE_STATE_KEY,
 	type UsageEvent,
 	UsageEvents,
@@ -52,12 +54,57 @@ function fixture(options: { configured?: boolean } = {}) {
 		offline: () => {
 			online = false;
 		},
+		online: () => {
+			online = true;
+		},
 	};
 }
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("usage consent and privacy boundary", () => {
+	it("matches the 30 fixed semantic names in US-06", () => {
+		expect([...USAGE_SEMANTIC_EVENTS].sort()).toEqual(
+			[
+				"shell.start.observed",
+				"shell.launch.start",
+				"intro.screen.view",
+				"intro.navigation.click",
+				"intro.provider.choose",
+				"intro.welcome.link",
+				"intro.speech.select",
+				"intro.character.select",
+				"intro.background.select",
+				"intro.voice.select",
+				"intro.voice.preview",
+				"intro.finish.saved",
+				"login.browser.start",
+				"login.credentials.saved",
+				"login.credentials.restored",
+				"login.attempt.fail",
+				"app.screen.view",
+				"home.menu.open",
+				"home.shortcut.click",
+				"settings.tab.open",
+				"settings.option.click",
+				"settings.voice.click",
+				"settings.save.click",
+				"settings.update.check",
+				"chat.message.send",
+				"chat.voice.toggle",
+				"chat.voice.cancel",
+				"chat.session.new",
+				"chat.reply.first",
+				"privacy.choice.select",
+			].sort(),
+		);
+		const inventory = readFileSync(
+			"../../docs/progress/usage-events/event-inventory.md",
+			"utf8",
+		);
+		for (const name of USAGE_SEMANTIC_EVENTS) expect(inventory).toContain(name);
+	});
+
 	it("collects zero in memory/storage/network before consent and after decline", async () => {
 		const f = fixture();
 		f.usage.record("chat.message.send", "text");
@@ -71,6 +118,51 @@ describe("usage consent and privacy boundary", () => {
 		await f.usage.flush();
 		expect(f.map.has(USAGE_STATE_KEY)).toBe(false);
 		expect(f.send).not.toHaveBeenCalled();
+	});
+	it("rejects synthetic personal markers before the send boundary", async () => {
+		const f = fixture();
+		await f.usage.choose(true);
+		await f.drain();
+		await f.usage.flush();
+		f.send.mockClear();
+
+		const markers = [
+			"Synthetic Person R2",
+			"r2-marker@example.test",
+			"Synthetic question R2: where is my private data?",
+			"https://marker.invalid/private/address?token=synthetic",
+			"/tmp/private-r2-marker/secret.txt",
+			"Synthetic raw failure R2: bearer=marker-token",
+		];
+		f.usage.record(markers[1], "text");
+		f.usage.record("chat.message.send", markers[4]);
+		f.usage.record("chat.message.send", markers[3]);
+		f.usage.record("intro.provider.choose", "provider", {
+			choice: markers[2],
+		});
+		f.usage.record("login.browser.start", "intro", {
+			attempt_id: markers[1],
+		});
+		f.usage.record("login.attempt.fail", "intro", {
+			attempt_id: "00000000-0000-4000-8000-000000000123",
+			failure: markers[5],
+		});
+		f.usage.record("chat.message.send", "text", {
+			name: markers[0],
+		} as never);
+		await f.drain();
+		await f.usage.flush();
+		expect(f.send).not.toHaveBeenCalled();
+
+		f.usage.record("chat.message.send", "text");
+		await f.drain();
+		await f.usage.flush();
+		const requestBody = JSON.stringify(
+			f.send.mock.calls[0][0].map((event) =>
+				usageEnvelope(event, "00000000-0000-4000-8000-000000000124"),
+			),
+		);
+		for (const marker of markers) expect(requestBody).not.toContain(marker);
 	});
 	it("starts at sequence one once, persists identity and sequence across restarts", async () => {
 		const f = fixture();
@@ -191,6 +283,7 @@ describe("usage consent and privacy boundary", () => {
 		await other.flush();
 		const events = f.send.mock.calls.flatMap((c) => c[0]);
 		expect(new Set(events.map((e) => e.sequence)).size).toBe(events.length);
+		expect(new Set(events.map((e) => e.event_id)).size).toBe(events.length);
 		other.record("chat.session.new", "chat");
 		await f.usage.choose(false);
 		await f.drain();
@@ -255,6 +348,12 @@ describe("bounded, ephemeral, best-effort batches", () => {
 		await f.usage.flush();
 		expect(f.usage.pending).toBe(0);
 		expect(f.send.mock.calls[0][0]).toEqual(f.send.mock.calls[1][0]);
+		expect(f.send.mock.calls[1][0].map((event) => event.event_id)).toEqual(
+			f.send.mock.calls[0][0].map((event) => event.event_id),
+		);
+		expect(f.send.mock.calls[1][0].map((event) => event.sequence)).toEqual(
+			f.send.mock.calls[0][0].map((event) => event.sequence),
+		);
 		f.usage.record("chat.session.new", "chat");
 		await f.drain();
 		f.time(600001);
@@ -265,6 +364,10 @@ describe("bounded, ephemeral, best-effort batches", () => {
 		f.offline();
 		await f.usage.flush();
 		expect(f.usage.pending).toBe(0);
+		const sendsBeforeOnline = f.send.mock.calls.length;
+		f.online();
+		await f.usage.flush();
+		expect(f.send).toHaveBeenCalledTimes(sendsBeforeOnline);
 	});
 	it("records only the first reply per installation across instances", async () => {
 		const f = fixture();

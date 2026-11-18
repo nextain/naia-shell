@@ -67,6 +67,8 @@ const semantic: Record<string, readonly string[]> = {
 	"chat.reply.first": ["text", "voice"],
 	"privacy.choice.select": ["allow", "enable"],
 };
+/** Stable semantic event names from US-06, distinct from detailed UI controls. */
+export const USAGE_SEMANTIC_EVENTS = Object.freeze(Object.keys(semantic));
 const choices: Record<string, readonly string[]> = {
 	"intro.navigation.click": ["back", "next", "start"],
 	"intro.provider.choose": ["naia_start", "manual", "later"],

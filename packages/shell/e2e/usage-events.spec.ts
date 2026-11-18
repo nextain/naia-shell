@@ -124,6 +124,17 @@ test("batches allowlisted clicks, uses Steam channel and stops immediately from 
 		expect(h.referer).toBeUndefined();
 		expect(h["x-naia-instance-id"]).toBeUndefined();
 	}
+	const syntheticMarkers = [
+		"Synthetic Person R2",
+		"r2-marker@example.test",
+		"Synthetic question R2: where is my private data?",
+		"https://marker.invalid/private/address?token=synthetic",
+		"/tmp/private-r2-marker/secret.txt",
+		"Synthetic raw failure R2: bearer=marker-token",
+	];
+	const requestArtifacts = JSON.stringify({ payloads, headers });
+	for (const marker of syntheticMarkers)
+		expect(requestArtifacts).not.toContain(marker);
 	// Same profile in a second real browser tab shares consent and atomic state.
 	const second = await context.newPage();
 	await second.goto("/");
@@ -141,6 +152,62 @@ test("batches allowlisted clicks, uses Steam channel and stops immediately from 
 	await page.waitForTimeout(5500);
 	expect(payloads).toHaveLength(count);
 	await second.close();
+});
+
+test("T-05 sends fixed payloads and headers without synthetic personal markers", async ({
+	page,
+	context,
+}) => {
+	const payloads: unknown[] = [];
+	const headers: Record<string, string>[] = [];
+	await context.route(
+		"https://*.applicationinsights.azure.com/v2.1/track",
+		async (route) => {
+			if (route.request().method() === "OPTIONS") {
+				await route.fulfill({
+					status: 204,
+					headers: {
+						"access-control-allow-origin": "*",
+						"access-control-allow-headers": "content-type",
+					},
+				});
+				return;
+			}
+			payloads.push(route.request().postDataJSON());
+			headers.push(route.request().headers());
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: { "access-control-allow-origin": "*" },
+				body: '{"itemsAccepted":3}',
+			});
+		},
+	);
+	await page.goto("/");
+	await page
+		.getByRole("button", { name: "Allow usage statistics", exact: true })
+		.click();
+	await expect(page.locator(".chat-app")).toBeVisible();
+	await expect
+		.poll(() => payloads.length, { timeout: 15_000 })
+		.toBeGreaterThan(0);
+
+	const markers = [
+		"Synthetic Person R2",
+		"r2-marker@example.test",
+		"Synthetic question R2: where is my private data?",
+		"https://marker.invalid/private/address?token=synthetic",
+		"/tmp/private-r2-marker/secret.txt",
+		"Synthetic raw failure R2: bearer=marker-token",
+	];
+	const requestArtifacts = JSON.stringify({ payloads, headers });
+	for (const marker of markers) expect(requestArtifacts).not.toContain(marker);
+	for (const requestHeaders of headers) {
+		expect(requestHeaders.authorization).toBeUndefined();
+		expect(requestHeaders.cookie).toBeUndefined();
+		expect(requestHeaders.referer).toBeUndefined();
+		expect(requestHeaders["x-naia-instance-id"]).toBeUndefined();
+	}
 });
 
 test("storage failure explains recovery and permits continuing with statistics off", async ({
