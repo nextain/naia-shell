@@ -560,7 +560,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	height: 12px;
 	padding: 0;
 	border-radius: 999px;
-	font-size: 9px;
+	font-size: calc(9px * var(--ui-font-scale, 1));
 	line-height: 1;
 	font-weight: 700;
 	color: transparent;
