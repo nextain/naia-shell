@@ -5486,7 +5486,7 @@ export function ChatArea({
 	}
 	return (
 		<>
-			<div className={`chat-app chat-app--${variant}`}>
+			<div className={`chat-app chat-app--${variant}${webWorkspacePending ? " chat-app--workspace-pending" : ""}`}>
 				{/* Header with tabs */}
 				<div className="chat-header">
 					<div className="chat-tabs">
@@ -5937,7 +5937,7 @@ export function ChatArea({
 				{(import.meta.env.MODE === "web" || isKioskDemo()) &&
 					activeTab === "chat" &&
 					(kioskLocalAnswer || loadConfig()?.provider === "webllm") && (
-						<WebModelStatusBar />
+						<WebModelStatusBar scrollDuringSetup={webWorkspacePending} />
 					)}
 
 				{(characterTransitionPending || greetingPreparing) && (
