@@ -172,9 +172,30 @@ export function deactivateSlidePresenterSpeechConsumer(): void {
 	presenterConsumerActive = false;
 }
 
+export function isSlidePresenterConsumerActive(): boolean {
+	return presenterConsumerActive;
+}
+
+export interface SlidePresenterSpeechTransport {
+	speak: (detail: SlidePresenterSpeechRequest) => void;
+	cancel: (detail: { requestId?: string; generation?: number }) => void;
+}
+
+let customSpeechTransport: SlidePresenterSpeechTransport | null = null;
+
+export function setSlidePresenterSpeechTransport(
+	transport: SlidePresenterSpeechTransport | null,
+): void {
+	customSpeechTransport = transport;
+}
+
 export function requestSlidePresenterSpeech(
 	detail: SlidePresenterSpeechRequest,
 ): void {
+	if (customSpeechTransport) {
+		customSpeechTransport.speak(detail);
+		return;
+	}
 	if (window.parent !== window) {
 		window.parent.postMessage({ type: "naia-slides:speak", detail }, "*");
 		return;
@@ -192,6 +213,10 @@ export function cancelSlidePresenterSpeech(
 		generation?: number;
 	} = {},
 ): void {
+	if (customSpeechTransport) {
+		customSpeechTransport.cancel(detail);
+		return;
+	}
 	if (window.parent !== window) {
 		window.parent.postMessage({ type: "naia-slides:cancel", detail }, "*");
 		return;

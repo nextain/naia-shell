@@ -196,6 +196,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-UI-FONT-SCALE-20261105",
   // 이음오피스 스튜디오(v0.2.0) 내장 웹 편집기 및 호스트 설치 감지·MCP 연결(#870). 확장앱·셸 표면 기능이다.
   "UC-IEUMOFFICE-MCP-870",
+  // 슬라이드 앱 순수 브라우저 PPTX 불러오기·내보내기 복구 및 웹 앱스토어 4종 미니앱 번들(2026-11-18). 확장앱·웹 앱스토어 표면 기능이다.
+  "UC-SLIDES-PPTX-WEB-20261118",
 ];
 
 export function ownedByEpic(uc: string): boolean {

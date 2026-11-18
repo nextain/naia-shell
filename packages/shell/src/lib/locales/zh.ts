@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "无法转换演示文稿。请打开 PDF 或重试。",
 	"slides.conversionTimeout": "转换超时。请打开 PDF 或重试。",
 	"slides.importBusy": "另一个演示文稿正在导入。",
+	"slides.exportPptx": "下载 PPTX",
+	"slides.pptxExportError": "无法导出 PPTX 演示文稿。",
 	"bgm.dragToReorder": "拖动以重新排序",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 城市流行",

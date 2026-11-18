@@ -1,12 +1,12 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { IeumOfficeStatus } from "../../lib/ieumoffice-mcp";
 import {
 	IEUMOFFICE_OFFICIAL_RELEASES_URL,
 	IEUMOFFICE_OFFICIAL_REPO_URL,
 	IEUMOFFICE_OFFICIAL_SITE_URL,
+	type IeumOfficeStatus,
 	buildFallbackNaiaPreset,
-} from "../../lib/ieumoffice-mcp";
+} from "./preset";
 import { Logger } from "../../lib/logger";
 import {
 	buildAiDocumentPrompt,
@@ -122,6 +122,7 @@ export function IeumOfficeApp(): React.ReactElement {
 		(
 			type: string,
 			extra: Record<string, unknown> = {},
+			timeoutMs = 1200,
 		): Promise<Record<string, unknown>> => {
 			return new Promise((resolve) => {
 				if (typeof window === "undefined" || window.parent === window) {
@@ -132,7 +133,7 @@ export function IeumOfficeApp(): React.ReactElement {
 				const timer = setTimeout(() => {
 					pendingBridgeMapRef.current.delete(id);
 					resolve({ ok: false, timeout: true });
-				}, 6000);
+				}, timeoutMs);
 				pendingBridgeMapRef.current.set(id, (payload) => {
 					clearTimeout(timer);
 					resolve(payload);
@@ -146,7 +147,7 @@ export function IeumOfficeApp(): React.ReactElement {
 	const refreshHostStatus = useCallback(async () => {
 		setCheckingHost(true);
 		Logger.debug(TAG, "requesting desktop ieumoffice status");
-		const res = await sendHostBridgeRequest("naia-ieumoffice:get-status");
+		const res = await sendHostBridgeRequest("naia-ieumoffice:get-status", {}, 800);
 		if (res.ok && res.status && typeof res.status === "object") {
 			setHostStatus(res.status as IeumOfficeStatus);
 		} else if (!hostStatus) {
@@ -386,7 +387,7 @@ export function IeumOfficeApp(): React.ReactElement {
 				break;
 			case "pptx":
 				triggerDownload(
-					buildPptxBytes(doc.slides),
+					buildPptxBytes(doc.slides, doc.title || safeName),
 					`${safeName}.pptx`,
 					"application/vnd.openxmlformats-officedocument.presentationml.presentation",
 				);
@@ -458,7 +459,29 @@ export function IeumOfficeApp(): React.ReactElement {
 	};
 
 	const handleToggleSpeak = () => {
-		if (typeof window === "undefined" || window.parent === window) return;
+		if (typeof window === "undefined") return;
+		if (window.parent === window) {
+			if (speakingId) {
+				window.speechSynthesis?.cancel();
+				setSpeakingId(null);
+				return;
+			}
+			const standaloneText = serializeActiveDocument(doc).slice(0, 1500);
+			if (!standaloneText.trim()) return;
+			if (
+				typeof window.speechSynthesis !== "undefined" &&
+				typeof SpeechSynthesisUtterance !== "undefined"
+			) {
+				const id = makeRequestId("ieum-speak");
+				const utterance = new SpeechSynthesisUtterance(standaloneText);
+				utterance.lang = locale === "ko" ? "ko-KR" : "en-US";
+				utterance.onend = () => setSpeakingId((cur) => (cur === id ? null : cur));
+				utterance.onerror = () => setSpeakingId((cur) => (cur === id ? null : cur));
+				setSpeakingId(id);
+				window.speechSynthesis.speak(utterance);
+			}
+			return;
+		}
 		if (speakingId) {
 			window.parent.postMessage(
 				{

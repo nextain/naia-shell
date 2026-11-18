@@ -1396,6 +1396,8 @@ export default {
 	"slides.conversionFailed": "The presentation could not be converted. Open a PDF or try again.",
 	"slides.conversionTimeout": "Conversion timed out. Open a PDF or try again.",
 	"slides.importBusy": "Another presentation import is already running.",
+	"slides.exportPptx": "Download PPTX",
+	"slides.pptxExportError": "Could not export PPTX presentation.",
 	"bgm.dragToReorder": "Drag to reorder",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 City Pop",

@@ -10,18 +10,17 @@ export default defineConfig({
 	plugins: [
 		react(),
 		{
-			// The packaged Slides app loads inside a Tauri asset-protocol iframe
-			// (convertFileSrc → http://asset.localhost/…). Vite tags its module
-			// script/stylesheet with `crossorigin`, which forces a CORS-mode fetch
-			// that the asset protocol does not answer with the required headers —
-			// so the module never executes and `#root` stays blank (2026-08-31
-			// rehearsal: installed Slides app rendered empty in real WebView2 while
-			// the browser Playwright e2e passed). Strip `crossorigin`; the assets
-			// are same-origin as the iframe document and need no CORS handshake.
-			name: "naia-slides-strip-crossorigin",
+			// Classic <script defer> + IIFE avoids CORS preflight/Origin:null blocks in
+			// both Tauri asset.localhost iframes and Web App Store opaque sandboxes.
+			name: "naia-slides-classic-script",
 			enforce: "post",
 			transformIndexHtml(html) {
-				return html.replace(/\s+crossorigin(=(["'][^"']*["']|\S+))?/g, "");
+				return html
+					.replace(/\s+crossorigin(=(["'][^"']*["']|\S+))?/g, "")
+					.replace(
+						/<script\s+type=["']module["']\s+src=(["'][^"']+["'])\s*><\/script>/g,
+						"<script defer src=$1></script>",
+					);
 			},
 		},
 		{
@@ -40,6 +39,10 @@ export default defineConfig({
 		emptyOutDir: true,
 		rollupOptions: {
 			input: { index: resolve(__dirname, "slides.html") },
+			output: {
+				format: "iife",
+				inlineDynamicImports: true,
+			},
 		},
 	},
 });

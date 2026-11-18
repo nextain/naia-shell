@@ -10,6 +10,8 @@
     "build:slides": "vite build --config vite.slides.config.ts",
     "build:charcard": "vite build --config vite.charcard.config.ts",
     "build:ieumoffice": "vite build --config vite.ieumoffice.config.ts",
+    "build:cafelua-tarot": "vite build --config vite.cafelua-tarot.config.ts",
+    "build:hosted-apps": "node scripts/stage-web-hosted-apps.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "node scripts/dev-setup.mjs && node scripts/tauri-with-mode.mjs dev",

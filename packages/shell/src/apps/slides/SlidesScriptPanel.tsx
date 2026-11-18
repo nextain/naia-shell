@@ -10,6 +10,7 @@ export interface SlidesScriptPanelProps {
 	unexportedScript: boolean;
 	onBeginEdit: () => void;
 	onDownload: () => void;
+	onExportPptx: () => void;
 	onHide: () => void;
 	onDraftChange: (value: string) => void;
 	onApply: () => void;
@@ -26,6 +27,7 @@ export function SlidesScriptPanel({
 	unexportedScript,
 	onBeginEdit,
 	onDownload,
+	onExportPptx,
 	onHide,
 	onDraftChange,
 	onApply,
@@ -65,6 +67,17 @@ export function SlidesScriptPanel({
 						onClick={onDownload}
 					>
 						{t("slides.downloadEditedScript")}
+					</button>
+					<button
+						type="button"
+						className="slides-app__focus-button"
+						data-testid="slides-export-pptx"
+						aria-label={t("slides.exportPptx")}
+						disabled={!totalPages}
+						data-usage-event="slides-script-panel.on-export-pptx-6.click"
+						onClick={onExportPptx}
+					>
+						{t("slides.exportPptx")}
 					</button>
 				</div>
 				<button

@@ -1,4 +1,8 @@
 import { Logger } from "../../lib/logger";
+import {
+	buildPptxPresentation,
+	parsePptxPresentation,
+} from "../../lib/pptx-ooxml";
 
 const TAG = "IeumZipOoxmlEngine";
 
@@ -654,140 +658,44 @@ export function buildCsvText(sheet: SheetGrid): string {
 // ─── PPTX ────────────────────────────────────────────────────────────────────
 
 export async function parsePptxBytes(bytes: Uint8Array): Promise<SlideItem[]> {
-	const entries = await readZipEntries(bytes);
-	const slideEntries = [...entries.entries()]
-		.filter(([k]) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
-		.sort(([a], [b]) => {
-			const na = Number.parseInt(/\d+/.exec(a)?.[0] ?? "0", 10);
-			const nb = Number.parseInt(/\d+/.exec(b)?.[0] ?? "0", 10);
-			return na - nb;
-		});
-
-	if (slideEntries.length === 0) {
-		throw new Error("No slide XML entries found in .pptx file");
-	}
-
-	return slideEntries.map(([name, xmlBytes], idx) => {
-		const doc = parseXmlDoc(UTF8_DECODER.decode(xmlBytes));
-		const shapes = elementsByLocalName(doc, "sp");
-		const lines: string[] = [];
-		for (const sp of shapes) {
-			const paragraphs = elementsByLocalName(sp, "p");
-			for (const p of paragraphs) {
-				const text = elementsByLocalName(p, "t")
-					.map((t) => t.textContent ?? "")
-					.join("")
-					.trim();
-				if (text) lines.push(text);
+	const deck = await parsePptxPresentation(bytes);
+	return deck.slides.map((slide, idx) => {
+		const bulletLines = slide.bullets.map((b) => b.text);
+		if (slide.subtitle && slide.subtitle.trim()) {
+			bulletLines.unshift(slide.subtitle.trim());
+		}
+		for (const tbl of slide.tables) {
+			for (const row of tbl.rows) {
+				const joined = row.filter(Boolean).join(" | ");
+				if (joined) bulletLines.push(joined);
 			}
 		}
-		const slideNo = Number.parseInt(/\d+/.exec(name)?.[0] ?? String(idx + 1), 10);
-		const notesBytes = entries.get(`ppt/notesSlides/notesSlide${slideNo}.xml`);
-		const notes = notesBytes
-			? elementsByLocalName(parseXmlDoc(UTF8_DECODER.decode(notesBytes)), "t")
-					.map((t) => t.textContent ?? "")
-					.join(" ")
-					.trim()
-			: "";
 		return {
 			id: `slide-${idx + 1}`,
-			title: lines[0] ?? `Slide ${idx + 1}`,
-			bullets: lines.slice(1).length > 0 ? lines.slice(1) : [""],
-			notes,
+			title: slide.title || `Slide ${idx + 1}`,
+			bullets: bulletLines.length > 0 ? bulletLines : [""],
+			notes: slide.notes,
 		};
 	});
 }
 
-export function buildPptxBytes(slides: ReadonlyArray<SlideItem>): Uint8Array {
-	const safeSlides = slides.length > 0 ? slides : [{ id: "slide-1", title: "Slide 1", bullets: [""], notes: "" }];
-	const files: Array<{ name: string; data: string }> = [];
-
-	const slideOverrides = safeSlides
-		.map(
-			(_, i) =>
-				`  <Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
-		)
-		.join("\n");
-
-	files.push({
-		name: "[Content_Types].xml",
-		data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-${slideOverrides}
-</Types>`,
+export function buildPptxBytes(
+	slides: ReadonlyArray<SlideItem>,
+	deckTitle = "IeumOffice Presentation",
+): Uint8Array {
+	const safeSlides =
+		slides.length > 0
+			? slides
+			: [{ id: "slide-1", title: "Slide 1", bullets: [""], notes: "" }];
+	return buildPptxPresentation({
+		title: deckTitle,
+		creator: "IeumOffice Studio",
+		slides: safeSlides.map((s) => ({
+			title: s.title,
+			bullets: s.bullets.filter((b) => b.trim().length > 0),
+			notes: s.notes,
+		})),
 	});
-
-	files.push({
-		name: "_rels/.rels",
-		data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
-</Relationships>`,
-	});
-
-	const sldIdLst = safeSlides
-		.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`)
-		.join("");
-	files.push({
-		name: "ppt/presentation.xml",
-		data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:sldIdLst>${sldIdLst}</p:sldIdLst>
-  <p:sldSz cx="12192000" cy="6858000"/>
-  <p:notesSz cx="6858000" cy="9144000"/>
-</p:presentation>`,
-	});
-
-	const presRels = safeSlides
-		.map(
-			(_, i) =>
-				`  <Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
-		)
-		.join("\n");
-	files.push({
-		name: "ppt/_rels/presentation.xml.rels",
-		data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-${presRels}
-</Relationships>`,
-	});
-
-	safeSlides.forEach((s, idx) => {
-		const bulletParas = s.bullets
-			.filter((b) => b.trim().length > 0)
-			.map(
-				(b) =>
-					`<a:p><a:r><a:rPr lang="ko-KR" sz="2000"/><a:t>${escapeXml(b)}</a:t></a:r></a:p>`,
-			)
-			.join("");
-		files.push({
-			name: `ppt/slides/slide${idx + 1}.xml`,
-			data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld>
-    <p:spTree>
-      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-      <p:grpSpPr/>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="685800" y="457200"/><a:ext cx="10820400" cy="1143000"/></a:xfrm></p:spPr>
-        <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="ko-KR" sz="3200" b="1"/><a:t>${escapeXml(s.title)}</a:t></a:r></a:p></p:txBody>
-      </p:sp>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="3" name="Content 2"/><p:cNvSpPr/><p:nvPr><p:ph idx="1"/></p:nvPr></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="685800" y="1828800"/><a:ext cx="10820400" cy="4343400"/></a:xfrm></p:spPr>
-        <p:txBody><a:bodyPr/><a:lstStyle/>${bulletParas || "<a:p><a:endParaRPr/></a:p>"}</p:txBody>
-      </p:sp>
-    </p:spTree>
-  </p:cSld>
-</p:sld>`,
-		});
-	});
-
-	return writeZipEntries(files);
 }
 
 // ─── HWPX (OWPML) ────────────────────────────────────────────────────────────

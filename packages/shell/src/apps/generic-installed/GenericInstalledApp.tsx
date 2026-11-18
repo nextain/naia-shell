@@ -63,7 +63,9 @@ export function createGenericInstalledApp(
 			const frame = iframeRef.current;
 			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, frameSrc);
 			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
-			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
+			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry, {
+				expectedFrameSrc: frameSrc,
+			});
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});

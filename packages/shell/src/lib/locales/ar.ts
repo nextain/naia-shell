@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "تعذّر تحويل العرض التقديمي. افتح PDF أو حاول مرة أخرى.",
 	"slides.conversionTimeout": "انتهت مهلة التحويل. افتح PDF أو حاول مرة أخرى.",
 	"slides.importBusy": "يتم استيراد عرض تقديمي آخر حاليًا.",
+	"slides.exportPptx": "تنزيل PPTX",
+	"slides.pptxExportError": "تعذر تصدير ملف PPTX.",
 	"bgm.dragToReorder": "اسحب لإعادة الترتيب",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 سيتي بوب",

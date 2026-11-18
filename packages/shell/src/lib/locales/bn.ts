@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "উপস্থাপনা রূপান্তর করা যায়নি। একটি PDF খুলুন বা আবার চেষ্টা করুন।",
 	"slides.conversionTimeout": "রূপান্তরের সময়সীমা শেষ হয়েছে। একটি PDF খুলুন বা আবার চেষ্টা করুন।",
 	"slides.importBusy": "অন্য একটি উপস্থাপনা ইতিমধ্যে আমদানি হচ্ছে।",
+	"slides.exportPptx": "PPTX ডাউনলোড করুন",
+	"slides.pptxExportError": "PPTX ফাইল রপ্তানি করা যায়নি।",
 	"bgm.dragToReorder": "সাজাতে টেনে আনুন",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 সিটি পপ",

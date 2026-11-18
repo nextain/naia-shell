@@ -2728,3 +2728,25 @@ Test Coverage Map (P02)
 | UC-IEUMOFFICE-MCP-870 | 순수 브라우저 ZIP·OOXML/OWPML/XMind 왕복(`.docx`, `.xlsx` 수식·순환참조, `.pptx`, `.hwpx`, `.xmind`→슬라이드/워드 변환) | `packages/shell/src/apps/ieumoffice/__tests__/zip-ooxml-engine.test.ts` | `pnpm -C packages/shell build:ieumoffice` (`dist-ieumoffice/index.html`) |
 | UC-IEUMOFFICE-MCP-870 | 웹 편집기 탭 전환, AI 수정안 비교·반영·되돌리기, `skill_ieumoffice_studio` 도구 응답, 공식 `pblsketch/ieumoffice` 주소 검증 | `packages/shell/src/apps/ieumoffice/__tests__/IeumOfficeApp.test.tsx` | `packages/shell/dist-ieumoffice/app.json` (`v0.2.0`) |
 | UC-IEUMOFFICE-MCP-870 | 호스트 `ieumoffice` 설치 경로 감지, Windows `ELECTRON_RUN_AS_NODE=1` MCP 실행 규격, 모델 도구 경계(`mcp__ieumoffice__*`), 출처 검증 | `packages/shell/src/lib/__tests__/ieumoffice-mcp.test.ts`; `packages/shell/src-tauri/src/ieumoffice.rs`; `packages/shell/src-tauri/src/cli_detect.rs` | `pnpm -C packages/shell build` 번들 예산 통과 |
+
+
+## UC-SLIDES-PPTX-WEB-20261118 — 슬라이드 앱 PPTX 순수 브라우저 불러오기·내보내기 복구 및 웹 앱스토어 4종 정적 미니앱 번들
+
+사용자는 데스크톱(Tauri)뿐 아니라 일반 웹 브라우저 및 웹 앱스토어에서 `나이아 슬라이드`(`land.naia.slides` `v0.2.0`)를 열어 외부 LibreOffice 의존 없이도 `.pptx`와 `.pdf` 발표 자료를 바로 불러오고(슬라이드 순서·제목·본문·내장 그림·발표자 노트 복원), 발표문을 편집한 뒤 표준 OOXML `.pptx`(슬라이드 마스터·레이아웃·테마·발표자 노트 포함) 또는 `.edited.md`로 내보낼 수 있다. 또한 웹 앱스토어에서 `슬라이드`(`v0.2.0`), `이음오피스`(`v0.2.0`), `카페루아 타로`(`v0.1.5`), `캐릭터 카드`(`v0.1.0`) 4종 정적 미니앱이 Tauri 없이 즉시 구동된다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 스토어 단독 슬라이드 앱을 열면 첫 화면에 예시 발표 자료가 표시되고, 상단 [PDF 또는 PPTX 열기] 단추가 웹 브라우저에서도 `.pdf`와 `.pptx` 모두 허용한다. |
+| 빈 목록 / 미선택 | 발표 자료가 없는 초기 상태에서는 빈 안내 화면이 표시되고 [PPTX 다운로드] 및 [편집한 Markdown 다운로드]는 비활성화된다. |
+| 진행 | `.pptx` 또는 `.pdf` 분석·불러오기 중 상태 표시줄에 진행 문구가 나타나고 중복 선택을 방지한다. |
+| 성공 | `.pptx`를 열면 `<p:sldIdLst>` 순서대로 슬라이드 카드·내장 이미지·발표자 노트가 표시되어 나이아가 바로 낭독하며, [PPTX 다운로드](`slides-export-pptx`)를 누르면 편집된 발표자 노트까지 포함된 유효한 OOXML `.pptx` 파일이 내려받아진다. |
+| 오류 | 손상된 ZIP·경로 이탈(`..`)·슬라이드 누락 등 비정상 `.pptx`를 선택하면 기존 발표 자료를 보존한 채 `invalidPptx` 인라인 오류 배너를 표시한다. |
+| 좁은 폭 | 560px 이하 모바일·좁은 폭에서도 슬라이드 카드와 발표문·내보내기 단추가 가로 넘침 없이 배치된다. |
+
+Test Coverage Map (P02)
+
+| UC | 상태·행동 | Vitest·Rust 파일·그룹 | 실 UI·빌드 검증 |
+|---|---|---|---|
+| UC-SLIDES-PPTX-WEB-20261118 | 표준 OOXML `.pptx` 생성·파싱·왕복(슬라이드 마스터·레이아웃·테마·발표자 노트·슬라이드 재정렬·경로 이탈 차단·실제 LibreOffice 변환 검증) | `packages/shell/src/lib/__tests__/pptx-ooxml.test.ts`; `packages/shell/src/apps/ieumoffice/__tests__/zip-ooxml-engine.test.ts` | `soffice --headless --convert-to pdf` 유효성 회귀 검증 |
+| UC-SLIDES-PPTX-WEB-20261118 | 브라우저 파일 입력 `.pptx` 직접 열기, 슬라이드 뷰어 렌더링, 발표문 편집 후 `.pptx` 내보내기(`slides-export-pptx`), `skill_slide_presenter` `export_pptx`·`create_deck` 도구, 호스트 브리지 `expectedFrameSrc` 일치 | `packages/shell/src/apps/__tests__/slides-pptx-regression.test.tsx`; `packages/shell/src/apps/__tests__/slides-script-editor.test.tsx`; `packages/shell/src/lib/__tests__/slides-files-bridge.test.ts` | `pnpm -C packages/shell build:slides` (`dist-slides/index.html`) |
+| UC-SLIDES-PPTX-WEB-20261118 | 웹 앱스토어 정적 미니앱 4종(`land.naia.slides`, `land.naia.ieumoffice`, `land.naia.cafelua-tarot`, `land.naia.charcard`) 단독 구동·매니페스트·Tauri 무의존 검증 | `packages/shell/src/apps/cafelua-tarot/__tests__/tarot-ui.test.tsx`; `packages/shell/src/apps/ieumoffice/__tests__/IeumOfficeApp.test.tsx`; `packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx` | Playwright 실 브라우저 4종 정적 번들 구동 검증 |

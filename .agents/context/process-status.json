@@ -18,8 +18,24 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-  "last_updated": "2026-11-16T15:40:00Z",
+  "last_updated": "2026-11-18T07:25:00Z",
   "current_work": {
+    "slides_pptx_web_apps_20261118": {
+      "issue": null,
+      "title": "슬라이드 앱(land.naia.slides v0.2.0) PPTX 순수 브라우저 불러오기·내보내기 완전 복구, 회귀 테스트 추가 및 웹 앱스토어 정적 미니앱 4종 빌드",
+      "requirements": "docs/requirements.md FR-SLIDES-PPTX-WEB.1~2 FR-WEB-HOSTED-APPS.1",
+      "scenario": "docs/user-scenarios.md UC-SLIDES-PPTX-WEB-20261118",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "P04_evidence": "Vitest 30 files / 217 tests PASS (pptx-ooxml + real LibreOffice soffice --headless --convert-to pdf conversion of Slides & IeumOffice .pptx, slides-pptx-regression, slides-*, ieumoffice, cafelua-tarot, charcard, usage-inventory, ui-font-scale, i18n); Playwright Chrome E2E 13/13 PASS (e2e/web-hosted-miniapps.spec.ts 4/4 in opaque sandbox, e2e/slides-standalone-build.spec.ts 2/2, e2e/slides-sidecar.spec.ts 7/7); check-compile-integrity, check-logging, check-bundle-budget, check-assembly-coverage, check-uc-traceability, check-dead-ui-specs, check-silent-clicks, check-lint-boundary, ci-verify-charter ALL PASS.",
+      "last_updated": "2026-11-18T07:25:00Z"
+    },
     "ieumoffice_mcp_studio_870": {
       "issue": 870,
       "title": "이음오피스(land.naia.ieumoffice v0.2.0) 내장 웹 편집기 스튜디오 및 데스크톱 ieumoffice mcp 자동 감지·연결",

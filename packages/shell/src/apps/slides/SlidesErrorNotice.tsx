@@ -6,6 +6,7 @@ export type SlidesFileError =
 	| "import"
 	| "unsaved"
 	| "export"
+	| "pptxExport"
 	| "exportUnsaved"
 	| "converter"
 	| "invalidPptx"
@@ -53,7 +54,9 @@ export function SlidesErrorNotice({
 								? t("slides.scriptChangesUnsaved")
 								: fileError === "export"
 									? t("slides.exportError")
-									: fileError === "exportUnsaved"
+									: fileError === "pptxExport"
+										? t("slides.pptxExportError")
+										: fileError === "exportUnsaved"
 										? t("slides.exportUnsaved")
 									: fileError === "converter"
 										? t("slides.converterUnavailable")

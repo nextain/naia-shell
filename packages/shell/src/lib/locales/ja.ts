@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "プレゼンテーションを変換できませんでした。PDFを開くか、もう一度お試しください。",
 	"slides.conversionTimeout": "変換がタイムアウトしました。PDFを開くか、もう一度お試しください。",
 	"slides.importBusy": "別のプレゼンテーションを読み込み中です。",
+	"slides.exportPptx": "PPTX をダウンロード",
+	"slides.pptxExportError": "PPTX プレゼンテーションを書き出せませんでした。",
 	"bgm.dragToReorder": "ドラッグで並べ替え",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 シティポップ",

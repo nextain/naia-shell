@@ -61,27 +61,29 @@ describe("zip-ooxml-engine browser roundtrips", () => {
 		expect(csv).toContain("총계,300,200,700");
 	});
 
-	it("roundtrips .pptx slides with titles and bullet points", async () => {
+	it("roundtrips .pptx slides with titles, bullet points, and speaker notes", async () => {
 		const slides = [
 			{
 				id: "s1",
 				title: "이음오피스 소개",
 				bullets: ["오픈소스 오피스", "나이아 MCP 연동"],
-				notes: "",
+				notes: "1장 발표자 노트 원문 보존",
 			},
 			{
 				id: "s2",
 				title: "기대 효과",
 				bullets: ["원본 형식 유지"],
-				notes: "",
+				notes: "2장 발표자 노트 원문 보존",
 			},
 		];
-		const bytes = buildPptxBytes(slides);
+		const bytes = buildPptxBytes(slides, "이음오피스 발표");
 		const parsed = await parsePptxBytes(bytes);
 		expect(parsed).toHaveLength(2);
 		expect(parsed[0].title).toBe("이음오피스 소개");
 		expect(parsed[0].bullets).toEqual(["오픈소스 오피스", "나이아 MCP 연동"]);
+		expect(parsed[0].notes).toBe("1장 발표자 노트 원문 보존");
 		expect(parsed[1].title).toBe("기대 효과");
+		expect(parsed[1].notes).toBe("2장 발표자 노트 원문 보존");
 	});
 
 	it("roundtrips open-standard Hangul .hwpx paragraphs", async () => {

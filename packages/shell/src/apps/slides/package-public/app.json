@@ -1,36 +1,66 @@
 {
-  "id": "land.naia.slides",
-  "name": "Naia Slides",
-  "names": {
-    "ko": "나이아 슬라이드",
-    "en": "Naia Slides"
-  },
-  "iconUrl": "icon.svg",
-  "version": "0.1.0",
-  "description": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원하는 슬라이드 앱",
-  "descriptions": {
-    "ko": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원합니다. 녹화는 data-private/apps/land.naia.slides/video/에 저장됩니다.",
-    "en": "Present PDF and PPTX decks from any page in focus or full-screen mode, collapse presenter notes, record the Naia window to MP4, and open recordings in Workspace. Recordings are stored under data-private/apps/land.naia.slides/video/."
-  },
-  "tools": [
-    {
-      "name": "skill_slide_presenter",
-      "description": "Control the active Slides app. It supports starting at a selected page, focus/full-screen presentation, collapsible notes, and MP4 recording of the Naia window saved in the app sandbox and opened in Workspace. Actions: start, pause, resume, stop, next, previous, goto, question, status, get_context.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "enum": ["start", "pause", "resume", "stop", "next", "previous", "goto", "question", "status", "get_context"]
-          },
-          "page": {
-            "type": "number",
-            "description": "1-based slide number for goto"
-          }
-        },
-        "required": ["action"]
-      },
-      "tier": 0
-    }
-  ]
+	"id": "land.naia.slides",
+	"name": "Naia Slides",
+	"nameKo": "나이아 슬라이드",
+	"nameEn": "Naia Slides",
+	"names": {
+		"ko": "나이아 슬라이드",
+		"en": "Naia Slides"
+	},
+	"iconUrl": "icon.svg",
+	"thumbnailUrl": "thumbnail.svg",
+	"version": "0.2.0",
+	"manifest_version": 2,
+	"permissions": ["speech", "locale"],
+	"keepAlive": true,
+	"description": "PDF·PPTX 불러오기·발표·PPTX 내보내기, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 편집·접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원하는 슬라이드 앱",
+	"descriptions": {
+		"ko": "PDF·PPTX 불러오기·발표와 PPTX 내보내기, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 편집·접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원합니다.",
+		"en": "Import and present PDF and PPTX decks in the browser or desktop shell, edit speaker notes and export to PPTX or Markdown, present in focus or full-screen mode, and record the Naia window to MP4."
+	},
+	"tools": [
+		{
+			"name": "skill_slide_presenter",
+			"description": "Control the active Slides app (PDF & PPTX). Supports starting at a selected page, focus/full-screen presentation, editing speaker notes, exporting the presentation as a valid .pptx file (export_pptx), creating a new PPTX slide deck live (create_deck), and MP4 recording. Actions: start, pause, resume, stop, next, previous, goto, question, status, get_context, export_pptx, create_deck.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"start",
+							"pause",
+							"resume",
+							"stop",
+							"next",
+							"previous",
+							"goto",
+							"question",
+							"status",
+							"get_context",
+							"export_pptx",
+							"create_deck"
+						]
+					},
+					"page": {
+						"type": "number",
+						"description": "1-based slide number for goto"
+					},
+					"title": {
+						"type": "string",
+						"description": "Presentation title when action is create_deck"
+					},
+					"slides": {
+						"type": "array",
+						"description": "Slides array ({ title, subtitle?, bullets?, notes? }) when action is create_deck",
+						"items": {
+							"type": "object"
+						}
+					}
+				},
+				"required": ["action"]
+			},
+			"tier": 0
+		}
+	]
 }

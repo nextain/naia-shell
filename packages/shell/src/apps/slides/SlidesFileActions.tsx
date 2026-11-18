@@ -1,10 +1,13 @@
+import type { RefObject } from "react";
 import { t } from "../../lib/i18n";
+import { PPTX_MIME_TYPE } from "../../lib/pptx-ooxml";
 
 export interface SlidesFileActionsProps {
 	nativePickerAvailable: boolean;
 	picking: boolean;
 	focusMode: boolean;
 	notesVisible: boolean;
+	browserInputRef?: RefObject<HTMLInputElement>;
 	onPickNative: () => void;
 	onPdfSelected: (file: File) => void;
 	onScriptSelected: (file: File) => void;
@@ -12,12 +15,15 @@ export interface SlidesFileActionsProps {
 	onShowNotes: () => void;
 }
 
-/** File inputs and the native picker hint live together so the center stays focused on presentation state. */
+const PRESENTATION_ACCEPT = `application/pdf,.pdf,${PPTX_MIME_TYPE},.pptx`;
+
+/** File inputs and the document picker hint live together so the center stays focused on presentation state. */
 export function SlidesFileActions({
 	nativePickerAvailable,
 	picking,
 	focusMode,
 	notesVisible,
+	browserInputRef,
 	onPickNative,
 	onPdfSelected,
 	onScriptSelected,
@@ -29,23 +35,14 @@ export function SlidesFileActions({
 			<label
 				className="slides-app__file-button"
 				data-testid="slides-open-document"
-				title={
-					nativePickerAvailable
-						? t("slides.pptxNativeHint")
-						: t("slides.pptxBrowserHint")
-				}
+				title={t("slides.pptxNativeHint")}
 			>
-				{nativePickerAvailable
-					? t("slides.openPresentation")
-					: t("slides.openPdf")}
+				{t("slides.openPresentation")}
 				<input
-					aria-label={
-						nativePickerAvailable
-							? t("slides.openPresentation")
-							: t("slides.openPdf")
-					}
+					ref={browserInputRef}
+					aria-label={t("slides.openPresentation")}
 					type="file"
-					accept="application/pdf,.pdf"
+					accept={PRESENTATION_ACCEPT}
 					disabled={picking}
 					data-usage-event="slides-file-actions.on-pick-native-1.click"
 					onClick={(event) => {
@@ -61,9 +58,7 @@ export function SlidesFileActions({
 				/>
 			</label>
 			<small className="slides-app__picker-hint">
-				{nativePickerAvailable
-					? t("slides.pptxNativeHint")
-					: t("slides.pptxBrowserHint")}
+				{t("slides.pptxNativeHint")}
 			</small>
 			<label className="slides-app__file-button slides-app__file-button--secondary">
 				{t("slides.openScript")}

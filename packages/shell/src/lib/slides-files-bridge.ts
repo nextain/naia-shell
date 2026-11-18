@@ -65,11 +65,20 @@ function isMessagePort(value: unknown): value is MessagePort {
 	);
 }
 
+export interface SlidesFilesBridgeOptions {
+	expectedFrameSrc?: string;
+}
+
 export function installSlidesFilesBridge(
 	frame: HTMLIFrameElement,
 	htmlEntry: string,
+	options: SlidesFilesBridgeOptions = {},
 ): () => void {
-	if (!isSlidesEntry(htmlEntry) || !isTrustedSlidesFrame(frame, htmlEntry))
+	const { expectedFrameSrc } = options;
+	if (
+		!isSlidesEntry(htmlEntry) ||
+		!isTrustedSlidesFrame(frame, htmlEntry, expectedFrameSrc)
+	)
 		return () => {};
 	let active = true;
 	let hasLoaded = false;
@@ -121,7 +130,7 @@ export function installSlidesFilesBridge(
 		}
 		hasLoaded = true;
 		documentGeneration += 1;
-		documentReady = isTrustedSlidesFrame(frame, htmlEntry);
+		documentReady = isTrustedSlidesFrame(frame, htmlEntry, expectedFrameSrc);
 		documentCapability = null;
 		probeId = null;
 	};
@@ -148,7 +157,7 @@ export function installSlidesFilesBridge(
 				!documentReady ||
 				requestGeneration !== documentGeneration ||
 				documentPort !== port ||
-				!isTrustedSlidesFrame(frame, htmlEntry)
+				!isTrustedSlidesFrame(frame, htmlEntry, expectedFrameSrc)
 			)
 				return;
 			const response = {
@@ -255,7 +264,7 @@ export function installSlidesFilesBridge(
 			documentPort ||
 			!target ||
 			event.source !== target ||
-			!isTrustedSlidesFrame(frame, htmlEntry)
+			!isTrustedSlidesFrame(frame, htmlEntry, expectedFrameSrc)
 		)
 			return;
 		const origin = new URL(frame.src).origin;

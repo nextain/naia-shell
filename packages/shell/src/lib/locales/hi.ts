@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "प्रस्तुति बदली नहीं जा सकी। PDF खोलें या फिर कोशिश करें।",
 	"slides.conversionTimeout": "बदलने का समय समाप्त हो गया। PDF खोलें या फिर कोशिश करें।",
 	"slides.importBusy": "एक अन्य प्रस्तुति पहले से आयात हो रही है।",
+	"slides.exportPptx": "PPTX डाउनलोड करें",
+	"slides.pptxExportError": "PPTX प्रस्तुति निर्यात नहीं की जा सकी।",
 	"bgm.dragToReorder": "क्रम बदलने के लिए खींचें",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 सिटी पॉप",

@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "Không thể chuyển đổi bài thuyết trình. Hãy mở PDF hoặc thử lại.",
 	"slides.conversionTimeout": "Đã hết thời gian chuyển đổi. Hãy mở PDF hoặc thử lại.",
 	"slides.importBusy": "Một bài thuyết trình khác đang được nhập.",
+	"slides.exportPptx": "Tải xuống PPTX",
+	"slides.pptxExportError": "Không thể xuất bài thuyết trình PPTX.",
 	"bgm.dragToReorder": "Kéo để sắp xếp lại",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 City Pop",

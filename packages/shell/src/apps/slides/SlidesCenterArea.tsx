@@ -11,6 +11,14 @@ import { appRegistry } from "../../lib/app-registry";
 import { t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 import {
+	type BuildPptxSlideInput,
+	PPTX_MIME_TYPE,
+	type ParsedPptxDeck,
+	buildPptxPresentation,
+	parsePptxPresentation,
+	slidesFromPageTextsAndNotes,
+} from "../../lib/pptx-ooxml";
+import {
 	EMPTY_SLIDE_PRESENTER_STATE,
 	boundedDeckContext,
 	narrationForPage,
@@ -24,20 +32,20 @@ import {
 	cancelSlidePresenterSpeech,
 	requestSlidePresenterSpeech,
 } from "../../lib/slide-presenter-events";
-import { useTabSkills } from "../../lib/tab-skills";
+import { replaceSlideScriptPage } from "../../lib/slide-script";
 import {
+	type SlidesOpenedPdf,
 	openSlidesDocument,
 	watchSlidesPickerAvailable,
-	type SlidesOpenedPdf,
 } from "../../lib/slides-files";
-import { replaceSlideScriptPage } from "../../lib/slide-script";
-import { startSlidesRecording, stopSlidesRecording } from "../../lib/slides-host";
+import {
+	startSlidesRecording,
+	stopSlidesRecording,
+} from "../../lib/slides-host";
+import { useTabSkills } from "../../lib/tab-skills";
 import { useAppStore } from "../../stores/app";
 import { SlidesControls } from "./SlidesControls";
-import {
-	SlidesErrorNotice,
-	type SlidesFileError,
-} from "./SlidesErrorNotice";
+import { SlidesErrorNotice, type SlidesFileError } from "./SlidesErrorNotice";
 import { SlidesFileActions } from "./SlidesFileActions";
 import { SlidesScriptPanel } from "./SlidesScriptPanel";
 import { SlidesStatus } from "./SlidesStatus";
@@ -55,6 +63,7 @@ export interface SlidesAppApi {
 	next: () => void;
 	previous: () => void;
 	goto: (page: number) => void;
+	exportPptx: () => string | null;
 }
 
 function stateLabel(mode: string): string {
@@ -62,13 +71,37 @@ function stateLabel(mode: string): string {
 	return t(key);
 }
 
-function scriptDownloadName(scriptName: string, pdfName: string): string {
-	const source = scriptName || pdfName || "slides";
-	const base = source.replace(/\.(?:markdown|md|txt|pdf|pptx)$/i, "");
-	return `${base || "slides"}.edited.md`;
+function deckBaseName(pdfName: string, scriptName: string): string {
+	const source = pdfName || scriptName || "slides";
+	const base = source.replace(/\.(?:markdown|md|txt|pdf|pptx)$/i, "").trim();
+	return base || "slides";
 }
 
-export function SlidesCenterArea({ naia }: AppCenterProps) {
+function scriptDownloadName(scriptName: string, pdfName: string): string {
+	return `${deckBaseName(scriptName, pdfName)}.edited.md`;
+}
+
+function pptxDownloadName(pdfName: string, scriptName: string): string {
+	return `${deckBaseName(pdfName, scriptName)}.pptx`;
+}
+
+function isPptxFile(file: File): boolean {
+	return (
+		file.name.toLowerCase().endsWith(".pptx") || file.type === PPTX_MIME_TYPE
+	);
+}
+
+async function readFileUint8Array(file: File): Promise<Uint8Array> {
+	if (typeof file.arrayBuffer === "function") {
+		return new Uint8Array(await file.arrayBuffer());
+	}
+	return new Uint8Array(await new Response(file).arrayBuffer());
+}
+
+export function SlidesCenterArea({
+	naia,
+	sampleDeck,
+}: AppCenterProps & { sampleDeck?: { pdfUrl: string; scriptUrl: string } }) {
 	const [state, dispatch] = useReducer(
 		reduceSlidePresenter,
 		EMPTY_SLIDE_PRESENTER_STATE,
@@ -76,6 +109,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const stateRef = useRef(state);
 	stateRef.current = state;
 	const [pdfFile, setPdfFile] = useState<File | null>(null);
+	const [pptxDeck, setPptxDeck] = useState<ParsedPptxDeck | null>(null);
 	const [pdfName, setPdfName] = useState("");
 	const [scriptName, setScriptName] = useState("");
 	const [nativePickerAvailable, setNativePickerAvailable] = useState(false);
@@ -83,6 +117,8 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [importPhase, setImportPhase] = useState<string | null>(null);
 	const [fileError, setFileError] = useState<SlidesFileError | null>(null);
 	const selectedFileRef = useRef<File | null>(null);
+	const samplePromiseRef = useRef<Promise<SlidesOpenedPdf | null> | null>(null);
+	const browserInputRef = useRef<HTMLInputElement>(null);
 	const scriptRevisionRef = useRef(0);
 	const pickerAbortRef = useRef<AbortController | null>(null);
 	const [scriptMarkdown, setScriptMarkdown] = useState("");
@@ -109,8 +145,16 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const activeSpeechRef = useRef<string | null>(null);
 	const notesRef = useRef(speakerNotes);
 	const pageTextsRef = useRef(pageTexts);
+	const pptxDeckRef = useRef(pptxDeck);
+	const pdfNameRef = useRef(pdfName);
+	const scriptNameRef = useRef(scriptName);
+	const draftDirtyRef = useRef(draftDirty);
 	notesRef.current = speakerNotes;
 	pageTextsRef.current = pageTexts;
+	pptxDeckRef.current = pptxDeck;
+	pdfNameRef.current = pdfName;
+	scriptNameRef.current = scriptName;
+	draftDirtyRef.current = draftDirty;
 	const hasUnsavedScript = draftDirty || unexportedScript;
 	scriptDirtyRef.current = hasUnsavedScript;
 
@@ -165,12 +209,15 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	}
 
 	function documentErrorKey(error: unknown): SlidesFileError {
-		const code = String(error).replace(/^Error:\s*/u, "").toLowerCase();
+		const code = String(error)
+			.replace(/^Error:\s*/u, "")
+			.toLowerCase();
 		if (code.includes("converter_unavailable")) return "converter";
 		if (code.includes("invalid_pptx")) return "invalidPptx";
 		if (code.includes("conversion_timeout")) return "conversionTimeout";
 		if (code.includes("conversion_failed")) return "conversionFailed";
-		if (code.includes("picker_busy") || code.includes("import_busy")) return "busy";
+		if (code.includes("picker_busy") || code.includes("import_busy"))
+			return "busy";
 		return "import";
 	}
 
@@ -226,6 +273,113 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		[cancelSpeech, scriptEditorOpen],
 	);
 
+	const applyParsedPptxDeck = useCallback(
+		(file: File, deck: ParsedPptxDeck) => {
+			cancelSpeech();
+			scriptRevisionRef.current++;
+			selectedFileRef.current = file;
+			setPdfFile(null);
+			setPptxDeck(deck);
+			setPdfName(file.name);
+			setPageTexts(deck.pageTexts);
+			setScriptMarkdown(deck.scriptMarkdown);
+			setSpeakerNotes(deck.speakerNotes);
+			setScriptName(
+				deck.speakerNotes.size > 0
+					? `${deckBaseName(file.name, "")}.notes.md`
+					: "",
+			);
+			setScriptEditorOpen(false);
+			setEditingPage(null);
+			setDraftText("");
+			setDraftDirty(false);
+			setUnexportedScript(false);
+			setImportPhase(null);
+			setFileError(null);
+			dispatch({ type: "load" });
+			dispatch({
+				type: "loaded",
+				totalPages: deck.slides.length,
+				range: presentationRangeForNotes(deck.speakerNotes, deck.slides.length),
+			});
+			Logger.info(TAG, "PPTX presentation loaded in browser", {
+				fileName: file.name,
+				slides: deck.slides.length,
+				notes: deck.speakerNotes.size,
+			});
+		},
+		[cancelSpeech],
+	);
+
+	const exportPptxDeck = useCallback((): string | null => {
+		if (draftDirtyRef.current) {
+			setFileError("exportUnsaved");
+			return null;
+		}
+		const currentTotal = stateRef.current.totalPages;
+		if (!currentTotal) return null;
+
+		let url = "";
+		try {
+			if (typeof URL === "undefined" || !URL.createObjectURL) {
+				throw new Error("download_unavailable");
+			}
+			const activePptx = pptxDeckRef.current;
+			const currentNotes = notesRef.current;
+			const slides: BuildPptxSlideInput[] = activePptx
+				? activePptx.slides.map((slide, idx) => ({
+						title: slide.title,
+						subtitle: slide.subtitle,
+						bullets: slide.bullets,
+						tables: slide.tables,
+						images: slide.images,
+						backgroundHex: slide.backgroundHex,
+						notes: currentNotes.get(idx + 1) ?? slide.notes,
+					}))
+				: slidesFromPageTextsAndNotes(
+						pageTextsRef.current,
+						currentNotes,
+						currentTotal,
+					);
+
+			const fileName = pptxDownloadName(
+				pdfNameRef.current,
+				scriptNameRef.current,
+			);
+			const bytes = buildPptxPresentation({
+				title: deckBaseName(pdfNameRef.current, scriptNameRef.current),
+				creator: "Naia Slides",
+				slideWidthEmu: activePptx?.slideWidthEmu,
+				slideHeightEmu: activePptx?.slideHeightEmu,
+				slides,
+			});
+			const blob = new Blob([bytes as unknown as BlobPart], {
+				type: PPTX_MIME_TYPE,
+			});
+			url = URL.createObjectURL(blob);
+			const anchor = document.createElement("a");
+			anchor.href = url;
+			anchor.download = fileName;
+			anchor.style.display = "none";
+			document.body.append(anchor);
+			anchor.click();
+			anchor.remove();
+			setFileError(null);
+			Logger.info(TAG, "PPTX presentation exported", {
+				fileName,
+				slides: slides.length,
+				bytes: bytes.length,
+			});
+			return fileName;
+		} catch (error) {
+			setFileError("pptxExport");
+			Logger.warn(TAG, "PPTX export failed", { error: String(error) });
+			return null;
+		} finally {
+			if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
+		}
+	}, []);
+
 	useEffect(() => {
 		if (state.mode !== "presenting" || state.speech !== "requested") return;
 		const text = currentNarration.trim();
@@ -257,6 +411,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			characters: text.length,
 		});
 	}, [
+		cancelSpeech,
 		currentNarration,
 		state.generation,
 		state.mode,
@@ -368,12 +523,14 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		window.addEventListener("keydown", onFocusShortcut);
 		return () => window.removeEventListener("keydown", onFocusShortcut);
 	}, []);
+
 	useEffect(() => {
 		const context = {
 			type: "slides",
 			data: {
 				fileName: pdfName,
 				scriptName,
+				format: pptxDeck ? "pptx" : pdfFile ? "pdf" : "empty",
 				state: state.mode,
 				page: state.page,
 				totalPages: state.totalPages,
@@ -391,7 +548,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		deckContext,
 		naia,
 		pageTexts,
+		pdfFile,
 		pdfName,
+		pptxDeck,
 		scriptName,
 		state.mode,
 		state.page,
@@ -409,6 +568,67 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				const current = stateRef.current;
 				if (action === "goto") {
 					gotoPage(Number(args.page ?? current.page));
+				} else if (action === "export_pptx") {
+					const exported = exportPptxDeck();
+					return JSON.stringify({
+						ok: Boolean(exported),
+						exported,
+						page: current.page,
+						totalPages: current.totalPages,
+					});
+				} else if (action === "create_deck") {
+					const rawSlides = Array.isArray(args.slides) ? args.slides : [];
+					if (rawSlides.length === 0) {
+						return JSON.stringify({
+							ok: false,
+							error: "slides_required",
+						});
+					}
+					const title =
+						typeof args.title === "string" && args.title.trim()
+							? args.title.trim()
+							: "naia-deck";
+					const slideInputs: BuildPptxSlideInput[] = rawSlides.map(
+						(item, idx) => {
+							const record =
+								item && typeof item === "object"
+									? (item as Record<string, unknown>)
+									: {};
+							return {
+								title:
+									typeof record.title === "string" && record.title.trim()
+										? record.title.trim()
+										: `Slide ${idx + 1}`,
+								subtitle:
+									typeof record.subtitle === "string"
+										? record.subtitle
+										: undefined,
+								bullets: Array.isArray(record.bullets)
+									? record.bullets.map((b) => String(b))
+									: [],
+								notes:
+									typeof record.notes === "string" ? record.notes : undefined,
+							};
+						},
+					);
+					const pptxBytes = buildPptxPresentation({
+						title,
+						creator: "Naia Slides",
+						slides: slideInputs,
+					});
+					const parsed = await parsePptxPresentation(pptxBytes);
+					const safeName = `${title.replace(/\.pptx$/i, "")}.pptx`;
+					const file = new File([pptxBytes as unknown as BlobPart], safeName, {
+						type: PPTX_MIME_TYPE,
+					});
+					applyParsedPptxDeck(file, parsed);
+					return JSON.stringify({
+						ok: true,
+						fileName: safeName,
+						state: "ready",
+						page: 1,
+						totalPages: parsed.slides.length,
+					});
 				} else if (action === "get_context") {
 					return JSON.stringify({
 						page: current.page,
@@ -458,7 +678,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			},
 		);
 		return unsubscribe;
-	}, [gotoPage, naia, runAction]);
+	}, [applyParsedPptxDeck, exportPptxDeck, gotoPage, naia, runAction]);
 
 	useEffect(() => {
 		if (window.parent !== window) return;
@@ -470,14 +690,16 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			next: () => runAction("next"),
 			previous: () => runAction("previous"),
 			goto: gotoPage,
+			exportPptx: exportPptxDeck,
 		});
 		return () => appRegistry.updateApi("slides", undefined);
-	}, [gotoPage, runAction]);
+	}, [exportPptxDeck, gotoPage, runAction]);
 
 	function loadPdf(file: File, companion?: SlidesOpenedPdf) {
 		cancelSpeech();
 		scriptRevisionRef.current++;
 		selectedFileRef.current = file;
+		setPptxDeck(null);
 		setPdfFile(file);
 		setPdfName(file.name);
 		setPageTexts([]);
@@ -502,6 +724,86 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			companion: !!companion?.script,
 		});
 	}
+
+	async function loadSelectedDocument(file: File) {
+		if (!confirmScriptReplacement()) return;
+		if (!isPptxFile(file)) {
+			loadPdf(file);
+			return;
+		}
+		setPickingPdf(true);
+		setImportPhase("parsing");
+		try {
+			const bytes = await readFileUint8Array(file);
+			const deck = await parsePptxPresentation(bytes);
+			applyParsedPptxDeck(file, deck);
+		} catch (error) {
+			setFileError(documentErrorKey(error));
+			setImportPhase(null);
+			Logger.warn(TAG, "browser PPTX import failed", {
+				fileName: file.name,
+				error: String(error),
+			});
+		} finally {
+			setPickingPdf(false);
+		}
+	}
+
+	useEffect(() => {
+		if (!sampleDeck || selectedFileRef.current) return;
+		if (!samplePromiseRef.current) {
+			const nameFromUrl = (url: string) =>
+				new URL(url, window.location.href).pathname.split("/").pop() || "";
+			samplePromiseRef.current = (async () => {
+				const scriptPromise = fetch(sampleDeck.scriptUrl)
+					.then(async (response) => {
+						if (!response.ok) return null;
+						const contentType = response.headers.get("content-type") ?? "";
+						if (contentType.includes("text/html")) return null;
+						const text = await response.text();
+						if (text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html")) {
+							return null;
+						}
+						return {
+							name: nameFromUrl(sampleDeck.scriptUrl),
+							text,
+						};
+					})
+					.catch(() => null);
+				try {
+					const response = await fetch(sampleDeck.pdfUrl);
+					if (!response.ok) return null;
+					const buf = new Uint8Array(await response.arrayBuffer());
+					if (
+						buf.length < 5 ||
+						buf[0] !== 0x25 ||
+						buf[1] !== 0x50 ||
+						buf[2] !== 0x44 ||
+						buf[3] !== 0x46
+					) {
+						return null;
+					}
+					const file = new File(
+						[buf as unknown as BlobPart],
+						nameFromUrl(sampleDeck.pdfUrl),
+						{ type: "application/pdf" },
+					);
+					return { file, script: await scriptPromise, scriptReadFailed: false };
+				} catch {
+					return null;
+				}
+			})();
+		}
+		let cancelled = false;
+		void samplePromiseRef.current.then((sample) => {
+			if (!cancelled && sample && !selectedFileRef.current) {
+				loadPdf(sample.file, sample);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [sampleDeck]);
 
 	async function pickPdf() {
 		if (pickerAbortRef.current) return;
@@ -570,7 +872,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		cancelSpeech();
 		if (stateRef.current.mode === "presenting") dispatch({ type: "pause" });
 		const initial = speakerNotes.has(state.page)
-			? speakerNotes.get(state.page) ?? ""
+			? (speakerNotes.get(state.page) ?? "")
 			: currentNarration;
 		draftOriginalRef.current = initial;
 		setEditingPage(state.page);
@@ -628,7 +930,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			setFileError(null);
 		} catch (error) {
 			setFileError("export");
-			Logger.warn(TAG, "edited script download failed", { error: String(error) });
+			Logger.warn(TAG, "edited script download failed", {
+				error: String(error),
+			});
 		} finally {
 			if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
 		}
@@ -671,10 +975,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					picking={pickingPdf}
 					focusMode={focusMode}
 					notesVisible={notesVisible}
+					browserInputRef={browserInputRef}
 					onPickNative={() => void pickPdf()}
-					onPdfSelected={(file) => {
-						if (confirmScriptReplacement()) loadPdf(file);
-					}}
+					onPdfSelected={(file) => void loadSelectedDocument(file)}
 					onScriptSelected={(file) => void loadScript(file)}
 					onToggleFocus={() => setFocusMode((focused) => !focused)}
 					onShowNotes={() => setNotesVisible(true)}
@@ -705,6 +1008,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			<div className="slides-app__workspace">
 				<SlidesViewer
 					file={pdfFile}
+					pptxDeck={pptxDeck}
 					fileName={pdfName}
 					page={state.page}
 					viewerRef={viewerRef}
@@ -738,6 +1042,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 						unexportedScript={unexportedScript}
 						onBeginEdit={beginScriptEdit}
 						onDownload={downloadEditedScript}
+						onExportPptx={() => void exportPptxDeck()}
 						onHide={() => setNotesVisible(false)}
 						onDraftChange={(value) => {
 							setDraftText(value);

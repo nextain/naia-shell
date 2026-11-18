@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "프레젠테이션을 변환하지 못했습니다. PDF를 열거나 다시 시도하세요.",
 	"slides.conversionTimeout": "변환 시간이 초과되었습니다. PDF를 열거나 다시 시도하세요.",
 	"slides.importBusy": "다른 프레젠테이션을 가져오는 중입니다.",
+	"slides.exportPptx": "PPTX 다운로드",
+	"slides.pptxExportError": "PPTX 프레젠테이션을 내보내지 못했습니다.",
 	"bgm.dragToReorder": "끌어서 순서 바꾸기",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 시티팝",

@@ -1425,6 +1425,8 @@ export default {
 	"slides.conversionFailed": "Presentasi tidak dapat dikonversi. Buka PDF atau coba lagi.",
 	"slides.conversionTimeout": "Waktu konversi habis. Buka PDF atau coba lagi.",
 	"slides.importBusy": "Impor presentasi lain sedang berlangsung.",
+	"slides.exportPptx": "Unduh PPTX",
+	"slides.pptxExportError": "Tidak dapat mengekspor presentasi PPTX.",
 	"bgm.dragToReorder": "Seret untuk mengurutkan",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 City Pop",
