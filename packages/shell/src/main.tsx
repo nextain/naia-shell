@@ -11,6 +11,7 @@ import { isKioskDemo } from "./lib/kiosk-demo/flag";
 import { Logger } from "./lib/logger";
 import {
 	getWebBasePath,
+	isWebMode,
 	syncWebModeRootAttribute,
 } from "./lib/web-runtime/web-assets";
 import "./styles/global.css";
@@ -59,12 +60,12 @@ if (
 
 // The browser test surface deliberately keeps the unavailable adapter. Only a
 // real Tauri window may call the paired Agent coding-job RPCs.
-if ("__TAURI_INTERNALS__" in window) {
+if (!isWebMode() && "__TAURI_INTERNALS__" in window) {
 	setCodingWorkersAdapterFactory(() => tauriCodingWorkersAdapter);
 }
 
 async function bootstrap() {
-	if ("__TAURI_INTERNALS__" in window) await bootstrapAdkPath();
+	if (!isWebMode() && "__TAURI_INTERNALS__" in window) await bootstrapAdkPath();
 	const { App } = await import("./App");
 	await bootstrapShell({
 		initializeI18n,

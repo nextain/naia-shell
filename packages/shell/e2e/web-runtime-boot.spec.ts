@@ -5,6 +5,19 @@ test.skip(
 	"Web runtime boot test only runs when NAIA_E2E_WEB=1",
 );
 
+test("web bootstrap does not call the native workspace cache through its compatibility shim", async ({ page }) => {
+	const errors: string[] = [];
+	page.on("console", (message) => {
+		if (message.type() === "error") errors.push(message.text());
+	});
+	await page.goto("/");
+	await expect(page.locator("html")).toHaveAttribute("data-naia-web", "true");
+	expect(await page.evaluate(() => "__TAURI_INTERNALS__" in window)).toBe(true);
+	await expect(page.getByRole("button", { name: /기본 작업 공간으로 시작|Start with default workspace/ })).toBeVisible({ timeout: 60_000 });
+	await expect(page.getByText("Cannot read workspace selection", { exact: false })).toHaveCount(0);
+	expect(errors.filter((message) => message.includes("desktop_only:read_naia_path_cache"))).toEqual([]);
+});
+
 test("boots into main screen within 10s without uncaught page errors in web mode", async ({
 	page,
 }) => {

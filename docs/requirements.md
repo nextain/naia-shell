@@ -1984,3 +1984,7 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 | 공개 지식에 웹 시험판과 앱 우선 기능, 자체 음성의 한계, 단일 GPU 성능, 웹 접근성·브라우저 기억·공개 하네스를 한영으로 안내하고 기존 미수정 원고를 갱신한다. | Done |
 | 입장 첫 인사에서 회사 소개 슬라이드 발표를 한영으로 안내한다. | Done |
 | 웹은 저장된 수동 방향 대신 창 크기에 따라 배치를 갱신하고 모바일 대화창을 화면 너비에 맞춘다. 네이티브 수동 배치는 유지한다. 이는 FR-WEB-KIOSK-FIX7D.1의 웹 수동 방향 부분을 대체한다. | Done |
+
+## FR-WEB-BOOT-RUNTIME-SEPARATION
+
+Web startup must select the web runtime using the build mode, even after the web Tauri-compatibility shim has installed `__TAURI_INTERNALS__`. It must neither invoke native workspace bootstrap nor install the native coding-worker adapter. Native Tauri builds retain both native paths and fail visibly when native workspace restoration fails. Verification: `UC-WEB-BOOT-RUNTIME-SEPARATION`.
