@@ -29,4 +29,6 @@ export interface TtsVoiceMeta {
 	label: string;
 	language?: string;
 	gender?: "male" | "female" | "neutral";
+	/** Supported secondary UI locales (e.g. Azure DragonHD 92-locale multilingual voices). */
+	secondaryLocales?: readonly string[];
 }

@@ -3,8 +3,10 @@ import { createGenericInstalledApp } from "../apps/generic-installed/GenericInst
 import { useAppStore } from "../stores/app";
 import { appRegistry } from "./app-registry";
 import type { AppDataUseSpec, AppSkillSpec, NaiaTool } from "./app-registry";
+import { getPlatformAppStoreAdapter } from "./app-store-adapter";
 import { hasStoreEntitlement } from "./app-store-client";
 import { Logger } from "./logger";
+import { isWebMode } from "./web-runtime/web-assets";
 import {
 	LEGACY_APP_TOOL_KEEP_LIST,
 	SHELL_RESERVED_TOOL_NAMES,
@@ -88,9 +90,11 @@ export async function ensureStoreAppVerificationFresh(
 	try {
 		const lastSignatureCheck = storeSignatureCheckedAt.get(appId) ?? 0;
 		if (Date.now() - lastSignatureCheck >= EXECUTION_RECHECK_CACHE_MS) {
-			const verified = await invoke<boolean>("app_verify_installed_store_app", {
-				appId,
-			});
+			const verified = isWebMode()
+				? await getPlatformAppStoreAdapter().verifyAppTrust(appId)
+				: await invoke<boolean>("app_verify_installed_store_app", {
+						appId,
+					});
 			if (!verified) {
 				appRegistry.updateStoreSignatureVerified(appId, false);
 				storeSignatureCheckedAt.delete(appId);
@@ -241,8 +245,10 @@ export async function loadInstalledApps(): Promise<void> {
 	const loadGeneration = ++installedAppsLoadGeneration;
 	let manifests: InstalledAppManifest[];
 	try {
-		Logger.debug("AppLoader", "Invoking app_list_installed");
-		manifests = await invoke<InstalledAppManifest[]>("app_list_installed");
+		Logger.debug("AppLoader", "Loading installed apps", { web: isWebMode() });
+		manifests = isWebMode()
+			? await getPlatformAppStoreAdapter().listInstalledManifests()
+			: await invoke<InstalledAppManifest[]>("app_list_installed");
 	} catch (err) {
 		if (loadGeneration !== installedAppsLoadGeneration) return;
 		Logger.warn("AppLoader", "Failed to load installed apps", {
@@ -458,7 +464,9 @@ export async function loadInstalledApps(): Promise<void> {
 
 /** Re-read the native list after store events, and rebuild only on a real manifest change. */
 export async function refreshInstalledAppsIfChanged(): Promise<boolean> {
-	const manifests = await invoke<InstalledAppManifest[]>("app_list_installed");
+	const manifests = isWebMode()
+		? await getPlatformAppStoreAdapter().listInstalledManifests()
+		: await invoke<InstalledAppManifest[]>("app_list_installed");
 	const signature = JSON.stringify(manifests);
 	if (installedManifestSignature === signature) return false;
 	installedManifestSignature = signature;
@@ -475,7 +483,11 @@ export async function removeInstalledApp(appId: string): Promise<void> {
 	Logger.info("AppLoader", `Removing installed app: ${appId}`);
 
 	try {
-		await invoke("app_remove_installed", { appId });
+		if (isWebMode()) {
+			await getPlatformAppStoreAdapter().uninstallApp(appId);
+		} else {
+			await invoke("app_remove_installed", { appId });
+		}
 		Logger.debug("AppLoader", `Disk removal complete: ${appId}`);
 	} catch (err) {
 		Logger.error("AppLoader", `Disk removal failed: ${appId}`, {

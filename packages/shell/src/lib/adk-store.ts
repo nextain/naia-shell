@@ -17,6 +17,7 @@ import {
 	WEB_NVA_ASSETS,
 	WEB_VRM_ASSETS,
 	isWebMode,
+	resolveWebPublicAssetUrl,
 } from "./web-runtime/web-assets";
 import {
 	type SlotsManifest,
@@ -251,12 +252,11 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 	//  read_local_binary 왕복 전에 바로 반환해 desktop_only 경고를 남기지 않는다.)
 	if (
 		isWebMode() &&
-		/^(https?:|blob:|data:|\/|avatars\/|assets\/)/.test(filePath)
+		/^(https?:|blob:|data:|\/|avatars\/|assets\/|backgrounds\/|nva\/)/.test(
+			filePath,
+		)
 	) {
-		return filePath.startsWith("avatars/") ||
-			filePath.startsWith("assets/")
-			? `/${filePath}`
-			: filePath;
+		return resolveWebPublicAssetUrl(filePath);
 	}
 	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
 	if (!BLOB_URL_EXTS.has(ext)) {

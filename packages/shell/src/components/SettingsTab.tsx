@@ -66,6 +66,7 @@ import {
 	logoutWebSession,
 	startWebLoginRedirect,
 } from "../lib/web-runtime/web-auth";
+import { openWebLoginPrompt } from "../lib/web-runtime/web-login-prompt";
 import {
 	formatWebStorageSummaryLine,
 	getWebStoragePersistState,
@@ -772,6 +773,10 @@ function ttsPricingLabel(p: { id: string; pricing?: string }): string {
 }
 
 async function openNvaAvatarCreator(): Promise<void> {
+	if (isWebMode() && !isKioskDemo() && !isWebAuthenticated()) {
+		openWebLoginPrompt("studio");
+		return;
+	}
 	const url = naiaWebUrl(`${getLocale()}/studio/nva/create`, NAIA_WEB_BASE_URL);
 	Logger.debug("SettingsTab", "Opening NVA avatar creator", { url });
 	try {
@@ -2932,6 +2937,10 @@ export function SettingsTab() {
 	}, []);
 
 	const startLabLogin = async () => {
+		if (isWebMode() && !isKioskDemo()) {
+			openWebLoginPrompt("cloud-llm");
+			return;
+		}
 		loginAdkPathRef.current = getAdkPath();
 		setLabWaiting(true);
 		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);

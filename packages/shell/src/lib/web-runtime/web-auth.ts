@@ -10,9 +10,10 @@ import {
 import { getDefaultLlmModel } from "../llm/registry";
 import { Logger } from "../logger";
 import { makeOnboardingSession } from "../onboarding-core";
+import { getDefaultDragonVoiceForLocale } from "../tts/registry";
 import { emitWebEvent } from "./event-bus";
 import { WEB_ADK_PATH } from "./web-adk-path";
-import { isWebMode } from "./web-assets";
+import { getWebBasePath, isWebMode } from "./web-assets";
 
 export const WEB_OAUTH_STATE_STORAGE_KEY = "naia-web-oauth-state";
 export const WEB_REMOTE_KEY_STORAGE_KEY = "naia-remote-key";
@@ -58,13 +59,18 @@ export function isWebLoginGateDisabled(envOverride?: string): boolean {
 }
 
 /**
- * 웹판 로그인 첫 화면 강제 여부.
- * 기본은 켬(`true`)이며, `VITE_NAIA_WEB_LOGIN_REQUIRED=0` 이면 로그인 문을 끈다.
+ * 웹판 로그인 첫 화면 강제 여부 (pl-04).
+ * 정식 웹 1차에서는 비로그인 방문자가 브라우저 로컬 WebGPU 모델 + 무료 브라우저 음성으로
+ * 즉시 체험할 수 있도록 기본값은 끔(`false`)이며, `VITE_NAIA_WEB_LOGIN_REQUIRED=1` 일 때만 강제한다.
  */
 export function isWebLoginRequired(envOverride?: string): boolean {
 	if (webLoginRequiredOverride !== null) return webLoginRequiredOverride;
 	if (!isWebMode()) return false;
-	return !isWebLoginGateDisabled(envOverride);
+	const raw =
+		envOverride ??
+		(import.meta.env.VITE_NAIA_WEB_LOGIN_REQUIRED as string | undefined);
+	const trimmed = raw?.trim().toLowerCase();
+	return trimmed === "1" || trimmed === "true";
 }
 
 /** 데스크톱 Rust 콜백(`lib.rs:256-260`)과 동일한 키 형식 검증. */
@@ -99,6 +105,8 @@ export function buildWebLoginRedirectUrl(opts?: {
 	origin?: string;
 	state?: string;
 	baseUrl?: string;
+	basePath?: string;
+	pathname?: string;
 }): { url: string; state: string; redirectUri: string } {
 	const lang = (opts?.lang || getLocale() || "ko").trim();
 	const origin = (
@@ -109,7 +117,17 @@ export function buildWebLoginRedirectUrl(opts?: {
 	).replace(/\/+$/, "");
 	const state = (opts?.state || generateWebOAuthState()).trim();
 	const baseUrl = getWebLoginBaseUrl(opts?.baseUrl);
-	const redirectUri = `${origin}/auth/callback`;
+	const currentPathname =
+		opts?.pathname ??
+		(typeof window !== "undefined" ? window.location.pathname : "/");
+	const slugMatch = /^\/u\/([a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9]))(?:\/|$)/i.exec(
+		currentPathname,
+	);
+	const basePath = getWebBasePath(opts?.basePath);
+	const redirectUri =
+		slugMatch && !opts?.basePath
+			? `${origin}/u/${slugMatch[1].toLowerCase()}/auth/callback`
+			: `${origin}${basePath}auth/callback`;
 	const params = new URLSearchParams({
 		redirect: "desktop",
 		app: "naia-os",
@@ -128,6 +146,8 @@ export function buildWebLoginRedirectUrl(opts?: {
 export function startWebLoginRedirect(opts?: {
 	lang?: string;
 	origin?: string;
+	pathname?: string;
+	basePath?: string;
 	state?: string;
 	baseUrl?: string;
 	navigate?: (url: string) => void;
@@ -254,17 +274,53 @@ export async function completeWebNaiaLogin(
 	}
 
 	const existing = loadConfig();
-	const onboardingComplete = resolveWebLoginOnboardingComplete({
-		existing,
-		previousUserId,
-		nextUserId,
-		explicitOnboardingComplete: opts?.onboardingComplete,
-	});
+	const hasActiveCardBeforeLogin =
+		typeof existing?.uiPreferences?.b2cActiveCardId === "string" &&
+		existing.uiPreferences.b2cActiveCardId.trim().length > 0;
+	const onboardingComplete = hasActiveCardBeforeLogin
+		? true
+		: resolveWebLoginOnboardingComplete({
+				existing,
+				previousUserId,
+				nextUserId,
+				explicitOnboardingComplete: opts?.onboardingComplete,
+			});
+	const shouldUpgradeAutoSeedToCloud =
+		!existing ||
+		(existing.webAutoDefaultModel === true && existing.provider === "webllm");
+	const nextProvider = shouldUpgradeAutoSeedToCloud
+		? "nextain"
+		: existing?.provider || "nextain";
+	const nextModel = shouldUpgradeAutoSeedToCloud
+		? getDefaultLlmModel("nextain")
+		: existing?.model || getDefaultLlmModel("nextain");
+	const shouldUpgradeToDragonVoice =
+		!isKioskDemo() &&
+		!existing?.ttsVoice &&
+		(!existing?.ttsProvider || existing.ttsProvider === "browser");
+	const dragonDefaultVoice = getDefaultDragonVoiceForLocale(
+		existing?.locale || getLocale(),
+	);
 	saveConfig({
-		provider: existing?.provider || "nextain",
-		model: existing?.model || getDefaultLlmModel("nextain"),
-		apiKey: existing?.apiKey ?? "",
 		...(existing ?? {}),
+		provider: nextProvider,
+		model: nextModel,
+		apiKey: existing?.apiKey ?? "",
+		...(shouldUpgradeAutoSeedToCloud
+			? {
+					llmRoles: {
+						...(existing?.llmRoles ?? {}),
+						main: { provider: nextProvider, model: nextModel },
+					},
+				}
+			: {}),
+		...(shouldUpgradeToDragonVoice
+			? {
+					ttsEnabled: existing?.ttsEnabled ?? true,
+					ttsProvider: "nextain" as const,
+					ttsVoice: dragonDefaultVoice,
+				}
+			: {}),
 		naiaUserId: nextUserId,
 		onboardingComplete,
 	});
@@ -310,17 +366,23 @@ export async function consumeWebAuthCallbackFromLocation(
 	if (!currentLoc) return { handled: false, ok: false };
 
 	const normalizedPath = currentLoc.pathname.replace(/\/+$/, "") || "/";
-	if (
-		normalizedPath !== "/auth/callback" &&
-		!normalizedPath.endsWith("/auth/callback")
-	) {
-		return { handled: false, ok: false };
-	}
+	const isAuthCallbackPath =
+		normalizedPath === "/auth/callback" ||
+		normalizedPath.endsWith("/auth/callback");
 
 	const hashParams = new URLSearchParams(
 		(currentLoc.hash ?? "").replace(/^#/, ""),
 	);
 	const queryParams = new URLSearchParams(currentLoc.search);
+	const isDirectHashKeyHandoff =
+		!isAuthCallbackPath &&
+		(hashParams.has("key") ||
+			(hashParams.get("code")?.trim().startsWith("gw-") ?? false));
+
+	if (!isAuthCallbackPath && !isDirectHashKeyHandoff) {
+		return { handled: false, ok: false };
+	}
+
 	const callbackParamNames = [
 		"state",
 		"key",
@@ -332,7 +394,8 @@ export async function consumeWebAuthCallbackFromLocation(
 	const hasAnyHashParam = callbackParamNames.some((name) =>
 		hashParams.has(name),
 	);
-	const sourceParams = hasAnyHashParam ? hashParams : queryParams;
+	const sourceParams =
+		isDirectHashKeyHandoff || hasAnyHashParam ? hashParams : queryParams;
 	const getCallbackParam = (
 		name: (typeof callbackParamNames)[number],
 	): string => sourceParams.get(name)?.trim() ?? "";
@@ -371,9 +434,32 @@ export async function consumeWebAuthCallbackFromLocation(
 				window.history.replaceState({}, "", cleanUrl);
 			}
 		});
-	cleanAddress("/");
+	let cleanTargetPath = "/";
+	if (isAuthCallbackPath) {
+		const prefix = normalizedPath.slice(0, -"/auth/callback".length);
+		cleanTargetPath = !prefix
+			? "/"
+			: prefix.startsWith("/u/")
+				? prefix
+				: `${prefix}/`;
+	} else {
+		cleanTargetPath = currentLoc.pathname || "/";
+	}
+	const preservedQuery = new URLSearchParams(currentLoc.search);
+	for (const authKey of callbackParamNames) {
+		preservedQuery.delete(authKey);
+	}
+	const preservedSearch = preservedQuery.toString();
+	cleanAddress(
+		preservedSearch ? `${cleanTargetPath}?${preservedSearch}` : cleanTargetPath,
+	);
 
-	if (!expectedState || returnedState !== expectedState) {
+	const requireStateValidation =
+		isAuthCallbackPath || Boolean(expectedState) || Boolean(returnedState);
+	if (
+		requireStateValidation &&
+		(!expectedState || returnedState !== expectedState)
+	) {
 		Logger.warn("WebAuth", "OAuth callback state mismatch");
 		return { handled: true, ok: false, error: "state_mismatch" };
 	}

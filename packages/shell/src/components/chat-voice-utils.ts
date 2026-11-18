@@ -9,6 +9,7 @@ import type {
 	VoiceConnectionStatus,
 } from "../lib/voice/index";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
+import { resolveDefaultWebDragonVoiceId } from "../lib/tts/resolve-web-tts-provider";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 
 const DEFAULT_LOCAL_VOICE = "cc0-ko-female-01.wav";
@@ -26,7 +27,7 @@ export function resolveTtsVoiceId(config: AppConfig): string | undefined {
 	if (config.ttsProvider === "nextain") {
 		if (isKioskDemo()) return KIOSK_DEMO_TTS_VOICE;
 		if (config.ttsVoice) return config.ttsVoice;
-		if (isWebMode() && !config.voice) return KIOSK_DEMO_TTS_VOICE;
+		if (isWebMode()) return resolveDefaultWebDragonVoiceId(config);
 		return `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`;
 	}
 	if (config.ttsProvider === "naia-local-voice") {

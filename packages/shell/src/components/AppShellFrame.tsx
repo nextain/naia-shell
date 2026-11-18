@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRef, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { resolveWebPublicAssetUrl } from "../lib/web-runtime/web-assets";
 import { isMediaSourceUrl } from "../lib/local-media-url";
 import {
 	setStoredNaiaWidth,
@@ -59,7 +60,15 @@ export function AppShellFrame({
 }: AppShellFrameProps) {
 	const [failedVideoUrl, setFailedVideoUrl] = useState("");
 	const layoutOrientation = useEffectiveLayoutOrientation();
-	const autumnVideo = backgroundVideoUrl === "/backgrounds/naia-autumn-office-live.mp4";
+	const autumnPosterUrl = resolveWebPublicAssetUrl(
+		"/backgrounds/naia-autumn-office.webp",
+	);
+	const autumnVideoUrl = resolveWebPublicAssetUrl(
+		"/backgrounds/naia-autumn-office-live.mp4",
+	);
+	const autumnVideo =
+		backgroundVideoUrl === "/backgrounds/naia-autumn-office-live.mp4" ||
+		backgroundVideoUrl === autumnVideoUrl;
 	const widthDragRef = useRef<{
 		startX: number;
 		startW: number;
@@ -137,7 +146,7 @@ export function AppShellFrame({
 			failedVideoUrl === backgroundVideoUrl && autumnVideo ? (
 				<img
 					className="app-bg-image"
-					src="/backgrounds/naia-autumn-office.webp"
+					src={autumnPosterUrl}
 					alt=""
 					style={{ zIndex: 1 }}
 				/>
@@ -151,9 +160,7 @@ export function AppShellFrame({
 					muted
 					playsInline
 					preload="none"
-					poster={
-						autumnVideo ? "/backgrounds/naia-autumn-office.webp" : undefined
-					}
+					poster={autumnVideo ? autumnPosterUrl : undefined}
 					onCanPlay={(event) => {
 						if (autumnVideo) {
 							void event.currentTarget
@@ -202,10 +209,11 @@ export function AppShellFrame({
 			{/* A MediaSource URL (Linux webm) attaches to one element only; when the
 			    foreground already shows it, the layer under it would fail. */}
 			{(!foreground || backgroundMediaType === "iframe") &&
-				(backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ? (
+				(backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ||
+				backgroundFallback?.url === autumnVideoUrl ? (
 					<img
 						className="app-bg-image"
-						src="/backgrounds/naia-autumn-office.webp"
+						src={autumnPosterUrl}
 						alt=""
 						style={{ zIndex: 0 }}
 					/>

@@ -40,6 +40,7 @@ interface SpeechRecognition extends EventTarget {
 	maxAlternatives: number;
 	onresult: ((event: SpeechRecognitionEvent) => void) | null;
 	onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+	onend: (() => void) | null;
 	start(): void;
 	stop(): void;
 	abort(): void;
@@ -75,16 +76,32 @@ export interface WebSpeechSttOptions {
 	 * turns this off and only drops the empty results.
 	 */
 	detectEmptyBackend?: boolean;
+	/**
+	 * Automatically recover and restart capture on Web Speech `no-speech`,
+	 * `aborted`, transient `audio-capture`, or browser-initiated `onend` while
+	 * the session has not been stopped by the caller (web continuous voice mode).
+	 */
+	continuousRecovery?: boolean;
+	/** Max consecutive `audio-capture` hiccups to auto-recover before surfacing error. */
+	maxAudioCaptureRetries?: number;
+	/** Base delay (ms) before restarting SpeechRecognition after transient end/error. */
+	recoveryDelayMs?: number;
 }
 
 /**
  * Session options per build. Desktop (WebView2) keeps the #615 empty-result
- * check so a dead speech backend still turns the mic off; the web build only
- * drops empty results.
+ * check so a dead speech backend still turns the mic off; the web build drops
+ * empty results and enables silent continuous recovery across silence/echo pauses.
  */
 export function webSpeechSttOptions(webMode: boolean): WebSpeechSttOptions {
-	return { detectEmptyBackend: !webMode };
+	return {
+		detectEmptyBackend: !webMode,
+		continuousRecovery: webMode,
+	};
 }
+
+const DEFAULT_MAX_AUDIO_CAPTURE_RETRIES = 3;
+const DEFAULT_RECOVERY_DELAY_MS = 150;
 
 /** Create a Web Speech API STT session. */
 export function createWebSpeechSttSession(
@@ -92,13 +109,26 @@ export function createWebSpeechSttSession(
 	options: WebSpeechSttOptions = {},
 ): SttSession {
 	const detectEmptyBackend = options.detectEmptyBackend ?? true;
+	const continuousRecovery = options.continuousRecovery ?? false;
+	const maxAudioCaptureRetries =
+		options.maxAudioCaptureRetries ?? DEFAULT_MAX_AUDIO_CAPTURE_RETRIES;
+	const recoveryDelayMs = options.recoveryDelayMs ?? DEFAULT_RECOVERY_DELAY_MS;
 	let resultCallbacks: ((result: SttResult) => void)[] = [];
 	let errorCallbacks: ((error: { code: string; message: string }) => void)[] =
 		[];
 	let recognition: SpeechRecognition | null = null;
+	let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 	let consecutiveEmptyFinals = 0;
+	let consecutiveAudioCaptureErrors = 0;
 	let emptyTranscriptErrorReported = false;
 	let stopped = true;
+
+	function clearRecoveryTimer(): void {
+		if (recoveryTimer !== null) {
+			clearTimeout(recoveryTimer);
+			recoveryTimer = null;
+		}
+	}
 
 	/**
 	 * Detach handlers and kill the native recognition object outright.
@@ -113,10 +143,22 @@ export function createWebSpeechSttSession(
 	function killRecognition(r: SpeechRecognition): void {
 		r.onresult = null;
 		r.onerror = null;
+		r.onend = null;
 		try {
 			r.abort();
 		} catch {
 			/* already stopped/aborted — nothing to clean up */
+		}
+	}
+
+	function stopRecognitionCleanly(r: SpeechRecognition): void {
+		r.onresult = null;
+		r.onerror = null;
+		r.onend = null;
+		try {
+			r.stop();
+		} catch {
+			/* already stopped — nothing to clean up */
 		}
 	}
 
@@ -135,6 +177,143 @@ export function createWebSpeechSttSession(
 		return r;
 	}
 
+	function mountAndStartInstance(): void {
+		clearRecoveryTimer();
+		if (recognition) {
+			const prev = recognition;
+			recognition = null;
+			killRecognition(prev);
+		}
+		const instance = buildRecognition();
+		recognition = instance;
+		consecutiveEmptyFinals = 0;
+		emptyTranscriptErrorReported = false;
+		stopped = false;
+
+		const scheduleRecoveryRestart = (delayMs: number, reason: string) => {
+			if (stopped) return;
+			clearRecoveryTimer();
+			Logger.debug("web-speech-stt", "scheduling continuous STT recovery", {
+				reason,
+				delayMs,
+			});
+			recoveryTimer = setTimeout(() => {
+				recoveryTimer = null;
+				if (stopped || recognition !== null) return;
+				try {
+					mountAndStartInstance();
+				} catch (err) {
+					if (stopped) return;
+					stopped = true;
+					const message = err instanceof Error ? err.message : String(err);
+					for (const cb of errorCallbacks)
+						cb({ code: "restart-failed", message });
+				}
+			}, delayMs);
+		};
+
+		instance.onresult = (event: SpeechRecognitionEvent) => {
+			// Browsers still flush results after stop() (and the TTS self-echo
+			// pause restarts with a new instance). Only the live instance may
+			// forward results; late ones from a stopped instance are dropped.
+			if (stopped || recognition !== instance) return;
+			for (let i = event.resultIndex; i < event.results.length; i++) {
+				const res = event.results[i];
+				const transcript = res[0].transcript;
+				const confidence = res[0].confidence;
+				const isFinal = res.isFinal;
+				Logger.info("web-speech-stt", "result", {
+					transcript: transcript.slice(0, 50),
+					isFinal,
+					confidence,
+				});
+
+				if (isFinal && transcript.trim() === "") {
+					consecutiveEmptyFinals++;
+					if (
+						detectEmptyBackend &&
+						consecutiveEmptyFinals >= EMPTY_FINAL_ERROR_THRESHOLD &&
+						!emptyTranscriptErrorReported
+					) {
+						emptyTranscriptErrorReported = true;
+						const msg =
+							"Web Speech API returned only empty transcripts — the " +
+							"speech recognition backend in this browser/WebView2 build " +
+							"is not actually transcribing audio";
+						Logger.warn("web-speech-stt", msg, {
+							consecutiveEmptyFinals,
+						});
+						for (const cb of errorCallbacks)
+							cb({ code: "empty-transcript", message: msg });
+					}
+					// Not real data — do not forward as a successful result.
+					continue;
+				}
+
+				consecutiveEmptyFinals = 0;
+				consecutiveAudioCaptureErrors = 0;
+				for (const cb of resultCallbacks)
+					cb({ transcript, isFinal, confidence });
+			}
+		};
+
+		instance.onerror = (event: SpeechRecognitionErrorEvent) => {
+			// Guard against stale recognizer instances (e.g. a paused recognizer
+			// flushing "aborted" after TTS finished and resumed with a new instance).
+			if (stopped || recognition !== instance) return;
+
+			if (event.error === "no-speech") {
+				if (continuousRecovery) {
+					recognition = null;
+					killRecognition(instance);
+					scheduleRecoveryRestart(recoveryDelayMs, "no-speech");
+				}
+				return;
+			}
+
+			if (
+				continuousRecovery &&
+				(event.error === "aborted" || event.error === "audio-capture")
+			) {
+				if (event.error === "audio-capture") {
+					consecutiveAudioCaptureErrors += 1;
+				}
+				if (
+					event.error === "aborted" ||
+					consecutiveAudioCaptureErrors <= maxAudioCaptureRetries
+				) {
+					recognition = null;
+					killRecognition(instance);
+					const backoffMs =
+						event.error === "audio-capture"
+							? Math.min(1_200, recoveryDelayMs * 2 * consecutiveAudioCaptureErrors)
+							: recoveryDelayMs;
+					scheduleRecoveryRestart(backoffMs, event.error);
+					return;
+				}
+			}
+
+			stopped = true;
+			clearRecoveryTimer();
+			Logger.warn("web-speech-stt", "error", { error: event.error });
+			recognition = null;
+			killRecognition(instance);
+			for (const cb of errorCallbacks)
+				cb({ code: event.error, message: event.message ?? event.error });
+		};
+
+		instance.onend = () => {
+			if (stopped || recognition !== instance) return;
+			if (!continuousRecovery) return;
+			recognition = null;
+			killRecognition(instance);
+			scheduleRecoveryRestart(recoveryDelayMs, "ended");
+		};
+
+		instance.start();
+		Logger.info("web-speech-stt", "started", { language });
+	}
+
 	return {
 		async start() {
 			if (!isWebSpeechAvailable()) {
@@ -144,83 +323,17 @@ export function createWebSpeechSttSession(
 					cb({ code: "NOT_AVAILABLE", message: msg });
 				throw new Error(msg);
 			}
-
-			const instance = buildRecognition();
-			recognition = instance;
-			consecutiveEmptyFinals = 0;
-			emptyTranscriptErrorReported = false;
-			stopped = false;
-
-			instance.onresult = (event: SpeechRecognitionEvent) => {
-				// Browsers still flush results after stop() (and the TTS self-echo
-				// pause restarts with a new instance). Only the live instance may
-				// forward results; late ones from a stopped instance are dropped.
-				if (stopped || recognition !== instance) return;
-				for (let i = event.resultIndex; i < event.results.length; i++) {
-					const res = event.results[i];
-					const transcript = res[0].transcript;
-					const confidence = res[0].confidence;
-					const isFinal = res.isFinal;
-					Logger.info("web-speech-stt", "result", {
-						transcript: transcript.slice(0, 50),
-						isFinal,
-						confidence,
-					});
-
-					if (isFinal && transcript.trim() === "") {
-						consecutiveEmptyFinals++;
-						if (
-							detectEmptyBackend &&
-							consecutiveEmptyFinals >= EMPTY_FINAL_ERROR_THRESHOLD &&
-							!emptyTranscriptErrorReported
-						) {
-							emptyTranscriptErrorReported = true;
-							const msg =
-								"Web Speech API returned only empty transcripts — the " +
-								"speech recognition backend in this browser/WebView2 build " +
-								"is not actually transcribing audio";
-							Logger.warn("web-speech-stt", msg, {
-								consecutiveEmptyFinals,
-							});
-							for (const cb of errorCallbacks)
-								cb({ code: "empty-transcript", message: msg });
-						}
-						// Not real data — do not forward as a successful result.
-						continue;
-					}
-
-					consecutiveEmptyFinals = 0;
-					for (const cb of resultCallbacks)
-						cb({ transcript, isFinal, confidence });
-				}
-			};
-
-			recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-				// "no-speech" is normal — not an error worth surfacing
-				if (event.error === "no-speech") return;
-				// Already torn down for a prior error on this instance — some
-				// WebView2/Chromium builds keep restarting capture internally
-				// (#623) and re-fire onerror even after abort(); ignore repeats
-				// instead of logging/forwarding an infinite stream of them.
-				if (stopped) return;
-				stopped = true;
-				Logger.warn("web-speech-stt", "error", { error: event.error });
-				const current = recognition;
-				recognition = null;
-				if (current) killRecognition(current);
-				for (const cb of errorCallbacks)
-					cb({ code: event.error, message: event.message ?? event.error });
-			};
-
-			recognition.start();
-			Logger.info("web-speech-stt", "started", { language });
+			consecutiveAudioCaptureErrors = 0;
+			mountAndStartInstance();
 		},
 
 		async stop() {
 			stopped = true;
+			clearRecoveryTimer();
 			if (recognition) {
-				recognition.stop();
+				const current = recognition;
 				recognition = null;
+				stopRecognitionCleanly(current);
 			}
 			Logger.info("web-speech-stt", "stopped");
 		},

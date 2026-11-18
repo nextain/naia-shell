@@ -227,11 +227,13 @@
       "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-assets.md",
       "source": "packages/shell/src/lib/web-runtime/web-assets.ts",
       "expect": [
+        "getWebBasePath",
         "isLegacyWebNaiaSelection",
         "isRetiredWebBackground",
         "isWebBundledAssetUrl",
         "isWebMode",
         "normalizeRetiredWebBackgroundInRecord",
+        "resolveWebPublicAssetUrl",
         "setWebAssetsModeForTests",
         "syncWebModeRootAttribute"
       ]
@@ -311,6 +313,7 @@
         "appendWebConversationMessages",
         "clearWebConversations",
         "handleWebWorkspaceCommand",
+        "resolveInitialWebWorkspaceConfig",
         "resolveWebConversationsDir",
         "safeSessionBase"
       ]

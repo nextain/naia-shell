@@ -5,7 +5,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
+import { WebAppStoreModal } from "./components/WebAppStoreModal";
+import { WebLoginPromptModal } from "./components/WebLoginPromptModal";
 import { WebLoginScreen } from "./components/WebLoginScreen";
+import { WebSlugOwnerGuard } from "./components/WebSlugOwnerGuard";
 import { useAgentAuthSync } from "./hooks/useAgentAuthSync";
 import {
 	applyTheme,
@@ -58,6 +61,15 @@ import {
 	isWebAuthenticated,
 	isWebLoginRequired,
 } from "./lib/web-runtime/web-auth";
+import {
+	type SlugOwnershipDecision,
+	extractWebSlugFromLocation,
+	verifyWebSlugOwnership,
+} from "./lib/web-runtime/web-slug-guard";
+import {
+	STUDIO_PENDING_CHARACTER_STORAGE_KEY,
+	consumePendingStudioCharacterCard,
+} from "./lib/web-runtime/web-studio-handoff";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
@@ -266,26 +278,72 @@ export function App() {
 		isWebAuthenticated(),
 	);
 	const [webAuthError, setWebAuthError] = useState<string | null>(null);
+	const [slugGuardDecision, setSlugGuardDecision] = useState<
+		SlugOwnershipDecision | "checking"
+	>(() =>
+		isWebMode() && !isKioskDemo() && extractWebSlugFromLocation() !== null
+			? "checking"
+			: { status: "none" },
+	);
 
 	useEffect(() => {
 		if (!isWebMode()) return;
-		const syncAuth = () => setWebAuthenticated(isWebAuthenticated());
-		window.addEventListener("naia-web-auth-changed", syncAuth);
-		void consumeWebAuthCallbackFromLocation().then((res) => {
-			if (res.handled) {
-				if (res.ok) {
-					setWebAuthError(null);
-					setWebAuthenticated(true);
-				} else if (res.error === "state_mismatch") {
-					setWebAuthError(
-						t("webAuth.stateFailed"),
-					);
-				} else if (res.error === "invalid_key") {
-					setWebAuthError(t("webAuth.invalidKey"));
-				}
+		let alive = true;
+		const checkSlug = async () => {
+			if (isKioskDemo()) {
+				if (alive) setSlugGuardDecision({ status: "none" });
+				return;
 			}
-		});
+			const decision = await verifyWebSlugOwnership();
+			if (!alive) return;
+			if (
+				decision.status === "authorized" &&
+				decision.redirectToSlug &&
+				typeof window !== "undefined"
+			) {
+				window.location.replace(
+					`/u/${encodeURIComponent(decision.redirectToSlug)}`,
+				);
+				return;
+			}
+			setSlugGuardDecision(decision);
+		};
+		const syncAuth = () => {
+			setWebAuthenticated(isWebAuthenticated());
+			void checkSlug();
+		};
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		void consumeWebAuthCallbackFromLocation()
+			.then((res) => {
+				if (!alive) return;
+				if (res.handled) {
+					if (res.ok) {
+						setWebAuthError(null);
+						setWebAuthenticated(true);
+						const postLoginCfg = loadConfig();
+						if (postLoginCfg) {
+							setShowOnboarding(postLoginCfg.onboardingComplete !== true);
+							if (postLoginCfg.ttsEnabled !== undefined) {
+								useAppStore.getState().setTtsEnabled(postLoginCfg.ttsEnabled);
+							}
+							void writeNaiaConfig({
+								...(postLoginCfg as unknown as Record<string, unknown>),
+								...buildNaiaConfigEnv(postLoginCfg),
+							}).catch(() => {});
+						}
+						window.dispatchEvent(new CustomEvent("naia-config-changed"));
+					} else if (res.error === "state_mismatch") {
+						setWebAuthError(t("webAuth.stateFailed"));
+					} else if (res.error === "invalid_key") {
+						setWebAuthError(t("webAuth.invalidKey"));
+					}
+				}
+			})
+			.finally(() => {
+				void checkSlug();
+			});
 		return () => {
+			alive = false;
 			window.removeEventListener("naia-web-auth-changed", syncAuth);
 		};
 	}, []);
@@ -1266,12 +1324,59 @@ export function App() {
 		return () => window.clearTimeout(retryTimer);
 	}, [pendingOpenFiles, showAdkSetup, showOnboarding, showSplash]);
 
+	// Studio -> Web Shell SillyTavern V2/V3 Character Card direct handoff
+	useEffect(() => {
+		if (!isWebMode() || isKioskDemo() || !configHydrated) return;
+		let cancelled = false;
+		const applyPending = async () => {
+			const res = await consumePendingStudioCharacterCard();
+			if (cancelled || !res.handled) return;
+			if (res.ok && res.characterName) {
+				setShowOnboarding(false);
+				setAppTitle(res.characterName);
+				showGlobalToast(
+					getLocale() === "ko"
+						? `캐릭터 카드 적용됨: ${res.characterName}`
+						: `Character card applied: ${res.characterName}`,
+				);
+			}
+		};
+		void applyPending();
+		const onStorage = (event: StorageEvent) => {
+			if (
+				event.key === STUDIO_PENDING_CHARACTER_STORAGE_KEY &&
+				event.newValue
+			) {
+				void applyPending();
+			}
+		};
+		window.addEventListener("storage", onStorage);
+		return () => {
+			cancelled = true;
+			window.removeEventListener("storage", onStorage);
+		};
+	}, [configHydrated, showGlobalToast]);
+
 	// The persisted two-way preference controls chat placement across apps.
 	const uiMode = showOnboarding
 		? "onboarding"
 		: showAdkSetup
 			? "setup"
 			: chatModeOverride;
+	if (slugGuardDecision === "checking") {
+		return (
+			<main
+				data-testid="web-slug-checking"
+				style={{ minHeight: "100dvh", background: "#060d14" }}
+			/>
+		);
+	}
+	if (
+		slugGuardDecision.status !== "none" &&
+		slugGuardDecision.status !== "authorized"
+	) {
+		return <WebSlugOwnerGuard decision={slugGuardDecision} />;
+	}
 	if (isWebLoginRequired() && !webAuthenticated) {
 		return <WebLoginScreen authError={webAuthError} />;
 	}
@@ -1334,6 +1439,8 @@ export function App() {
 					updateInfo,
 				}}
 			/>
+			<WebLoginPromptModal />
+			<WebAppStoreModal />
 			{globalToast && (
 				<div
 					className="workspace-app__idle-toast"

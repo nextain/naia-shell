@@ -1,6 +1,9 @@
 import { Logger } from "../../logger";
 import type { NvaManifest } from "../../nva";
-import { isNarrowPortraitScreen } from "../../web-runtime/web-assets";
+import {
+	isNarrowPortraitScreen,
+	resolveWebPublicAssetUrl,
+} from "../../web-runtime/web-assets";
 
 /**
  * Speech asset bytes fetched before the avatar renderer exists (kiosk entry
@@ -69,7 +72,7 @@ export async function prewarmWebSpeechAssets(
 				import("./canonical-speech-stage"),
 				import("../nva-stacked-alpha"),
 			]);
-		const directory = `/nva/${bundleName}`;
+		const directory = resolveWebPublicAssetUrl(`/nva/${bundleName}`);
 		const response = await fetch(`${directory}/manifest.json`);
 		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 		const manifest = parseNvaManifest(await response.text());

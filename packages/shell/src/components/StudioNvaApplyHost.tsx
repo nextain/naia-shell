@@ -13,6 +13,7 @@ import {
 	hasPendingStudioNvaTarget,
 	isStudioNvaApplyRequest,
 } from "../lib/studio-nva-apply-request";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // The dialog, its apply flow, and the NVA manifest checks load only when a
@@ -47,6 +48,7 @@ export default function StudioNvaApplyHost() {
 	}, []);
 
 	useEffect(() => {
+		if (isWebMode()) return;
 		let active = true;
 		const unlisten = listen<StudioNvaApplyRequest>(
 			"studio_nva_apply_requested",

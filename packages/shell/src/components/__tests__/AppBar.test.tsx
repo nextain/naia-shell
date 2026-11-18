@@ -89,9 +89,13 @@ vi.mock("../../lib/app-loader", () => ({
 	removeInstalledApp: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../lib/chat-service", () => ({
-	sendAppSkillsClear: (...a: unknown[]) => mockSendAppSkillsClear(...a),
-}));
+vi.mock("../../lib/chat-service", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../lib/chat-service")>();
+	return {
+		...actual,
+		sendAppSkillsClear: (...a: unknown[]) => mockSendAppSkillsClear(...a),
+	};
+});
 
 vi.mock("../../lib/app-registry", () => ({
 	appRegistry: {

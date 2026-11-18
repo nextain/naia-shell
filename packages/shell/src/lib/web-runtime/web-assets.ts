@@ -302,3 +302,52 @@ export function isWebBundledAssetUrl(path: string): boolean {
 		path.startsWith("assets/")
 	);
 }
+
+/**
+ * Vite `base` 경로 정규화 (`"/"` 또는 `"/app/"` 등 항상 앞뒤 `/` 보장).
+ */
+export function getWebBasePath(baseOverride?: string): string {
+	const raw =
+		baseOverride ??
+		(typeof import.meta !== "undefined" && import.meta.env?.BASE_URL
+			? String(import.meta.env.BASE_URL)
+			: "/");
+	const trimmed = raw.trim();
+	if (!trimmed || trimmed === "/") return "/";
+	const withLeading = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+	return withLeading.endsWith("/") ? withLeading : `${withLeading}/`;
+}
+
+/**
+ * 웹 정적 번들 자산 URL(`/avatars/*`, `/backgrounds/*`, `/assets/*`, `/nva/*`, `/brand/*`)을
+ * 현재 Vite `BASE_URL`(`"/"` 또는 `"/app/"`)에 맞게 보정한다.
+ * `BASE_URL === "/"` 인 기본/테스트 환경에서는 기존 절대 경로(`"/nva/..."` 등)를 그대로 반환한다.
+ */
+export function resolveWebPublicAssetUrl(
+	path: string,
+	baseOverride?: string,
+): string {
+	if (!path) return path;
+	if (/^(https?:|blob:|data:|asset:|tauri:)/.test(path)) return path;
+	const normalized =
+		path.startsWith("avatars/") ||
+		path.startsWith("assets/") ||
+		path.startsWith("backgrounds/") ||
+		path.startsWith("nva/") ||
+		path.startsWith("brand/")
+			? `/${path}`
+			: path;
+	const base = getWebBasePath(baseOverride);
+	if (base === "/") return normalized;
+	if (normalized.startsWith(base)) return normalized;
+	if (
+		normalized.startsWith("/avatars/") ||
+		normalized.startsWith("/backgrounds/") ||
+		normalized.startsWith("/assets/") ||
+		normalized.startsWith("/nva/") ||
+		normalized.startsWith("/brand/")
+	) {
+		return `${base.slice(0, -1)}${normalized}`;
+	}
+	return normalized;
+}

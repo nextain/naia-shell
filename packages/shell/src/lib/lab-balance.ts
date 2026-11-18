@@ -69,6 +69,24 @@ export function isLabBalanceUnauthorized(err: unknown): boolean {
 }
 
 const NAIA_KEY_UNAUTHORIZED_EVENT = "naia_key_unauthorized";
+const NAIA_WEB_CREDIT_REFRESH_EVENT = "naia-web-credit-refresh";
+
+/**
+ * Notify `WebCreditChip` (SP-00 / SP-10) that a cloud LLM turn or cloud TTS
+ * synthesis just consumed credits (or hit HTTP 402), triggering an immediate
+ * debounced balance re-fetch.
+ */
+export function requestWebCreditRefresh(): void {
+	if (typeof window === "undefined") return;
+	window.dispatchEvent(new CustomEvent(NAIA_WEB_CREDIT_REFRESH_EVENT));
+}
+
+export function onWebCreditRefresh(handler: () => void): () => void {
+	if (typeof window === "undefined") return () => {};
+	window.addEventListener(NAIA_WEB_CREDIT_REFRESH_EVENT, handler);
+	return () =>
+		window.removeEventListener(NAIA_WEB_CREDIT_REFRESH_EVENT, handler);
+}
 
 /**
  * Broadcasts that the stored Naia key was rejected by the backend — whether

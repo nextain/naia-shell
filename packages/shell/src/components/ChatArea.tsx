@@ -147,7 +147,11 @@ import {
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
-import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
+import {
+	markNaiaKeyUnauthorized,
+	primeLabCredits,
+	requestWebCreditRefresh,
+} from "../lib/lab-balance";
 import {
 	getDefaultLlmModel,
 	getLlmModel,
@@ -215,6 +219,7 @@ import {
 	isNarrowPortraitScreen,
 	isWebMode,
 } from "../lib/web-runtime/web-assets";
+import { openWebLoginPrompt } from "../lib/web-runtime/web-login-prompt";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
@@ -848,14 +853,13 @@ export function ChatArea({
 						if (sttCooldownTimerRef.current)
 							clearTimeout(sttCooldownTimerRef.current);
 						sttCooldownTimerRef.current = setTimeout(() => {
-							setSttState("listening");
 							sttCooldownTimerRef.current = null;
-							if (pipelineActiveRef.current) {
-								try {
-									sttResumeRef.current?.();
-								} catch {
-									// 재개 실패 시 다음 발화 토글로 복구
-								}
+							if (!pipelineActiveRef.current || ttsPlayingRef.current) return;
+							setSttState("listening");
+							try {
+								sttResumeRef.current?.();
+							} catch {
+								// 재개 실패 시 다음 발화 토글로 복구
 							}
 						}, delayMs);
 					},
@@ -1067,6 +1071,9 @@ export function ChatArea({
 		}
 
 		currentRequestId.current = null;
+		if (isWebMode() && !isKioskDemo()) {
+			requestWebCreditRefresh();
+		}
 		settleAvatarEmotionIfIdle();
 		scheduleNextQueuedMessage();
 	}
@@ -2772,6 +2779,9 @@ export function ChatArea({
 			configuredProvider === "nextain" &&
 			!config?.naiaKey
 		) {
+			if (isWebMode()) {
+				openWebLoginPrompt("cloud-llm");
+			}
 			settleInstalledAppReply("", t("apps.loginRequired"));
 			useChatStore.getState().appendStreamChunk(t("apps.loginRequired"));
 			useChatStore.getState().finishStreaming();
@@ -3095,9 +3105,21 @@ export function ChatArea({
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
-				setShowNoAuthModal(true);
+				if (isWebMode() && !isKioskDemo()) {
+					openWebLoginPrompt("cloud-llm");
+				} else {
+					setShowNoAuthModal(true);
+				}
 				completeCurrentRequest(requestId);
 			} else {
+				if (
+					isWebMode() &&
+					!isKioskDemo() &&
+					/\b402\b|Insufficient credits/i.test(errStr)
+				) {
+					primeLabCredits(0);
+					requestWebCreditRefresh();
+				}
 				const admissionKey =
 					err instanceof OllamaRuntimeAdmissionError
 						? ollamaAdmissionMessageKey(err.reasonCode)
@@ -4255,12 +4277,28 @@ export function ChatArea({
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
 			Logger.info("ChatArea", "Barge-in via button: stopping TTS");
+			interruptTts();
 			audioQueueRef.current?.clear();
 			ttsPlayingRef.current = false;
 			setTtsPlaying(false);
 			handleCancelStreaming();
 			sentenceChunkerRef.current?.clear();
 			ttsCooldownUntilRef.current = Date.now() + 300;
+			if (pipelineActiveRef.current) {
+				setSttState("initializing");
+				if (sttCooldownTimerRef.current)
+					clearTimeout(sttCooldownTimerRef.current);
+				sttCooldownTimerRef.current = setTimeout(() => {
+					sttCooldownTimerRef.current = null;
+					if (!pipelineActiveRef.current || ttsPlayingRef.current) return;
+					setSttState("listening");
+					try {
+						sttResumeRef.current?.();
+					} catch {
+						// 재개 실패 시 다음 발화 토글로 복구
+					}
+				}, 300);
+			}
 			return;
 		}
 
@@ -4324,6 +4362,7 @@ export function ChatArea({
 				const sttProviderMeta = getSttProvider(config.sttProvider || "");
 				const needsModel = sttProviderMeta?.engineType === "tauri";
 				if (
+					!isWebMode() &&
 					!isAsrModel &&
 					(!config.sttProvider || (needsModel && !config.sttModel))
 				) {
@@ -4388,15 +4427,14 @@ export function ChatArea({
 						if (sttCooldownTimerRef.current)
 							clearTimeout(sttCooldownTimerRef.current);
 						sttCooldownTimerRef.current = setTimeout(() => {
-							setSttState("listening");
 							sttCooldownTimerRef.current = null;
-							// 쿨다운 종료 후 마이크 재개 (세션이 살아있을 때만).
-							if (pipelineActiveRef.current) {
-								try {
-									sttResumeRef.current?.();
-								} catch {
-									/* 재개 실패 = 다음 발화 토글로 복구 가능 */
-								}
+							// 쿨다운 종료 후 마이크 재개 (세션이 살아있고 새 발화가 시작되지 않았을 때만).
+							if (!pipelineActiveRef.current || ttsPlayingRef.current) return;
+							setSttState("listening");
+							try {
+								sttResumeRef.current?.();
+							} catch {
+								/* 재개 실패 = 다음 발화 토글로 복구 가능 */
 							}
 						}, 800);
 					},

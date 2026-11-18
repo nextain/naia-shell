@@ -25,7 +25,7 @@ export function getStoreGatewayUrl(): string {
 	// legacy chat WebSocket gateway (ws://localhost:18789), so install hit a dead
 	// localhost port ("error sending request for url http://localhost:18789/...",
 	// 2026-08-31 rehearsal). config.gatewayUrl (chat gateway) is unrelated here.
-	return httpGatewayUrl(LAB_GATEWAY_URL);
+	return httpGatewayUrl(LAB_GATEWAY_URL || "https://api.naia.land");
 }
 
 export function hasStoreEntitlement(appId: string): Promise<boolean> {

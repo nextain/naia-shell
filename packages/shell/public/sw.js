@@ -2,8 +2,13 @@
 const SW_BUILD_VERSION = "__NAIA_SW_VERSION__";
 const CACHE_VERSION = SW_BUILD_VERSION.startsWith("__") ? "dev" : SW_BUILD_VERSION;
 const CACHE = `naia-shell-${CACHE_VERSION}`;
-const shellUrl = new URL("/", self.location.origin).href;
-const assetPath = /^\/assets\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}\.(?:js|mjs|css|woff2?)$/;
+const rawSwPath = typeof self.location?.pathname === "string" ? self.location.pathname : "/sw.js";
+const baseDir = rawSwPath.endsWith("/sw.js") ? rawSwPath.slice(0, -5) || "/" : "/";
+const normalizedBase = baseDir.endsWith("/") ? baseDir : `${baseDir}/`;
+const shellUrl = new URL(normalizedBase === "/" ? "/" : `${normalizedBase}index.html`, self.location.origin).href;
+const escapedBase = normalizedBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const assetPath = new RegExp(`^${escapedBase}assets\\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}\\.(?:js|mjs|css|woff2?)$`);
+const htmlAssetRe = new RegExp(`(?:src|href)=["'](${escapedBase}assets\\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}\\.(?:js|mjs|css|woff2?))["']`, "g");
 
 function cacheable(response, expectedUrl) {
   const policy = response.headers.get("cache-control") || "";
@@ -26,15 +31,19 @@ async function savePublic(url, cache, cacheMode = "default") {
 }
 function isShellNavigation(request, url) {
   if (request.mode !== "navigate") return false;
-  if (url.pathname.startsWith("/e2e/")) return false;
-  return url.pathname === "/" || url.pathname === "/index.html" || !/\.[^/]+$/.test(url.pathname);
+  if (url.pathname.startsWith("/e2e/") || url.pathname.startsWith("/hosted-apps/")) return false;
+  if (normalizedBase !== "/") {
+    const prefixNoSlash = normalizedBase.slice(0, -1);
+    if (url.pathname !== prefixNoSlash && !url.pathname.startsWith(normalizedBase)) return false;
+  }
+  return url.pathname === "/" || url.pathname === "/index.html" || !/\.[^/]+$/.test(url.pathname) || url.pathname.endsWith("/index.html");
 }
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     const shell = await savePublic(shellUrl, cache, "no-cache");
     const html = await shell.text();
-    const urls = [...html.matchAll(/(?:src|href)=["'](\/assets\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}\.(?:js|mjs|css|woff2?))["']/g)]
+    const urls = [...html.matchAll(htmlAssetRe)]
       .map((match) => new URL(match[1], self.location.origin).href);
     await Promise.all(urls.map((url) => savePublic(url, cache)));
     await self.skipWaiting();

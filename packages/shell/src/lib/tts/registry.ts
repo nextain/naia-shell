@@ -1,4 +1,5 @@
-import type { TtsProviderMeta } from "./types";
+import type { Locale } from "../i18n";
+import type { TtsProviderMeta, TtsVoiceMeta } from "./types";
 
 const providers = new Map<string, TtsProviderMeta>();
 
@@ -71,26 +72,298 @@ registerTtsProviderMeta({
 	],
 });
 
+const MULTILINGUAL_SECONDARY_LOCALES: readonly Locale[] = [
+	"ru",
+	"hi",
+	"bn",
+	"ko",
+	"ja",
+	"zh",
+	"fr",
+	"de",
+	"es",
+	"ar",
+	"pt",
+	"id",
+	"vi",
+];
+
+export const DRAGON_CLOUD_VOICES: readonly TtsVoiceMeta[] = [
+	{
+		id: "ko-KR-SunHi:DragonHDLatestNeural",
+		label: "SunHi HD (한국어 · 여성)",
+		language: "ko",
+		gender: "female",
+	},
+	{
+		id: "ko-KR-Hyunsu:DragonHDLatestNeural",
+		label: "Hyunsu HD (한국어 · 남성)",
+		language: "ko",
+		gender: "male",
+	},
+	{
+		id: "en-US-Ava:DragonHDLatestNeural",
+		label: "Ava HD (English / 다국어 · 여성)",
+		language: "en",
+		gender: "female",
+		secondaryLocales: MULTILINGUAL_SECONDARY_LOCALES,
+	},
+	{
+		id: "en-US-Andrew:DragonHDLatestNeural",
+		label: "Andrew HD (English / 다국어 · 남성)",
+		language: "en",
+		gender: "male",
+		secondaryLocales: MULTILINGUAL_SECONDARY_LOCALES,
+	},
+	{
+		id: "ja-JP-Nanami:DragonHDLatestNeural",
+		label: "Nanami HD (日本語 · 여성)",
+		language: "ja",
+		gender: "female",
+	},
+	{
+		id: "ja-JP-Masaru:DragonHDLatestNeural",
+		label: "Masaru HD (日本語 · 남성)",
+		language: "ja",
+		gender: "male",
+	},
+	{
+		id: "zh-CN-Xiaochen:DragonHDLatestNeural",
+		label: "Xiaochen HD (中文 · 여성)",
+		language: "zh",
+		gender: "female",
+	},
+	{
+		id: "zh-CN-Xiaoxiao:DragonHDFlashLatestNeural",
+		label: "Xiaoxiao HD Flash (中文 · 여성)",
+		language: "zh",
+		gender: "female",
+	},
+	{
+		id: "zh-TW-HsiaoChen:DragonLatestNeural",
+		label: "HsiaoChen Dragon (繁體中文 · 여성)",
+		language: "zh",
+		gender: "female",
+	},
+	{
+		id: "es-ES-Ximena:DragonHDLatestNeural",
+		label: "Ximena HD (Español · 여성)",
+		language: "es",
+		gender: "female",
+	},
+	{
+		id: "es-ES-Tristan:DragonHDLatestNeural",
+		label: "Tristan HD (Español · 남성)",
+		language: "es",
+		gender: "male",
+	},
+	{
+		id: "fr-FR-Vivienne:DragonHDLatestNeural",
+		label: "Vivienne HD (Français · 여성)",
+		language: "fr",
+		gender: "female",
+	},
+	{
+		id: "fr-FR-Remy:DragonHDLatestNeural",
+		label: "Remy HD (Français · 남성)",
+		language: "fr",
+		gender: "male",
+	},
+	{
+		id: "de-DE-Seraphina:DragonHDLatestNeural",
+		label: "Seraphina HD (Deutsch · 여성)",
+		language: "de",
+		gender: "female",
+	},
+	{
+		id: "de-DE-Florian:DragonHDLatestNeural",
+		label: "Florian HD (Deutsch · 남성)",
+		language: "de",
+		gender: "male",
+	},
+	{
+		id: "pt-BR-Thalita:DragonHDLatestNeural",
+		label: "Thalita HD (Português · 여성)",
+		language: "pt",
+		gender: "female",
+	},
+	{
+		id: "pt-BR-Macerio:DragonHDLatestNeural",
+		label: "Macerio HD (Português · 남성)",
+		language: "pt",
+		gender: "male",
+	},
+	{
+		id: "id-ID-Gadis:DragonHDLatestNeural",
+		label: "Gadis HD (Bahasa Indonesia · 여성)",
+		language: "id",
+		gender: "female",
+	},
+	{
+		id: "id-ID-Ardi:DragonHDLatestNeural",
+		label: "Ardi HD (Bahasa Indonesia · 남성)",
+		language: "id",
+		gender: "male",
+	},
+	{
+		id: "vi-VN-HoaiMy:DragonLatestNeural",
+		label: "HoaiMy Dragon (Tiếng Việt · 여성)",
+		language: "vi",
+		gender: "female",
+	},
+	{
+		id: "ar-EG-Hoda:DragonLatestNeural",
+		label: "Hoda Dragon (العربية · 여성)",
+		language: "ar",
+		gender: "female",
+	},
+	{
+		id: "ar-SA-Hamed:DragonLatestNeural",
+		label: "Hamed Dragon (العربية · 남성)",
+		language: "ar",
+		gender: "male",
+	},
+	{
+		id: "it-IT-Isabella:DragonHDLatestNeural",
+		label: "Isabella HD (Italiano · 여성)",
+		language: "it",
+		gender: "female",
+	},
+	{
+		id: "it-IT-Alessio:DragonHDLatestNeural",
+		label: "Alessio HD (Italiano · 남성)",
+		language: "it",
+		gender: "male",
+	},
+	{
+		id: "th-TH-Premwadee:DragonLatestNeural",
+		label: "Premwadee Dragon (ไทย · 여성)",
+		language: "th",
+		gender: "female",
+	},
+	{
+		id: "th-TH-Pattara:DragonLatestNeural",
+		label: "Pattara Dragon (ไทย · 남성)",
+		language: "th",
+		gender: "male",
+	},
+];
+
+/**
+ * Canonical Dragon voice mapping for all 14 supported UI locales (`Locale`).
+ * Locales without a primary eastus2 Dragon voice (`ru`, `hi`, `bn`, and male
+ * counterparts for `zh` / `vi`) map to the verified Azure `eastus2` DragonHD
+ * 92-locale multilingual voices (`Ava` / `Andrew`).
+ */
+export const DRAGON_LOCALE_DEFAULT_VOICES: Readonly<
+	Record<Locale, { readonly female: string; readonly male: string }>
+> = {
+	ko: {
+		female: "ko-KR-SunHi:DragonHDLatestNeural",
+		male: "ko-KR-Hyunsu:DragonHDLatestNeural",
+	},
+	en: {
+		female: "en-US-Ava:DragonHDLatestNeural",
+		male: "en-US-Andrew:DragonHDLatestNeural",
+	},
+	ja: {
+		female: "ja-JP-Nanami:DragonHDLatestNeural",
+		male: "ja-JP-Masaru:DragonHDLatestNeural",
+	},
+	zh: {
+		female: "zh-CN-Xiaochen:DragonHDLatestNeural",
+		male: "en-US-Andrew:DragonHDLatestNeural",
+	},
+	fr: {
+		female: "fr-FR-Vivienne:DragonHDLatestNeural",
+		male: "fr-FR-Remy:DragonHDLatestNeural",
+	},
+	de: {
+		female: "de-DE-Seraphina:DragonHDLatestNeural",
+		male: "de-DE-Florian:DragonHDLatestNeural",
+	},
+	ru: {
+		female: "en-US-Ava:DragonHDLatestNeural",
+		male: "en-US-Andrew:DragonHDLatestNeural",
+	},
+	es: {
+		female: "es-ES-Ximena:DragonHDLatestNeural",
+		male: "es-ES-Tristan:DragonHDLatestNeural",
+	},
+	ar: {
+		female: "ar-EG-Hoda:DragonLatestNeural",
+		male: "ar-SA-Hamed:DragonLatestNeural",
+	},
+	hi: {
+		female: "en-US-Ava:DragonHDLatestNeural",
+		male: "en-US-Andrew:DragonHDLatestNeural",
+	},
+	bn: {
+		female: "en-US-Ava:DragonHDLatestNeural",
+		male: "en-US-Andrew:DragonHDLatestNeural",
+	},
+	pt: {
+		female: "pt-BR-Thalita:DragonHDLatestNeural",
+		male: "pt-BR-Macerio:DragonHDLatestNeural",
+	},
+	id: {
+		female: "id-ID-Gadis:DragonHDLatestNeural",
+		male: "id-ID-Ardi:DragonHDLatestNeural",
+	},
+	vi: {
+		female: "vi-VN-HoaiMy:DragonLatestNeural",
+		male: "en-US-Andrew:DragonHDLatestNeural",
+	},
+};
+
+function normalizeLocaleCode(rawLocale?: string): Locale {
+	const code = (rawLocale || "ko").trim().toLowerCase().split(/[-_]/)[0];
+	return Object.prototype.hasOwnProperty.call(
+		DRAGON_LOCALE_DEFAULT_VOICES,
+		code,
+	)
+		? (code as Locale)
+		: "ko";
+}
+
+export function getDefaultDragonVoiceForLocale(
+	rawLocale?: string,
+	gender: "female" | "male" = "female",
+): string {
+	const locale = normalizeLocaleCode(rawLocale);
+	return DRAGON_LOCALE_DEFAULT_VOICES[locale][gender];
+}
+
+export function getRecommendedDragonVoicesForLocale(
+	rawLocale?: string,
+): TtsVoiceMeta[] {
+	const locale = normalizeLocaleCode(rawLocale);
+	const pair = DRAGON_LOCALE_DEFAULT_VOICES[locale];
+	const byId = new Map(DRAGON_CLOUD_VOICES.map((voice) => [voice.id, voice]));
+	const recommended: TtsVoiceMeta[] = [];
+	const seen = new Set<string>();
+	const pushVoice = (voice: TtsVoiceMeta | undefined) => {
+		if (!voice || seen.has(voice.id)) return;
+		seen.add(voice.id);
+		recommended.push(voice);
+	};
+	pushVoice(byId.get(pair.female));
+	pushVoice(byId.get(pair.male));
+	for (const voice of DRAGON_CLOUD_VOICES) {
+		if (voice.language === locale) pushVoice(voice);
+	}
+	return recommended;
+}
+
 registerTtsProviderMeta({
 	id: "nextain",
-	name: "Naia Cloud TTS",
+	name: "Naia Cloud TTS (Dragon)",
 	description:
-		"Azure Neural HD (SunHi / Hyunsu), billed in Naia credits via the gateway.",
+		"Azure Dragon HD / Dragon Neural voices for 14 languages, billed in Naia credits via the gateway.",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
 	pricing: "Naia credits",
-	voices: [
-		{
-			id: "ko-KR-SunHi:DragonHDLatestNeural",
-			label: "SunHi HD (여성)",
-			gender: "female",
-		},
-		{
-			id: "ko-KR-Hyunsu:DragonHDLatestNeural",
-			label: "Hyunsu HD (남성)",
-			gender: "male",
-		},
-	],
+	voices: [...DRAGON_CLOUD_VOICES],
 });
 
 // ── Local vLLM TTS (OpenAI-compatible /v1/audio/speech) ──

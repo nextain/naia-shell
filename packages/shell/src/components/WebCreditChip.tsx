@@ -3,6 +3,8 @@ import {
 	LAB_GATEWAY_URL,
 	NAIA_WEB_BASE_URL,
 	getNaiaKeySecure,
+	loadConfig,
+	saveConfig,
 } from "../lib/config";
 import { formatCredits } from "../lib/credits";
 import { usePaymentLinksHidden } from "../lib/distribution";
@@ -13,12 +15,15 @@ import {
 	isLabBalanceUnauthorized,
 	markNaiaKeyUnauthorized,
 	onNaiaKeyUnauthorized,
+	onWebCreditRefresh,
 	parseLabCredits,
 	primeLabCredits,
 } from "../lib/lab-balance";
 import { Logger } from "../lib/logger";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { isWebMode } from "../lib/web-runtime/web-assets";
+import { readNavigatorGpu } from "../lib/web-runtime/webgpu-check";
+import { WEB_LLM_MODEL_ID } from "../lib/web-runtime/webllm-model";
 import { useAppStore } from "../stores/app";
 
 /** SP-00: balance under this shows orange. */
@@ -118,12 +123,26 @@ export function WebCreditChip() {
 		window.addEventListener("focus", onFocus);
 		window.addEventListener("naia-web-auth-changed", onFocus);
 		document.addEventListener("visibilitychange", onVisible);
+		let creditRefreshDebounce: number | undefined;
+		const offCreditRefresh = onWebCreditRefresh(() => {
+			if (creditRefreshDebounce !== undefined) {
+				window.clearTimeout(creditRefreshDebounce);
+			}
+			creditRefreshDebounce = window.setTimeout(() => {
+				creditRefreshDebounce = undefined;
+				void refresh();
+			}, 300);
+		});
 		const offUnauthorized = onNaiaKeyUnauthorized(() => setBalance(null));
 		return () => {
 			window.clearInterval(timer);
+			if (creditRefreshDebounce !== undefined) {
+				window.clearTimeout(creditRefreshDebounce);
+			}
 			window.removeEventListener("focus", onFocus);
 			window.removeEventListener("naia-web-auth-changed", onFocus);
 			document.removeEventListener("visibilitychange", onVisible);
+			offCreditRefresh();
 			offUnauthorized();
 			inFlight.current?.abort();
 		};
@@ -134,7 +153,43 @@ export function WebCreditChip() {
 	const continueLocal = () => {
 		setOpen(false);
 		setEmptyDismissed(true);
-		setActiveApp("settings");
+		try {
+			const existing =
+				typeof loadConfig === "function" ? loadConfig() : undefined;
+			if (typeof saveConfig === "function") {
+				saveConfig({
+					...(existing ?? { apiKey: "" }),
+					provider: "webllm",
+					model: WEB_LLM_MODEL_ID,
+					ttsProvider: "browser",
+					ttsEnabled: existing?.ttsEnabled ?? true,
+					llmRoles: {
+						...(existing?.llmRoles ?? {}),
+						main: { provider: "webllm", model: WEB_LLM_MODEL_ID },
+					},
+				});
+				window.dispatchEvent(new CustomEvent("naia-config-changed"));
+				void Promise.all([
+					import("../lib/web-runtime/model-start"),
+					import("../lib/web-runtime/agent-bridge"),
+				])
+					.then(([{ startWebModel }, { getStartableAgentBridge }]) =>
+						startWebModel({
+							gpu: readNavigatorGpu(),
+							storage:
+								typeof localStorage !== "undefined" ? localStorage : null,
+							engineKind: import.meta.env.VITE_NAIA_WEB_LLM,
+							buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
+							bridge: getStartableAgentBridge(),
+						}),
+					)
+					.catch(() => {});
+			} else {
+				setActiveApp("settings");
+			}
+		} catch {
+			setActiveApp("settings");
+		}
 	};
 
 	return (

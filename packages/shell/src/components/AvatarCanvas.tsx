@@ -39,6 +39,10 @@ import {
 } from "../lib/vrm/expression";
 import { randomSaccadeInterval } from "../lib/vrm/eye-motions";
 import { applyRelaxedFists } from "../lib/vrm/hand-pose";
+import {
+	isWebMode,
+	resolveWebPublicAssetUrl,
+} from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
 
 // 카메라 액션 브리지는 lib/avatar/camera-actions 로 분리(VRM·NVA 공용). 아래에서는
@@ -149,7 +153,9 @@ function resolveAssetUrl(path: string): string {
 	}
 	// Relative web-asset paths — normalize to absolute web path
 	if (normalized.startsWith("avatars/") || normalized.startsWith("assets/")) {
-		return `/${normalized}`;
+		return isWebMode()
+			? resolveWebPublicAssetUrl(`/${normalized}`)
+			: `/${normalized}`;
 	}
 	if (
 		normalized.startsWith("/assets/") ||
@@ -160,7 +166,7 @@ function resolveAssetUrl(path: string): string {
 		normalized.startsWith("blob:") ||
 		normalized.startsWith("data:")
 	) {
-		return normalized;
+		return isWebMode() ? resolveWebPublicAssetUrl(normalized) : normalized;
 	}
 	const assetUrl = convertFileSrc(normalized);
 	return normalizeTauriAssetUrl(assetUrl);

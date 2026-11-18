@@ -27,6 +27,7 @@ import {
 	KIOSK_DEMO_TTS_VOICE,
 } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
+import { primeLabCredits, requestWebCreditRefresh } from "../lab-balance";
 import { Logger } from "../logger";
 import {
 	isOwnLocalVoiceUrl,
@@ -36,7 +37,10 @@ import {
 import { applyLocalRefAudio } from "../voice/ref-audio-api";
 import { resolveEdgeVoice } from "./edge-tts";
 import { emitKioskVoiceState } from "./kiosk-voice-gate";
-import { isNarrowPortraitScreen } from "../web-runtime/web-assets";
+import {
+	isNarrowPortraitScreen,
+	isWebMode,
+} from "../web-runtime/web-assets";
 
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
 // webview can't do the MS WebSocket handshake (it can't set the required
@@ -443,11 +447,18 @@ async function requestNextainSpeech(
 		signal: opts.signal,
 	});
 	if (!resp.ok) {
+		if (resp.status === 402 && isWebMode() && !isKioskDemo()) {
+			primeLabCredits(0);
+			requestWebCreditRefresh();
+		}
 		throw new NextainSpeechError(
 			`Naia TTS 실패 (${resp.status}): ${await errorDetail(resp)}`,
 			resp.status,
 			resp.headers?.get?.("Retry-After") ?? null,
 		);
+	}
+	if (isWebMode() && !isKioskDemo()) {
+		requestWebCreditRefresh();
 	}
 	const contentType = resp.headers?.get?.("content-type")?.toLowerCase() ?? "";
 	if (contentType.startsWith("audio/")) {

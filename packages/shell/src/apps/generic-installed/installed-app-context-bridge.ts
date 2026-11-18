@@ -8,10 +8,18 @@ const MAX_TYPE_LENGTH = 64;
 const MAX_CONTEXT_JSON_CHARS = 32_000;
 const TAG = "InstalledAppContextBridge";
 
+function isOpaqueSandboxFrame(frame: HTMLIFrameElement): boolean {
+	const sb = frame.getAttribute("sandbox") ?? "";
+	return sb.length > 0 && !/\ballow-same-origin\b/i.test(sb);
+}
+
 function resolveFrameTargetOrigin(
 	frame: HTMLIFrameElement,
 	htmlEntry?: string | null,
 ): string {
+	if (isOpaqueSandboxFrame(frame)) {
+		return "*";
+	}
 	const candidates = [frame.src, frame.getAttribute("src"), htmlEntry];
 	for (const candidate of candidates) {
 		if (!candidate) continue;
@@ -163,8 +171,12 @@ export function installInstalledAppContextBridge(
 	const onMessage = (event: MessageEvent) => {
 		const contentWindow = frame.contentWindow;
 		if (!contentWindow || event.source !== contentWindow) return;
-		const origin = resolveFrameTargetOrigin(frame, htmlEntry);
-		if (origin === "*" || event.origin !== origin) return;
+		if (isOpaqueSandboxFrame(frame)) {
+			if (event.origin !== "null") return;
+		} else {
+			const origin = resolveFrameTargetOrigin(frame, htmlEntry);
+			if (origin === "*" || event.origin !== origin) return;
+		}
 		const payload = event.data;
 		if (
 			typeof payload !== "object" ||

@@ -19,7 +19,11 @@ import {
 	isLegacyBundledVrmModel,
 } from "../lib/avatar-presets";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
-import { getTtsProviderMeta } from "../lib/tts/registry";
+import {
+	getDefaultDragonVoiceForLocale,
+	getRecommendedDragonVoicesForLocale,
+	getTtsProviderMeta,
+} from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
 import {
 	activateNaiaLlm,
@@ -469,14 +473,20 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		window.speechSynthesis.speak(utter);
 	}
 
-	const cloudVoices = getTtsProviderMeta("nextain")?.voices ?? [];
+	const currentUiLocale = getLocale();
+	const allCloudVoices = getTtsProviderMeta("nextain")?.voices ?? [];
+	const recommendedCloudVoices =
+		getRecommendedDragonVoicesForLocale(currentUiLocale);
+	const cloudVoices =
+		recommendedCloudVoices.length > 0 ? recommendedCloudVoices : allCloudVoices;
 
-	// 로그인하면 기본 목소리를 드래곤 HD 첫 목소리로 둔다(브라우저 목소리를 직접 고르면 그쪽이 이김).
+	// 로그인하면 기본 목소리를 현재 UI 언어의 드래곤 대표 목소리로 둔다(브라우저 목소리를 직접 고르면 그쪽이 이김).
 	useEffect(() => {
-		if (naiaLoginDone && !cloudVoice && !webVoiceURI && cloudVoices[0]) {
-			setCloudVoice(cloudVoices[0].id);
+		if (naiaLoginDone && !cloudVoice && !webVoiceURI) {
+			const localeDefault = getDefaultDragonVoiceForLocale(currentUiLocale);
+			setCloudVoice(localeDefault || cloudVoices[0]?.id || "");
 		}
-	}, [naiaLoginDone, cloudVoice, webVoiceURI, cloudVoices]);
+	}, [naiaLoginDone, cloudVoice, webVoiceURI, currentUiLocale, cloudVoices]);
 
 	async function previewCloudVoice(voice: string) {
 		const naiaKey =
@@ -1750,6 +1760,28 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 										</button>
 									))}
 								</div>
+								{allCloudVoices.length > cloudVoices.length && (
+									<div style={{ marginTop: 8 }}>
+										<select
+											className="onboarding-step__input"
+											aria-label={t("onboard.voice.cloudTitle")}
+											value={cloudVoice}
+											onChange={(e) => {
+												const nextId = e.target.value;
+												if (!nextId) return;
+												setCloudVoice(nextId);
+												setWebVoiceURI("");
+												void previewCloudVoice(nextId);
+											}}
+										>
+											{allCloudVoices.map((voice) => (
+												<option key={voice.id} value={voice.id}>
+													{voice.label}
+												</option>
+											))}
+										</select>
+									</div>
+								)}
 								{cloudVoiceError && (
 									<p className="onboarding-step__hint onboarding-step__hint--warn">
 										{cloudVoiceError}

@@ -90,33 +90,186 @@ export interface WebHttpAppStoreAdapterDeps {
 	getSandboxOrigin?: () => string;
 	getShellOrigin?: () => string | undefined;
 	onUnauthorized?: () => void;
+	/**
+	 * When true (enabled by default in Official Web Stage 1 runtime), merges the
+	 * 4 verified Stage-1 hosted mini-apps (`slides`, `ieumoffice` v0.2.0,
+	 * `cafelua-tarot` v0.1.5, `charcard`), activates `ieumoffice` over stale
+	 * `coming_soon` gateway metadata, excludes Stage-2 coding/courseware apps
+	 * (`blackjack`, `nts-edu-helper`), and defaults missing `hosted_entry_url`
+	 * to `${shellOrigin}/hosted-apps/<slug>/index.html`.
+	 */
+	stage1HostedCatalog?: boolean;
+}
+
+/** Stage-2 coding / courseware mini-apps excluded from Stage-1 web launch list. */
+export const STAGE1_EXCLUDED_WEB_APP_IDS = new Set([
+	"land.naia.blackjack",
+	"blackjack",
+	"land.naia.nts-edu-helper",
+	"nts-edu-helper",
+	"land.naia.public-ax",
+	"public-ax",
+]);
+
+interface Stage1HostedAppSpec {
+	readonly appId: string;
+	readonly hostedSlug: string;
+	readonly version: string;
+	readonly defaultPriceCredits: number;
+	readonly freeWithoutLogin: boolean;
+	readonly forceVersion?: boolean;
+	readonly manifest: StoreProductSummary["manifest"];
+}
+
+export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
+	{
+		appId: "land.naia.charcard",
+		hostedSlug: "naia-charcard",
+		version: "1.0.0",
+		defaultPriceCredits: 0,
+		freeWithoutLogin: true,
+		manifest: {
+			id: "land.naia.charcard",
+			name: "캐릭터 카드",
+			names: { ko: "캐릭터 카드", en: "Character Cards" },
+			icon: "🃏",
+			description: "SillyTavern V2/V3 PNG·JSON 캐릭터 카드 불러오기·편집·적용",
+			descriptions: {
+				ko: "실리태번 호환 캐릭터 카드(.png / .json)를 불러오고 나이아 에이전트에 바로 입힙니다.",
+				en: "Import, edit, and apply SillyTavern V2/V3 PNG & JSON character cards.",
+			},
+			version: "1.0.0",
+			manifest_version: 2,
+			permissions: ["speech", "locale", "model.ask"],
+			keepAlive: true,
+		},
+	},
+	{
+		appId: "land.naia.slides",
+		hostedSlug: "naia-slides",
+		version: "0.1.2",
+		defaultPriceCredits: 0,
+		freeWithoutLogin: true,
+		manifest: {
+			id: "land.naia.slides",
+			name: "슬라이드",
+			names: { ko: "슬라이드", en: "Naia Slides" },
+			icon: "▣",
+			description: "나이아 아바타와 함께하는 슬라이드 발표 미니앱",
+			descriptions: {
+				ko: "PDF·발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
+				en: "Present slide decks together with your Naia avatar.",
+			},
+			version: "0.1.2",
+			manifest_version: 2,
+			permissions: ["speech", "locale"],
+			keepAlive: true,
+		},
+	},
+	{
+		appId: "land.naia.ieumoffice",
+		hostedSlug: "ieumoffice",
+		version: "0.2.0",
+		defaultPriceCredits: 0,
+		freeWithoutLogin: true,
+		forceVersion: true,
+		manifest: {
+			id: "land.naia.ieumoffice",
+			name: "이음오피스",
+			names: { ko: "이음오피스", en: "IeumOffice" },
+			icon: "📑",
+			description: "이음오피스 v0.2.0 문서·발표 웹 스튜디오",
+			descriptions: {
+				ko: "이음오피스 v0.2.0 웹 스튜디오에서 문서·슬라이드를 작성하고 나이아와 협업합니다.",
+				en: "Author documents and slide decks in IeumOffice v0.2.0 Web Studio.",
+			},
+			version: "0.2.0",
+			manifest_version: 2,
+			permissions: ["speech", "locale", "model.ask"],
+			keepAlive: true,
+		},
+	},
+	{
+		appId: "land.naia.cafelua-tarot",
+		hostedSlug: "cafelua-tarot",
+		version: "0.1.5",
+		defaultPriceCredits: 3000,
+		freeWithoutLogin: true,
+		forceVersion: true,
+		manifest: {
+			id: "land.naia.cafelua-tarot",
+			name: "카페루아 타로",
+			names: { ko: "카페루아 타로", en: "Cafe Lua Tarot" },
+			icon: "🔮",
+			description: "카페루아 타로 v0.1.5 — 1/3/10장 스프레드 리딩 및 타로 이야기 낭독",
+			descriptions: {
+				ko: "나이아가 카페루아의 타로 리더가 되어 1/3/10장 카드를 풀어 주고 타로 이야기를 낭독합니다.",
+				en: "Cafe Lua Tarot v0.1.5 — 1/3/10-card spreads and narrated tarot stories with Naia.",
+			},
+			version: "0.1.5",
+			manifest_version: 2,
+			permissions: ["speech", "locale", "model.ask"],
+			keepAlive: true,
+		},
+	},
+];
+
+const STAGE1_HOSTED_BY_ID = new Map(
+	STAGE1_HOSTED_MINI_APPS.map((spec) => [spec.appId, spec]),
+);
+const STAGE1_SHORT_SLUG_TO_ID = new Map(
+	STAGE1_HOSTED_MINI_APPS.map((spec) => [spec.hostedSlug, spec.appId]),
+);
+
+export function normalizeCanonicalWebAppId(rawAppId: string): string {
+	const trimmed = rawAppId.trim();
+	return STAGE1_SHORT_SLUG_TO_ID.get(trimmed) ?? trimmed;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+	return (
+		hostname === "localhost" ||
+		hostname === "127.0.0.1" ||
+		hostname === "[::1]"
+	);
+}
+
+function parsePriceCredits(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return Math.max(0, value);
+	}
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number(value.trim());
+		if (Number.isFinite(parsed)) return Math.max(0, parsed);
+	}
+	return undefined;
 }
 
 interface RawStoreProduct {
 	app_id?: string;
 	appId?: string;
 	version?: string;
-	price_credits?: number;
-	priceCredits?: number;
-	hosted_entry_url?: string;
-	hostedEntryUrl?: string;
-	manifest?: Partial<InstalledAppManifest>;
+	price_credits?: number | string;
+	priceCredits?: number | string;
+	hosted_entry_url?: string | null;
+	hostedEntryUrl?: string | null;
+	manifest?: Partial<InstalledAppManifest> & { status?: string };
 }
 
 function normalizeStoreProduct(
 	raw: RawStoreProduct,
 ): StoreProductSummary | null {
-	const appId = (raw.app_id ?? raw.appId ?? raw.manifest?.id ?? "").trim();
+	const appId = normalizeCanonicalWebAppId(
+		raw.app_id ?? raw.appId ?? raw.manifest?.id ?? "",
+	);
 	if (!isValidStoreAppId(appId)) return null;
 	const manifest = raw.manifest ?? {};
 	const version =
 		(raw.version ?? manifest.version ?? "1.0.0").trim() || "1.0.0";
 	const priceCredits =
-		typeof raw.price_credits === "number"
-			? raw.price_credits
-			: typeof raw.priceCredits === "number"
-				? raw.priceCredits
-				: 0;
+		parsePriceCredits(raw.price_credits) ??
+		parsePriceCredits(raw.priceCredits) ??
+		0;
 	const hostedEntryUrl = (raw.hosted_entry_url ?? raw.hostedEntryUrl)?.trim();
 	const {
 		htmlEntry: _ignoredHtml,
@@ -238,15 +391,21 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	readonly kind = "web-http" as const;
 	private readonly fetchImpl: typeof fetch;
 	private readonly getGatewayUrl: () => string;
-	private readonly getAuthKey: () => string | undefined;
+	private readonly getAuthKey: () => string;
+	private readonly hasCustomSandboxOrigin: boolean;
 	private readonly getSandboxOrigin: () => string;
 	private readonly getShellOrigin: () => string | undefined;
 	private readonly onUnauthorized: () => void;
+	private readonly stage1HostedCatalog: boolean;
 
 	constructor(deps: WebHttpAppStoreAdapterDeps = {}) {
 		this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
 		this.getGatewayUrl = deps.getGatewayUrl ?? getStoreGatewayUrl;
-		this.getAuthKey = deps.getAuthKey ?? defaultReadWebAuthKey;
+		this.getAuthKey = () => (deps.getAuthKey ?? defaultReadWebAuthKey)() ?? "";
+		this.hasCustomSandboxOrigin = Boolean(
+			deps.getSandboxOrigin ||
+				(import.meta.env.VITE_NAIA_APPS_SANDBOX_ORIGIN as string | undefined)?.trim(),
+		);
 		this.getSandboxOrigin =
 			deps.getSandboxOrigin ?? (() => getWebAppsSandboxOrigin());
 		this.getShellOrigin =
@@ -254,10 +413,11 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			(() =>
 				typeof window !== "undefined" ? window.location.origin : undefined);
 		this.onUnauthorized = deps.onUnauthorized ?? markNaiaKeyUnauthorized;
+		this.stage1HostedCatalog = deps.stage1HostedCatalog === true;
 	}
 
 	private requireAuthHeaders(): Record<string, string> {
-		const key = this.getAuthKey()?.trim();
+		const key = this.getAuthKey().trim();
 		if (!key || !isValidWebAuthKey(key)) {
 			throw new AppStoreHttpError(
 				"auth_required",
@@ -268,30 +428,121 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	}
 
 	private assertAppId(appId: string): string {
-		const trimmed = appId.trim();
-		if (!isValidStoreAppId(trimmed)) {
+		const canonical = normalizeCanonicalWebAppId(appId);
+		if (!isValidStoreAppId(canonical)) {
 			throw new AppStoreHttpError(
 				"invalid_app_id",
 				`Invalid Store app id: ${appId}`,
 			);
 		}
-		return trimmed;
+		return canonical;
+	}
+
+	private resolveDefaultHostedEntryUrl(
+		appId: string,
+		version: string,
+	): string {
+		const stage1Spec = STAGE1_HOSTED_BY_ID.get(appId);
+		const shellOrigin = this.getShellOrigin()?.replace(/\/+$/, "");
+		if (this.stage1HostedCatalog && !this.hasCustomSandboxOrigin && shellOrigin) {
+			const slug = stage1Spec?.hostedSlug ?? appId;
+			return `${shellOrigin}/hosted-apps/${encodeURIComponent(slug)}/index.html`;
+		}
+		const sandboxOrigin = this.getSandboxOrigin().replace(/\/+$/, "");
+		if (sandboxOrigin.endsWith("/hosted-apps")) {
+			const slug = stage1Spec?.hostedSlug ?? appId;
+			return `${sandboxOrigin}/${encodeURIComponent(slug)}/index.html`;
+		}
+		return `${sandboxOrigin}/${encodeURIComponent(appId)}/${encodeURIComponent(version)}/index.html`;
+	}
+
+	private mergeStage1Catalog(
+		remoteItems: StoreProductSummary[],
+	): StoreProductSummary[] {
+		const filtered = remoteItems.filter(
+			(item) => !STAGE1_EXCLUDED_WEB_APP_IDS.has(item.appId),
+		);
+		const byId = new Map<string, StoreProductSummary>();
+		for (const item of filtered) {
+			const manifestStatus = (
+				item.manifest as InstalledAppManifest & { status?: string }
+			).status;
+			// Non-Stage1 items marked coming_soon stay hidden in Stage 1.
+			if (
+				manifestStatus === "coming_soon" &&
+				!STAGE1_HOSTED_BY_ID.has(item.appId)
+			) {
+				continue;
+			}
+			byId.set(item.appId, item);
+		}
+
+		for (const spec of STAGE1_HOSTED_MINI_APPS) {
+			const existing = byId.get(spec.appId);
+			const version =
+				spec.forceVersion || !existing ? spec.version : existing.version;
+			const mergedManifest = {
+				...(existing?.manifest ?? {}),
+				...spec.manifest,
+				id: spec.appId,
+				version,
+				status: "active",
+				tools: existing?.manifest.tools?.length
+					? existing.manifest.tools
+					: spec.manifest.tools,
+			} as StoreProductSummary["manifest"];
+			const hostedEntryUrl =
+				existing?.hostedEntryUrl ||
+				this.resolveDefaultHostedEntryUrl(spec.appId, version);
+			byId.set(spec.appId, {
+				appId: spec.appId,
+				version,
+				priceCredits: existing ? existing.priceCredits : spec.defaultPriceCredits,
+				hostedEntryUrl,
+				manifest: mergedManifest,
+			});
+		}
+
+		// Preserve Stage-1 canonical order first, then any extra active products.
+		const ordered: StoreProductSummary[] = [];
+		for (const spec of STAGE1_HOSTED_MINI_APPS) {
+			const item = byId.get(spec.appId);
+			if (item) {
+				ordered.push(item);
+				byId.delete(spec.appId);
+			}
+		}
+		for (const rest of byId.values()) {
+			ordered.push(rest);
+		}
+		return ordered;
 	}
 
 	async listCatalog(): Promise<StoreProductSummary[]> {
 		const base = this.getGatewayUrl().replace(/\/+$/, "");
-		const res = await this.fetchImpl(`${base}/v1/apps/products`);
-		if (!res.ok) {
-			throw new AppStoreHttpError(
-				"http_error",
-				`GET /v1/apps/products failed with HTTP ${res.status}`,
-				res.status,
-			);
+		let remoteItems: StoreProductSummary[] = [];
+		try {
+			const res = await this.fetchImpl(`${base}/v1/apps/products`);
+			if (!res.ok) {
+				if (!this.stage1HostedCatalog) {
+					throw new AppStoreHttpError(
+						"http_error",
+						`GET /v1/apps/products failed with HTTP ${res.status}`,
+						res.status,
+					);
+				}
+			} else {
+				const body = (await res.json()) as { data?: RawStoreProduct[] };
+				remoteItems = (body.data ?? [])
+					.map(normalizeStoreProduct)
+					.filter((item): item is StoreProductSummary => item !== null);
+			}
+		} catch (err) {
+			if (!this.stage1HostedCatalog) throw err;
 		}
-		const body = (await res.json()) as { data?: RawStoreProduct[] };
-		return (body.data ?? [])
-			.map(normalizeStoreProduct)
-			.filter((item): item is StoreProductSummary => item !== null);
+		return this.stage1HostedCatalog
+			? this.mergeStage1Catalog(remoteItems)
+			: remoteItems;
 	}
 
 	async listEntitlements(): Promise<StoreEntitlementSummary[]> {
@@ -356,6 +607,13 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 
 	async checkEntitlement(appId: string): Promise<boolean> {
 		const validId = this.assertAppId(appId);
+		const stage1Spec = this.stage1HostedCatalog
+			? STAGE1_HOSTED_BY_ID.get(validId)
+			: undefined;
+		const key = this.getAuthKey().trim();
+		if (stage1Spec && (!key || !isValidWebAuthKey(key))) {
+			return stage1Spec.freeWithoutLogin;
+		}
 		const headers = this.requireAuthHeaders();
 		const base = this.getGatewayUrl().replace(/\/+$/, "");
 		const res = await this.fetchImpl(
@@ -364,6 +622,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		);
 		if (res.status === 401) {
 			this.onUnauthorized();
+			if (stage1Spec?.freeWithoutLogin) return true;
 			throw new AppStoreHttpError(
 				"unauthorized",
 				`Entitlement check unauthorized for ${validId} (HTTP 401)`,
@@ -371,9 +630,12 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			);
 		}
 		if (res.status === 403 || res.status === 404) {
-			return false;
+			// Stage-1 bundled hosted mini-apps (`charcard`, `slides`, `ieumoffice`, `cafelua-tarot`)
+			// may not yet have a purchase receipt row in `api-dev` DB (e.g. `charcard` or `coming_soon` `ieumoffice`).
+			return stage1Spec ? stage1Spec.freeWithoutLogin : false;
 		}
 		if (!res.ok) {
+			if (stage1Spec?.freeWithoutLogin) return true;
 			throw new AppStoreHttpError(
 				"http_error",
 				`Entitlement check failed for ${validId} with HTTP ${res.status}`,
@@ -386,8 +648,12 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			data?: { entitled?: boolean; active?: boolean };
 		};
 		const record = payload.data ?? payload;
-		if (typeof record.entitled === "boolean") return record.entitled;
-		if (typeof record.active === "boolean") return record.active;
+		if (typeof record.entitled === "boolean") {
+			return record.entitled || Boolean(stage1Spec?.freeWithoutLogin);
+		}
+		if (typeof record.active === "boolean") {
+			return record.active || Boolean(stage1Spec?.freeWithoutLogin);
+		}
 		return true;
 	}
 
@@ -437,17 +703,52 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 
 	async installApp(appId: string): Promise<void> {
 		const validId = this.assertAppId(appId);
-		const alreadyEntitled = await this.checkEntitlement(validId);
-		if (!alreadyEntitled) {
-			await this.purchaseApp(validId);
-		}
-		const cfg = loadConfig();
-		if (cfg) {
-			const next = Array.from(
-				new Set([...(cfg.installedWebApps ?? []), validId]),
+		if (
+			this.stage1HostedCatalog &&
+			STAGE1_EXCLUDED_WEB_APP_IDS.has(validId)
+		) {
+			throw new AppStoreHttpError(
+				"invalid_app_id",
+				`App ${validId} is scheduled for Stage 2`,
 			);
-			saveConfig({ ...cfg, installedWebApps: next });
 		}
+		const isStage1BundledApp =
+			this.stage1HostedCatalog && STAGE1_HOSTED_BY_ID.has(validId);
+		if (isStage1BundledApp) {
+			// Best-effort entitlement sync when logged in; never fail Stage-1 hosted launch
+			// when api-dev omits charcard or marks ieumoffice coming_soon.
+			if (this.getAuthKey().trim()) {
+				try {
+					const alreadyEntitled = await this.checkEntitlement(validId);
+					if (!alreadyEntitled) {
+						await this.purchaseApp(validId);
+					}
+				} catch {
+					// Hosted Stage-1 bundle remains runnable from /hosted-apps/<slug>/index.html
+				}
+			}
+		} else {
+			const alreadyEntitled = await this.checkEntitlement(validId);
+			if (!alreadyEntitled) {
+				await this.purchaseApp(validId);
+			}
+		}
+		const cfg = loadConfig() ?? {
+			provider: "nextain" as const,
+			model: "gpt-6.1-terra",
+			apiKey: "",
+		};
+		const next = Array.from(
+			new Set([...(cfg.installedWebApps ?? []), validId]),
+		);
+		const cleanedDeleted = Array.isArray(cfg.deletedApps)
+			? cfg.deletedApps.filter((id) => id !== validId)
+			: undefined;
+		saveConfig({
+			...cfg,
+			installedWebApps: next,
+			...(cleanedDeleted !== undefined ? { deletedApps: cleanedDeleted } : {}),
+		});
 	}
 
 	async uninstallApp(appId: string): Promise<void> {
@@ -467,7 +768,16 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		let grantedById = new Map<string, number | undefined>();
 
 		if (Array.isArray(cfg?.installedWebApps)) {
-			candidateIds = cfg.installedWebApps.filter(isValidStoreAppId);
+			candidateIds = cfg.installedWebApps
+				.map(normalizeCanonicalWebAppId)
+				.filter(isValidStoreAppId);
+		} else if (this.stage1HostedCatalog) {
+			// Default Stage-1 web shell pins all 4 official hosted mini-apps out of the box
+			// (excluding any explicitly removed via deletedApps).
+			const deleted = new Set(cfg?.deletedApps ?? []);
+			candidateIds = STAGE1_HOSTED_MINI_APPS.map((s) => s.appId).filter(
+				(id) => !deleted.has(id),
+			);
 		} else {
 			const entitlements = await this.listEntitlements();
 			const active = entitlements.filter((e) => e.entitled);
@@ -475,11 +785,16 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			grantedById = new Map(active.map((e) => [e.appId, e.grantedAtMs]));
 		}
 
+		if (this.stage1HostedCatalog) {
+			candidateIds = candidateIds.filter(
+				(id) => !STAGE1_EXCLUDED_WEB_APP_IDS.has(id),
+			);
+		}
+
 		if (candidateIds.length === 0) return [];
 
 		const catalog = await this.listCatalog();
 		const byId = new Map(catalog.map((item) => [item.appId, item]));
-		const sandboxOrigin = this.getSandboxOrigin().replace(/\/+$/, "");
 
 		const checked = await Promise.all(
 			candidateIds.map(async (appId) => {
@@ -491,7 +806,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 				if (!entitled) return null;
 				const candidateEntry =
 					product.hostedEntryUrl ??
-					`${sandboxOrigin}/${encodeURIComponent(appId)}/${encodeURIComponent(product.version)}/index.html`;
+					this.resolveDefaultHostedEntryUrl(appId, product.version);
 				const verifiedFrameSrc = this.resolveFrameSrc(candidateEntry);
 				return {
 					...product.manifest,
@@ -535,16 +850,40 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 				`Invalid web mini-app entry URL: ${htmlEntry}`,
 			);
 		}
-		const expectedSandboxOrigin = new URL(this.getSandboxOrigin()).origin;
 		const shellOrigin = this.getShellOrigin();
+		const isAllowedProtocol =
+			parsed.protocol === "https:" ||
+			(parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname));
+
+		// Portal Stage-1 contract: `${shellOrigin}/hosted-apps/<appId>/index.html`
+		// is allowed ONLY under `/hosted-apps/` and MUST be mounted with an opaque
+		// iframe sandbox (no `allow-same-origin` — enforced in GenericInstalledApp).
+		if (
+			isAllowedProtocol &&
+			shellOrigin &&
+			parsed.origin === shellOrigin &&
+			parsed.pathname.startsWith("/hosted-apps/") &&
+			!parsed.pathname.includes("..")
+		) {
+			return parsed.toString();
+		}
+
+		const expectedSandboxUrl = new URL(this.getSandboxOrigin());
+		const expectedSandboxOrigin = expectedSandboxUrl.origin;
+		const expectedPathPrefix = expectedSandboxUrl.pathname.replace(/\/+$/, "");
+		const pathMatchesPrefix =
+			!expectedPathPrefix ||
+			expectedPathPrefix === "/" ||
+			parsed.pathname.startsWith(`${expectedPathPrefix}/`);
 		if (
 			parsed.protocol !== "https:" ||
 			parsed.origin !== expectedSandboxOrigin ||
+			!pathMatchesPrefix ||
 			(shellOrigin && parsed.origin === shellOrigin)
 		) {
 			throw new AppStoreHttpError(
 				"untrusted_origin",
-				`Untrusted web mini-app origin: ${parsed.origin} (expected isolated sandbox ${expectedSandboxOrigin})`,
+				`Untrusted web mini-app origin: ${parsed.origin} (expected isolated sandbox ${expectedSandboxOrigin} or ${shellOrigin ?? "<shell>"}/hosted-apps/*)`,
 			);
 		}
 		return parsed.toString();
@@ -558,7 +897,10 @@ export function createPlatformAppStoreAdapter(
 	webDeps?: WebHttpAppStoreAdapterDeps,
 ): PlatformAppStoreAdapter {
 	return isWebMode()
-		? new WebHttpAppStoreAdapter(webDeps)
+		? new WebHttpAppStoreAdapter({
+				stage1HostedCatalog: true,
+				...webDeps,
+			})
 		: new DesktopTauriAppStoreAdapter();
 }
 

@@ -54,10 +54,14 @@ describe("web-auth (item 5)", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it("requires login by default in web mode and allows disabling via VITE_NAIA_WEB_LOGIN_REQUIRED=0", () => {
-		expect(isWebLoginRequired()).toBe(true);
+	it("defaults to non-login lightweight free start (pl-04) and allows enabling mandatory gate via VITE_NAIA_WEB_LOGIN_REQUIRED=1", () => {
+		expect(isWebLoginRequired()).toBe(false);
 		expect(isWebLoginRequired("0")).toBe(false);
 		expect(isWebLoginRequired("false")).toBe(false);
+		expect(isWebLoginRequired("1")).toBe(true);
+		expect(isWebLoginRequired("true")).toBe(true);
+		setWebLoginRequiredForTests(true);
+		expect(isWebLoginRequired()).toBe(true);
 		setWebLoginRequiredForTests(false);
 		expect(isWebLoginRequired()).toBe(false);
 	});
@@ -181,10 +185,11 @@ describe("web-auth (item 5)", () => {
 		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
 	});
 
-	it("defers startWebModel until login completes when login gate is enabled, and starts immediately when disabled", async () => {
+	it("defers startWebModel until login completes when login gate is enabled, and starts immediately by default (pl-04)", async () => {
 		const startModel = vi.fn(async () => {});
 
-		// 1. Login required and not authenticated -> does not start model at boot
+		// 1. Login required (explicit gate) and not authenticated -> does not start model at boot
+		setWebLoginRequiredForTests(true);
 		const bootRes = await bootWebRuntimeAndModel({
 			installRuntime: () => {},
 			consumeAuthCallback: async () => ({ handled: false, ok: false }),
@@ -198,9 +203,9 @@ describe("web-auth (item 5)", () => {
 		await completeWebNaiaLogin("naia_live_after_login_key_123", "usr_boot");
 		expect(startModel).toHaveBeenCalledTimes(1);
 
-		// 3. When login gate is disabled (VITE_NAIA_WEB_LOGIN_REQUIRED=0), starts immediately even when logged out
+		// 3. Default Stage-1 non-login mode (pl-04) starts WebGPU model immediately even when logged out
 		logoutWebSession();
-		setWebLoginRequiredForTests(false);
+		setWebLoginRequiredForTests(null);
 		const startModelNoGate = vi.fn(async () => {});
 		const noGateRes = await bootWebRuntimeAndModel({
 			installRuntime: () => {},
@@ -210,6 +215,73 @@ describe("web-auth (item 5)", () => {
 		});
 		expect(noGateRes.startedImmediately).toBe(true);
 		expect(startModelNoGate).toHaveBeenCalledTimes(1);
+	});
+
+	it("supports /app/auth/callback, /u/<slug>/auth/callback, and portal #key=gw-... handoff while upgrading WebGPU starter to Cloud + Dragon voice", async () => {
+		// 1) /u/cafelua builds callback under /u/cafelua/auth/callback and cleans back to /u/cafelua
+		const slugRedirect = startWebLoginRedirect({
+			origin: "https://dev.naia.land",
+			pathname: "/u/cafelua",
+			lang: "ko",
+			state: "slug-callback-state",
+			navigate: () => {},
+		});
+		const parsedSlugUrl = new URL(slugRedirect.url);
+		expect(parsedSlugUrl.searchParams.get("redirect_uri")).toBe(
+			"https://dev.naia.land/u/cafelua/auth/callback",
+		);
+
+		// Simulate prior unauthenticated WebGPU starter with an active character card
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: "Qwen3-4B-q4f16_1-MLC",
+				locale: "ko",
+				webAutoDefaultModel: true,
+				ttsEnabled: true,
+				ttsProvider: "browser",
+				onboardingComplete: true,
+				uiPreferences: { b2cActiveCardId: "studio-lua-1" },
+			}),
+		);
+
+		const replaceSlug = vi.fn();
+		const slugRes = await consumeWebAuthCallbackFromLocation(
+			{
+				pathname: "/u/cafelua/auth/callback",
+				search: "",
+				hash: "#key=gw-slug-owner-token-777&user_id=usr_cafelua&state=slug-callback-state",
+			},
+			replaceSlug,
+		);
+		expect(slugRes.ok).toBe(true);
+		expect(replaceSlug).toHaveBeenCalledWith("/u/cafelua");
+		expect(loadConfig()).toMatchObject({
+			provider: "nextain",
+			ttsProvider: "nextain",
+			ttsVoice: "ko-KR-SunHi:DragonHDLatestNeural",
+			onboardingComplete: true,
+		});
+
+		// 2) Direct portal handoff `/app#key=gw-...` without prior OAuth state (same-origin portal button)
+		logoutWebSession();
+		const replaceApp = vi.fn();
+		const handoffRes = await consumeWebAuthCallbackFromLocation(
+			{
+				pathname: "/app",
+				search: "",
+				hash: "#key=gw-portal-direct-handoff-888&user_id=usr_portal_8&onboarding_complete=1",
+			},
+			replaceApp,
+		);
+		expect(handoffRes).toEqual({
+			handled: true,
+			ok: true,
+			naiaKey: "gw-portal-direct-handoff-888",
+			naiaUserId: "usr_portal_8",
+		});
+		expect(replaceApp).toHaveBeenCalledWith("/app");
 	});
 
 	it("consumes key, state, and user_id from URL hash (#) on /auth/callback and cleans URL to '/'", async () => {

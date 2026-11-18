@@ -31,6 +31,7 @@ import {
 import {
 	isNarrowPortraitScreen,
 	isWebMode,
+	resolveWebPublicAssetUrl,
 } from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
@@ -200,20 +201,34 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		setLoaded(false);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
 		if (isWebMode()) {
-			const segments = nvaModel?.split(/[/\\]/).filter(Boolean) ?? [];
-			const bundleName = segments.at(-1) ?? "";
-			if (
-				!bundleName ||
-				segments.includes("..") ||
-				!/^[a-z0-9-]+$/.test(bundleName)
-			) {
-				const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
-				setError(err);
-				setMode("error");
-				useCascadeAvatarStore.getState().setNvaLoadError(err);
-				return;
+			const trimmedModel = nvaModel?.trim() ?? "";
+			const isTrustedStudioRemoteDir =
+				!trimmedModel.includes("..") &&
+				(trimmedModel.startsWith("/api/nva-preview/") ||
+					/^https:\/\/([a-z0-9-]+\.)?naia\.land\/[A-Za-z0-9/_-]+$/i.test(
+						trimmedModel,
+					));
+			let directory: string;
+			if (isTrustedStudioRemoteDir) {
+				directory = trimmedModel
+					.replace(/\/manifest\.json$/i, "")
+					.replace(/\/+$/, "");
+			} else {
+				const segments = trimmedModel.split(/[/\\]/).filter(Boolean);
+				const bundleName = segments.at(-1) ?? "";
+				if (
+					!bundleName ||
+					segments.includes("..") ||
+					!/^[a-z0-9-]+$/.test(bundleName)
+				) {
+					const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
+					setError(err);
+					setMode("error");
+					useCascadeAvatarStore.getState().setNvaLoadError(err);
+					return;
+				}
+				directory = resolveWebPublicAssetUrl(`/nva/${bundleName}`);
 			}
-			const directory = `/nva/${bundleName}`;
 			void fetch(`${directory}/manifest.json`)
 				.then(async (res) => {
 					if (!res.ok) {

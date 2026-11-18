@@ -327,4 +327,104 @@ describe("PlatformAppStoreAdapter & WebHttpAppStoreAdapter", () => {
 			"noopener,noreferrer",
 		);
 	});
+
+	it("merges live api-dev Stage-1 4-app catalog (/hosted-apps/*), overrides ieumoffice coming_soon -> v0.2.0, excludes Stage-2 apps, and enforces opaque sandbox", async () => {
+		const { resolveInstalledAppSandboxAttr } = await import(
+			"../../apps/generic-installed/GenericInstalledApp"
+		);
+		const liveApiDevPayload = {
+			data: [
+				{
+					app_id: "land.naia.slides",
+					version: "0.1.2",
+					price_credits: "0.000000",
+					status: null,
+					hosted_entry_url: null,
+					manifest: { name: "Slides" },
+				},
+				{
+					app_id: "land.naia.cafelua-tarot",
+					version: "0.1.3",
+					price_credits: "0.000000",
+					status: null,
+					hosted_entry_url: null,
+					manifest: { name: "Cafelua Tarot" },
+				},
+				{
+					app_id: "land.naia.ieumoffice",
+					version: "0.1.0",
+					price_credits: "3000.000000",
+					status: null,
+					hosted_entry_url: null,
+					manifest: { name: "IeumOffice", status: "coming_soon" },
+				},
+				{
+					app_id: "land.naia.blackjack",
+					version: "0.2.0",
+					price_credits: "0.000000",
+					manifest: { name: "Blackjack", status: "coming_soon" },
+				},
+				{
+					app_id: "land.naia.nts-edu-helper",
+					version: "0.1.3",
+					price_credits: "0.000000",
+					manifest: { name: "Edu Helper", status: "coming_soon" },
+				},
+			],
+		};
+
+		const adapter = new WebHttpAppStoreAdapter({
+			stage1HostedCatalog: true,
+			fetchImpl: vi.fn(async () =>
+				jsonResponse(200, liveApiDevPayload),
+			) as unknown as typeof fetch,
+			getGatewayUrl: () => "https://api-dev.naia.land",
+			getShellOrigin: () => "https://dev.naia.land",
+		});
+
+		const catalog = await adapter.listCatalog();
+		expect(catalog.map((c) => c.appId)).toEqual([
+			"land.naia.charcard",
+			"land.naia.slides",
+			"land.naia.ieumoffice",
+			"land.naia.cafelua-tarot",
+		]);
+
+		const ieum = catalog.find((c) => c.appId === "land.naia.ieumoffice")!;
+		expect(ieum.version).toBe("0.2.0");
+		expect((ieum.manifest as { status?: string }).status).toBe("active");
+		expect(ieum.priceCredits).toBe(3000);
+		expect(ieum.hostedEntryUrl).toBe(
+			"https://dev.naia.land/hosted-apps/ieumoffice/index.html",
+		);
+
+		const tarot = catalog.find((c) => c.appId === "land.naia.cafelua-tarot")!;
+		expect(tarot.version).toBe("0.1.5");
+		expect(tarot.hostedEntryUrl).toBe(
+			"https://dev.naia.land/hosted-apps/cafelua-tarot/index.html",
+		);
+
+		// Default installed manifests include all 4 Stage-1 mini-apps even when unauthenticated
+		const manifests = await adapter.listInstalledManifests();
+		expect(manifests.map((m) => m.id)).toEqual([
+			"land.naia.charcard",
+			"land.naia.slides",
+			"land.naia.ieumoffice",
+			"land.naia.cafelua-tarot",
+		]);
+		for (const m of manifests) {
+			const resolvedSrc = adapter.resolveFrameSrc(m.htmlEntry!);
+			expect(resolvedSrc.startsWith("https://dev.naia.land/hosted-apps/")).toBe(
+				true,
+			);
+			const sandboxAttr = resolveInstalledAppSandboxAttr(resolvedSrc, true);
+			expect(sandboxAttr).not.toContain("allow-same-origin");
+			expect(sandboxAttr).toContain("allow-scripts");
+		}
+
+		// Non-/hosted-apps/ paths on shellOrigin are still strictly rejected!
+		expect(() =>
+			adapter.resolveFrameSrc("https://dev.naia.land/app/index.html"),
+		).toThrow(AppStoreHttpError);
+	});
 });

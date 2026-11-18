@@ -31,10 +31,12 @@ import { Logger } from "../lib/logger";
 import { getBridgeForApp } from "../lib/active-bridge";
 import { removeInstalledApp } from "../lib/app-loader";
 import { appRegistry } from "../lib/app-registry";
+import { getPlatformAppStoreAdapter } from "../lib/app-store-adapter";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { AppStoreIcon } from "./AppStoreIcon";
 import { WebCreditChip } from "./WebCreditChip";
+import { WebRuntimeHarnessBar } from "./WebRuntimeHarnessBar";
 
 const BgmPlayer = lazy(() =>
 	import("./BgmPlayer").then((module) => ({
@@ -203,7 +205,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		// The web app store sells apps for credits: not reachable from the Steam build.
 		if (paymentLinksHiddenNow()) return;
 		try {
-			if (!appStoreOpening) appStoreOpening = invoke("focus_or_create_app_store_window", { url: storeUrl });
+			if (!appStoreOpening) {
+				appStoreOpening =
+					isWebMode() && !isKioskDemo()
+						? getPlatformAppStoreAdapter().openStoreSurface(storeUrl)
+						: invoke("focus_or_create_app_store_window", { url: storeUrl });
+			}
 			await appStoreOpening;
 		} catch (error) {
 			Logger.warn("AppBar", "Failed to open app store window", {
@@ -268,13 +275,14 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const handleTabBarContextMenu = useCallback(
 		(e: React.MouseEvent) => {
 			e.preventDefault();
-			if (isWeb) return;
 			const target = e.target as HTMLElement;
-			const shortcutEl = target.closest("[data-browser-shortcut]");
-			if (shortcutEl) {
-				const url = shortcutEl.getAttribute("data-browser-shortcut") ?? "";
-				setCtxMenu({ x: e.clientX, y: e.clientY, shortcutUrl: url });
-				return;
+			if (!isWeb) {
+				const shortcutEl = target.closest("[data-browser-shortcut]");
+				if (shortcutEl) {
+					const url = shortcutEl.getAttribute("data-browser-shortcut") ?? "";
+					setCtxMenu({ x: e.clientX, y: e.clientY, shortcutUrl: url });
+					return;
+				}
 			}
 			const appEl = target.closest("[data-app-id]");
 			if (appEl) {
@@ -285,9 +293,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					return;
 				}
 			}
+			if (isWeb) return;
 			setCtxMenu({ x: e.clientX, y: e.clientY });
 		},
-		[activeApp],
+		[activeApp, isWeb],
 	);
 
 	useEffect(() => {
@@ -409,7 +418,11 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					className={`app-bar-tab${activeApp === "workspace" ? " app-bar-tab--active" : ""}`}
 					data-app-id="workspace"
 					aria-label={t("appbar.workspace")}
-					onClick={() => setActiveApp("workspace")}
+					onClick={() =>
+						setActiveApp(
+							isWeb && activeApp === "workspace" ? null : "workspace",
+						)
+					}
 				>
 					<span className="app-bar-tab-icon">📁</span>
 				</button>
@@ -821,6 +834,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
 			<Suspense fallback={null}><BgmPlayer naia={bgmBridge} /></Suspense>
+			<WebRuntimeHarnessBar />
 			<WebCreditChip />
 			<button
 				type="button"

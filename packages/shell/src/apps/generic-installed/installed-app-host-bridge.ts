@@ -32,10 +32,15 @@ export function installInstalledAppHostBridge(
 	} catch {
 		return () => {};
 	}
+	const isOpaqueSandbox = () => {
+		const sb = frame.getAttribute("sandbox") ?? "";
+		return sb.length > 0 && !/\ballow-same-origin\b/i.test(sb);
+	};
 	Logger.debug("InstalledAppHostBridge", "install", { appId, permissions });
 	const pendingReplies = new Map<string, ReturnType<typeof setTimeout>>();
 	const pendingSpeech = new Map<string, ReturnType<typeof setTimeout>>();
-	const send = (message: object) => target.postMessage(message, origin);
+	const send = (message: object) =>
+		target.postMessage(message, isOpaqueSandbox() ? "*" : origin);
 	const settle = (pending: Map<string, ReturnType<typeof setTimeout>>, id: string) => {
 		const timer = pending.get(id);
 		if (!timer) return false;
@@ -48,9 +53,10 @@ export function installInstalledAppHostBridge(
 		permissions.includes("locale") && send({ type: CHILD_LOCALE, locale: getLocale() });
 	const onLoad = () => postLocale();
 	const onMessage = (event: MessageEvent) => {
+		const expectedEventOrigin = isOpaqueSandbox() ? "null" : origin;
 		if (
 			event.source !== target ||
-			event.origin !== origin
+			event.origin !== expectedEventOrigin
 		)
 			return;
 		const message = event.data;

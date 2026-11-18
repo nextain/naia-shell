@@ -1,8 +1,52 @@
 import type { AppConfig, TtsProviderId } from "../config";
+import { getLocale } from "../i18n";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { readCachedLabCredits } from "../lab-balance";
 import { isWebMode } from "../web-runtime/web-assets";
 import { isValidWebAuthKey } from "../web-runtime/web-auth";
+import { getDefaultDragonVoiceForLocale } from "./registry";
+
+const MALE_VOICE_HINTS = new Set([
+	"puck",
+	"charon",
+	"fenrir",
+	"orus",
+	"minho",
+	"minho-anime",
+	"hood_boy",
+]);
+
+function inferDragonGenderHint(
+	config?: Pick<AppConfig, "voice" | "vrmModel" | "nvaModel"> | null,
+): "female" | "male" {
+	const candidates = [config?.voice, config?.nvaModel, config?.vrmModel]
+		.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+		.map((v) => v.trim().toLowerCase());
+	for (const item of candidates) {
+		if (
+			MALE_VOICE_HINTS.has(item) ||
+			item.includes("minho") ||
+			item.includes("hood_boy")
+		) {
+			return "male";
+		}
+	}
+	return "female";
+}
+
+/**
+ * Canonical Dragon default voice ID for Official Web SaaS (`nextain` cloud TTS).
+ * Unifies Dragon voice selection across all 14 supported UI languages.
+ */
+export function resolveDefaultWebDragonVoiceId(
+	config?: Pick<AppConfig, "locale" | "voice" | "vrmModel" | "nvaModel"> | null,
+): string {
+	const locale = config?.locale || getLocale() || "ko";
+	return getDefaultDragonVoiceForLocale(
+		locale,
+		inferDragonGenderHint(config),
+	);
+}
 
 export interface ResolveEffectiveTtsProviderOptions {
 	/**

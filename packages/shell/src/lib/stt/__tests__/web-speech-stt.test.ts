@@ -22,6 +22,7 @@ class FakeSpeechRecognition {
 	maxAlternatives = 1;
 	onresult: ((event: unknown) => void) | null = null;
 	onerror: ((event: unknown) => void) | null = null;
+	onend: (() => void) | null = null;
 	start = vi.fn();
 	stop = vi.fn();
 	abort = vi.fn();
@@ -32,6 +33,10 @@ class FakeSpeechRecognition {
 
 	emitError(error: string, message = "") {
 		this.onerror?.({ error, message });
+	}
+
+	emitEnd() {
+		this.onend?.();
 	}
 
 	emitResult(
@@ -326,5 +331,114 @@ describe("createWebSpeechSttSession — late results after stop (19판)", () => 
 		]);
 
 		expect(results.map((r) => r.transcript)).toEqual(["사용자 말"]);
+	});
+
+	it("detaches onerror on stop() so a late aborted error from a TTS-paused recognizer never kills the resumed recognizer", async () => {
+		const session = createWebSpeechSttSession("ko-KR", webSpeechSttOptions(true));
+		const results: { transcript: string }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const first = FakeSpeechRecognition.instances[0];
+		// Capture old handler reference in case a broken browser retained an internal closure
+		const staleOnError = first.onerror;
+		await session.stop();
+		expect(first.onerror).toBeNull();
+		expect(first.onresult).toBeNull();
+		expect(first.onend).toBeNull();
+
+		// Resume after TTS ends
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+
+		// Even if stale closure is invoked directly after new start(), instance guard blocks it
+		staleOnError?.({ error: "aborted", message: "late abort" });
+		expect(errors).toEqual([]);
+		expect(second.abort).not.toHaveBeenCalled();
+
+		second.emitResult([
+			{ transcript: "정상 이어 말하기", confidence: 0.95, isFinal: true },
+		]);
+		expect(results.map((r) => r.transcript)).toEqual(["정상 이어 말하기"]);
+	});
+});
+
+describe("createWebSpeechSttSession — continuous voice recovery (Stage 1)", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("silently recovers and auto-restarts on no-speech, aborted, transient audio-capture, and natural onend in web mode", async () => {
+		const session = createWebSpeechSttSession("ko-KR", {
+			...webSpeechSttOptions(true),
+			recoveryDelayMs: 50,
+			maxAudioCaptureRetries: 2,
+		});
+		const results: { transcript: string }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		expect(FakeSpeechRecognition.instances).toHaveLength(1);
+
+		// 1) no-speech -> silent restart
+		FakeSpeechRecognition.instances[0].emitError("no-speech");
+		await vi.advanceTimersByTimeAsync(60);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(2);
+
+		// 2) aborted -> silent restart
+		FakeSpeechRecognition.instances[1].emitError("aborted");
+		await vi.advanceTimersByTimeAsync(60);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(3);
+
+		// 3) browser natural onend -> silent restart
+		FakeSpeechRecognition.instances[2].emitEnd();
+		await vi.advanceTimersByTimeAsync(60);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(4);
+
+		// 4) transient audio-capture (2x within maxAudioCaptureRetries=2) -> silent restart
+		FakeSpeechRecognition.instances[3].emitError("audio-capture");
+		await vi.advanceTimersByTimeAsync(150);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(5);
+
+		FakeSpeechRecognition.instances[4].emitResult([
+			{ transcript: "마이크 복구 완료", confidence: 0.9, isFinal: true },
+		]);
+		expect(results.map((r) => r.transcript)).toEqual(["마이크 복구 완료"]);
+
+		// 5) persistent audio-capture exceeding maxAudioCaptureRetries surfaces cleanly
+		FakeSpeechRecognition.instances[4].emitError("audio-capture");
+		await vi.advanceTimersByTimeAsync(150);
+		FakeSpeechRecognition.instances[5].emitError("audio-capture");
+		await vi.advanceTimersByTimeAsync(300);
+		FakeSpeechRecognition.instances[6].emitError("audio-capture");
+		expect(errors.map((e) => e.code)).toEqual(["audio-capture"]);
+
+		await session.stop();
+		vi.useRealTimers();
+	});
+
+	it("aborts any prior active recognizer if start() is called twice without leaking duplicate listeners", async () => {
+		vi.useRealTimers();
+		const session = createWebSpeechSttSession("ko-KR", webSpeechSttOptions(true));
+		await session.start();
+		const first = FakeSpeechRecognition.instances[0];
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+
+		expect(first.abort).toHaveBeenCalledTimes(1);
+		expect(first.onresult).toBeNull();
+		expect(second.start).toHaveBeenCalledTimes(1);
+		await session.stop();
 	});
 });

@@ -9,15 +9,22 @@ import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { isKioskDemo } from "./lib/kiosk-demo/flag";
 import { Logger } from "./lib/logger";
-import { syncWebModeRootAttribute } from "./lib/web-runtime/web-assets";
+import {
+	getWebBasePath,
+	syncWebModeRootAttribute,
+} from "./lib/web-runtime/web-assets";
 import "./styles/global.css";
 import "./styles/web-mode.css";
 
 syncWebModeRootAttribute();
 
 if (import.meta.env.MODE === "web" && "serviceWorker" in navigator) {
+	const swBasePath = getWebBasePath();
 	void navigator.serviceWorker
-		.register("/sw.js", { updateViaCache: "none" })
+		.register(`${swBasePath}sw.js`, {
+			scope: swBasePath,
+			updateViaCache: "none",
+		})
 		.then(async (reg) => {
 			await reg.update().catch(() => {});
 			await navigator.serviceWorker.ready;

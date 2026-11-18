@@ -109,7 +109,7 @@ describe("resolveEffectiveTtsProvider & Official Web SaaS Cloud TTS unlock", () 
 		).toBe("naia-local-voice");
 	});
 
-	it("resolves canonical Google Neural2 voice id on fresh Official Web SaaS cloud TTS configs", () => {
+	it("resolves unified Dragon default voice across all 14 supported locales on Official Web SaaS cloud TTS configs", () => {
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
 
@@ -117,11 +117,70 @@ describe("resolveEffectiveTtsProvider & Official Web SaaS Cloud TTS unlock", () 
 			provider: "nextain",
 			model: "gpt-6.1-terra",
 			apiKey: "",
+			locale: "ko",
 			ttsProvider: "nextain",
 		};
-		expect(resolveTtsVoiceId(baseConfig)).toBe("ko-KR-Neural2-A");
+		expect(resolveTtsVoiceId(baseConfig)).toBe(
+			"ko-KR-SunHi:DragonHDLatestNeural",
+		);
 		expect(
-			resolveTtsVoiceId({ ...baseConfig, ttsVoice: "ko-KR-Neural2-C" }),
-		).toBe("ko-KR-Neural2-C");
+			resolveTtsVoiceId({ ...baseConfig, nvaModel: "minho-anime" }),
+		).toBe("ko-KR-Hyunsu:DragonHDLatestNeural");
+		expect(
+			resolveTtsVoiceId({ ...baseConfig, voice: "Kore" }),
+		).toBe("ko-KR-SunHi:DragonHDLatestNeural");
+		expect(
+			resolveTtsVoiceId({
+				...baseConfig,
+				ttsVoice: "ja-JP-Nanami:DragonHDLatestNeural",
+			}),
+		).toBe("ja-JP-Nanami:DragonHDLatestNeural");
+	});
+
+	it("maps all 14 supported shell locales (female & male) to verified Azure eastus2 Dragon voice IDs accepted by dragon_voice.py", async () => {
+		const {
+			DRAGON_LOCALE_DEFAULT_VOICES,
+			getDefaultDragonVoiceForLocale,
+			getRecommendedDragonVoicesForLocale,
+			getTtsProviderMeta,
+		} = await import("../registry");
+		const allLocales = [
+			"ko",
+			"en",
+			"ja",
+			"zh",
+			"fr",
+			"de",
+			"ru",
+			"es",
+			"ar",
+			"hi",
+			"bn",
+			"pt",
+			"id",
+			"vi",
+		] as const;
+		// Matches naia-anyllm dragon_voice.py _AZURE_VOICE + ":Dragon"
+		const gatewayDragonRegex =
+			/^[a-z]{2,3}-[A-Z]{2}-[A-Za-z0-9]+:[A-Za-z0-9]*Dragon[A-Za-z0-9]*Neural$/;
+		const registeredIds = new Set(
+			(getTtsProviderMeta("nextain")?.voices ?? []).map((v) => v.id),
+		);
+
+		expect(Object.keys(DRAGON_LOCALE_DEFAULT_VOICES).sort()).toEqual(
+			[...allLocales].sort(),
+		);
+		for (const locale of allLocales) {
+			const female = getDefaultDragonVoiceForLocale(locale, "female");
+			const male = getDefaultDragonVoiceForLocale(locale, "male");
+			expect(female).toMatch(gatewayDragonRegex);
+			expect(male).toMatch(gatewayDragonRegex);
+			expect(registeredIds.has(female)).toBe(true);
+			expect(registeredIds.has(male)).toBe(true);
+
+			const recommended = getRecommendedDragonVoicesForLocale(locale);
+			expect(recommended.length).toBeGreaterThanOrEqual(2);
+			expect(recommended[0].id).toBe(female);
+		}
 	});
 });
