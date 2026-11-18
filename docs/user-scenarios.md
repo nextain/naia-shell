@@ -3221,3 +3221,9 @@ P02 검증: 기본·빈 대화·진행·성공·오류 복구·좁은 폭 상태
 ### UC-WEB-APP-TOOLS-20261114 — 웹에서도 지금 시각과 메모를 앱과 같은 도구로 쓴다
 
 웹 버전의 AI 는 앱과 같은 이름·같은 인자의 도구로 지금 시각(`get_time`)과 메모(`memo_list`, `memo_get`, `memo_save`)를 쓴다. 메모 저장은 앱처럼 사용자 승인을 받고, 브라우저 저장소에 남는다. 전시(kiosk) 판의 도구는 바뀌지 않는다. 앱에서만 되는 도구(브라우저 웹뷰·작업공간·위임)와 아직 통합되지 않은 도구(기억·지식)를 AI 가 부르면 "현재 앱에서는 되고 웹버전 통합 진행중입니다." 만 돌려준다. 근거: `packages/shell/web-worker/web-app-tools.ts`, 시험 `web-worker/__tests__/web-app-tools.test.ts`.
+
+## UC-WEB-BOOT-RUNTIME-SEPARATION
+
+In a fresh web browser, the web runtime may provide a Tauri-compatible shim, but startup must not call desktop-only workspace commands. The web app reaches its normal entry screen. A native Tauri startup continues to restore its workspace and reports a real native read failure.
+
+Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean web boot with `NAIA_E2E_WEB=1` and `PLAYWRIGHT_SERVER_COMMAND='pnpm exec vite --mode web'`; `packages/shell/e2e/adk-home-isolation.spec.ts` exercises mocked native workspace restoration and failure. It does not replace a real Tauri test.
