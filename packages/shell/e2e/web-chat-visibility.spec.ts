@@ -53,8 +53,10 @@ for (const viewport of [
 		});
 		const messages = page.locator(".chat-messages");
 		const last = page.locator(".chat-message").last();
+		await expect(last).toContainText("두 번째 대화가 보이는지 확인합니다.");
 		await expect.poll(() => messages.evaluate((el) => el.clientHeight)).toBeGreaterThanOrEqual(64);
-		await last.scrollIntoViewIfNeeded();
+		// Do not scroll here: the newest message must be visible immediately
+		// after it is added, before the user manipulates the chat container.
 		await expectPointerTarget(last);
 		const details = page.getByTestId("web-model-ready-details");
 		const summary = details.locator("summary");
