@@ -3550,3 +3550,16 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 성공 | PNG와 V2/V3 JSON을 추가하고 카드 만들기 후 선택된 카드의 목록·상세에 그림 표시. 적용하면 첫 인사가 대화에 나타남 | `CharCardApp.test.tsx`, `e2e/web-charcard-r40.spec.ts` R40 |
 | 오류 | 잘못된 파일을 읽지 못하면 경고를 표시하고 다른 파일을 고를 수 있음 | `e2e/web-charcard-r40.spec.ts` R40 |
 | 좁은 폭·키보드 | 1280×720과 390×844에서 만들기·파일 추가·적용이 스크롤 전에 보이고 목록과 버튼을 키보드로 조작할 수 있음 | `e2e/web-charcard-r40.spec.ts`, `shots/r40-card/R40-1280.png`·`R40-390.png` |
+
+## UC-WEB-VRM-HUB. 웹판 VRM 아바타를 고르며 VRoid Hub를 연다 (R41)
+
+사용자가 브라우저에서 설정의 아바타 탭을 열고 `3D VRM`을 고릅니다. `VRoid Hub` 링크를 새 탭에서 열어도 셸에서 아바타 선택을 이어갈 수 있습니다. `비디오 아바타(NVA)`로 바꾸면 `NVA 아바타 만들기`를 사용할 수 있습니다.
+
+### Test Coverage Map — UC-WEB-VRM-HUB
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 목록 | VRM 선택 상태에서 목록 유무와 관계없이 VRoid Hub 링크 표시 | `SettingsTab.test.tsx` R41 |
+| 진행·성공 | 링크는 새 탭으로 열리고 아바타 전환 시 공급자에 맞는 행동만 표시 | `SettingsTab.test.tsx`, `e2e/web-vroid-hub-r41.spec.ts` R41 |
+| 오류 | 새 탭에서 접속 오류가 발생해도 원래 설정 화면에서 선택을 이어갈 수 있음 | `e2e/web-vroid-hub-r41.spec.ts` R41, 격리 응답 |
+| 좁은 폭·키보드 | 1280×720과 390×844에서 링크에 초점을 두고 열 수 있음 | `e2e/web-vroid-hub-r41.spec.ts`, `shots/r40-card/R41-1280.png`·`R41-390.png` |

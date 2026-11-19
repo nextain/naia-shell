@@ -3175,6 +3175,15 @@ body.resizing-row {
 	text-align: left;
 }
 
+.settings-vroid-hub {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	margin-top: 8px;
+	text-decoration: none;
+}
+
 .connection-setup-steps {
 	margin: 8px 0 0;
 	padding-left: 22px;

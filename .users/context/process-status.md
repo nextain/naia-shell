@@ -1,3 +1,10 @@
+<!-- src-sha: 1d79769912aad3b5 -->
+
+## 웹판 VRM 설정의 VRoid Hub 링크 (R41) — 2026-11-20
+
+- 표적 Vitest 3건과 Playwright 1280×720·390×844 2건 통과. 키보드로 새 탭을 열고 격리 응답 오류 뒤 원래 설정에서 NVA 선택으로 전환. 캡처 shots/r40-card/R41-1280.png·R41-390.png.
+- `UC-WEB-VRM-HUB` · `FR-WEB-VRM-HUB.1` · `packages/shell/e2e/web-vroid-hub-r41.spec.ts`
+
 <!-- src-sha: 4f83c9966f571f68 -->
 
 ## 웹판 캐릭터 카드 추가·적용 (R40) — 2026-11-20

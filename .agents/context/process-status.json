@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T19:19:46Z",
+  "last_updated": "2026-11-19T19:21:36Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_vrm_hub_r41_20261120": {
+      "requirement_id": "R41",
+      "title": "웹판 VRM 설정의 VRoid Hub 링크",
+      "branch": "alpha/webgpu-r40-card-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-VRM-HUB",
+      "requirements": "docs/requirements.md FR-WEB-VRM-HUB.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "표적 Vitest 3건과 Playwright 1280×720·390×844 2건 통과. 키보드로 새 탭을 열고 격리 응답 오류 뒤 원래 설정에서 NVA 선택으로 전환. 캡처 shots/r40-card/R41-1280.png·R41-390.png.",
+      "evidence": "packages/shell/e2e/web-vroid-hub-r41.spec.ts",
+      "last_updated": "2026-11-19T19:21:36Z"
+    },
     "web_charcard_r40_20261120": {
       "requirement_id": "R40",
       "title": "웹판 캐릭터 카드 추가·적용",

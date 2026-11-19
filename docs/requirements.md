@@ -2151,3 +2151,11 @@ Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-ru
 기준 재현. 상단 버튼 `WebRuntimeHarnessBar.tsx:191`에서 `land.naia.charcard`를 열면 iframe이 `/hosted-apps/naia-charcard/index.html`을 요청했습니다. `git log -S`로 추적한 최초 URL은 `e0033299`의 `app-store-adapter.ts:449`에 있습니다. `96ba5bf7`은 기본 URL에 `/app/`을 붙였습니다. 로컬 Vite에서는 기본 경로로도 카드 HTML이 제공되지 않아 셸 HTML이 HTTP 200으로 반환됐습니다. 새 웹판은 같은 카드 소스로 개발·빌드 경로를 제공하며 기존 카탈로그 URL보다 셸에 포함된 카드 경로를 사용합니다.
 
 검증. 표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.
+
+## 웹판 3D VRM 아바타 선택의 VRoid Hub 링크 (R41)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-VRM-HUB.1 | 웹판 아바타 설정은 `3D VRM`에서 `VRoid Hub`를 새 탭으로 열고, `비디오 아바타(NVA)`에서 `NVA 아바타 만들기`를 표시합니다. (UC-WEB-VRM-HUB) | Done (local) |
+
+검증. 표적 Vitest 3건과 Playwright 1280×720·390×844 2건 통과. 키보드로 새 탭을 열고 격리 응답 오류 뒤 원래 설정에서 NVA 선택으로 전환. 캡처 shots/r40-card/R41-1280.png·R41-390.png.

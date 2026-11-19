@@ -5139,7 +5139,7 @@ export function SettingsTab() {
 
 					{/* #6: Pre-baked NVA selection is independent of the voice runtime and GPU. */}
 					<div className="settings-field">
-						<label>{t("settings.avatarProvider")}</label>
+						<label htmlFor="avatar-provider">{t("settings.avatarProvider")}</label>
 						<select
 							id="avatar-provider"
 							value={effectiveAvatarProvider}
@@ -5179,20 +5179,31 @@ export function SettingsTab() {
 								{t("settings.avatarProviderVideo")}
 							</option>
 						</select>
-						<div className="settings-nva-create">
-							<p className="settings-nva-create__description">
-								{t("settings.nvaCreateDesc")}
-							</p>
-							<button
-								type="button"
-								className="voice-preview-btn settings-nva-create__button"
-								aria-label={t("settings.nvaCreate")}
-								title={t("settings.nvaCreate")}
-								onClick={() => void openNvaAvatarCreator()}
+						{isWebMode() && effectiveAvatarProvider === "vrm" ? (
+							<a
+								className="voice-preview-btn settings-vroid-hub"
+								href="https://hub.vroid.com/"
+								target="_blank"
+								rel="noopener noreferrer"
 							>
-								{t("settings.nvaCreate")}
-							</button>
-						</div>
+								VRoid Hub <span aria-hidden="true">↗</span>
+							</a>
+						) : (
+							<div className="settings-nva-create">
+								<p className="settings-nva-create__description">
+									{t("settings.nvaCreateDesc")}
+								</p>
+								<button
+									type="button"
+									className="voice-preview-btn settings-nva-create__button"
+									aria-label={t("settings.nvaCreate")}
+									title={t("settings.nvaCreate")}
+									onClick={() => void openNvaAvatarCreator()}
+								>
+									{t("settings.nvaCreate")}
+								</button>
+							</div>
+						)}
 					</div>
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}
