@@ -226,6 +226,46 @@ export function normalizeCanonicalWebAppId(rawAppId: string): string {
 	return STAGE1_SHORT_SLUG_TO_ID.get(trimmed) ?? trimmed;
 }
 
+const PACKAGE_ICON_MAX_CHARS = 512 * 1024;
+const SVG_DOCUMENT_START =
+	/^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i;
+
+/**
+ * R6: desktop inlines the package `app.json` `iconUrl` SVG (Rust
+ * `app_list_installed`). A hosted bundle is the same package, so read the same
+ * files next to its entry. Returns undefined on any mismatch so the manifest
+ * emoji stays as the fallback.
+ */
+export async function readPackageIconSvg(
+	fetchImpl: typeof fetch,
+	entryUrl: string,
+): Promise<string | undefined> {
+	const base = new URL("./", entryUrl);
+	const res = await fetchImpl(new URL("app.json", base).toString(), {
+		credentials: "omit",
+	});
+	if (!res.ok) return undefined;
+	const meta = (await res.json()) as { iconUrl?: unknown } | null;
+	const iconPath = typeof meta?.iconUrl === "string" ? meta.iconUrl.trim() : "";
+	if (!iconPath || iconPath.includes("..") || !/\.svg$/i.test(iconPath)) {
+		return undefined;
+	}
+	const iconUrl = new URL(iconPath, base);
+	if (
+		iconUrl.origin !== base.origin ||
+		!iconUrl.pathname.startsWith(base.pathname)
+	) {
+		return undefined;
+	}
+	const iconRes = await fetchImpl(iconUrl.toString(), { credentials: "omit" });
+	if (!iconRes.ok) return undefined;
+	const svg = await iconRes.text();
+	if (svg.length > PACKAGE_ICON_MAX_CHARS || !SVG_DOCUMENT_START.test(svg)) {
+		return undefined;
+	}
+	return svg;
+}
+
 function isLoopbackHostname(hostname: string): boolean {
 	return (
 		hostname === "localhost" ||
@@ -397,6 +437,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	private readonly getShellOrigin: () => string | undefined;
 	private readonly onUnauthorized: () => void;
 	private readonly stage1HostedCatalog: boolean;
+	private readonly packageIconCache = new Map<string, Promise<string | undefined>>();
 
 	constructor(deps: WebHttpAppStoreAdapterDeps = {}) {
 		this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
@@ -808,8 +849,12 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 					product.hostedEntryUrl ??
 					this.resolveDefaultHostedEntryUrl(appId, product.version);
 				const verifiedFrameSrc = this.resolveFrameSrc(candidateEntry);
+				const iconSvg = product.manifest.iconSvg
+					? undefined
+					: await this.loadPackageIconSvg(verifiedFrameSrc);
 				return {
 					...product.manifest,
+					...(iconSvg ? { iconSvg } : {}),
 					id: appId,
 					version: product.version,
 					htmlEntry: verifiedFrameSrc,
@@ -838,6 +883,16 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			target.searchParams.set("target", "web");
 			window.open(target.toString(), "_blank", "noopener,noreferrer");
 		}
+	}
+
+	private loadPackageIconSvg(entryUrl: string): Promise<string | undefined> {
+		const cached = this.packageIconCache.get(entryUrl);
+		if (cached) return cached;
+		const pending = readPackageIconSvg(this.fetchImpl, entryUrl).catch(
+			() => undefined,
+		);
+		this.packageIconCache.set(entryUrl, pending);
+		return pending;
 	}
 
 	resolveFrameSrc(htmlEntry: string): string {

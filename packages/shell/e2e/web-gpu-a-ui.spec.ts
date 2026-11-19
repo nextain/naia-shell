@@ -137,6 +137,24 @@ for (const viewport of [
 			await shot(page, "R8", viewport.width);
 		});
 
+		test(`R6: web app bar uses the same package icon as the desktop app (${viewport.width})`, async () => {
+			test.setTimeout(180_000);
+			const tarotTab = page.locator('.app-bar-tab[data-app-id="land.naia.cafelua-tarot"]');
+			await expect(tarotTab).toHaveCount(1, { timeout: 60_000 });
+			const img = tarotTab.locator("img.app-bar-tab-icon--svg");
+			await expect(img).toHaveCount(1);
+			const src = await img.getAttribute("src");
+			expect(decodeURIComponent((src ?? "").replace(/^data:image\/svg\+xml,/, ""))).toBe(ICON_SVG);
+			// Packages without a package icon keep their emoji fallback.
+			await expect(page.locator('.app-bar-tab[data-app-id="land.naia.charcard"] .app-bar-tab-icon')).toHaveText("🃏");
+			if (await tarotTab.isVisible()) {
+				await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+				await page.locator(".app-bar").screenshot({ path: SHOT_DIR ? `${SHOT_DIR}/R6-${viewport.width}.png` : undefined });
+			} else {
+				await shot(page, "R6", viewport.width);
+			}
+		});
+
 		test(`R1: web brain provider list only offers providers that run in the browser (${viewport.width})`, async () => {
 			test.setTimeout(180_000);
 			await openSettings(page);

@@ -3264,3 +3264,14 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 |---|---|---|
 | 기본(웹) | 목록이 `nextain`, `webllm` 두 개 | `registry-web-providers.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R1 (1280·390) |
 | 데스크톱 | 전체 공급자 목록 유지 | `registry-web-providers.test.ts` |
+
+## UC-WEB-A-R6. 웹판 앱 아이콘을 데스크톱 앱과 같은 자산으로 보이기
+
+웹판 사용자가 상단 막대의 설치 앱 탭을 봅니다. 앱 묶음의 `app.json`이 `iconUrl`로 SVG 아이콘을 지정하면 데스크톱 앱과 같은 그 SVG가 보입니다. 아이콘 파일이 없거나 SVG가 아니면 기존 그림 문자 아이콘이 보입니다. 아이콘 경로는 앱 폴더 안의 같은 출처 `.svg`만 받습니다.
+
+### Test Coverage Map — UC-WEB-A-R6
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 카페루아 타로 탭 `<img>` 내용이 묶음 `icon.svg`와 같음 | `app-store-adapter-package-icon.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R6 (1280·390) |
+| 아이콘 없음·오류 | SPA 대체 HTML, 다른 출처, `..` 경로, SVG 아님이면 그림 문자 유지 | `app-store-adapter-package-icon.test.ts`, e2e R6의 캐릭터 카드 🃏 |
