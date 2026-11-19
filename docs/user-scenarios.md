@@ -3563,3 +3563,16 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 진행·성공 | 링크는 새 탭으로 열리고 아바타 전환 시 공급자에 맞는 행동만 표시 | `SettingsTab.test.tsx`, `e2e/web-vroid-hub-r41.spec.ts` R41 |
 | 오류 | 새 탭에서 접속 오류가 발생해도 원래 설정 화면에서 선택을 이어갈 수 있음 | `e2e/web-vroid-hub-r41.spec.ts` R41, 격리 응답 |
 | 좁은 폭·키보드 | 1280×720과 390×844에서 링크에 초점을 두고 열 수 있음 | `e2e/web-vroid-hub-r41.spec.ts`, `shots/r40-card/R41-1280.png`·`R41-390.png` |
+
+## UC-WEB-CREDIT-FORMAT. 웹판 잔액과 요금을 짧게 읽는다 (R42)
+
+브라우저 사용자가 한국어 또는 영어로 잔액, 모델 가격이나 대화 비용을 확인합니다. 표시 단위는 `Cr`이고 자릿수는 쉼표로 구분됩니다. 크레딧 금액 앞의 `약` 또는 `≈`가 사라집니다.
+
+### Test Coverage Map — UC-WEB-CREDIT-FORMAT
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 값 | 표시할 값이 없으면 기존 빈 상태를 사용하고 0은 `0 Cr`로 표시 | `credits.test.ts`, `WebCreditChip.test.tsx` R42 |
+| 진행·오류 | 설정 잔액 조회와 조회 실패·재시도는 기존 안내와 단추를 사용 | `e2e/web-credits-r42.spec.ts` R42 |
+| 성공 | 상단·설정·모델 선택·사용량에서 같은 단위를 사용하며, 소액과 USD 환산은 기존 값 유지 | `credits.test.ts`, `WebCreditChip.test.tsx`, `e2e/web-credits-r42.spec.ts` R42 |
+| 좁은 폭·키보드 | 1280×720 및 390×844에서 잔액 또는 모델 요금을 읽고 설정 단추를 조작할 수 있음 | `e2e/web-credits-r42.spec.ts`, `shots/r40-card/R42-1280.png`·`R42-390.png` |

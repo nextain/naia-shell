@@ -3,14 +3,21 @@ import {
 	formatCredits,
 	formatCreditsExact,
 	formatCreditsFromUsd,
+	formatWebCredits,
+	formatWebCreditsFromUsd,
 	isNaiaAccountProvider,
 	usdToCredits,
 } from "../credits";
 import {
+	formatCreditBalance,
+	formatSavedVoiceCostSummary,
 	formatUsageCost,
 	formatUsageTotal,
 	formatUsdEstimate,
 } from "../credits-usage";
+import { setLocale, t } from "../i18n";
+import { formatModelLabel } from "../llm/model-label";
+import { setWebAssetsModeForTests } from "../web-runtime/web-assets";
 
 describe("formatCredits", () => {
 	it("formats examples from specification correctly", () => {
@@ -111,5 +118,33 @@ describe("USD to credit display (#727)", () => {
 		expect(formatUsageTotal(0.05, 0.02)).toBe(
 			"≈ 50 credits + $0.020 (provider price est.)",
 		);
+	});
+});
+
+describe("R42 web credit display", () => {
+	it("groups credits and keeps the existing USD conversion and small-charge precision", () => {
+		expect(formatWebCredits(0)).toBe("0 Cr");
+		expect(formatWebCredits(1234.5)).toBe("1,234.5 Cr");
+		expect(formatWebCreditsFromUsd(1.234)).toBe("1,234 Cr");
+		expect(formatWebCreditsFromUsd(0.000254)).toBe("0.254 Cr");
+	});
+
+	it.each(["ko", "en"] as const)("uses Cr for balances, models and usage in %s", async (locale) => {
+		setWebAssetsModeForTests(true);
+		await setLocale(locale);
+		try {
+			expect(formatCreditBalance(1234)).toBe("1,234 Cr");
+			expect(formatUsageCost(1.234, "nextain")).toBe("1,234 Cr");
+			expect(formatUsageTotal(1.234, 0)).toBe("1,234 Cr");
+			expect(formatModelLabel({ id: "test", label: "Test", capabilities: ["llm"], pricing: [1.234, 0.002] }, t))
+				.toMatch(/1,234 Cr .*2 Cr/);
+			expect(formatSavedVoiceCostSummary("🎙️ 1m 10s · 약 1.23K 크레딧 (TTS)", 1.234))
+				.toBe("🎙️ 1m 10s · 1,234 Cr (TTS)");
+			expect(formatSavedVoiceCostSummary("🎙️ 8s · ≈ 1.23K credits (TTS)", 1.234))
+				.toBe("🎙️ 8s · 1,234 Cr (TTS)");
+		} finally {
+			setWebAssetsModeForTests(null);
+			await setLocale("en");
+		}
 	});
 });

@@ -1,9 +1,15 @@
-import { formatCreditsFromUsd } from "../credits.js";
+import { formatCreditsFromUsd, formatWebCreditsFromUsd } from "../credits.js";
 import type { LlmModelMeta } from "./types";
 import type { TranslationKey } from "../i18n";
+import { isWebMode } from "../web-runtime/web-assets";
 
 // Kept out of `registry.ts` so the credit formatter is only bundled with the
 // settings screen that shows model prices, not with the always-loaded registry.
+
+export function formatModelPrice(usd: number, translate?: (key: TranslationKey) => string): string {
+	if (isWebMode()) return formatWebCreditsFromUsd(usd);
+	return `${formatCreditsFromUsd(usd)} ${translate ? translate("cost.labCredits") : "credits"}`;
+}
 
 /** Format model label with pricing and capability hints. */
 export function formatModelLabel(model: LlmModelMeta, tFn?: (key: TranslationKey) => string): string {
@@ -25,10 +31,9 @@ export function formatModelLabel(model: LlmModelMeta, tFn?: (key: TranslationKey
 			: "Price per 1M tokens";
 		const inputLabel = tFn ? tFn("settings.priceInput") : "Input";
 		const outputLabel = tFn ? tFn("settings.priceOutput") : "Output";
-		const unit = tFn ? tFn("cost.labCredits") : "credits";
 		// Prices come from the gateway `/v1/pricing` (the only place a markup
 		// lives); the shell only converts USD to credits (#727).
-		label = `${label} (${pricingLabel}: ${inputLabel} ${formatCreditsFromUsd(input)} ${unit} / ${outputLabel} ${formatCreditsFromUsd(output)} ${unit})`;
+		label = `${label} (${pricingLabel}: ${inputLabel} ${formatModelPrice(input, tFn)} / ${outputLabel} ${formatModelPrice(output, tFn)})`;
 	}
 	if (model.comingSoon) {
 		label = `${label} (${tFn ? tFn("settings.comingSoonTag") : "준비중"})`;

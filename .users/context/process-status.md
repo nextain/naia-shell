@@ -1,3 +1,10 @@
+<!-- src-sha: 5b6f75184999a42d -->
+
+## 웹판 크레딧 금액 표기 (R42) — 2026-11-20
+
+- 표적 Vitest 95건과 Playwright 1280×720·390×844 2건 통과. 한국어·영어 모델 요금과 잔액을 확인하고 조회 실패에서 재시도. 캡처 shots/r40-card/R42-1280.png·R42-390.png.
+- `UC-WEB-CREDIT-FORMAT` · `FR-WEB-CREDIT-FORMAT.1` · `packages/shell/e2e/web-credits-r42.spec.ts`
+
 <!-- src-sha: 1d79769912aad3b5 -->
 
 ## 웹판 VRM 설정의 VRoid Hub 링크 (R41) — 2026-11-20

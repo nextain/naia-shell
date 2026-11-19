@@ -30,8 +30,8 @@ interface PromptCopy {
 function getPromptCopy(locale: string): PromptCopy {
 	if (locale === "ko") {
 		return {
-			badge: "무료 200 크레딧 지급 · SP-04",
-			title: "로그인하면 무료 200크레딧을 드려요",
+			badge: "무료 200 Cr 지급",
+			title: "로그인하고 무료 200 Cr 받기",
 			body: "클라우드 고성능 두뇌·드래곤 14개국어 감정 음성·나이아 스튜디오를 바로 쓸 수 있어요. 대화와 기억은 지금처럼 이 브라우저에만 남습니다.",
 			reasonHint: {
 				"cloud-llm": "클라우드 고성능 LLM 두뇌는 로그인 후 크레딧으로 이용할 수 있어요.",
@@ -46,8 +46,8 @@ function getPromptCopy(locale: string): PromptCopy {
 		};
 	}
 	return {
-		badge: "Free 200 Credits · SP-04",
-		title: "Sign in and get 200 free credits",
+		badge: "Free 200 Cr",
+		title: "Sign in and get 200 Cr free",
 		body: "Unlock cloud frontier LLMs, 14-language Dragon HD emotional voices, and Naia Studio. Your chats and memory stay right inside this browser.",
 		reasonHint: {
 			"cloud-llm": "Cloud LLM models require a Naia account with credits.",

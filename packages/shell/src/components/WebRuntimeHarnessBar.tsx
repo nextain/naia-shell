@@ -210,12 +210,12 @@ export function WebRuntimeHarnessBar() {
 					style={pillStyle(false, true)}
 					title={
 						isKo
-							? "로그인하고 무료 200 크레딧으로 클라우드 두뇌·드래곤 14개국어 음성 쓰기"
-							: "Sign in for 200 free credits, Cloud Brain & 14-language Dragon voices"
+							? "로그인하고 무료 200 Cr로 클라우드 두뇌·드래곤 14개국어 음성 쓰기"
+							: "Sign in for 200 Cr, Cloud Brain & 14-language Dragon voices"
 					}
 					onClick={() => openWebLoginPrompt("account")}
 				>
-					{isKo ? "로그인 · 무료 200⚡" : "Sign in · 200⚡"}
+					{isKo ? "로그인 · 무료 200 Cr" : "Sign in · 200 Cr"}
 				</button>
 			)}
 		</div>

@@ -1914,6 +1914,10 @@ body.resizing-row {
 	color: var(--sage);
 }
 
+[data-naia-web="true"] .credit-amount {
+	white-space: nowrap;
+}
+
 /* Messages */
 .chat-messages {
 	flex: 1;

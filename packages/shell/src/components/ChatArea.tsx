@@ -131,6 +131,7 @@ import {
 import { getConversationHistory } from "../lib/conversation-store";
 import {
 	formatApproxCredits,
+	formatSavedVoiceCostSummary,
 	formatUsageCost,
 	formatUsageTotal,
 } from "../lib/credits-usage";
@@ -5532,7 +5533,11 @@ export function ChatArea({
 							provider !== "vllm" && (
 								<button
 									type="button"
-									className="cost-badge session-cost cost-badge-clickable"
+									className={
+										isWebMode() && totalSessionCostNaia === totalSessionCost
+											? "cost-badge session-cost cost-badge-clickable credit-amount"
+											: "cost-badge session-cost cost-badge-clickable"
+									}
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
 									{formatUsageTotal(
@@ -5786,7 +5791,12 @@ export function ChatArea({
 										{msg.role === "assistant" ? (
 											// #571 — 음성 상태와 무관하게 본문을 그대로 그린다.
 											<DeferredChatMarkdown>
-												{extractExpression(msg.content).cleanText}
+												{extractExpression(
+													msg.cost?.provider === "nextain" &&
+														(msg.cost.model === "naia-omni" || msg.cost.model === "azure-realtime")
+														? formatSavedVoiceCostSummary(msg.content, msg.cost.cost)
+														: msg.content,
+												).cleanText}
 											</DeferredChatMarkdown>
 										) : (
 											msg.content

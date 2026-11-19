@@ -183,11 +183,8 @@ import {
 } from "../lib/ollama-runtime";
 import { DevicePairingSection } from "./DevicePairingSection";
 import { SmallLlmSection } from "./SmallLlmSection";
-import {
-	formatCredits,
-	formatCreditsExact,
-	formatCreditsFromUsd,
-} from "../lib/credits";
+import { formatCreditBalance } from "../lib/credits-usage";
+import { formatModelPrice } from "../lib/llm/model-label";
 import {
 	paymentLinksHiddenNow,
 	usePaymentLinksHidden,
@@ -777,7 +774,8 @@ function DeviceSelect({
 
 /** Localized provider price tag; the Naia credit tag follows the UI language. */
 function ttsPricingLabel(p: { id: string; pricing?: string }): string {
-	return p.id === "nextain" ? t("tts.pricingNaiaCredits") : (p.pricing ?? "");
+	if (p.id !== "nextain") return p.pricing ?? "";
+	return isWebMode() ? "Naia Cr" : t("tts.pricingNaiaCredits");
 }
 
 async function openNvaAvatarCreator(): Promise<void> {
@@ -4481,6 +4479,10 @@ export function SettingsTab() {
 	const selectedModelMeta = availableProviderModels.find(
 		(m) => m.id === activeBrainModel,
 	);
+	const renderModelPrice = (usd: number) => {
+		const amount = formatModelPrice(usd, t);
+		return isWebMode() ? <span className="credit-amount">{amount}</span> : amount;
+	};
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const selectedOllamaPullCandidate = ollamaModelPolicy?.candidates.find(
 		(candidate) => candidate.tag === ollamaPullTag,
@@ -5586,13 +5588,13 @@ export function SettingsTab() {
 								)}
 								<div className="lab-balance-row">
 									<span className="lab-balance-label">
-										{t("settings.labBalance")}
+										{t(isWebMode() ? "cost.labBalance" : "settings.labBalance")}
 									</span>
 									<span
 										className="lab-balance-value"
 										title={
-											labBalance !== null && labBalance >= 1000
-												? `${formatCreditsExact(labBalance, 2)} ${t("cost.labCredits")}`
+											!isWebMode() && labBalance !== null && labBalance >= 1000
+												? formatCreditBalance(labBalance, true)
 												: undefined
 										}
 									>
@@ -5601,7 +5603,7 @@ export function SettingsTab() {
 											: labBalanceError
 												? t("cost.labError")
 												: labBalance !== null
-													? `${formatCredits(labBalance, 2)} ${t("cost.labCredits")}`
+															? formatCreditBalance(labBalance)
 													: "-"}
 									</span>
 									{!labBalanceLoading && labBalanceError && (
@@ -6909,22 +6911,20 @@ export function SettingsTab() {
 								<span style={{ color: "var(--accent-color, #64a0ff)" }}>
 									{t("settings.pricingPerMillionTokens")}:{" "}
 									{t("settings.priceInput")}{" "}
-									{formatCreditsFromUsd(selectedModelMeta.pricing[0])}{" "}
-									{t("cost.labCredits")} · {t("settings.priceOutput")}{" "}
-									{formatCreditsFromUsd(selectedModelMeta.pricing[1])}{" "}
-									{t("cost.labCredits")}
+									{renderModelPrice(selectedModelMeta.pricing[0])} · {t("settings.priceOutput")}{" "}
+									{renderModelPrice(selectedModelMeta.pricing[1])}
 									{selectedModelMeta.cachePricing ? (
 										<>
 											{" · "}
 											{t("settings.priceCacheRead")}{" "}
 											{selectedModelMeta.cachePricing.read === null
 												? "—"
-												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.read)} ${t("cost.labCredits")}`}
+												: renderModelPrice(selectedModelMeta.cachePricing.read)}
 											{" · "}
 											{t("settings.priceCacheWrite")}{" "}
 											{selectedModelMeta.cachePricing.write === null
 												? "—"
-												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.write)} ${t("cost.labCredits")}`}
+												: renderModelPrice(selectedModelMeta.cachePricing.write)}
 										</>
 									) : null}
 								</span>

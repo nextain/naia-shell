@@ -7,12 +7,8 @@ import {
 	hasNaiaKeySecure,
 } from "../lib/config";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
-import {
-	formatCredits,
-	formatCreditsExact,
-	isNaiaAccountProvider,
-} from "../lib/credits";
-import { formatUsageCost, formatUsageTotal } from "../lib/credits-usage";
+import { isNaiaAccountProvider } from "../lib/credits";
+import { formatCreditBalance, formatUsageCost, formatUsageTotal } from "../lib/credits-usage";
 import { usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import {
@@ -221,11 +217,11 @@ function LabBalanceSection() {
 					className="lab-balance-value"
 					title={
 						balance >= 1000
-							? `${formatCreditsExact(balance, 2)} ${t("cost.labCredits")}`
+							? formatCreditBalance(balance, true)
 							: undefined
 					}
 				>
-					{formatCredits(balance, 2)} {t("cost.labCredits")}
+					{formatCreditBalance(balance)}
 				</span>
 			</div>
 			{!paymentLinksHidden && (
