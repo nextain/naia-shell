@@ -31,7 +31,7 @@ async function savePublic(url, cache, cacheMode = "default") {
 }
 function isShellNavigation(request, url) {
   if (request.mode !== "navigate") return false;
-  if (url.pathname.startsWith("/e2e/") || url.pathname.startsWith("/hosted-apps/")) return false;
+  if (url.pathname.startsWith("/e2e/") || url.pathname.startsWith(`${normalizedBase}hosted-apps/`)) return false;
   if (normalizedBase !== "/") {
     const prefixNoSlash = normalizedBase.slice(0, -1);
     if (url.pathname !== prefixNoSlash && !url.pathname.startsWith(normalizedBase)) return false;

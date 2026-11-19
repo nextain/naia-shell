@@ -27,7 +27,7 @@ afterEach(() => {
 function createFakeSwEnv(
 	swSource: string,
 	fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
-	options: { windowUrls?: string[] } = {},
+	options: { windowUrls?: string[]; swPath?: string } = {},
 ) {
 	const stores = new Map<string, Map<string, Response>>();
 	const listeners = new Map<string, Array<(event: unknown) => void>>();
@@ -82,7 +82,7 @@ function createFakeSwEnv(
 	};
 
 	const selfObj = {
-		location: { origin: "https://demo.example.test" },
+		location: { origin: "https://demo.example.test", pathname: options.swPath },
 		skipWaiting: async () => {
 			eventsOrder.push("skipWaiting");
 			skipWaitingCount += 1;
@@ -221,6 +221,21 @@ describe("web-sw-version & sw.js", () => {
 		expect(() => injectServiceWorkerVersion("const x = 1;", "v2")).toThrow(
 			/__NAIA_SW_VERSION__/,
 		);
+	});
+
+	it.each(["/", "/app/"])("R35 passes hosted app navigation through with service worker base %s", async (base) => {
+		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
+		const origin = "https://demo.example.test";
+		const env = createFakeSwEnv(
+			swTemplate,
+			async (url) => makeBasicResponse(url, "<html>shell</html>"),
+			{ swPath: `${base}sw.js` },
+		);
+
+		const appUrl = `${origin}${base}hosted-apps/cafelua-tarot/index.html`;
+		await expect(env.dispatchFetch({ url: appUrl, mode: "navigate" })).resolves.toBeUndefined();
+		const shell = await env.dispatchFetch({ url: `${origin}${base}`, mode: "navigate" });
+		expect(await shell?.text()).toBe("<html>shell</html>");
 	});
 
 	it("purges prior caches on activate, calls skipWaiting/clients.claim, and fetches navigate requests network-first with cache no-cache", async () => {

@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-09T00:40:44.605043+00:00",
+  "last_updated": "2026-11-19T18:04:13.353104+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_hosted_apps_r35_20261120": {
+      "title": "R35 2단계 웹판 내장 미니앱 번들",
+      "branch": "alpha/webgpu-r35-hosted-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-HOSTED-APPS",
+      "requirements": "docs/requirements.md FR-WEB-HOSTED-APPS.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "blocked",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "last_updated": "2026-11-19T18:04:13.353104+00:00",
+      "deliverable": "packages/shell/scripts/web-hosted-apps.mjs; packages/shell/e2e/web-hosted-apps-r35.spec.ts; docs/app-store-protocol.md",
+      "verification": "표적 Vitest 44 통과/0 실패, 셸·BGM·웹 워커 타입 검사 통과. 세션 시작 전체 Shell Vitest 3642 통과/14 실패/34 제외. GitHub에서 고정 커밋 가져오기 성공. 기존 원본 번들 4개 HTML·스크립트와 /app/ 미리보기 응답 헤더 HTTP 확인. 기준 서비스 워커는 앱 탐색에 /app/index.html을 반환했고 변경 뒤 통과시킴.",
+      "remaining": "heavy-run 디스크 조건(/data 25GB)에 막혀 새 build:web 산출물, Playwright 두 폭 및 캡처 미확인. 포털 마운트의 실제 응답 헤더 미확인."
+    },
     "web_ir_kiosk_fix7j_20261109": {
       "issue": 824,
       "title": "키오스크 시연판 7판 열째 묶음(fix7j): 매 장면 GPU 안팎 판정을 중단하고 원본 해상도 정확한 연결 성분(BFS/라벨링, 반복 상한 없음)으로 구운 .stacked.mp4 알파 재생 + result-fix7hrev1 반례 전수 순수 함수 시험 고정",

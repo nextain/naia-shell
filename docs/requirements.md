@@ -2100,3 +2100,12 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-SLIDES-PPTX.4 | 웹판 슬라이드 창(opaque-origin 샌드박스)에서 `sessionStorage` 접근이 앱을 멈추지 않습니다. | Done (local) |
 
 로컬 검증: vitest `slides-pptx.test.ts` 와 기존 슬라이드 시험. Playwright `e2e/web-slides-pptx.spec.ts` 는 NAIA_E2E_WEB=1 로, `vite --mode web --cors` 와 Chrome `--disable-features=LocalNetworkAccessChecks` 를 켜고 돌립니다(샌드박스 창이 루프백 dev 서버에서 모듈을 받기 때문). 배포된 `hosted-apps/naia-slides` 빌드와 실제 업무용 PPTX의 그림 품질은 미확인.
+
+## 웹판 내장 미니앱 번들 (R35 2단계, 2026-11-20)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-HOSTED-APPS.1 | 웹판(브라우저) `build:web`은 `dist-web/hosted-apps/`에 `naia-charcard`, `naia-slides`, `ieumoffice`, `cafelua-tarot`의 실제 `index.html`, `app.json`, 아이콘과 자산을 넣습니다. 원본이나 필수 파일을 확보할 수 없으면 빌드가 실패합니다. | Pending |
+| FR-WEB-HOSTED-APPS.2 | `/app/` 아래의 앱스토어에서 네 앱을 각각 실행할 수 있습니다. 앱 iframe은 불투명한 출처 샌드박스를 유지하며, 각 앱은 자신의 경로에서 상대 주소로 자산을 읽습니다. 서비스 워커는 앱 문서 요청을 서버로 전달합니다. | Pending |
+
+검증 항목은 `UC-WEB-HOSTED-APPS`에 매핑합니다. 웹 미리보기의 실제 산출물을 Chromium 1280×720·390×844에서 실행합니다.

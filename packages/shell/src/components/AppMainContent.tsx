@@ -203,6 +203,8 @@ export function AppMainContent(props: AppMainContentProps) {
 		return next;
 	}, [closedApps, activeApp]);
 	const webMode = isWebMode();
+	const webHostedAppOpen =
+		webMode && showAppTitlebar && Boolean(activeAppDescriptor?.htmlEntry);
 	const hasMessages = useChatStore((state) => state.messages.length > 0);
 	const [mobileSheet, setMobileSheet] = useState<
 		"collapsed" | "half" | "expanded"
@@ -367,7 +369,7 @@ export function AppMainContent(props: AppMainContentProps) {
 					{showNarrowMobileChrome &&
 						(activeApp === "workspace" ||
 							activeApp === "settings" ||
-							activeApp === "land.naia.slides") && (
+							(activeApp === "land.naia.slides" && !webHostedAppOpen)) && (
 							<button
 								type="button"
 								className="web-mobile-workspace-close"
@@ -855,6 +857,7 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			<div
 				className="app-layout"
+				data-web-hosted-app={webHostedAppOpen || undefined}
 				style={{
 					left: showOnboarding
 						? 0

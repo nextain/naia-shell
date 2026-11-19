@@ -3464,3 +3464,17 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 오류 | ZIP 아님·발표 아님·장 없음 → `slides_invalid_pptx`, 패키지 밖 경로 거부; e2e 깨진 PPTX 안내 | `slides-pptx.test.ts`; e2e "unreadable PPTX" |
 | PDF 작성 | 장마다 JPEG 한 쪽, xref 위치 정확 | `slides-pptx.test.ts` "image PDF writer" |
 | 좁은 폭 | 390px 에서 열기 단추·슬라이드·발표문이 화면 안 | e2e 390×844 |
+
+## UC-WEB-HOSTED-APPS. 웹판 앱스토어에서 내장 미니앱 4개를 연다 (R35 2단계, 2026-11-20)
+
+웹판(브라우저) 사용자가 앱스토어에서 캐릭터 카드, 나이아 슬라이드, 이음오피스, 카페루아 타로를 실행합니다. `/app/` 아래에 설치된 셸은 각 앱의 HTML과 자산을 `/app/hosted-apps/<slug>/`에서 읽습니다. 처음 열린 앱을 닫고 스토어에서 다시 실행해도 같은 앱 화면으로 돌아갑니다. 서비스 워커가 활성화된 상태에서도 앱 요청은 앱 파일로 전달됩니다.
+
+### Test Coverage Map — UC-WEB-HOSTED-APPS
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 외부 목록 | 앱스토어 카드의 이름과 실행 단추를 읽을 수 있고 외부 목록이 없어도 내장 4개가 표시됩니다. | `e2e/web-hosted-apps-r35.spec.ts` R35, 기존 `e2e/web-app-store-catalog.spec.ts` |
+| 진행 | 목록을 조회하는 동안 기존 로딩 안내가 표시됩니다. 실행하면 스토어에서 앱 화면으로 전환됩니다. | `e2e/web-hosted-apps-r35.spec.ts` R35 |
+| 성공 | 네 앱 각각이 실제 배포 번들에서 렌더링되고 이름·아이콘·실행 파일이 빌드에 포함됩니다. 앱을 닫고 다시 실행할 수 있습니다. | `e2e/web-hosted-apps-r35.spec.ts` R35, `scripts/__tests__/web-hosted-apps.test.ts` |
+| 오류·복구 | 원본 또는 필수 파일이 누락되면 빌드가 실패합니다. 서비스 워커는 앱 경로에 셸 첫 화면을 반환하지 않습니다. | `scripts/__tests__/web-hosted-apps.test.ts`, `scripts/__tests__/web-sw-version.test.ts` R35 |
+| 좁은 폭·접근성 | 1280×720·390×844에서 앱스토어와 앱 화면의 주요 조작을 읽고 실행할 수 있습니다. | `e2e/web-hosted-apps-r35.spec.ts` R35 |
