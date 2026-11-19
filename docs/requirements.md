@@ -2020,6 +2020,19 @@ Web startup must select the web runtime using the build mode, even after the web
 
 검증: `UC-WEB-BGM-CATALOG-TRUTH`. 샌드박스 Chromium 에서는 YouTube 가 봇 확인 화면을 띄워 실제 소리 재생은 확인하지 못했습니다(시험은 embed 를 빈 페이지로 대체하고 영상 id 일치만 확인).
 
+## 웹판 상단 음악 바 ▶ 실제 재생 (R31)
+
+실물 원인(2026-11-19, 서버 실제 크롬으로 dev.naia.land/app 확인): ① 곡을 고르지 않은 상태의 ▶ 는 iframe 없이 ■ 만 켰다. ② 포털이 `/app` 을 `Cross-Origin-Embedder-Policy: credentialless` 로 내보내 COEP 헤더가 없는 YouTube embed 문서가 `ERR_BLOCKED_BY_RESPONSE`(`coep-frame-resource-needs-coep-header`) 로 막혔다. ③ 포털의 `Permissions-Policy: autoplay=(self)` 가 YouTube iframe 의 자동 재생을 막는다(쿠키 있는 embed 도 `paused, currentTime=0`; YouTube 출처를 autoplay 허용 목록에 넣으면 재생·소리 켜짐·시간 증가).
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-BGM-PLAY.1 | 웹(브라우저) 빌드에서 재생기에 iframe 이 없을 때 상단 바 ▶ 는 지금 곡 → 마지막 곡 → 재생목록 다음 곡 → 정적 목록 첫 곡 순으로 실제 곡을 싣는다. 실을 곡이 없으면 ■ 를 켜지 않는다. | Done (local) |
+| FR-WEB-BGM-PLAY.2 | 페이지가 cross-origin isolated(`crossOriginIsolated=true`)이면 BGM iframe 에 `credentialless` 를 달아 COEP 아래에서도 YouTube 문서가 실린다. isolation 이 없는 데스크톱·로컬에서는 달지 않는다. | Done (local) |
+| FR-WEB-BGM-PLAY.3 | 웹판은 요청 즉시 ■ 로 보이되, 12초 안에 플레이어가 진행(currentTime>0)을 한 번도 알리지 않거나 오류를 보내면 ■ 를 내리고 "유튜브가 이 곡을 재생하지 않았습니다…" 알림(role=status, 닫기 단추)을 보인다. 그 상태에서 ▶ 는 같은 곡을 새로 싣는다. 뒤늦게 실제 재생이 오면 ■ 로 돌아간다. | Done (local) |
+| FR-WEB-BGM-PLAY.4 | 포털 `/app` 응답의 `Permissions-Policy` autoplay 허용 목록에 `https://www.youtube-nocookie.com`·`https://www.youtube.com` 을 넣는다(naia.land `src/lib/web-shell-routing.ts`·`next.config.ts`). 셸 저장소 밖 변경이라 이 묶음에서는 하지 않음. | Open (portal, 승인 필요) |
+
+검증: `UC-WEB-BGM-TOPBAR-PLAY`. 이 서버의 IP 에서는 쿠키 없는 embed(credentialless 포함)에 YouTube 가 봇 확인 화면을 띄워, 고친 셸 + 포털 헤더 조합의 실제 소리는 이 서버에서 확인하지 못했다(미확인). 쿠키 있는 embed 로 ③ 의 헤더 효과만 실측했다.
+
 ## 웹판 로컬 음악 올리기 (R10)
 
 | 요구사항 | 계약 | 상태 |

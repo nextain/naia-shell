@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "Добавление…",
 	"bgm.webNoTracks": "Музыки пока нет. Добавленные файлы хранятся только в этом браузере.",
 	"bgm.webUploadDone": "Добавлено файлов: {count}.",
+	"bgm.webYoutubeNotPlaying": "YouTube не запустил эту песню. Нажмите ▶ ещё раз чуть позже или выберите другую.",
 	"bgm.webUploadNotAudio": "Можно добавлять только аудиофайлы (mp3, m4a, ogg, wav, flac).",
 	"bgm.webUploadTooLarge": "Файл больше 200 МБ.",
 	"bgm.webUploadQuota": "Недостаточно места в хранилище браузера.",

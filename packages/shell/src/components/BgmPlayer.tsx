@@ -61,7 +61,13 @@ import {
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
 	searchWebYoutubeCatalog,
+	WEB_YOUTUBE_CATALOG,
 } from "../lib/bgm-skill";
+import {
+	pickYoutubeStartTrack,
+	webCatalogStartTrack,
+	youtubeNeverStarted,
+} from "../lib/bgm-embed";
 import { Logger } from "../lib/logger";
 import type { NaiaContextBridge } from "../lib/app-registry";
 import {
@@ -546,6 +552,9 @@ export function BgmPlayer({ naia }: Props) {
 	const broadcastingRef = useRef(broadcasting);
 	broadcastingRef.current = broadcasting;
 	const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+	// R31 — web only: YouTube refused or never started the requested song.
+	const [youtubeNotice, setYoutubeNotice] = useState<string | null>(null);
+	const webStartCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		if (audioRef.current) {
@@ -678,6 +687,42 @@ export function BgmPlayer({ naia }: Props) {
 			playbackTimeoutRef.current = null;
 		}
 	}
+
+	// R31 — the web path marks YouTube "playing" as soon as it is requested.
+	// If the player never reports progress (autoplay blocked by the page's
+	// Permissions-Policy, a bot check, an embed refusal), say so and drop the
+	// ■ instead of pretending. A later real PLAYING event restores ■ by itself.
+	function beginWebStartCheck(playbackId: string) {
+		if (webStartCheckRef.current) clearTimeout(webStartCheckRef.current);
+		setYoutubeNotice(null);
+		webStartCheckRef.current = setTimeout(() => {
+			webStartCheckRef.current = null;
+			const observed = observedIframeStateRef.current;
+			if (
+				!youtubeNeverStarted({
+					checkedPlaybackId: playbackId,
+					currentPlaybackId: bgmPlayback.current()?.playbackId ?? null,
+					observedPlaybackId: observed.playbackId,
+					lastCurrentTime: observed.lastCurrentTime,
+					manuallyStopped: manuallyStoppedPlaybackRef.current === playbackId,
+				})
+			)
+				return;
+			Logger.warn("BgmPlayer", "web YouTube playback never started", {
+				playbackId,
+			});
+			setPlaying(false);
+			setVideoLive(false);
+			setYoutubeNotice(t("bgm.webYoutubeNotPlaying"));
+		}, PLAYBACK_TIMEOUT_MS);
+	}
+
+	useEffect(
+		() => () => {
+			if (webStartCheckRef.current) clearTimeout(webStartCheckRef.current);
+		},
+		[],
+	);
 
 	function observePlayback(
 		status: Exclude<BgmPlaybackStatus, "requested">,
@@ -1012,6 +1057,9 @@ export function BgmPlayer({ naia }: Props) {
 		reason: string,
 	) {
 		setPlaying(false);
+		if (import.meta.env.MODE === "web") {
+			setYoutubeNotice(t("bgm.webYoutubeNotPlaying"));
+		}
 		if (
 			eventPlaybackId &&
 			lastErroredPlaybackIdRef.current === eventPlaybackId
@@ -2099,6 +2147,7 @@ export function BgmPlayer({ naia }: Props) {
 		setPlaybackSnapshot(snapshot);
 		if (import.meta.env.MODE === "web") {
 			observePlayback("playing", { playbackId: snapshot.playbackId });
+			beginWebStartCheck(snapshot.playbackId);
 		} else {
 			beginPlaybackTimeout(snapshot.playbackId);
 		}
@@ -2159,8 +2208,25 @@ export function BgmPlayer({ naia }: Props) {
 				const iframe = document.querySelector(
 					".app-bg-iframe",
 				) as HTMLIFrameElement | null;
-				if (!iframe && currentYt) {
-					// No iframe yet (e.g. restored from config) — reload the video
+				if (!iframe) {
+					// No iframe yet (restored from config, or nothing chosen yet).
+					// R31: never flip to "playing" without loading a real track —
+					// resume the current/last song, else the playlist, else (web)
+					// the first catalog song.
+					const resume = pickYoutubeStartTrack(currentYt, lastYtRef.current);
+					if (resume) {
+						handleYtSelect(resume);
+					} else if (!playNext() && import.meta.env.MODE === "web") {
+						const first = webCatalogStartTrack(WEB_YOUTUBE_CATALOG);
+						if (first) handleYtSelect(first);
+					}
+				} else if (
+					import.meta.env.MODE === "web" &&
+					currentYt &&
+					!((observedIframeStateRef.current.lastCurrentTime ?? 0) > 0)
+				) {
+					// R31: the player never started this song — resuming it is
+					// pointless, so load it again as a fresh attempt.
 					handleYtSelect(currentYt);
 				} else {
 					// A prior manual stop leaves this latch set so a stale PLAYING
@@ -2426,6 +2492,20 @@ export function BgmPlayer({ naia }: Props) {
 			>
 				<track kind="captions" />
 			</audio>
+			{youtubeNotice && !playing && (
+				<div className="bgm-yt-notice" role="status" aria-live="polite">
+					<span>{youtubeNotice}</span>
+					<button
+						type="button"
+						className="bgm-yt-notice-close"
+						onClick={() => setYoutubeNotice(null)}
+						aria-label={t("bgm.close")}
+						title={t("bgm.close")}
+					>
+						×
+					</button>
+				</div>
+			)}
 
 			{/* ── Compact bar ── */}
 			<div className="bgm-player-controls">

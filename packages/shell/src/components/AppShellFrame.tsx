@@ -1,6 +1,7 @@
 import { ResilientVideo } from "./ResilientVideo";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRef, useState } from "react";
+import { bgmIframeIsolationAttrs } from "../lib/bgm-embed";
 import { loadConfig, saveConfig } from "../lib/config";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { resolveWebPublicAssetUrl } from "../lib/web-runtime/web-assets";
@@ -129,6 +130,9 @@ export function AppShellFrame({
 		<iframe
 			key={bgmVideoUrl}
 			className="app-bg-iframe"
+			{...bgmIframeIsolationAttrs(
+				typeof window !== "undefined" && window.crossOriginIsolated === true,
+			)}
 			src={bgmVideoUrl}
 			allow="autoplay"
 			referrerPolicy="origin"

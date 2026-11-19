@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "Menambahkan…",
 	"bgm.webNoTracks": "Belum ada musik. File yang ditambahkan hanya disimpan di browser ini.",
 	"bgm.webUploadDone": "{count} file ditambahkan.",
+	"bgm.webYoutubeNotPlaying": "YouTube tidak memutar lagu ini. Tekan ▶ lagi sebentar lagi atau pilih lagu lain.",
 	"bgm.webUploadNotAudio": "Hanya file audio (mp3, m4a, ogg, wav, flac) yang bisa ditambahkan.",
 	"bgm.webUploadTooLarge": "File lebih besar dari 200 MB.",
 	"bgm.webUploadQuota": "Penyimpanan browser tidak cukup.",

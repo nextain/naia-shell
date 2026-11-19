@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "올리는 중…",
 	"bgm.webNoTracks": "아직 음악이 없습니다. 올린 파일은 이 브라우저에만 저장됩니다.",
 	"bgm.webUploadDone": "{count}개 파일을 올렸습니다.",
+	"bgm.webYoutubeNotPlaying": "유튜브가 이 곡을 재생하지 않았습니다. 잠시 뒤 ▶ 를 다시 누르거나 다른 곡을 골라 주세요.",
 	"bgm.webUploadNotAudio": "음악 파일(mp3, m4a, ogg, wav, flac)만 올릴 수 있습니다.",
 	"bgm.webUploadTooLarge": "파일이 200MB보다 큽니다.",
 	"bgm.webUploadQuota": "브라우저 저장 공간이 부족합니다.",

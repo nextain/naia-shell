@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "追加中…",
 	"bgm.webNoTracks": "まだ音楽がありません。追加したファイルはこのブラウザにだけ保存されます。",
 	"bgm.webUploadDone": "{count}個のファイルを追加しました。",
+	"bgm.webYoutubeNotPlaying": "YouTubeがこの曲を再生しませんでした。しばらくしてから▶をもう一度押すか、別の曲を選んでください。",
 	"bgm.webUploadNotAudio": "音声ファイル(mp3, m4a, ogg, wav, flac)のみ追加できます。",
 	"bgm.webUploadTooLarge": "ファイルが200MBを超えています。",
 	"bgm.webUploadQuota": "ブラウザの保存容量が足りません。",

@@ -6337,6 +6337,40 @@ body.resizing-row {
 	pointer-events: auto;
 }
 
+/* R31 — web: YouTube did not start the requested song. */
+.bgm-yt-notice {
+	position: fixed;
+	top: 44px;
+	right: 8px;
+	z-index: 1000;
+	/* 세로 모바일은 상단 바(조상)가 숨지만 음악 앱에서 재생이 실패해도 알림은 보여야 한다. */
+	visibility: visible;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	max-width: min(360px, calc(100vw - 16px));
+	padding: 8px 10px;
+	background: rgba(8, 14, 28, 0.92);
+	color: #f2f4f8;
+	font-size: 12px;
+	line-height: 1.45;
+	border: 1px solid rgba(255, 196, 90, 0.55);
+	border-radius: 8px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+	pointer-events: auto;
+}
+
+.bgm-yt-notice-close {
+	flex-shrink: 0;
+	background: none;
+	border: none;
+	color: inherit;
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 2px;
+}
+
 @media (max-width: 500px) {
 	.bgm-player {
 		width: 72px;

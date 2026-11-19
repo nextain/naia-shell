@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "Đang thêm…",
 	"bgm.webNoTracks": "Chưa có nhạc. Tệp đã thêm chỉ lưu trong trình duyệt này.",
 	"bgm.webUploadDone": "Đã thêm {count} tệp.",
+	"bgm.webYoutubeNotPlaying": "YouTube chưa phát bài này. Hãy nhấn ▶ lại sau giây lát hoặc chọn bài khác.",
 	"bgm.webUploadNotAudio": "Chỉ có thể thêm tệp âm thanh (mp3, m4a, ogg, wav, flac).",
 	"bgm.webUploadTooLarge": "Tệp lớn hơn 200 MB.",
 	"bgm.webUploadQuota": "Không đủ dung lượng lưu trữ của trình duyệt.",

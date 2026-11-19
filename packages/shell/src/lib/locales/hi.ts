@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "जोड़ा जा रहा है…",
 	"bgm.webNoTracks": "अभी कोई संगीत नहीं। जोड़ी गई फ़ाइलें केवल इसी ब्राउज़र में रहती हैं।",
 	"bgm.webUploadDone": "{count} फ़ाइलें जोड़ी गईं।",
+	"bgm.webYoutubeNotPlaying": "YouTube ने यह गाना शुरू नहीं किया। थोड़ी देर बाद ▶ फिर से दबाएँ या कोई दूसरा गाना चुनें।",
 	"bgm.webUploadNotAudio": "केवल ऑडियो फ़ाइलें (mp3, m4a, ogg, wav, flac) जोड़ी जा सकती हैं।",
 	"bgm.webUploadTooLarge": "फ़ाइल 200 MB से बड़ी है।",
 	"bgm.webUploadQuota": "ब्राउज़र में पर्याप्त संग्रहण नहीं है।",

@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "جارٍ الإضافة…",
 	"bgm.webNoTracks": "لا توجد موسيقى بعد. الملفات المضافة تبقى في هذا المتصفح فقط.",
 	"bgm.webUploadDone": "تمت إضافة {count} ملف.",
+	"bgm.webYoutubeNotPlaying": "لم يشغّل YouTube هذه الأغنية. اضغط ▶ مرة أخرى بعد قليل أو اختر أغنية أخرى.",
 	"bgm.webUploadNotAudio": "يمكن إضافة الملفات الصوتية فقط (mp3، m4a، ogg، wav، flac).",
 	"bgm.webUploadTooLarge": "حجم الملف أكبر من 200 ميغابايت.",
 	"bgm.webUploadQuota": "مساحة تخزين المتصفح غير كافية.",

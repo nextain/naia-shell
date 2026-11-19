@@ -3344,6 +3344,21 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 오류(지어낸 제목) | 예전 지어낸 곡명이 웹 목록에 없음, 주제어 검색이 실제 영상만 고름 | `e2e/web-bgm-r7.spec.ts` R7, `src/lib/__tests__/bgm-skill.test.ts` |
 | 좁은 폭 | 390×844 에서 재생기 안 목록·재생이 동작(세로 모바일 진입점은 앱 바 몫) | `e2e/web-bgm-r7.spec.ts` R7 390 |
 
+## UC-WEB-BGM-TOPBAR-PLAY. 웹판 상단 음악 바의 ▶ 로 유튜브 곡을 듣는다 (R31)
+
+경로: 웹(브라우저) 빌드(`vite --mode web`, 운영은 dev.naia.land/app). 웹판 사용자가 음악 앱을 열지 않고 상단 음악 바의 ▶ 를 누릅니다. 고른 곡이 없으면 지금·마지막 곡, 재생목록, 정적 목록 첫 곡 순으로 실제 곡이 배경 재생기에 실리고 바에 곡 제목이 보입니다. 포털이 페이지를 cross-origin isolated 로 내보내도 재생기 iframe 은 `credentialless` 로 실려 막히지 않습니다. 유튜브가 12초 안에 재생을 시작하지 않거나 거절하면(자동 재생 차단·봇 확인·embed 거부) ■ 가 ▶ 로 돌아가고 바 아래에 이유 알림이 보이며, ▶ 를 다시 누르면 같은 곡을 새로 싣습니다. 요구: FR-WEB-BGM-PLAY.1~4.
+
+### Test Coverage Map — UC-WEB-BGM-TOPBAR-PLAY
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 처음 화면 ▶, 재생기 iframe 없음 | `e2e/web-bgm-r31.spec.ts` R31 (1280×720, 390×844) |
+| 진행·성공 | ▶ → iframe src = 목록 첫 곡(8XmoPmtBi-I), 바 제목 Lofi Chill, ■ | `e2e/web-bgm-r31.spec.ts` R31, `src/lib/__tests__/bgm-embed.test.ts` R31 |
+| COEP | `crossOriginIsolated=true` 페이지에서 iframe `credentialless`, 실린 문서가 막히지 않음 | `e2e/web-bgm-r31.spec.ts` R31 coep (1280×720), `bgm-embed.test.ts` |
+| 오류 | 진행 알림이 없으면 ▶ 복귀 + role=status 알림, 닫기 단추 키보드 동작, ▶ 재시도 시 새 재생(bgm-playback-2) | `e2e/web-bgm-r31.spec.ts` R31, `bgm-embed.test.ts` youtubeNeverStarted |
+| 좁은 폭 | 390×844 세로에서는 상단 바가 숨는다(진입점은 앱 바 묶음 몫) — 숨은 ▶ 를 스크립트로 눌러 재생 경로를 보고, 알림은 숨은 조상과 무관하게 화면 안에 보임 | `e2e/web-bgm-r31.spec.ts` R31 390 |
+| 실제 크롬 | dev 헤더(COEP·autoplay=(self))를 씌운 로컬 셸에서 iframe 이 막히지 않고 플레이어 onReady 수신 | 수동 CDP(`r31-work/cdp-play.mjs`), 실제 소리는 서버 IP 봇 확인으로 미확인 |
+
 ## UC-WEB-BGM-LOCAL-IMPORT. 웹판 음악 앱에 내 음악 파일 올리기 (R10)
 
 경로: 웹(브라우저) 빌드. 웹판 사용자가 음악 앱(♫)의 [로컬] 탭을 엽니다. 처음에는 "아직 음악이 없습니다. 올린 파일은 이 브라우저에만 저장됩니다." 안내와 [음악 올리기] 단추가 보입니다. 단추를 눌러 이 기기의 음악 파일(mp3·m4a·aac·ogg·opus·wav·flac·weba, 여러 개 가능)을 고르면 파일이 이 브라우저 저장소(OPFS `naia-adk/naia-settings/bgm-musics/`)에 복사되고 목록에 이름이 생깁니다. 줄을 누르면 재생되고, ✕ 로 지웁니다. 새로고침해도 목록이 남습니다. 파일은 서버로 가지 않습니다.

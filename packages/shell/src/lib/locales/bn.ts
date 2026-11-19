@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "যোগ করা হচ্ছে…",
 	"bgm.webNoTracks": "এখনো কোনো সংগীত নেই। যোগ করা ফাইল শুধু এই ব্রাউজারে থাকে।",
 	"bgm.webUploadDone": "{count}টি ফাইল যোগ করা হয়েছে।",
+	"bgm.webYoutubeNotPlaying": "YouTube এই গানটি চালু করেনি। একটু পরে আবার ▶ চাপুন বা অন্য গান বেছে নিন।",
 	"bgm.webUploadNotAudio": "শুধু অডিও ফাইল (mp3, m4a, ogg, wav, flac) যোগ করা যায়।",
 	"bgm.webUploadTooLarge": "ফাইলটি 200 MB-এর বেশি।",
 	"bgm.webUploadQuota": "ব্রাউজারে যথেষ্ট সঞ্চয়স্থান নেই।",

@@ -1564,6 +1564,7 @@ export default {
 	"bgm.webUploading": "正在添加…",
 	"bgm.webNoTracks": "还没有音乐。添加的文件只保存在此浏览器中。",
 	"bgm.webUploadDone": "已添加 {count} 个文件。",
+	"bgm.webYoutubeNotPlaying": "YouTube 没有播放这首歌。请稍后再按 ▶，或换一首歌。",
 	"bgm.webUploadNotAudio": "只能添加音频文件(mp3、m4a、ogg、wav、flac)。",
 	"bgm.webUploadTooLarge": "文件超过 200 MB。",
 	"bgm.webUploadQuota": "浏览器存储空间不足。",
