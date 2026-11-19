@@ -21,6 +21,8 @@ export const useWebModelStatus: () => WebModelStatus =
 		? () => useSyncExternalStore(subscribeWebModelStatus, getWebModelStatus)
 		: () => DESKTOP_MODEL_STATUS;
 
+const READY_NOTICE_MS = 4000;
+
 export function WebModelStatusBar(props: {
 	scrollDuringSetup?: boolean;
 	onSwitchModel?: (model: WebLlmModelId) => void;
@@ -31,6 +33,20 @@ export function WebModelStatusBar(props: {
 	useEffect(() => {
 		setReadyDetailsOpen(false);
 	}, [status.phase]);
+	// The default model's "ready" line sits right above the composer and eats
+	// scarce chat height; show it briefly, then get out of the way. Fallback
+	// notices and workspace setup stay visible because they need action.
+	const quietReady =
+		status.phase === "ready" &&
+		status.model === WEB_LLM_MODEL_ID &&
+		!props.scrollDuringSetup;
+	const [readyHidden, setReadyHidden] = useState(false);
+	useEffect(() => {
+		setReadyHidden(false);
+		if (!quietReady) return;
+		const timer = window.setTimeout(() => setReadyHidden(true), READY_NOTICE_MS);
+		return () => window.clearTimeout(timer);
+	}, [quietReady]);
 
 	const handleSwitchModel = (model: WebLlmModelId) => {
 		if (props.onSwitchModel) {
@@ -141,6 +157,7 @@ export function WebModelStatusBar(props: {
 			data-model={status.model}
 			className="chat-compaction-notice"
 			role="status"
+			hidden={quietReady && readyHidden && !readyDetailsOpen}
 		>
 			{status.phase === "checking" && (
 				<div>{t("webModel.checking")}</div>

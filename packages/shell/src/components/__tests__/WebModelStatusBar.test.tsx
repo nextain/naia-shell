@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebModelStatusBar } from "../WebModelStatusBar";
 import { t } from "../../lib/i18n";
@@ -173,5 +173,30 @@ describe("WebModelStatusBar", () => {
 		const retryBtn = screen.getByTestId("web-model-retry");
 		fireEvent.click(retryBtn);
 		expect(onRetry).toHaveBeenCalledTimes(1);
+	});
+
+	it("hides the default model ready line after a short notice but keeps fallback notices", async () => {
+		vi.useFakeTimers();
+		try {
+			setWebModelStatus({ phase: "ready", progress: 1, model: WEB_LLM_MODEL_ID });
+			const { unmount } = render(<WebModelStatusBar />);
+			const el = screen.getByTestId("web-model-status");
+			expect(el.hidden).toBe(false);
+			await act(async () => {
+				vi.advanceTimersByTime(4100);
+			});
+			expect(el.hidden).toBe(true);
+			expect(el.getAttribute("data-phase")).toBe("ready");
+			unmount();
+
+			setWebModelStatus({ phase: "ready", progress: 1, model: WEB_LLM_FALLBACK_F32 });
+			render(<WebModelStatusBar />);
+			await act(async () => {
+				vi.advanceTimersByTime(4100);
+			});
+			expect(screen.getByTestId("web-model-status").hidden).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
