@@ -1,7 +1,11 @@
+import { type AppDescriptor, appRegistry } from "../../lib/app-registry";
+import { isKioskDemo } from "../../lib/kiosk-demo/flag";
+import { useAppStore } from "../../stores/app";
+import { SlidesCenterArea } from "./SlidesCenterArea";
 import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 
 /** Store-package metadata. The app is registered only after signed installation. */
-export const NAIA_SLIDES_DESCRIPTOR = {
+export const NAIA_SLIDES_DESCRIPTOR: Omit<AppDescriptor, "center"> = {
 	id: "land.naia.slides",
 	name: "슬라이드",
 	names: { ko: "슬라이드", en: "Slides" },
@@ -41,3 +45,10 @@ export const NAIA_SLIDES_DESCRIPTOR = {
 		...TAB_SKILL_DESCRIPTORS,
 	],
 };
+
+/** Register the bundled presentation only for the kiosk demo. */
+export function syncKioskSlidesAppRegistration(): void {
+	if (!isKioskDemo() || appRegistry.get(NAIA_SLIDES_DESCRIPTOR.id)) return;
+	appRegistry.register({ ...NAIA_SLIDES_DESCRIPTOR, center: SlidesCenterArea });
+	useAppStore.getState().bumpAppListVersion();
+}

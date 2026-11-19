@@ -16,7 +16,9 @@ import {
 	markFirstAdkBinding,
 	saveSecretKeyAtPath,
 } from "./secure-store";
+import { NAIA_SLOT_DEFAULTS } from "./slots/model";
 import type { ProviderId } from "./types";
+import type { UiFontScaleId } from "./ui-font-scale";
 import {
 	NAIA_INSTANCE_URLS,
 	naiaLaunchMode,
@@ -30,7 +32,7 @@ import {
 	KIOSK_DEMO_THINKING_LEVEL,
 	KIOSK_DEMO_TTS_VOICE,
 	applyKioskDemoMainModel,
-} from "./config-seed";
+} from "./kiosk-demo/model-config";
 import { isKioskDemo } from "./kiosk-demo/flag";
 
 const STORAGE_KEY = "naia-config";
@@ -330,6 +332,8 @@ export interface AppConfig {
 	memoryLlmCredentialRef?: string;
 	locale?: Locale;
 	theme?: ThemeId;
+	/** UI-only font scale, persisted in ui-config.json. */
+	uiFontScale?: UiFontScaleId;
 	backgroundImage?: string;
 	vrmModel?: string;
 	avatarProvider?: "vrm" | "naia-video-avatar";
@@ -916,8 +920,8 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 	// ADK remains the authority; an empty ADK still returns null and cannot inherit
 	// another ADK's credential.
 	const config: AppConfig = publicConfig ?? {
-		provider: "",
-		model: "",
+		provider: NAIA_SLOT_DEFAULTS.main.provider,
+		model: NAIA_SLOT_DEFAULTS.main.model,
 		apiKey: "",
 	};
 	for (const key of SECRET_KEYS) {

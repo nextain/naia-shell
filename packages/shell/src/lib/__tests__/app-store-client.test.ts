@@ -42,6 +42,26 @@ describe("app-store-client", () => {
 		});
 	});
 
+	it("routes web entitlement checks through the web adapter", async () => {
+		const { setWebAssetsModeForTests } = await import("../web-runtime/web-assets");
+		const { WebHttpAppStoreAdapter, setPlatformAppStoreAdapterForTests } = await import("../app-store-adapter");
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ entitled: false }) });
+		setWebAssetsModeForTests(true);
+		setPlatformAppStoreAdapterForTests(new WebHttpAppStoreAdapter({
+			fetchImpl: fetchImpl as typeof fetch,
+			getGatewayUrl: () => "https://gateway.example",
+			getAuthKey: () => "naia_test_key_for_login_123",
+		}));
+		try {
+			await expect(hasStoreEntitlement("land.naia.slides")).resolves.toBe(false);
+			expect(fetchImpl).toHaveBeenCalledOnce();
+			expect(invoke).not.toHaveBeenCalled();
+		} finally {
+			setPlatformAppStoreAdapterForTests(null);
+			setWebAssetsModeForTests(null);
+		}
+	});
+
 	it("resolves the localized product name from the public catalog", async () => {
 		vi.stubGlobal(
 			"fetch",

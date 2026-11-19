@@ -320,3 +320,11 @@ export function resetUiPreferencesForTests(): void {
 	activeAdkPath = null;
 	listeners.clear();
 }
+
+/** Read the web layout preference from its persisted UI sources. */
+export function getStoredLayoutOrientation(): "portrait" | "landscape" | null {
+	for (const value of [snapshot.layoutOrientation, readStorage("naia-layout-orientation"), loadConfig()?.uiPreferences?.layoutOrientation]) {
+		if (value === "portrait" || value === "landscape") return value;
+	}
+	return null;
+}

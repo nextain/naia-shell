@@ -9,6 +9,7 @@ import {
 	hasNaiaKey,
 	loadConfig,
 } from "../../config";
+import { getDefaultLlmModel } from "../../llm/registry";
 import { bootWebRuntimeAndModel } from "../auto-install";
 import { setWebAssetsModeForTests } from "../web-assets";
 import {
@@ -170,13 +171,15 @@ describe("web-auth (item 5)", () => {
 		expect(loadConfig()?.naiaUserId).toBeUndefined();
 	});
 
-	it("uses the server model on a fresh login and exposes the login key to balance requests", async () => {
+	it("uses the registered default model on a fresh login and exposes the login key to balance requests", async () => {
 		const { installWebRuntime } = await import("../install");
 		installWebRuntime();
 		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
+		const defaultModel = getDefaultLlmModel("nextain");
+		expect(defaultModel).not.toBe("");
 		expect(loadConfig()).toMatchObject({
 			provider: "nextain",
-			model: "gpt-6.1-terra",
+			model: defaultModel,
 		});
 		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
 	});

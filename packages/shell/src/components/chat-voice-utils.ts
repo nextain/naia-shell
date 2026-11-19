@@ -1,6 +1,6 @@
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import type { AppConfig } from "../lib/config";
-import { KIOSK_DEMO_TTS_VOICE } from "../lib/config-seed";
+import { KIOSK_DEMO_TTS_VOICE } from "../lib/kiosk-demo/model-config";
 import { paymentLinksHiddenNow } from "../lib/distribution";
 import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";

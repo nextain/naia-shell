@@ -972,7 +972,7 @@ export function SettingsTab() {
 	>(getStaticModelsRecord);
 	const [naiaModelsSettled, setNaiaModelsSettled] = useState(false);
 	const [modelSortMode, setModelSortMode] = useState<ModelSortMode>(
-		existing?.modelSortMode ?? "price",
+		existing?.modelSortMode === "performance" ? "performance" : "price",
 	);
 	const [ollamaHost, setOllamaHost] = useState(
 		existing?.ollamaHost ?? DEFAULT_OLLAMA_HOST,

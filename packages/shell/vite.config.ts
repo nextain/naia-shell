@@ -4,12 +4,32 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { type Plugin, defineConfig } from "vite";
 import packageJson from "./package.json";
+import { resolveWebAgentDir } from "./scripts/web-agent-dir.mjs";
 import { shouldIncludeDesktopPublicAsset } from "./src/lib/avatar/desktop-public-assets";
 
 export { shouldIncludeDesktopPublicAsset };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Use the real browser worker in web mode. Desktop and unit-test mode cannot
+// start a browser worker, matching the original web runtime contract.
+function virtualAgentWorkerPlugin(mode: string): Plugin {
+	const virtualId = "virtual:naia-agent-worker";
+	const desktopId = `\0${virtualId}`;
+	return {
+		name: "virtual-naia-agent-worker",
+		resolveId(id) {
+			if (id !== virtualId) return;
+			return mode === "web"
+				? path.resolve(__dirname, "web-worker/create-agent-worker.ts")
+				: desktopId;
+		},
+		load(id) {
+			if (id === desktopId) return 'export function createAgentWorker() { throw new Error("desktop_only:agent-worker"); }';
+		},
+	};
+}
 
 function readPositiveIntegerEnv(
 	name: string,
@@ -67,10 +87,11 @@ export function desktopPublicAssetsPlugin(): Plugin {
 const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
 	publicDir: command === "build" ? false : "public",
 	plugins: [
 		react(),
+		virtualAgentWorkerPlugin(mode),
 		...(command === "build" ? [desktopPublicAssetsPlugin()] : []),
 	],
 	build: {
@@ -81,6 +102,7 @@ export default defineConfig(({ command }) => ({
 	},
 	define: {
 		__USAGE_VERSION__: JSON.stringify(packageJson.version),
+		__WEB_VERSION__: JSON.stringify(packageJson.version),
 		__BUILD_ID__: JSON.stringify(
 			new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
 		),
@@ -125,6 +147,7 @@ export default defineConfig(({ command }) => ({
 	resolve: {
 		alias: {
 			"@": "/src",
+			...(mode === "web" ? { "@naia-agent": path.join(resolveWebAgentDir(process.env), "src/main") } : {}),
 		},
 	},
 }));

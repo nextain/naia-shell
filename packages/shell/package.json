@@ -57,6 +57,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.36.4",
+    "@mlc-ai/web-llm": "0.2.85",
     "@nextain/naia-os-core": "workspace:*",
     "@pixiv/three-vrm": "^3.4.5",
     "@pixiv/three-vrm-animation": "^3.4.5",
