@@ -1998,3 +1998,12 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존됩니다. 저장소 미지원과 용량 부족은 사용자에게 알려 줍니다. | Done (local) |
 
 로컬 후보 검증은 2026-11-19 03:53 UTC Chromium 탐색기 실동작과 탐색기 회귀 시험 7건입니다. 시스템 기본 작업 공간 준비는 별도 진입 시험에서 확인합니다.
+
+## 웹판 음악 목록의 정직성 (R7)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-BGM-CATALOG.1 | 웹(브라우저) 빌드의 정적 YouTube 목록(`WEB_YOUTUBE_CATALOG`)의 제목·채널은 그 영상 id 의 실제 YouTube 정보(oEmbed)와 같습니다. 길이는 확인된 값만, 실시간 방송은 `LIVE` 로 적습니다. | Done (local) |
+| FR-WEB-BGM-CATALOG.2 | 주제어는 영상의 실제 내용만 적습니다. 목록에 없는 장르를 다른 영상에 붙이지 않습니다. | Done (local) |
+
+검증: `UC-WEB-BGM-CATALOG-TRUTH`. 샌드박스 Chromium 에서는 YouTube 가 봇 확인 화면을 띄워 실제 소리 재생은 확인하지 못했습니다(시험은 embed 를 빈 페이지로 대체하고 영상 id 일치만 확인).

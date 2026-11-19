@@ -3241,3 +3241,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·빈 폴더·읽기 전용 | 목적지가 없을 때 안내를 보이고 작업 폴더를 고르면 해당 위치가 보임 | `web-workspace-path.test.tsx` |
 | 진행·성공·좁은 화면 | 진행 상태, 새 항목 열기·내려받기, 키보드·400px 폭에서 목적지와 단추 표시 | `web-workspace-path.test.tsx`와 좁은 화면 브라우저 확인 |
 | 오류·충돌 | 기존 파일 보존, 새 파일 바이트 확인, 작업 폴더 교체·용량 부족 때 재선택 또는 재시도 | `web-workspace-path.test.tsx` |
+
+## UC-WEB-BGM-CATALOG-TRUTH. 웹판 음악 앱 목록 곡이 실제로 재생되는 곡과 같다 (R7)
+
+경로: 웹(브라우저) 빌드(`vite --mode web`). 웹판 사용자가 음악 앱(♫)을 열고 장르(예: 지브리)를 고른 뒤 목록의 한 곡을 누릅니다. 목록에 보인 제목·채널의 영상이 배경 재생기에 실리고, 재생 중 카드와 AI 가 말하는 곡명도 같은 제목입니다. 웹판에는 검색 서버(사이드카)가 없으므로 정적 목록만 쓰며, 목록에 없는 장르(제이팝·시티팝·클래식 등)를 다른 영상에 억지로 붙이지 않습니다. 실시간 방송은 길이 대신 `LIVE` 로 보입니다.
+
+### Test Coverage Map — UC-WEB-BGM-CATALOG-TRUTH
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·성공 | 지브리 장르 첫 줄 제목 = 재생 영상 id(3jWRrafhO7M)·재생 카드 제목 | `e2e/web-bgm-r7.spec.ts` R7 (1280×720, 390×844) |
+| 오류(지어낸 제목) | 예전 지어낸 곡명이 웹 목록에 없음, 주제어 검색이 실제 영상만 고름 | `e2e/web-bgm-r7.spec.ts` R7, `src/lib/__tests__/bgm-skill.test.ts` |
+| 좁은 폭 | 390×844 에서 재생기 안 목록·재생이 동작(세로 모바일 진입점은 앱 바 몫) | `e2e/web-bgm-r7.spec.ts` R7 390 |
