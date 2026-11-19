@@ -11,7 +11,7 @@ function rowsFromQuery(input) {
   return table.rows.map((row) => Object.fromEntries(table.columns.map((col, i) => [col.name, row[i]])));
 }
 
-export function reconcile(live, query, dateKst) {
+export function reconcile(live, query, daily, dateKst) {
   if (!live || typeof live.runMarker !== "string" || !Array.isArray(live.events) || !Number.isSafeInteger(live.expectedEventCount)) throw new Error("Invalid client run evidence");
   const rows = rowsFromQuery(query).map((row) => {
     if (!row || typeof row.name !== "string" || !row.name || typeof row.event_id !== "string" || !row.event_id || row.installation_id !== live.runMarker || typeof row.occurred_at !== "string" || !/(?:Z|[+-]\d\d:\d\d)$/.test(row.occurred_at) || !Number.isFinite(Date.parse(row.occurred_at)) || !/^\d+$/.test(String(row.sequence)) || !Number.isSafeInteger(Number(row.sequence))) throw new Error("Invalid or out-of-run query row");
@@ -36,14 +36,15 @@ export function reconcile(live, query, dateKst) {
     eventIdsMatch: receivedIds.size === expectedIds.length && expectedIds.every((id) => receivedIds.has(id)),
     oneDuplicateRemoved: dailyRows.length - unique.length === 1,
     uniqueCount: unique.length === live.expectedEventCount,
+    reportedCount: daily?.dateKst === dateKst && daily?.runMarker === live.runMarker && Number.isSafeInteger(daily?.reportedEventCount) && daily.reportedEventCount === unique.length && daily?.report?.dateKst === dateKst && daily?.report?.shell?.eventCount === unique.length,
   };
-  return { dateKst, runMarker: live.runMarker, expectedUniqueEvents: live.expectedEventCount, storedRowsIncludingRetry: rows.length, duplicatesRemoved: dailyRows.length - unique.length, reconciledDailyEventCount: unique.length, checks, report };
+  return { dateKst, runMarker: live.runMarker, expectedUniqueEvents: live.expectedEventCount, storedRowsIncludingRetry: rows.length, duplicatesRemoved: dailyRows.length - unique.length, reconciledDailyEventCount: unique.length, reportedEventCount: daily?.reportedEventCount ?? null, checks, report };
 }
 
 async function main() {
-  const [livePath, rowsPath, dateKst] = process.argv.slice(2);
-  if (!livePath || !rowsPath || !dateKst || process.argv.length !== 5) throw new Error("Usage: node --experimental-strip-types usage-app-insights-reconcile.mjs LIVE.json QUERY.json YYYY-MM-DD");
-  const result = reconcile(JSON.parse(await readFile(livePath, "utf8")), JSON.parse(await readFile(rowsPath, "utf8")), dateKst);
+  const [livePath, rowsPath, dailyPath, dateKst] = process.argv.slice(2);
+  if (!livePath || !rowsPath || !dailyPath || !dateKst || process.argv.length !== 6) throw new Error("Usage: node --experimental-strip-types usage-app-insights-reconcile.mjs LIVE.json QUERY.json DAILY.json YYYY-MM-DD");
+  const result = reconcile(JSON.parse(await readFile(livePath, "utf8")), JSON.parse(await readFile(rowsPath, "utf8")), JSON.parse(await readFile(dailyPath, "utf8")), dateKst);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (Object.values(result.checks).some((pass) => !pass)) process.exitCode = 1;
 }
