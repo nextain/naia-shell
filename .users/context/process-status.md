@@ -1,3 +1,10 @@
+<!-- src-sha: 2a48a4b509256dc2 -->
+
+## 웹 키오스크 앱스토어 안내 시험 (R46) — 2026-11-20
+
+- 기존 시험 실패 1건 재현 후 표적 Vitest 1건 및 Playwright 3건 통과. 1280×720·390×844 키오스크의 안내 열기·닫기와 정식 웹판의 통합 상점을 대조. 전체 셸 Vitest 3,693 통과, 13 실패, 34 제외. 실패는 nva-alpha-bake 9건, canonical-speech 3건, nva.test.ts의 atlas.bin 누락 1건. kiosk-demo/knowledge 실패 0건. 캡처 bundle-runs/r46-shots/R46-1280.png·R46-390.png.
+- `UC-WEB-KIOSK-APP-STORE` · `packages/shell/src/components/__tests__/AppMainContent.kiosk-store.test.tsx`
+
 <!-- src-sha: 370ffd13122f50f5 -->
 
 ## 웹판 모델 준비 오류 중 입력칸 배치 (R44) — 2026-11-20

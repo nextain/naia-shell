@@ -4,7 +4,7 @@ import {
 	fireEvent,
 	render,
 	screen,
-	waitFor,
+	within,
 } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -108,7 +108,7 @@ function Harness() {
 	return <AppMainContent {...baseProps(showAppInstall, setShowAppInstall)} />;
 }
 
-describe("R7 kiosk demo AppBar -> AppInstallDialog wiring", () => {
+describe("R46 kiosk demo App Store notice", () => {
 	beforeEach(() => {
 		localStorage.clear();
 		sessionStorage.clear();
@@ -122,37 +122,40 @@ describe("R7 kiosk demo AppBar -> AppInstallDialog wiring", () => {
 
 	afterEach(() => {
 		cleanup();
-		setWebAssetsModeForTests(null);
 		vi.unstubAllEnvs();
+		setWebAssetsModeForTests(null);
 		localStorage.clear();
 		sessionStorage.clear();
 	});
 
-	it("opens and closes AppInstallDialog when clicking App Store button in kiosk demo", async () => {
+	it("opens and dismisses the App Store notice in a kiosk browser", () => {
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 
 		const { container } = render(<Harness />);
 
-		const storeButton = await screen.findByRole("button", {
-			name: /App Store|앱 스토어|appbar\.appStore/i,
-		});
-		fireEvent.click(storeButton);
+		const name = /App Store|앱 스토어|appbar\.appStore/i;
+		expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name }));
 
-		await waitFor(() => {
-			expect(container.querySelector(".app-install-overlay")).not.toBeNull();
-			expect(container.querySelector(".app-install-dialog")).not.toBeNull();
-		});
-		expect(container.querySelector("#git-url-input")).not.toBeNull();
+		const notice = screen.getByRole("dialog", { name });
+		expect(notice).toHaveAttribute("aria-modal", "true");
+		expect(notice.parentElement).toBe(document.body);
+		expect(
+			within(notice).getByText(
+				"앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.",
+			),
+		).toBeVisible();
+		expect(
+			container.querySelector(".app-install-overlay"),
+		).not.toBeInTheDocument();
 		expect(mockInvoke).not.toHaveBeenCalledWith(
 			"focus_or_create_app_store_window",
 			expect.anything(),
 		);
 
-		fireEvent.click(container.querySelector(".app-install-close")!);
-		await waitFor(() => {
-			expect(container.querySelector(".app-install-overlay")).toBeNull();
-		});
+		fireEvent.click(within(notice).getByRole("button", { name: "닫기" }));
+		expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument();
 	});
 });

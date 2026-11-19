@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T21:29:25Z",
+  "last_updated": "2026-11-19T23:08:38Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_kiosk_app_store_r46_20261120": {
+      "requirement_id": "R46",
+      "title": "웹 키오스크 앱스토어 안내 시험",
+      "branch": "alpha/webgpu-r45-creds-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-APP-STORE",
+      "requirements": "시연판 16판 R7 (fd48500c, f0e53745), 정식 웹판 범위 docs/requirements.md FR-WEB-APP-CATALOG.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "기존 시험 실패 1건 재현 후 표적 Vitest 1건 및 Playwright 3건 통과. 1280×720·390×844 키오스크의 안내 열기·닫기와 정식 웹판의 통합 상점을 대조. 전체 셸 Vitest 3,693 통과, 13 실패, 34 제외. 실패는 nva-alpha-bake 9건, canonical-speech 3건, nva.test.ts의 atlas.bin 누락 1건. kiosk-demo/knowledge 실패 0건. 캡처 bundle-runs/r46-shots/R46-1280.png·R46-390.png.",
+      "evidence": "packages/shell/src/components/__tests__/AppMainContent.kiosk-store.test.tsx",
+      "last_updated": "2026-11-19T23:08:38Z"
+    },
     "web_chat_model_error_r44_20261120": {
       "requirement_id": "R44",
       "title": "웹판 모델 준비 오류 중 입력칸 배치",
