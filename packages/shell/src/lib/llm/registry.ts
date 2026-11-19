@@ -5,6 +5,7 @@ import {
 } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { MODEL_CAPABILITY_VALUES, type ModelCapability } from "../types.js";
+import { isWebMode } from "../web-runtime/web-assets";
 import type {
 	LlmModelMeta,
 	LlmProviderMeta,
@@ -42,16 +43,27 @@ const PROVIDER_DISPLAY_ORDER = [
 	"grok",
 ];
 
+/**
+ * R1: the browser agent worker (`web-worker/agent-worker.ts`) only runs the
+ * in-browser WebLLM engine and the Naia gateway; local daemons (Ollama, vLLM)
+ * and CLI providers (Codex, Claude Code, Grok) need a desktop process.
+ */
+export const WEB_SUPPORTED_LLM_PROVIDER_IDS = ["nextain", "webllm"] as const;
+
 /** List all registered LLM providers in the user-defined display order. */
 export function listLlmProviders(): LlmProviderMeta[] {
 	const rank = (id: string) => {
 		const i = PROVIDER_DISPLAY_ORDER.indexOf(id);
 		return i < 0 ? PROVIDER_DISPLAY_ORDER.length : i;
 	};
+	const web = isWebMode();
 	return Array.from(providers.values())
 		.filter(
 			(p) =>
 				!(isKioskDemo() && !isKioskLocalAnswerEnabled() && p.id === "webllm"),
+		)
+		.filter(
+			(p) => !web || (WEB_SUPPORTED_LLM_PROVIDER_IDS as readonly string[]).includes(p.id),
 		)
 		.sort((a, b) => rank(a.id) - rank(b.id));
 }

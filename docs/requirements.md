@@ -2004,3 +2004,4 @@ Web startup must select the web runtime using the build mode, even after the web
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
 | FR-WEB-A-R8 | 웹판 상단 막대는 WebGPU 상태·공개 하네스·캐릭터 카드 바로가기·크레딧 다음에 음악 플레이어를 두고, 설정 단추를 맨 끝에 둔다. 데스크톱 앱 배치는 바꾸지 않는다. 검증: `UC-WEB-A-R8`. | Done (local) |
+| FR-WEB-A-R1 | 웹판 설정의 두뇌 공급자 목록은 웹 작업자가 받아들이는 `nextain`·`webllm`만 보여 준다. 판정은 `isWebMode()`를 쓰고 데스크톱 목록은 바꾸지 않는다. 검증: `UC-WEB-A-R1`. | Done (local) |

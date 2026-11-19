@@ -3253,3 +3253,14 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본(웹) | 상태 표시 → 크레딧 → 음악 → 설정 순서와 화면 x 좌표 | `AppBar.test.tsx` R8, `e2e/web-gpu-a-ui.spec.ts` R8 (1280·390) |
 | 데스크톱 | 웹 전용 요소가 없을 때 음악 → 설정 순서 유지 | `AppBar.test.tsx` 기존 시험 |
 | 좁은 세로 화면 | 390×844에서는 기존 배치대로 상단 막대를 숨기고 ☰ 메뉴를 쓰며, 문서 순서는 같음 | `e2e/web-gpu-a-ui.spec.ts` R8 (390) |
+
+## UC-WEB-A-R1. 웹판 두뇌 공급자 목록에 브라우저에서 되는 것만 보이기
+
+웹판 사용자가 설정의 두뇌 탭에서 공급자를 고릅니다. 목록에는 브라우저에서 동작하는 나이아 서버(nextain)와 내 기기 WebGPU(webllm)만 보입니다. Ollama·vLLM·Codex·Claude Code·Grok처럼 로컬 프로세스나 CLI가 필요한 공급자는 보이지 않습니다. 데스크톱 앱 목록은 그대로입니다.
+
+### Test Coverage Map — UC-WEB-A-R1
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본(웹) | 목록이 `nextain`, `webllm` 두 개 | `registry-web-providers.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R1 (1280·390) |
+| 데스크톱 | 전체 공급자 목록 유지 | `registry-web-providers.test.ts` |

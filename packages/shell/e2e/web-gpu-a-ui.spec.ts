@@ -137,5 +137,20 @@ for (const viewport of [
 			await shot(page, "R8", viewport.width);
 		});
 
+		test(`R1: web brain provider list only offers providers that run in the browser (${viewport.width})`, async () => {
+			test.setTimeout(180_000);
+			await openSettings(page);
+			await page.locator(".settings-tab-btn").nth(1).click();
+			const select = page.locator("#provider-select");
+			await expect(select).toBeVisible({ timeout: 30_000 });
+			const values = await select.locator("option").evaluateAll((opts) => opts.map((o) => (o as HTMLOptionElement).value));
+			expect(values.sort()).toEqual(["nextain", "webllm"]);
+			for (const hidden of ["ollama", "vllm", "codex", "claude-code-cli", "grok"]) {
+				expect(values).not.toContain(hidden);
+			}
+			await select.scrollIntoViewIfNeeded();
+			await shot(page, "R1", viewport.width);
+		});
+
 	});
 }
