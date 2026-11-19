@@ -969,6 +969,13 @@
         "UC-WEB-BGM-LOCAL-IMPORT"
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-bgm-music.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-studio-handoff.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-STUDIO-VOICE-APPLY"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-studio-handoff.md"
     }
   },
   "scan_dirs": [

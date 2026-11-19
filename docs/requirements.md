@@ -2017,3 +2017,12 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-BGM-LOCAL.3 | 음악이 아닌 파일·200MB 초과·용량 부족·쓰기 실패를 구분해 알리고 반쪽 파일을 남기지 않습니다. 키오스크와 OPFS 미지원 브라우저에서는 올리기를 숨깁니다. | Done (local) |
 
 검증: `UC-WEB-BGM-LOCAL-IMPORT`.
+
+## 스튜디오 적용 시 캐릭터·목소리 함께 바뀜 (R16)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-STUDIO-VOICE.1 | 웹(브라우저) 빌드가 스튜디오 카드를 적용하면 `naia_studio.voice_id`(또는 `tts_voice`)를 아바타와 같이 `ttsVoice` 로 저장합니다. 맨 목록 이름은 `naia-voice:<이름>` 으로 바꿔 게이트웨이 `/v1/audio/speech` 가 나이아 목소리 경로로 보내게 합니다. | Done (local) |
+| FR-WEB-STUDIO-VOICE.2 | 카드에 쓸 수 있는 목소리가 없으면(없음·`user-voice:`) 앞 캐릭터 목소리를 지워 기본 목소리로 돌아갑니다. | Done (local) |
+
+검증: `UC-WEB-STUDIO-VOICE-APPLY`. 게이트웨이 규칙(`naia-voice:` 머리말만 나이아 목소리)은 참고 사본 코드로 확인했고 운영 게이트웨이와 같은지는 미확인입니다. 스튜디오 `user-voice:`(내 목소리)를 셸 실시간 합성에서 쓰는 경로는 없습니다.

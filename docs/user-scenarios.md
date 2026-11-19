@@ -3268,3 +3268,18 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 진행·성공 | 올린 wav 가 목록에 생기고 `data-bgm-local-count=1`, 눌러 재생 시 audio 오류 없음, 새로고침 뒤 유지, ✕ 로 삭제 | `e2e/web-bgm-r10.spec.ts` R10 |
 | 오류 | 음악 아닌 파일 거절 안내(role=alert), 200MB 초과·용량 부족·경로 탈출 거부, 실패 시 반쪽 파일 없음 | `e2e/web-bgm-r10.spec.ts`, `src/lib/web-runtime/__tests__/web-bgm-music.test.ts` |
 | 좁은 폭 | 390×844 에서 단추·목록·삭제 단추 표시 | `e2e/web-bgm-r10.spec.ts` R10 390 |
+
+## UC-WEB-STUDIO-VOICE-APPLY. 스튜디오에서 셸로 적용하면 캐릭터와 목소리가 함께 바뀐다 (R16)
+
+경로: 웹(브라우저) 빌드의 받는 쪽(`web-studio-handoff.ts`). 사용자가 스튜디오에서 캐릭터를 만들고 [셸에 적용]을 누르면 카드(`extensions.naia_studio`의 `avatar_id`·`voice_id`)가 `?character=` 또는 브라우저 저장소로 넘어옵니다. 셸은 아바타와 함께 목소리도 바꿉니다. 스튜디오가 보내는 맨 목록 이름(예: `cc0-ko-female-01`)은 게이트웨이가 나이아 목소리로 처리하도록 `naia-voice:` 를 붙여 저장합니다. 이미 `naia-voice:`·Dragon/Google 이름이면 그대로 씁니다.
+
+카드에 목소리가 없거나 셸 음성 합성이 쓰지 못하는 목소리(`user-voice:` — 스튜디오 작업에서만 쓰임)면 앞 캐릭터 목소리를 남기지 않고 기본 목소리(언어·캐릭터 기준)로 돌아갑니다. 못 쓰는 목소리는 기록(Logger.warn)에 남깁니다.
+
+### Test Coverage Map — UC-WEB-STUDIO-VOICE-APPLY
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·성공 | `avatar_id`+맨 `voice_id` 카드 적용 → 아바타 `naia-video-avatar`, `ttsVoice=naia-voice:<이름>` | `src/lib/web-runtime/__tests__/web-studio-voice.test.ts` R16 |
+| 형식 | 맨 이름·`naia-voice:`·Dragon·Google 이름 정규화, `user-voice:`·빈 값 거절 | `web-studio-voice.test.ts` R16 |
+| 빈 값·오류 | 목소리 없는 새 캐릭터·`user-voice:` 카드 → 앞 캐릭터 목소리 제거 | `web-studio-voice.test.ts` R16 |
+| 화면 | 받는 쪽은 화면 변화가 설정값뿐이라 단위 시험으로 확인(화면 캡처 없음) | — |
