@@ -14,12 +14,11 @@ export interface WebWorkspaceImportTarget {
 
 async function workspaceDirectory(
 	parts: readonly string[],
-	create = false,
 ): Promise<FileSystemDirectoryHandle> {
 	const root = await navigator.storage.getDirectory();
 	let directory = await root.getDirectoryHandle(WEB_ADK_OPFS_DIR);
 	for (const part of parts) {
-		directory = await directory.getDirectoryHandle(part, { create });
+		directory = await directory.getDirectoryHandle(part);
 	}
 	return directory;
 }
@@ -45,9 +44,10 @@ export async function openWebWorkspaceImportRoot(): Promise<WebWorkspaceImportTa
 	if (isKioskDemo() || !navigator.locks?.request) {
 		throw new DOMException("Workspace import unavailable", "NotSupportedError");
 	}
+	const workspace = await workspaceDirectory([]);
 	return {
 		path: WEB_WORKSPACE_IMPORT_ROOT,
-		directory: await workspaceDirectory(["work"], true),
+		directory: await workspace.getDirectoryHandle("work", { create: true }),
 	};
 }
 

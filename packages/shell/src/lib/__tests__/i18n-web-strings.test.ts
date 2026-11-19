@@ -37,7 +37,7 @@ describe("i18n web strings", () => {
 		expect(t("chat.outputStage.thinking")).toBe("Thinking…");
 	});
 
-	it("(다) en-web.ts has 66 keys matching en test mode values", async () => {
+	it("(다) en-web.ts has 77 keys matching en test mode values", async () => {
 		vi.unstubAllEnvs();
 		vi.resetModules();
 
@@ -45,7 +45,7 @@ describe("i18n web strings", () => {
 		const enMod = await import("../locales/en");
 
 		const webKeys = Object.keys(enWebMod.default);
-		expect(webKeys.length).toBe(66);
+		expect(webKeys.length).toBe(77);
 
 		for (const [key, value] of Object.entries(enWebMod.default)) {
 			expect(key in enMod.default).toBe(true);
