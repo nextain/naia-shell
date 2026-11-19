@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T19:31:38Z",
+  "last_updated": "2026-11-19T19:51:48Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_vrm_lip_sync_r43_20261120": {
+      "requirement_id": "R43",
+      "title": "웹판 VRM 립싱크",
+      "branch": "alpha/webgpu-r40-card-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-VRM-LIP-SYNC",
+      "requirements": "docs/requirements.md FR-WEB-VRM-LIP-SYNC.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "표적 Vitest 218건과 Playwright 1280×720·390×844 4건 통과. 디코딩한 시험 음원에 맞춰 VRM 모음 표정이 바뀌고 재생 종료·Esc 중단 뒤 해제됨을 확인. 같은 음원으로 데스크톱 NVA 타이밍과 모바일 NVA 말하기 클립을 대조. 캡처 shots/r40-card/R43-1280.png·R43-390.png.",
+      "evidence": "packages/shell/e2e/web-vrm-lip-sync-r43.spec.ts",
+      "last_updated": "2026-11-19T19:51:48Z"
+    },
     "web_credit_format_r42_20261120": {
       "requirement_id": "R42",
       "title": "웹판 크레딧 금액 표기",

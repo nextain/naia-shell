@@ -1,3 +1,10 @@
+<!-- src-sha: 529875b7df8ebcbe -->
+
+## 웹판 VRM 립싱크 (R43) — 2026-11-20
+
+- 표적 Vitest 218건과 Playwright 1280×720·390×844 4건 통과. 디코딩한 시험 음원에 맞춰 VRM 모음 표정이 바뀌고 재생 종료·Esc 중단 뒤 해제됨을 확인. 같은 음원으로 데스크톱 NVA 타이밍과 모바일 NVA 말하기 클립을 대조. 캡처 shots/r40-card/R43-1280.png·R43-390.png.
+- `UC-WEB-VRM-LIP-SYNC` · `FR-WEB-VRM-LIP-SYNC.1~2` · `packages/shell/e2e/web-vrm-lip-sync-r43.spec.ts`
+
 <!-- src-sha: 5b6f75184999a42d -->
 
 ## 웹판 크레딧 금액 표기 (R42) — 2026-11-20

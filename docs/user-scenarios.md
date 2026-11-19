@@ -3576,3 +3576,16 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 진행·오류 | 설정 잔액 조회와 조회 실패·재시도는 기존 안내와 단추를 사용 | `e2e/web-credits-r42.spec.ts` R42 |
 | 성공 | 상단·설정·모델 선택·사용량에서 같은 단위를 사용하며, 소액과 USD 환산은 기존 값 유지 | `credits.test.ts`, `WebCreditChip.test.tsx`, `e2e/web-credits-r42.spec.ts` R42 |
 | 좁은 폭·키보드 | 1280×720 및 390×844에서 잔액 또는 모델 요금을 읽고 설정 단추를 조작할 수 있음 | `e2e/web-credits-r42.spec.ts`, `shots/r40-card/R42-1280.png`·`R42-390.png` |
+
+## UC-WEB-VRM-LIP-SYNC. 웹판에서 말하는 VRM 아바타의 입이 움직인다 (R43)
+
+브라우저에서 3D VRM을 고르고 음성을 켠 사용자가 대화합니다. 답변을 재생하는 동안 입이 발화에 맞게 열리고, 문장 끝이나 정지 시 입 모양이 돌아옵니다. NVA(2D)를 사용하는 경우 그 아바타의 음성 연출도 재생됩니다.
+
+### Test Coverage Map — UC-WEB-VRM-LIP-SYNC
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 대화 | VRM이 로드된 뒤 발화가 없을 때 입에 발화용 표정이 적용되지 않음 | `e2e/web-vrm-lip-sync-r43.spec.ts` R43 |
+| 진행·성공 | 대화 음원의 재생 위치와 음량으로 VRM 입 모양을 구동하며, 브라우저 음성의 발화 경계도 반영. NVA의 음성 장면을 대조함 | `lip-sync.test.ts`, `e2e/web-vrm-lip-sync-r43.spec.ts` R43 |
+| 오류·정지 | 재생이 끝나거나 정지·실패하면 발화용 표정이 해제됨 | `lip-sync.test.ts`, `e2e/web-vrm-lip-sync-r43.spec.ts` R43 |
+| 좁은 폭 | 1280×720과 390×844에서 VRM 입이 열린 프레임이 아바타 영역에 보임 | `e2e/web-vrm-lip-sync-r43.spec.ts`, `shots/r40-card/R43-1280.png`·`R43-390.png` |

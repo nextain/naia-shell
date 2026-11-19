@@ -17,6 +17,8 @@ import { Logger } from "../logger";
 export interface AudioQueueCallbacks {
 	onPlaybackStart?: () => void;
 	onPlaybackEnd?: () => void;
+	/** Enable a local analyser on the speech element for VRM lip-sync. */
+	measureSpeech?: () => boolean;
 	/** Audio output device ID (from enumerateDevices). Applied via setSinkId. */
 	outputDeviceId?: string;
 }
@@ -100,6 +102,7 @@ export class AudioQueue {
 	private queue: AudioQueueItem[] = [];
 	private current: HTMLAudioElement | null = null;
 	private currentStream: PcmStreamSource | null = null;
+	private disconnectSpeechMeter: (() => void) | null = null;
 	private streamSources = new Set<AudioBufferSourceNode>();
 	private playing = false;
 	private playbackPaused = false;
@@ -228,6 +231,7 @@ export class AudioQueue {
 		this.pendingOrdered.clear();
 		this.flushCursor = 0;
 		this.nextExpectedSeq = 0;
+		this.clearSpeechMeter();
 		if (this.current) {
 			this.current.pause();
 			this.current.src = "";
@@ -249,6 +253,11 @@ export class AudioQueue {
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
 		}
+	}
+
+	private clearSpeechMeter(): void {
+		this.disconnectSpeechMeter?.();
+		this.disconnectSpeechMeter = null;
 	}
 
 	/** Whether audio is currently playing or queued. */
@@ -447,7 +456,10 @@ export class AudioQueue {
 		const audio = new Audio(
 			`data:audio/${isWav ? "wav" : "mp3"};base64,${mp3Base64}`,
 		);
-		attachMediaElementToSharedContext(audio, { transient: true });
+		const source = attachMediaElementToSharedContext(audio, { transient: true });
+		const measure = this.callbacks.measureSpeech?.() === true;
+		const readSpeechLevel =
+			measure && source ? this.createSpeechMeter(source, audio) : undefined;
 		// Apply output device if specified (setSinkId is non-standard, guarded)
 		const setSinkId = (
 			audio as unknown as { setSinkId?: (id: string) => Promise<void> }
@@ -470,6 +482,7 @@ export class AudioQueue {
 		const advance = () => {
 			if (!isCurrent() || advanced) return;
 			advanced = true;
+			this.clearSpeechMeter();
 			this.current = null;
 			this.playNext();
 		};
@@ -477,7 +490,10 @@ export class AudioQueue {
 		audio.onplay = () => {
 			if (!isCurrent()) return;
 			started = true;
-			item.onPlaybackStart?.({ clock: () => audio.currentTime || 0 });
+			item.onPlaybackStart?.({
+				clock: () => audio.currentTime || 0,
+				...(measure ? { duration: () => audio.duration, readSpeechLevel } : {}),
+			});
 			// Only fire onPlaybackStart for the first chunk in a sequence
 			if (!wasPlaying) {
 				this.callbacks.onPlaybackStart?.();
@@ -502,6 +518,42 @@ export class AudioQueue {
 			signalUnavailable();
 			advance();
 		});
+	}
+
+	private createSpeechMeter(
+		source: MediaElementAudioSourceNode,
+		audio: HTMLAudioElement,
+	): (() => number) | undefined {
+		try {
+			const analyser = source.context.createAnalyser();
+			analyser.fftSize = 1024;
+			const samples = new Float32Array(analyser.fftSize);
+			source.connect(analyser);
+			this.disconnectSpeechMeter = () => {
+				try {
+					source.disconnect(analyser);
+				} catch {
+					/* Transient audio may already be disconnected. */
+				}
+			};
+			return () => {
+				if (
+					this.current !== audio ||
+					audio.paused ||
+					audio.ended ||
+					audio.readyState < 2
+				) {
+					return 0;
+				}
+				analyser.getFloatTimeDomainData(samples);
+				let squared = 0;
+				for (const sample of samples) squared += sample * sample;
+				return Math.sqrt(squared / samples.length);
+			};
+		} catch {
+			Logger.debug("AudioQueue", "speech meter unavailable");
+			return undefined;
+		}
 	}
 }
 

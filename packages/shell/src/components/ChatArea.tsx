@@ -19,6 +19,7 @@ import {
 	KIOSK_DEMO_THINKING_LEVEL,
 	applyKioskDemoMainModel,
 	isKioskLocalAnswerEnabled,
+	resolveShellAvatarSelection,
 	setKioskLocalAnswerEnabled,
 } from "../lib/config-seed";
 import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
@@ -572,6 +573,16 @@ export async function loadOrCreateSession(): Promise<void> {
 	}
 }
 
+function getWebVrmLipSyncSink() {
+	if (
+		!isWebMode() ||
+		resolveShellAvatarSelection(loadConfig()).avatarProvider !== "vrm"
+	) {
+		return null;
+	}
+	return useAvatarStore.getState().setLipSyncSource;
+}
+
 export function ChatArea({
 	variant = "floating",
 	headerControls,
@@ -811,6 +822,7 @@ export function ChatArea({
 					? null
 					: renderer;
 			},
+			getVrmLipSyncSink: getWebVrmLipSyncSink,
 			beginCascadeJob: () => beginCascadeTtsJob(),
 			setOutputStage: (stage) => {
 				if (acceptPipelineOutputStage(ttsTextSyncRef.current))
@@ -1651,6 +1663,7 @@ export function ChatArea({
 		if (!audioQueueRef.current) {
 			audioQueueRef.current = new AudioQueue({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
+				measureSpeech: () => Boolean(getWebVrmLipSyncSink()),
 				onPlaybackStart: () => {
 					if (activeSlidePresenterSpeechRef.current?.appId)
 						activeSlidePresenterSpeechRef.current.started = true;
@@ -4398,6 +4411,7 @@ export function ChatArea({
 
 				const queue = new AudioQueue({
 					outputDeviceId: config.ttsOutputDeviceId || undefined,
+					measureSpeech: () => Boolean(getWebVrmLipSyncSink()),
 					onPlaybackStart: () => {
 						useAvatarStore.getState().setSpeaking(true);
 						ttsPlayingRef.current = true;

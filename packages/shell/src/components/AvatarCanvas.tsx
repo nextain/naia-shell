@@ -39,6 +39,7 @@ import {
 } from "../lib/vrm/expression";
 import { randomSaccadeInterval } from "../lib/vrm/eye-motions";
 import { applyRelaxedFists } from "../lib/vrm/hand-pose";
+import { createVrmMouthController } from "../lib/vrm/lip-sync";
 import {
 	isWebMode,
 	resolveWebPublicAssetUrl,
@@ -276,6 +277,7 @@ export function AvatarCanvas() {
 		const createdObjectUrls: string[] = [];
 		let mixer: AnimationMixer | null = null;
 		let emotionCtrl: ReturnType<typeof createEmotionController> | null = null;
+		let mouth: ReturnType<typeof createVrmMouthController> | null = null;
 		let blinkExprName = "blink";
 
 		// Renderer — WebGL context creation can fail on a host without a usable
@@ -461,6 +463,7 @@ export function AvatarCanvas() {
 			const delta = Math.min(clock.getDelta(), MAX_DELTA);
 
 			controls.update();
+			mouth?.restore();
 
 			if (mixer) {
 				mixer.update(delta);
@@ -473,6 +476,10 @@ export function AvatarCanvas() {
 				updateBlink(vrm, delta, animState, blinkExprName);
 				updateSaccade(vrm, delta, animState);
 				emotionCtrl?.update(delta);
+				if (mouth) {
+					const { isSpeaking, lipSyncSource } = useAvatarStore.getState();
+					if (isSpeaking && lipSyncSource) mouth.apply(lipSyncSource());
+				}
 				vrm.expressionManager?.update();
 				vrm.springBoneManager?.update(delta);
 			}
@@ -586,6 +593,9 @@ export function AvatarCanvas() {
 
 				// Resolve blink expression name for VRM 0.0/1.0 compat
 				if (vrm.expressionManager) {
+					if (isWebMode()) {
+						mouth = createVrmMouthController(vrm.expressionManager);
+					}
 					const resolve = buildExpressionResolver(
 						vrm.expressionManager.expressionMap,
 					);
@@ -643,15 +653,12 @@ export function AvatarCanvas() {
 			}
 		}
 
-		// Subscribe to isSpeaking changes for lip sync
-		// VRM mouth: no sound-independent vowel loop (naia-shell#760, SoT 8).
-		// The old vowel-cycle controller (lib/vrm/mouth.ts) is quarantined.
-
 		// Subscribe to currentEmotion changes for avatar expression
 		let prevEmotion = "neutral";
 		const unsubEmotion = useAvatarStore.subscribe((state) => {
 			if (state.currentEmotion !== prevEmotion) {
 				prevEmotion = state.currentEmotion;
+				mouth?.restore();
 				emotionCtrl?.setEmotion(state.currentEmotion);
 			}
 		});

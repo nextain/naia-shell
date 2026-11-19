@@ -12,6 +12,11 @@ class FakeAudio {
 	onended: (() => void) | null = null;
 	onerror: ((event: Event) => void) | null = null;
 	src: string;
+	currentTime = 0;
+	duration = 2;
+	paused = false;
+	ended = false;
+	readyState = 4;
 	pause = vi.fn();
 	play = vi.fn<() => Promise<void>>(() => FakeAudio.playImpl());
 
@@ -57,6 +62,40 @@ describe("AudioQueue sentence callbacks", () => {
 		first.onerror?.(new Event("error"));
 		expect(started).not.toHaveBeenCalled();
 		expect(unavailable).not.toHaveBeenCalled();
+	});
+
+	it("R43 measures only the current speech element and releases its analyser on clear", () => {
+		const analyser = {
+			fftSize: 0,
+			getFloatTimeDomainData: (samples: Float32Array) => samples.fill(0.25),
+		};
+		const connect = vi.fn();
+		const disconnect = vi.fn();
+		const previousContext = globalThis.AudioContext;
+		vi.stubGlobal("AudioContext", class {
+			state = "running";
+			destination = {};
+			createAnalyser() { return analyser; }
+			createMediaElementSource() { return { context: this, connect, disconnect }; }
+		});
+		try {
+			const queue = new AudioQueue({ measureSpeech: () => true });
+			const started = vi.fn();
+			queue.enqueue("voice", { onPlaybackStart: started });
+			const clip = FakeAudio.instances[0];
+			clip.onplay?.();
+			const playback = started.mock.calls[0][0];
+			clip.currentTime = 0.5;
+			expect(playback.clock()).toBe(0.5);
+			expect(playback.duration()).toBe(2);
+			expect(playback.readSpeechLevel()).toBe(0.25);
+			expect(connect).toHaveBeenCalledWith(analyser);
+			queue.clear();
+			expect(playback.readSpeechLevel()).toBe(0);
+			expect(disconnect).toHaveBeenCalledWith(analyser);
+		} finally {
+			vi.stubGlobal("AudioContext", previousContext);
+		}
 	});
 
 	it("settles playback as failed when audio errors after it starts", () => {
