@@ -12,6 +12,13 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import {
+	importWebBgmMusic,
+	isWebBgmImportSupported,
+	removeWebBgmMusic,
+	WebBgmImportError,
+} from "../lib/web-runtime/web-bgm-music";
+import { isWebMode } from "../lib/web-runtime/web-assets";
+import {
 	attachMediaElementToSharedContext,
 	isBroadcastActive,
 	useBroadcastBridge,
@@ -353,7 +360,19 @@ export function BgmPlayer({ naia }: Props) {
 		(track: BgmLibraryTrack, index: number, playlistId: string) => void
 	>(() => {});
 
+	// R10: 웹판 로컬 탭은 브라우저 저장소에 올린 파일을 보여 준다. 올리거나
+	// 지우면 이 값을 올려 목록을 다시 읽는다.
+	const [localReload, setLocalReload] = useState(0);
+	const [localImportBusy, setLocalImportBusy] = useState(false);
+	const [localImportMessage, setLocalImportMessage] = useState<{
+		text: string;
+		error: boolean;
+	} | null>(null);
+	const localFileInputRef = useRef<HTMLInputElement | null>(null);
+	const webLocalImport = isWebMode() && isWebBgmImportSupported();
+
 	useEffect(() => {
+		void localReload;
 		listNaiaAssets("bgm-musics").then(async (paths) => {
 			const urls = await Promise.all(paths.map(toLocalBlobUrl));
 			const names = paths.map(
@@ -369,9 +388,59 @@ export function BgmPlayer({ naia }: Props) {
 			setLocalPaths(paths);
 			setLocalTracks(urls);
 			setLocalNames(names);
-			if (urls.length > 0 && !bgmTrackUrl) setBgmTrackUrl(urls[0]);
+			// 상점에서 바로 읽어 재생 곡이 바뀔 때마다 목록(blob URL)을 다시 만들지 않는다.
+			const current = useAvatarStore.getState().bgmTrackUrl;
+			if (urls.length > 0 && (!current || current.startsWith("blob:"))) {
+				if (!current || !urls.includes(current)) setBgmTrackUrl(urls[0]);
+			}
 		});
-	}, [bgmTrackUrl, setBgmTrackUrl]);
+	}, [localReload, setBgmTrackUrl]);
+
+	const importLocalFiles = async (files: FileList | null) => {
+		const picked = files ? Array.from(files) : [];
+		if (picked.length === 0) return;
+		setLocalImportBusy(true);
+		setLocalImportMessage(null);
+		let added = 0;
+		let failure: WebBgmImportError["code"] | null = null;
+		for (const file of picked) {
+			try {
+				await importWebBgmMusic(file);
+				added += 1;
+			} catch (error) {
+				failure = error instanceof WebBgmImportError ? error.code : "write_failed";
+				Logger.warn("BgmPlayer", "web bgm import failed", { name: file.name, code: failure });
+			}
+		}
+		setLocalImportBusy(false);
+		if (added > 0) setLocalReload((n) => n + 1);
+		if (failure) {
+			const key =
+				failure === "not_audio"
+					? "bgm.webUploadNotAudio"
+					: failure === "too_large"
+						? "bgm.webUploadTooLarge"
+						: failure === "quota"
+							? "bgm.webUploadQuota"
+							: "bgm.webUploadFailed";
+			setLocalImportMessage({ text: t(key), error: true });
+		} else {
+			setLocalImportMessage({
+				text: t("bgm.webUploadDone").replace("{count}", String(added)),
+				error: false,
+			});
+		}
+	};
+
+	const removeLocalFile = async (path: string) => {
+		try {
+			await removeWebBgmMusic(path);
+		} catch (error) {
+			Logger.warn("BgmPlayer", "web bgm remove failed", { error: String(error) });
+			setLocalImportMessage({ text: t("bgm.webUploadFailed"), error: true });
+		}
+		setLocalReload((n) => n + 1);
+	};
 
 	// ── Playback state (restored from persisted config) ───────────────────────
 	const [source, setSource] = useState<Source>(
@@ -2692,8 +2761,46 @@ export function BgmPlayer({ naia }: Props) {
 						{/* ── Local tab ── */}
 						{appTab === "local" && (
 							<div className="bgm-yt-list">
+								{webLocalImport && (
+									<div className="bgm-local-import">
+										<input
+											ref={localFileInputRef}
+											type="file"
+											accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac,.weba"
+											multiple
+											hidden
+											data-testid="bgm-local-file-input"
+											onChange={(event) => {
+												const input = event.currentTarget;
+												void importLocalFiles(input.files).finally(() => {
+													input.value = "";
+												});
+											}}
+										/>
+										<button
+											type="button"
+											className="bgm-local-import-btn"
+											data-testid="bgm-local-upload"
+											disabled={localImportBusy}
+											onClick={() => localFileInputRef.current?.click()}
+										>
+											{localImportBusy ? t("bgm.webUploading") : t("bgm.webUpload")}
+										</button>
+										{localImportMessage && (
+											<div
+												className={`bgm-yt-status${localImportMessage.error ? " bgm-yt-status--error" : ""}`}
+												role={localImportMessage.error ? "alert" : "status"}
+												data-testid="bgm-local-import-message"
+											>
+												{localImportMessage.text}
+											</div>
+										)}
+									</div>
+								)}
 								{localTracks.length === 0 && (
-									<div className="bgm-yt-status">{t("bgm.noTracks")}</div>
+									<div className="bgm-yt-status">
+										{webLocalImport ? t("bgm.webNoTracks") : t("bgm.noTracks")}
+									</div>
 								)}
 								{localTracks.map((url, idx) => {
 									const isActive = source === "local" && localIndex === idx;
@@ -2726,6 +2833,21 @@ export function BgmPlayer({ naia }: Props) {
 											>
 												＋
 											</button>
+											{webLocalImport && (
+												<button
+													type="button"
+													className="bgm-yt-fav-btn"
+													title={t("bgm.webRemove")}
+													aria-label={`${t("bgm.webRemove")} ${localNames[idx]}`}
+													data-testid="bgm-local-remove"
+													onClick={(event) => {
+														event.stopPropagation();
+														void removeLocalFile(localPaths[idx]);
+													}}
+												>
+													✕
+												</button>
+											)}
 										</div>
 									);
 								})}

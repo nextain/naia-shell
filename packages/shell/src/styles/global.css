@@ -6464,6 +6464,40 @@ body.resizing-row {
 	color: rgba(255, 255, 255, 0.7);
 }
 
+/* R10: 웹판 로컬 음악 올리기 */
+.bgm-local-import {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 6px 8px;
+}
+
+.bgm-local-import-btn {
+	align-self: flex-start;
+	min-height: 32px;
+	padding: 6px 12px;
+	border: 1px solid rgba(130, 180, 255, 0.5);
+	border-radius: 6px;
+	background: rgba(130, 180, 255, 0.15);
+	color: rgba(255, 255, 255, 0.92);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.bgm-local-import-btn:hover:not(:disabled) {
+	background: rgba(130, 180, 255, 0.28);
+}
+
+.bgm-local-import-btn:focus-visible {
+	outline: 2px solid rgba(130, 180, 255, 0.9);
+	outline-offset: 2px;
+}
+
+.bgm-local-import-btn:disabled {
+	opacity: 0.6;
+	cursor: progress;
+}
+
 /* Local track row icon */
 .bgm-local-row {
 	align-items: center;

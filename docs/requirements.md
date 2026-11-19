@@ -2007,3 +2007,13 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-BGM-CATALOG.2 | 주제어는 영상의 실제 내용만 적습니다. 목록에 없는 장르를 다른 영상에 붙이지 않습니다. | Done (local) |
 
 검증: `UC-WEB-BGM-CATALOG-TRUTH`. 샌드박스 Chromium 에서는 YouTube 가 봇 확인 화면을 띄워 실제 소리 재생은 확인하지 못했습니다(시험은 embed 를 빈 페이지로 대체하고 영상 id 일치만 확인).
+
+## 웹판 로컬 음악 올리기 (R10)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-BGM-LOCAL.1 | 웹(브라우저) 빌드의 음악 앱 로컬 탭은 사용자가 고른 음악 파일을 같은 출처 브라우저 저장소(OPFS `naia-adk/naia-settings/bgm-musics/`)에 원래 바이트로 복사하고 목록에 보입니다. 파일은 서버로 보내지 않습니다. | Done (local) |
+| FR-WEB-BGM-LOCAL.2 | 올린 파일은 올바른 audio MIME 의 blob 으로 재생되고 새로고침 뒤에도 남으며, 사용자가 지울 수 있습니다. | Done (local) |
+| FR-WEB-BGM-LOCAL.3 | 음악이 아닌 파일·200MB 초과·용량 부족·쓰기 실패를 구분해 알리고 반쪽 파일을 남기지 않습니다. 키오스크와 OPFS 미지원 브라우저에서는 올리기를 숨깁니다. | Done (local) |
+
+검증: `UC-WEB-BGM-LOCAL-IMPORT`.

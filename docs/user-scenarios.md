@@ -3253,3 +3253,18 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·성공 | 지브리 장르 첫 줄 제목 = 재생 영상 id(3jWRrafhO7M)·재생 카드 제목 | `e2e/web-bgm-r7.spec.ts` R7 (1280×720, 390×844) |
 | 오류(지어낸 제목) | 예전 지어낸 곡명이 웹 목록에 없음, 주제어 검색이 실제 영상만 고름 | `e2e/web-bgm-r7.spec.ts` R7, `src/lib/__tests__/bgm-skill.test.ts` |
 | 좁은 폭 | 390×844 에서 재생기 안 목록·재생이 동작(세로 모바일 진입점은 앱 바 몫) | `e2e/web-bgm-r7.spec.ts` R7 390 |
+
+## UC-WEB-BGM-LOCAL-IMPORT. 웹판 음악 앱에 내 음악 파일 올리기 (R10)
+
+경로: 웹(브라우저) 빌드. 웹판 사용자가 음악 앱(♫)의 [로컬] 탭을 엽니다. 처음에는 "아직 음악이 없습니다. 올린 파일은 이 브라우저에만 저장됩니다." 안내와 [음악 올리기] 단추가 보입니다. 단추를 눌러 이 기기의 음악 파일(mp3·m4a·aac·ogg·opus·wav·flac·weba, 여러 개 가능)을 고르면 파일이 이 브라우저 저장소(OPFS `naia-adk/naia-settings/bgm-musics/`)에 복사되고 목록에 이름이 생깁니다. 줄을 누르면 재생되고, ✕ 로 지웁니다. 새로고침해도 목록이 남습니다. 파일은 서버로 가지 않습니다.
+
+음악이 아닌 파일, 200MB 넘는 파일, 저장 공간 부족, 쓰기 실패는 각각 이유를 알림(role=alert)으로 보이고, 받을 수 있는 파일은 그대로 올립니다. 같은 이름은 `이름 (2).확장자` 로 구별합니다. 키오스크 체험판과 OPFS 를 못 쓰는 브라우저에서는 올리기 단추를 숨깁니다. 데스크톱은 기존처럼 `naia-settings/bgm-musics/` 폴더를 읽습니다.
+
+### Test Coverage Map — UC-WEB-BGM-LOCAL-IMPORT
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 목록 | 빈 안내 문구와 [음악 올리기] 단추 표시 | `e2e/web-bgm-r10.spec.ts` R10 (1280×720, 390×844) |
+| 진행·성공 | 올린 wav 가 목록에 생기고 `data-bgm-local-count=1`, 눌러 재생 시 audio 오류 없음, 새로고침 뒤 유지, ✕ 로 삭제 | `e2e/web-bgm-r10.spec.ts` R10 |
+| 오류 | 음악 아닌 파일 거절 안내(role=alert), 200MB 초과·용량 부족·경로 탈출 거부, 실패 시 반쪽 파일 없음 | `e2e/web-bgm-r10.spec.ts`, `src/lib/web-runtime/__tests__/web-bgm-music.test.ts` |
+| 좁은 폭 | 390×844 에서 단추·목록·삭제 단추 표시 | `e2e/web-bgm-r10.spec.ts` R10 390 |
