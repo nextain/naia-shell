@@ -27,7 +27,7 @@ afterEach(() => {
 function createFakeSwEnv(
 	swSource: string,
 	fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
-	options: { windowUrls?: string[] } = {},
+	options: { windowUrls?: string[]; swPath?: string } = {},
 ) {
 	const stores = new Map<string, Map<string, Response>>();
 	const listeners = new Map<string, Array<(event: unknown) => void>>();
@@ -82,7 +82,10 @@ function createFakeSwEnv(
 	};
 
 	const selfObj = {
-		location: { origin: "https://demo.example.test" },
+		location: {
+			origin: "https://demo.example.test",
+			...(options.swPath ? { pathname: options.swPath } : {}),
+		},
 		skipWaiting: async () => {
 			eventsOrder.push("skipWaiting");
 			skipWaitingCount += 1;
@@ -184,6 +187,28 @@ function makeBasicResponse(
 }
 
 describe("web-sw-version & sw.js", () => {
+	it("R35: leaves /app/hosted-apps/* navigations to the network under the /app/ base", async () => {
+		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
+		const stamped = injectServiceWorkerVersion(swTemplate, "r35-test0001");
+		const env = createFakeSwEnv(
+			stamped,
+			async (url) => makeBasicResponse(url, "<html>shell</html>"),
+			{ swPath: "/app/sw.js" },
+		);
+
+		const appNav = await env.dispatchFetch({
+			url: "https://demo.example.test/app/hosted-apps/naia-slides/index.html",
+			mode: "navigate",
+		});
+		expect(appNav).toBeUndefined();
+
+		const shellNav = await env.dispatchFetch({
+			url: "https://demo.example.test/app/settings",
+			mode: "navigate",
+		});
+		expect(await shellNav!.text()).toContain("shell");
+	});
+
 	it("computes deterministic version from revision and index.html and stamps sw.js", () => {
 		const htmlA =
 			'<html><script src="/assets/index-AAAAAAAA.js"></script></html>';
