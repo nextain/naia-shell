@@ -2066,3 +2066,24 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-VOICE-MIC.2 | 웹판 음성 대화를 끌 때 데스크톱 전용 Tauri STT 플러그인 정지(`plugin:stt|stop_listening`)를 부르지 않습니다. | Done (local) |
 
 검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
+## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-APP-CATALOG.1 | 정식 웹판의 셸 안 미니앱 스토어는 내장 Stage-1 앱 → 게이트웨이 `GET /v1/apps/products` → 포털 `GET {NAIA_WEB_BASE_URL}/api/apps` 순서로 합친 한 목록을 보여 줍니다. 같은 id 는 앞 출처가 이깁니다. (UC-WEB-APP-CATALOG) | Done (local) |
+| FR-WEB-APP-CATALOG.2 | 포털 목록은 4초 안에 응답이 없거나 실패·형식 오류면 빈 목록으로 처리하고, 스토어는 오류 없이 내장 목록만 보입니다. | Done (local) |
+| FR-WEB-APP-CATALOG.3 | 어드민 앱은 `docs/app-store-protocol.md` 계약을 따르고, 공개(`visibility`)·제공 언어(`locales`)·허용 출처(`url`) 검사를 통과한 것만 보입니다. 어드민 앱은 무료 호스팅 앱으로 로그인·구매 없이 설치·실행합니다. 유료 앱은 게이트웨이 상품으로만 등록합니다. | Done (local) |
+| FR-WEB-APP-CATALOG.4 | 포털 상점 화면 `/{locale}/apps` 도 같은 `/api/apps` 목록으로 그립니다. | 포털 작업(이 저장소 밖), 미착수 |
+
+로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`, Playwright `e2e/web-app-store-catalog.spec.ts`(NAIA_E2E_WEB=1, `vite --mode web`, 1280×720·390×844). 실제 포털 서버 응답은 미확인.
+
+## 웹판 슬라이드 PPTX 열기 (R27, 2026-11-19)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-SLIDES-PPTX.1 | 웹판 슬라이드의 파일 입력은 PDF와 PPTX를 받습니다. PPTX는 브라우저 안에서만 읽습니다(`slides-pptx-parse.ts`, 업로드 없음, 128MB·500장 상한). 글상자(레이아웃·마스터 자리표시자 위치 상속, 그룹 좌표)·그림·단색/그림 배경을 캔버스에 그려 그림 PDF(`slides-pptx-browser.ts`)로 만듭니다. (UC-WEB-SLIDES-PPTX) | Done (local) |
+| FR-WEB-SLIDES-PPTX.2 | 발표자 노트는 데스크톱 `script_markdown` 과 같은 `## NN.` 대본으로 붙이고, 노트가 없으면 대본을 붙이지 않습니다. 그림 PDF에는 글자 층이 없으므로, 장 글자는 PPTX 에서 읽은 것으로 대신 씁니다. | Done (local) |
+| FR-WEB-SLIDES-PPTX.3 | 읽을 수 없는 PPTX는 `slides_invalid_pptx` 로 기존 안내를 보이고 기존 문서와 입력을 유지합니다. | Done (local) |
+| FR-WEB-SLIDES-PPTX.4 | 웹판 슬라이드 창(opaque-origin 샌드박스)에서 `sessionStorage` 접근이 앱을 멈추지 않습니다. | Done (local) |
+
+로컬 검증: vitest `slides-pptx.test.ts` 와 기존 슬라이드 시험. Playwright `e2e/web-slides-pptx.spec.ts` 는 NAIA_E2E_WEB=1 로, `vite --mode web --cors` 와 Chrome `--disable-features=LocalNetworkAccessChecks` 를 켜고 돌립니다(샌드박스 창이 루프백 dev 서버에서 모듈을 받기 때문). 배포된 `hosted-apps/naia-slides` 빌드와 실제 업무용 PPTX의 그림 품질은 미확인.

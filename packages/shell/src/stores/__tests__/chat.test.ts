@@ -448,3 +448,22 @@ describe("UC-B2C-026-R2 card conversations", () => {
 		]);
 	});
 });
+
+describe("R27 chat session id in a sandboxed (opaque-origin) frame", () => {
+	it("R27 storage helpers do not throw when reading sessionStorage is denied", () => {
+		const original = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+		Object.defineProperty(window, "sessionStorage", {
+			configurable: true,
+			get() {
+				throw new DOMException("sandboxed", "SecurityError");
+			},
+		});
+		try {
+			expect(getStoredLocalSessionId()).toBeNull();
+			expect(() => setStoredLocalSessionId("x")).not.toThrow();
+			expect(() => clearStoredLocalSessionId()).not.toThrow();
+		} finally {
+			if (original) Object.defineProperty(window, "sessionStorage", original);
+		}
+	});
+});

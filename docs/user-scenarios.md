@@ -3417,3 +3417,35 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 오류 코드 표 | 6가지 코드 → 안내 문구 키, 모르는 코드는 null | `src/lib/stt/__tests__/web-speech-stt.test.ts` R26 |
 | 데스크톱 회귀 | 데스크톱 Web Speech 권한 오류 문구는 그대로 | `src/components/__tests__/ChatArea.test.tsx` |
 | 좁은 폭 | 390×844 에서 채팅 위 안내 문구가 잘리지 않음 | `e2e/web-voice-r26.spec.ts` R26 390 |
+## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
+
+정식 웹판(브라우저) 사용자가 앱 막대의 [앱스토어]를 누릅니다. 셸 안 미니앱 스토어에는 내장 앱 4개(캐릭터 카드·슬라이드·이음오피스·카페루아 타로), 게이트웨이 상품, 포털 어드민이 등록한 앱이 한 목록으로 보입니다. 어드민 앱은 로그인 없이 [실행]으로 바로 열리고, 설치된 뒤에는 앱 막대에 내장 앱과 같은 방식으로 남습니다.
+
+포털 서버가 없거나 실패하면 오류 없이 내장 목록만 보입니다. 어드민이 내장 앱과 같은 id 로 등록해도 내장 앱 이름·주소는 바뀌지 않습니다. 허용된 앱 주소(포털 `/hosted-apps/` 또는 앱 샌드박스 출처)가 아닌 앱, 공개가 아닌 앱, 현재 언어에서 제공하지 않는 앱은 보이지 않습니다. 계약: `docs/app-store-protocol.md` "Unified web app catalog".
+
+### Test Coverage Map — UC-WEB-APP-CATALOG
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본(서버 정상) | 내장 4개 뒤에 게이트웨이·어드민 앱이 순서대로, 중복 없이 보임 | `app-catalog.test.ts` "R3 R4 appends…"; `e2e/web-app-store-catalog.spec.ts` 1280×720·390×844 |
+| 빈 목록·실패 | 포털 끊김·500·HTML 응답·게이트웨이 503 이면 내장 목록만, 오류 알림 없음 | `app-catalog.test.ts` "never throws", "only built-in"; e2e "portal catalog is unreachable" |
+| 진행·성공 | 어드민 앱 [실행] → 구매 요청 없이 설치 → 앱 iframe 이 열림 | `app-catalog.test.ts` "launch without login"; e2e 두 폭 |
+| 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts` 계약 시험; e2e 가짜 슬라이드 미표시 |
+| 좁은 폭 | 390px 에서 카드·[실행] 단추가 화면 안 | e2e 390×844 상자 검사, `shots/D/R3-390.png` |
+
+## UC-WEB-SLIDES-PPTX. 웹판 슬라이드에서 PPTX 열기 (R27, 2026-11-19)
+
+정식 웹판 사용자가 앱스토어에서 [슬라이드]를 열고 [PDF 또는 PPTX 열기]로 PPTX를 고릅니다. 브라우저가 파일을 서버로 보내지 않고 직접 읽습니다. 각 장의 글상자·그림·단색 배경을 그려 그림 PDF로 만들고, 발표자 노트는 데스크톱과 같은 `## NN.` 대본으로 붙입니다. 상태 줄에는 `<이름>.pdf`·`<이름>.md`가 보이고, 그 뒤 발표·대본 편집·녹화는 PDF와 똑같이 동작합니다. 읽을 수 없는 PPTX면 "이 PPTX를 읽을 수 없거나…" 안내가 뜨고 입력은 다시 쓸 수 있습니다.
+
+배경: 데스크톱은 3cc7237a 부터 LibreOffice 로 PPTX를 바꿨지만(`slides_import.rs`) 웹판은 처음부터 PDF만 받았습니다. 그래서 "예전에 pptx까지 되게 했는데 사라진 듯"으로 보였습니다. 웹판 슬라이드 창은 opaque-origin 샌드박스라서 `stores/chat.ts` 가 `sessionStorage` 를 읽다 멈추는 문제도 함께 고쳤습니다. 브라우저 변환은 근사치입니다. 차트·SmartArt·그라데이션·테마 글꼴·애니메이션은 그리지 않습니다. 원본 그대로 보려면 데스크톱 앱이나 PDF를 쓰십시오.
+
+### Test Coverage Map — UC-WEB-SLIDES-PPTX
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 스토어 슬라이드 설명에 PPTX, 입력 `accept` 에 `.pptx` | `e2e/web-slides-pptx.spec.ts` 두 폭 |
+| 진행·성공 | PPTX → 쪽 수 2, 첫 장 배경색이 그림으로 그려지고 노트가 현재 발표문에 보임 | e2e 1280×720·390×844, `shots/D/R27-1280.png`·`R27-390.png` |
+| 파싱 | 장 순서·크기, 레이아웃에서 물려받은 제목 위치, 그룹 좌표, 그림, 마스터 배경, 노트(`sldNum` 제외) | `slides-pptx.test.ts` |
+| 오류 | ZIP 아님·발표 아님·장 없음 → `slides_invalid_pptx`, 패키지 밖 경로 거부; e2e 깨진 PPTX 안내 | `slides-pptx.test.ts`; e2e "unreadable PPTX" |
+| PDF 작성 | 장마다 JPEG 한 쪽, xref 위치 정확 | `slides-pptx.test.ts` "image PDF writer" |
+| 좁은 폭 | 390px 에서 열기 단추·슬라이드·발표문이 화면 안 | e2e 390×844 |

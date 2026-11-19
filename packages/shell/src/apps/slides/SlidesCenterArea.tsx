@@ -41,6 +41,7 @@ import {
 	openSlidesDocument,
 	watchSlidesPickerAvailable,
 } from "../../lib/slides-files";
+import { importPptxInBrowser, isPptxFile } from "../../lib/slides-pptx-browser";
 import {
 	isRecordingLost,
 	startSlidesRecording,
@@ -191,6 +192,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const prefetchSerialRef = useRef(0);
 	const notesRef = useRef(speakerNotes);
 	const pageTextsRef = useRef(pageTexts);
+	const companionTextsRef = useRef<string[] | undefined>(undefined);
 	notesRef.current = speakerNotes;
 	pageTextsRef.current = pageTexts;
 	const hasUnsavedScript = draftDirty || unexportedScript;
@@ -369,7 +371,13 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				page: stateRef.current.page,
 			});
 		},
-		[cancelSpeech, clearAutoResumeTimer, kioskMode, pauseActiveVideo, scriptEditorOpen],
+		[
+			cancelSpeech,
+			clearAutoResumeTimer,
+			kioskMode,
+			pauseActiveVideo,
+			scriptEditorOpen,
+		],
 	);
 
 	const gotoPage = useCallback(
@@ -781,6 +789,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		videoAssetsRef.current = nextAssets;
 		videoReadFailuresRef.current = companion?.videoReadFailures ?? [];
 		scriptMarkdownRef.current = companion?.script?.text ?? "";
+		companionTextsRef.current = companion?.pageTexts;
 		setVideoAssets(nextAssets);
 		const videoContent = videoContentForScript(
 			companion?.script?.text ?? "",
@@ -914,6 +923,35 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				setFileError(documentErrorKey(error));
 				setImportPhase(null);
 				Logger.warn(TAG, "document selection failed", { error: String(error) });
+			}
+		} finally {
+			if (pickerAbortRef.current === abort) pickerAbortRef.current = null;
+			setPickingPdf(false);
+		}
+	}
+
+	// Web runtime (R27): a PPTX from the browser file input is converted here.
+	async function importBrowserPptx(file: File) {
+		if (pickerAbortRef.current) return;
+		if (!confirmScriptReplacement()) return;
+		const abort = new AbortController();
+		pickerAbortRef.current = abort;
+		setPickingPdf(true);
+		setImportPhase("reading");
+		try {
+			const selection = await importPptxInBrowser(
+				file,
+				setImportPhase,
+				abort.signal,
+			);
+			if (!abort.signal.aborted) loadPdf(selection.file, selection);
+		} catch (error) {
+			if (!abort.signal.aborted) {
+				setFileError(documentErrorKey(error));
+				setImportPhase(null);
+				Logger.warn(TAG, "browser PPTX import failed", {
+					error: String(error),
+				});
 			}
 		} finally {
 			if (pickerAbortRef.current === abort) pickerAbortRef.current = null;
@@ -1097,7 +1135,8 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					notesVisible={notesVisible}
 					onPickNative={() => void pickPdf()}
 					onPdfSelected={(file) => {
-						if (confirmScriptReplacement()) loadPdf(file);
+						if (isPptxFile(file)) void importBrowserPptx(file);
+						else if (confirmScriptReplacement()) loadPdf(file);
 					}}
 					onScriptSelected={(file) => void loadScript(file)}
 					onToggleFocus={() => setFocusMode((focused) => !focused)}
@@ -1150,7 +1189,11 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 								videoReadFailuresRef.current,
 							).cues,
 						});
-						setPageTexts(texts);
+						setPageTexts(
+							texts.some(Boolean)
+								? texts
+								: (companionTextsRef.current ?? texts),
+						);
 						Logger.info(TAG, "PDF ready", { pages: totalPages });
 					}}
 					onError={(file, error) => {

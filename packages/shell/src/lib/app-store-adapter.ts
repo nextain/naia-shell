@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+	type AdminCatalogEntry,
+	fetchPortalCatalog,
+	isOfferedInLocale,
+} from "./app-catalog";
 import type { InstalledAppManifest } from "./app-loader";
 import { getStoreGatewayUrl } from "./app-store-client";
-import { loadConfig, saveConfig } from "./config";
+import { NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "./config";
+import { getLocale } from "./i18n";
 import { markNaiaKeyUnauthorized } from "./lab-balance";
 import { isWebMode } from "./web-runtime/web-assets";
 import {
@@ -57,6 +63,8 @@ export interface StoreProductSummary {
 	version: string;
 	priceCredits: number;
 	hostedEntryUrl?: string;
+	/** Store card picture for admin-registered apps (R4). */
+	iconUrl?: string;
 	manifest: Omit<
 		InstalledAppManifest,
 		"htmlEntry" | "store_signature_verified" | "store_signature_issued_at_ms"
@@ -99,6 +107,13 @@ export interface WebHttpAppStoreAdapterDeps {
 	 * to `${shellOrigin}/hosted-apps/<slug>/index.html`.
 	 */
 	stage1HostedCatalog?: boolean;
+	/**
+	 * Portal origin serving the admin catalog `GET /api/apps` (R4).  The
+	 * platform adapter passes `NAIA_WEB_BASE_URL`; unset or empty disables it.
+	 */
+	getPortalBaseUrl?: () => string;
+	/** Locale used to drop admin apps not offered in this language. */
+	getLocale?: () => string;
 }
 
 /** Stage-2 coding / courseware mini-apps excluded from Stage-1 web launch list. */
@@ -157,8 +172,8 @@ export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
 			icon: "▣",
 			description: "나이아 아바타와 함께하는 슬라이드 발표 미니앱",
 			descriptions: {
-				ko: "PDF·발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
-				en: "Present slide decks together with your Naia avatar.",
+				ko: "PDF·PPTX 발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
+				en: "Open a PDF or PPTX deck and present it with your Naia avatar.",
 			},
 			version: "0.1.2",
 			manifest_version: 2,
@@ -201,7 +216,8 @@ export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
 			name: "카페루아 타로",
 			names: { ko: "카페루아 타로", en: "Cafe Lua Tarot" },
 			icon: "🔮",
-			description: "카페루아 타로 v0.1.5 — 1/3/10장 스프레드 리딩 및 타로 이야기 낭독",
+			description:
+				"카페루아 타로 v0.1.5 — 1/3/10장 스프레드 리딩 및 타로 이야기 낭독",
 			descriptions: {
 				ko: "나이아가 카페루아의 타로 리더가 되어 1/3/10장 카드를 풀어 주고 타로 이야기를 낭독합니다.",
 				en: "Cafe Lua Tarot v0.1.5 — 1/3/10-card spreads and narrated tarot stories with Naia.",
@@ -268,9 +284,7 @@ export async function readPackageIconSvg(
 
 function isLoopbackHostname(hostname: string): boolean {
 	return (
-		hostname === "localhost" ||
-		hostname === "127.0.0.1" ||
-		hostname === "[::1]"
+		hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
 	);
 }
 
@@ -438,6 +452,10 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	private readonly onUnauthorized: () => void;
 	private readonly stage1HostedCatalog: boolean;
 	private readonly packageIconCache = new Map<string, Promise<string | undefined>>();
+	private readonly getPortalBaseUrl: () => string;
+	private readonly getLocale: () => string;
+	/** Ids that came only from the admin catalog in the last listCatalog(). */
+	private adminAppIds = new Set<string>();
 
 	constructor(deps: WebHttpAppStoreAdapterDeps = {}) {
 		this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
@@ -445,7 +463,9 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		this.getAuthKey = () => (deps.getAuthKey ?? defaultReadWebAuthKey)() ?? "";
 		this.hasCustomSandboxOrigin = Boolean(
 			deps.getSandboxOrigin ||
-				(import.meta.env.VITE_NAIA_APPS_SANDBOX_ORIGIN as string | undefined)?.trim(),
+				(
+					import.meta.env.VITE_NAIA_APPS_SANDBOX_ORIGIN as string | undefined
+				)?.trim(),
 		);
 		this.getSandboxOrigin =
 			deps.getSandboxOrigin ?? (() => getWebAppsSandboxOrigin());
@@ -455,6 +475,8 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 				typeof window !== "undefined" ? window.location.origin : undefined);
 		this.onUnauthorized = deps.onUnauthorized ?? markNaiaKeyUnauthorized;
 		this.stage1HostedCatalog = deps.stage1HostedCatalog === true;
+		this.getPortalBaseUrl = deps.getPortalBaseUrl ?? (() => "");
+		this.getLocale = deps.getLocale ?? (() => "ko");
 	}
 
 	private requireAuthHeaders(): Record<string, string> {
@@ -479,13 +501,14 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		return canonical;
 	}
 
-	private resolveDefaultHostedEntryUrl(
-		appId: string,
-		version: string,
-	): string {
+	private resolveDefaultHostedEntryUrl(appId: string, version: string): string {
 		const stage1Spec = STAGE1_HOSTED_BY_ID.get(appId);
 		const shellOrigin = this.getShellOrigin()?.replace(/\/+$/, "");
-		if (this.stage1HostedCatalog && !this.hasCustomSandboxOrigin && shellOrigin) {
+		if (
+			this.stage1HostedCatalog &&
+			!this.hasCustomSandboxOrigin &&
+			shellOrigin
+		) {
 			const slug = stage1Spec?.hostedSlug ?? appId;
 			return `${shellOrigin}/hosted-apps/${encodeURIComponent(slug)}/index.html`;
 		}
@@ -538,7 +561,9 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			byId.set(spec.appId, {
 				appId: spec.appId,
 				version,
-				priceCredits: existing ? existing.priceCredits : spec.defaultPriceCredits,
+				priceCredits: existing
+					? existing.priceCredits
+					: spec.defaultPriceCredits,
 				hostedEntryUrl,
 				manifest: mergedManifest,
 			});
@@ -559,7 +584,52 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		return ordered;
 	}
 
+	/**
+	 * Append admin-registered apps (R4).  Built-in and gateway entries win on
+	 * id collisions; admin entries whose frame URL is not an allowed sandbox
+	 * or `/hosted-apps/` origin are dropped instead of failing at launch.
+	 */
+	private mergeAdminCatalog(
+		items: StoreProductSummary[],
+		adminItems: AdminCatalogEntry[],
+	): StoreProductSummary[] {
+		const adminIds = new Set<string>();
+		this.adminAppIds = adminIds;
+		if (adminItems.length === 0) return items;
+		const known = new Set(items.map((item) => item.appId));
+		const locale = this.getLocale();
+		const merged = [...items];
+		for (const entry of adminItems) {
+			if (known.has(entry.appId)) continue;
+			if (STAGE1_EXCLUDED_WEB_APP_IDS.has(entry.appId)) continue;
+			if (!isOfferedInLocale(entry, locale)) continue;
+			const hostedEntryUrl =
+				entry.hostedEntryUrl ??
+				this.resolveDefaultHostedEntryUrl(entry.appId, entry.version);
+			try {
+				this.resolveFrameSrc(hostedEntryUrl);
+			} catch {
+				continue;
+			}
+			known.add(entry.appId);
+			adminIds.add(entry.appId);
+			merged.push({
+				appId: entry.appId,
+				version: entry.version,
+				priceCredits: 0,
+				hostedEntryUrl,
+				...(entry.iconUrl ? { iconUrl: entry.iconUrl } : {}),
+				manifest: entry.manifest,
+			});
+		}
+		return merged;
+	}
+
 	async listCatalog(): Promise<StoreProductSummary[]> {
+		const portalBase = this.stage1HostedCatalog ? this.getPortalBaseUrl() : "";
+		const adminCatalog = portalBase
+			? fetchPortalCatalog(this.fetchImpl, portalBase)
+			: Promise.resolve<AdminCatalogEntry[]>([]);
 		const base = this.getGatewayUrl().replace(/\/+$/, "");
 		let remoteItems: StoreProductSummary[] = [];
 		try {
@@ -581,9 +651,11 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		} catch (err) {
 			if (!this.stage1HostedCatalog) throw err;
 		}
-		return this.stage1HostedCatalog
-			? this.mergeStage1Catalog(remoteItems)
-			: remoteItems;
+		if (!this.stage1HostedCatalog) return remoteItems;
+		return this.mergeAdminCatalog(
+			this.mergeStage1Catalog(remoteItems),
+			await adminCatalog,
+		);
 	}
 
 	async listEntitlements(): Promise<StoreEntitlementSummary[]> {
@@ -648,6 +720,9 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 
 	async checkEntitlement(appId: string): Promise<boolean> {
 		const validId = this.assertAppId(appId);
+		// Admin-registered apps are free hosted apps with no gateway receipt;
+		// paid apps must be gateway products.
+		if (this.adminAppIds.has(validId)) return true;
 		const stage1Spec = this.stage1HostedCatalog
 			? STAGE1_HOSTED_BY_ID.get(validId)
 			: undefined;
@@ -744,10 +819,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 
 	async installApp(appId: string): Promise<void> {
 		const validId = this.assertAppId(appId);
-		if (
-			this.stage1HostedCatalog &&
-			STAGE1_EXCLUDED_WEB_APP_IDS.has(validId)
-		) {
+		if (this.stage1HostedCatalog && STAGE1_EXCLUDED_WEB_APP_IDS.has(validId)) {
 			throw new AppStoreHttpError(
 				"invalid_app_id",
 				`App ${validId} is scheduled for Stage 2`,
@@ -954,6 +1026,8 @@ export function createPlatformAppStoreAdapter(
 	return isWebMode()
 		? new WebHttpAppStoreAdapter({
 				stage1HostedCatalog: true,
+				getPortalBaseUrl: () => NAIA_WEB_BASE_URL,
+				getLocale,
 				...webDeps,
 			})
 		: new DesktopTauriAppStoreAdapter();

@@ -138,7 +138,7 @@ test("installed iframe loads sidecar, toggles notes and fullscreen, and loops on
 	const errors: string[] = [];
 	page.on("pageerror", (error) => errors.push(error.message));
 	const frame = await openInstalledHost(page);
-	await frame.getByLabel(/PDF 열기|Open PDF/).click();
+	await frame.getByLabel(/PDF 또는 PPTX 열기|Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
 	await expect(frame.getByTestId("slides-current-note")).toHaveText(
 		"First authored note",
@@ -416,13 +416,13 @@ test("cancel, missing sidecar and narrow-screen script controls preserve the PDF
 		path: testInfo.outputPath("script-editor-narrow.png"),
 	});
 	await frame.getByRole("button", { name: "Cancel script edit" }).click();
-	await frame.getByLabel(/PDF 열기|Open PDF/).click();
+	await frame.getByLabel(/PDF 또는 PPTX 열기|Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
 	await page.evaluate(() => {
 		(window as any).fixture.selection = null;
 	});
-	await frame.getByLabel(/PDF 열기|Open PDF/).click();
-	await expect(frame.getByLabel(/PDF 열기|Open PDF/)).toBeEnabled();
+	await frame.getByLabel(/PDF 또는 PPTX 열기|Open PDF/).click();
+	await expect(frame.getByLabel(/PDF 또는 PPTX 열기|Open PDF/)).toBeEnabled();
 	await expect(frame.getByTestId("slides-current-note")).toHaveText(
 		"First authored note",
 	);
@@ -447,7 +447,7 @@ test("cancel, missing sidecar and narrow-screen script controls preserve the PDF
 			scriptReadFailed: true,
 		};
 	}, pdfBase64());
-	await frame.getByLabel(/PDF 열기|Open PDF/).click();
+	await frame.getByLabel(/PDF 또는 PPTX 열기|Open PDF/).click();
 	await expect(frame.getByRole("alert")).toBeVisible();
 	await expect(
 		frame.getByLabel(/발표 종료 페이지|Presentation end page/),
