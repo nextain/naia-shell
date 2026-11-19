@@ -201,6 +201,17 @@ function webHostedAppsPlugin(): Plugin {
 	let outputDirectory = "";
 	return {
 		name: "web-hosted-apps",
+		configureServer(server) {
+			const base = server.config.base;
+			const prefix = `${base}hosted-apps/naia-charcard/`;
+			server.middlewares.use((req, _res, next) => {
+				const url = new URL(req.url ?? "/", "http://localhost");
+				if (url.pathname === `${prefix}index.html`) {
+					req.url = `${base}charcard.html${url.search}`;
+				}
+				next();
+			});
+		},
 		configResolved(config) {
 			outputDirectory = path.resolve(config.root, config.build.outDir);
 		},

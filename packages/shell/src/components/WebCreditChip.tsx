@@ -6,7 +6,7 @@ import {
 	loadConfig,
 	saveConfig,
 } from "../lib/config";
-import { formatCredits } from "../lib/credits";
+import { formatWebCredits } from "../lib/credits";
 import { usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
@@ -199,11 +199,11 @@ export function WebCreditChip() {
 				className={`web-credit__chip web-credit__chip--${level}`}
 				onClick={() => setOpen((v) => !v)}
 				title={t("webCredit.title")}
-				aria-label={`${t("webCredit.title")}: ${formatCredits(balance)}`}
+				aria-label={`${t("webCredit.title")}: ${formatWebCredits(balance)}`}
 				aria-expanded={open}
 			>
 				<span aria-hidden="true">⚡</span>
-				{formatCredits(balance)}
+				{formatWebCredits(balance)}
 			</button>
 			{open && (
 				<section
@@ -213,7 +213,7 @@ export function WebCreditChip() {
 					<div className="web-credit__row">
 						<span>{t("webCredit.title")}</span>
 						<strong className={`web-credit__value--${level}`}>
-							{formatCredits(balance, 2)}
+							{formatWebCredits(balance, 2)}
 						</strong>
 					</div>
 					<div className="web-credit__actions">

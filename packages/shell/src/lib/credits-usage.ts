@@ -1,5 +1,13 @@
-import { formatCreditsFromUsd, isNaiaAccountProvider } from "./credits";
+import {
+	formatCredits,
+	formatCreditsExact,
+	formatCreditsFromUsd,
+	formatWebCredits,
+	formatWebCreditsFromUsd,
+	isNaiaAccountProvider,
+} from "./credits";
 import { t } from "./i18n";
+import { isWebMode } from "./web-runtime/web-assets";
 
 // Localized usage-cost text (#727). Kept apart from `credits.ts` (pure number
 // formatting, reached from the always-loaded entry bundle) so the entry bundle
@@ -14,7 +22,24 @@ export function formatUsdEstimate(cost: number): string {
 
 /** "약 N 크레딧" — estimated Naia-account usage, from an agent USD estimate. */
 export function formatApproxCredits(usd: number): string {
-	return t("cost.approxCredits", { amount: formatCreditsFromUsd(usd) });
+	return isWebMode()
+		? formatWebCreditsFromUsd(usd)
+		: t("cost.approxCredits", { amount: formatCreditsFromUsd(usd) });
+}
+
+export function formatCreditBalance(balance: number, exact = false): string {
+	if (isWebMode()) return formatWebCredits(balance, 2);
+	const amount = exact ? formatCreditsExact(balance, 2) : formatCredits(balance, 2);
+	return `${amount} ${t("cost.labCredits")}`;
+}
+
+/** Display the recorded charge with today's unit when opening an older voice session. */
+export function formatSavedVoiceCostSummary(content: string, usd: number): string {
+	if (!isWebMode()) return content;
+	return content.replace(
+		/^(🎙️ (?:\d+m )?\d+s · )(?:약|≈) [\d.,K]+ (?:크레딧|credits)(?= \()/,
+		(_, prefix: string) => prefix + formatWebCreditsFromUsd(usd),
+	);
 }
 
 /** "$0.012 (제공사 요금 추정)" — the user pays the provider directly. */

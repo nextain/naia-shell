@@ -4,8 +4,10 @@ import {
 	MAX_CARD_FILE_BYTES,
 	type NormalizedCharacterCard,
 	type NormalizedLorebookEntry,
+	createCharacterCardV2,
 	parseCharacterCardBytes,
 } from "../apps/charcard/card-parser";
+import { charCardText } from "../apps/charcard/locales/messages";
 import {
 	type CardEditableFieldKey,
 	type CardEditablePatch,
@@ -21,6 +23,8 @@ import {
 	readCharacterLibrary,
 	mergeCharacterCard,
 	characterCardPatch,
+	characterCardPngPreview,
+	encodeUtf8Base64,
 	readCharacterThemes,
 	restoreOriginalCard,
 	updateNormalizedCard,
@@ -29,6 +33,7 @@ import { loadConfig, saveConfig, type AppConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
+import { WEB_DEFAULT_VRM, WEB_VRM_ASSETS, isWebMode, resolveWebPublicAssetUrl } from "../lib/web-runtime/web-assets";
 
 interface Props {
 	config: AppConfig;
@@ -50,6 +55,9 @@ export function CharacterThemeSettings({
 	onPreferences,
 }: Props) {
 	const streaming = useChatStore((state) => state.isStreaming);
+	const webCards = isWebMode() && !isKioskDemo();
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const msg = (key: Parameters<typeof charCardText>[0]) => charCardText(key, undefined, getLocale());
 
 	const [library, setLibrary] = useState<SavedCharacterCard[]>(() => {
 		const parsed = readCharacterLibrary(config?.uiPreferences?.b2cCardLibrary);
@@ -114,7 +122,31 @@ export function CharacterThemeSettings({
 		card && originalCard
 			? getModifiedCardFields(card, originalCard)
 			: new Set<CardEditableFieldKey>();
-	const avatarImageUrl = extractCardAvatarImageUrl(card);
+	const vrm = WEB_VRM_ASSETS.find(({ url }) => config?.vrmModel === url);
+	const fallbackAvatar = resolveWebPublicAssetUrl((vrm?.url ?? WEB_DEFAULT_VRM).replace(/\.vrm$/i, ".webp"));
+	const cardImage = (value: NormalizedCharacterCard | null, sourceBase64: string) => {
+		const avatar = extractCardAvatarImageUrl(value);
+		if (!webCards) return avatar;
+		return characterCardPngPreview(sourceBase64) ?? (avatar ? resolveWebPublicAssetUrl(avatar) : fallbackAvatar);
+	};
+	const avatarImageUrl = cardImage(card, source.sourceBase64);
+
+	function selectCard(saved?: SavedCharacterCard) {
+		const parsed = saved ? libraryCard(saved) : null;
+		setCardId(saved?.id ?? "");
+		setCard(parsed);
+		setOriginalCard(saved && parsed ? restoreOriginalCard(saved.sourceBase64, parsed, saved.id) : null);
+		setThemeId(saved?.themeId ?? "");
+		setSource({ sourceName: saved?.sourceName ?? "", sourceBase64: saved?.sourceBase64 ?? "" });
+	}
+
+	function openDraft(next: NormalizedCharacterCard, sourceName: string, sourceBase64: string) {
+		setCardId("");
+		setCard(next);
+		setOriginalCard(structuredClone(next));
+		setThemeId("");
+		setSource({ sourceName, sourceBase64 });
+	}
 
 	function syncEditedCardState(
 		nextCard: NormalizedCharacterCard,
@@ -218,6 +250,92 @@ export function CharacterThemeSettings({
 		}
 	}
 
+	async function applyCard() {
+		if (!card || !preview) return;
+		if (useChatStore.getState().isStreaming) throw new Error("chat in progress");
+		const appliedSource = source.sourceBase64 ? source : {
+			...source,
+			sourceBase64: encodeUtf8Base64(JSON.stringify(card.rawJson)),
+		};
+		const incoming: SavedCharacterCard = {
+			version: 1,
+			id: cardId || crypto.randomUUID(),
+			name: card.name,
+			rawJson: card.rawJson,
+			greeting: preview.greeting,
+			...appliedSource,
+			...(themeId ? { themeId } : {}),
+		};
+		const { card: saved, cards: next } = mergeCharacterCard(library, incoming);
+		if (next.length > 30 || JSON.stringify(next).length > CARD_LIBRARY_MAX_BYTES)
+			throw new Error("library limit");
+		const selectedTheme = themes.find((theme) => theme.id === saved.themeId);
+		useChatStore.setState({ characterTransitionPending: true });
+		try {
+			await onCard({
+				...preview.patch,
+				uiPreferences: {
+					...loadConfig()?.uiPreferences,
+					b2cCardLibrary: next,
+					b2cActiveCardId: saved.id,
+				},
+			}, selectedTheme);
+			setLibrary(next);
+			setCardId(saved.id);
+			if (!source.sourceBase64) {
+				setSource(appliedSource);
+				setOriginalCard(structuredClone(card));
+			}
+			window.dispatchEvent(new Event("naia-character-new-conversation"));
+		} finally {
+			useChatStore.setState({ characterTransitionPending: false });
+		}
+		setStatus(t("characterTheme.cardApplied"));
+	}
+
+	const applyButton = (
+		<button
+			type="button"
+			className="settings-save-btn"
+			data-testid="charcard-apply-btn"
+			disabled={busy || streaming || !card}
+			onClick={() => void run(applyCard)}
+		>
+			{webCards ? msg("charcard.apply") : t("characterTheme.applyCard")}
+		</button>
+	);
+	const fileInput = (
+		<input
+			id="character-card-file"
+			ref={fileInputRef}
+			type="file"
+			accept=".png,.json"
+			disabled={busy}
+			hidden={webCards}
+			style={{ maxWidth: "100%" }}
+			onChange={(event) => {
+				const file = event.target.files?.[0];
+				event.target.value = "";
+				if (!file) return;
+				void run(async () => {
+					if (file.size > MAX_CARD_FILE_BYTES) {
+						setError(t("characterTheme.cardTooLarge"));
+						return;
+					}
+					const bytes = new Uint8Array(await file.arrayBuffer());
+					const parsed = await parseCharacterCardBytes(bytes);
+					if (!parsed.ok) {
+						setError(t("characterTheme.cardUnreadable"));
+						return;
+					}
+					let binary = "";
+					for (const byte of bytes) binary += String.fromCharCode(byte);
+					openDraft(parsed.card, file.name, btoa(binary));
+				});
+			}}
+		/>
+	);
+
 	return (
 		<section
 			className="settings-field character-theme-settings"
@@ -225,6 +343,37 @@ export function CharacterThemeSettings({
 			style={{ minWidth: 0, gridColumn: "1 / -1", overflowWrap: "anywhere" }}
 		>
 			<h3>{t("characterTheme.cardsTitle")}</h3>
+			{webCards && (
+				<div className="character-card-actions" aria-busy={busy}>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						disabled={busy}
+						onClick={() => {
+							const next = createCharacterCardV2(msg("charcard.newName"));
+							if (!next.ok) return;
+							setError("");
+							setStatus("");
+							openDraft(next.card, "character.json", "");
+						}}
+					>
+						{msg("charcard.createButton")}
+					</button>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						disabled={busy}
+						onClick={() => fileInputRef.current?.click()}
+					>
+						{msg("charcard.importButton")}
+					</button>
+					{applyButton}
+					{fileInput}
+					{busy && <output>{t("characterTheme.working")}</output>}
+					{status && <output>{status}</output>}
+					{error && <p role="alert">{error}</p>}
+				</div>
+			)}
 			<label>
 				<input
 					type="checkbox"
@@ -246,42 +395,39 @@ export function CharacterThemeSettings({
 				{t("characterTheme.greetingAutoplay")}
 			</label>
 			<p className="settings-hint">{t("characterTheme.cardHint")}</p>
-			<label htmlFor="saved-character-card">
-				{t("characterTheme.cardLibrary")}
-			</label>
-			<select
-				id="saved-character-card"
-				value={cardId}
-				disabled={busy}
-				style={{ maxWidth: "100%" }}
-				onChange={(e) => {
-					const saved = library.find((c) => c.id === e.target.value);
-					const parsed = saved ? libraryCard(saved) : null;
-					setCardId(saved?.id ?? "");
-					setCard(parsed);
-					setOriginalCard(
-						saved && parsed
-							? restoreOriginalCard(saved.sourceBase64, parsed, saved.id)
-							: null,
-					);
-					setThemeId(saved?.themeId ?? "");
-					setSource(
-						saved
-							? {
-									sourceName: saved.sourceName,
-									sourceBase64: saved.sourceBase64,
-								}
-							: { sourceName: "", sourceBase64: "" },
-					);
-				}}
-			>
-				<option value="">{t("characterTheme.chooseSavedCard")}</option>
-				{library.map((c) => (
-					<option key={c.id} value={c.id}>
-						{c.name}
-					</option>
-				))}
-			</select>
+			{webCards ? (
+				<ul className="character-card-library" aria-label={t("characterTheme.cardLibrary")}>
+					{library.map((item) => (
+						<li key={item.id}>
+							<button type="button" disabled={busy} aria-pressed={cardId === item.id} onClick={() => selectCard(item)}>
+								<img
+									src={cardImage(libraryCard(item), item.sourceBase64) ?? fallbackAvatar}
+									alt=""
+									onError={(event) => {
+										if (event.currentTarget.getAttribute("src") !== fallbackAvatar)
+											event.currentTarget.src = fallbackAvatar;
+									}}
+								/>
+								{item.name}
+							</button>
+						</li>
+					))}
+				</ul>
+			) : (
+				<>
+					<label htmlFor="saved-character-card">{t("characterTheme.cardLibrary")}</label>
+					<select
+						id="saved-character-card"
+						value={cardId}
+						disabled={busy}
+						style={{ maxWidth: "100%" }}
+						onChange={(event) => selectCard(library.find((item) => item.id === event.target.value))}
+					>
+						<option value="">{t("characterTheme.chooseSavedCard")}</option>
+						{library.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+					</select>
+				</>
+			)}
 			<p className="settings-hint">{t("characterTheme.libraryHint")}</p>
 			{cardId && (
 				<button
@@ -325,41 +471,12 @@ export function CharacterThemeSettings({
 					{t("characterTheme.deleteCard")}
 				</button>
 			)}
-			<label htmlFor="character-card-file">
-				{t("characterTheme.importCard")}
-			</label>
-			<input
-				id="character-card-file"
-				type="file"
-				accept=".png,.json"
-				disabled={busy}
-				style={{ maxWidth: "100%" }}
-				onChange={(event) => {
-					const file = event.target.files?.[0];
-					event.target.value = "";
-					if (!file) return;
-					setCard(null);
-					setOriginalCard(null);
-					void run(async () => {
-						if (file.size > MAX_CARD_FILE_BYTES) {
-							setError(t("characterTheme.cardTooLarge"));
-							return;
-						}
-						const bytes = new Uint8Array(await file.arrayBuffer());
-						const parsed = await parseCharacterCardBytes(bytes);
-						if (!parsed.ok) {
-							setError(t("characterTheme.cardUnreadable"));
-							return;
-						}
-						let binary = "";
-						for (const byte of bytes) binary += String.fromCharCode(byte);
-						setSource({ sourceName: file.name, sourceBase64: btoa(binary) });
-						setCardId("");
-						setCard(parsed.card);
-						setOriginalCard(structuredClone(parsed.card));
-					});
-				}}
-			/>
+			{!webCards && (
+				<>
+					<label htmlFor="character-card-file">{t("characterTheme.importCard")}</label>
+					{fileInput}
+				</>
+			)}
 			{!card && !busy && <p>{t("characterTheme.noCard")}</p>}
 			{card && preview && (
 				<div
@@ -391,6 +508,10 @@ export function CharacterThemeSettings({
 									src={avatarImageUrl}
 									alt={card.name}
 									data-testid="charcard-preview-image"
+									onError={(event) => {
+										if (webCards && event.currentTarget.getAttribute("src") !== fallbackAvatar)
+											event.currentTarget.src = fallbackAvatar;
+									}}
 									style={{
 										width: 44,
 										height: 44,
@@ -836,63 +957,7 @@ export function CharacterThemeSettings({
 						/>
 					</div>
 
-					<button
-						type="button"
-						className="settings-save-btn"
-						data-testid="charcard-apply-btn"
-						disabled={busy || streaming}
-						onClick={() =>
-							void run(async () => {
-								if (useChatStore.getState().isStreaming)
-									throw new Error("chat in progress");
-								const incoming: SavedCharacterCard = {
-									version: 1,
-									id: cardId || crypto.randomUUID(),
-									name: card.name,
-									rawJson: card.rawJson,
-									greeting: preview.greeting,
-									...source,
-									...(themeId ? { themeId } : {}),
-								};
-								const { card: saved, cards: next } = mergeCharacterCard(
-									library,
-									incoming,
-								);
-								if (
-									next.length > 30 ||
-									JSON.stringify(next).length > CARD_LIBRARY_MAX_BYTES
-								)
-									throw new Error("library limit");
-								const selectedTheme = themes.find(
-									(t) => t.id === saved.themeId,
-								);
-								useChatStore.setState({ characterTransitionPending: true });
-								try {
-									await onCard(
-										{
-											...preview.patch,
-											uiPreferences: {
-												...loadConfig()?.uiPreferences,
-												b2cCardLibrary: next,
-												b2cActiveCardId: saved.id,
-											},
-										},
-										selectedTheme,
-									);
-									setLibrary(next);
-									setCardId(saved.id);
-									window.dispatchEvent(
-										new Event("naia-character-new-conversation"),
-									);
-								} finally {
-									useChatStore.setState({ characterTransitionPending: false });
-								}
-								setStatus(t("characterTheme.cardApplied"));
-							})
-						}
-					>
-						{t("characterTheme.applyCard")}
-					</button>
+					{!webCards && applyButton}
 				</div>
 			)}
 			<h3>{t("characterTheme.themesTitle")}</h3>
@@ -1022,13 +1087,13 @@ export function CharacterThemeSettings({
 					</button>
 				</div>
 			)}
-			{busy && (
+			{!webCards && busy && (
 				<output style={{ display: "block" }}>
 					{t("characterTheme.working")}
 				</output>
 			)}
-			{status && <output style={{ display: "block" }}>{status}</output>}
-			{error && <p role="alert">{error}</p>}
+			{!webCards && status && <output style={{ display: "block" }}>{status}</output>}
+			{!webCards && error && <p role="alert">{error}</p>}
 		</section>
 	);
 }

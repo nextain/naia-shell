@@ -3,6 +3,7 @@ import { isLegacyBundledVrmModel } from "../lib/avatar-presets";
 import { loadConfig } from "../lib/config";
 import type { AmbientBgm } from "../lib/avatar/ambient-idle";
 import type { EmotionName } from "../lib/vrm/expression";
+import type { VrmLipSyncSource } from "../lib/vrm/lip-sync";
 
 export type BackgroundMediaType = "" | "image" | "video" | "iframe";
 
@@ -27,11 +28,13 @@ interface AvatarState {
 	loadProgress: number;
 	currentEmotion: EmotionName;
 	isSpeaking: boolean;
+	lipSyncSource: VrmLipSyncSource | null;
 	pendingAudio: string | null;
 	setLoaded: (loaded: boolean) => void;
 	setLoadProgress: (progress: number) => void;
 	setEmotion: (emotion: EmotionName) => void;
 	setSpeaking: (speaking: boolean) => void;
+	setLipSyncSource: (source: VrmLipSyncSource | null) => void;
 	setPendingAudio: (data: string | null) => void;
 	setModelPath: (path: string) => void;
 	setBackgroundImage: (path: string) => void;
@@ -66,11 +69,16 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	loadProgress: 0,
 	currentEmotion: "neutral",
 	isSpeaking: false,
+	lipSyncSource: null,
 	pendingAudio: null,
 	setLoaded: (loaded) => set({ isLoaded: loaded }),
 	setLoadProgress: (progress) => set({ loadProgress: progress }),
 	setEmotion: (emotion) => set({ currentEmotion: emotion }),
-	setSpeaking: (speaking) => set({ isSpeaking: speaking }),
+	setSpeaking: (speaking) =>
+		set(
+			speaking ? { isSpeaking: true } : { isSpeaking: false, lipSyncSource: null },
+		),
+	setLipSyncSource: (source) => set({ lipSyncSource: source }),
 	setPendingAudio: (data) => set({ pendingAudio: data }),
 	setModelPath: (path) =>
 		set({ modelPath: path, isLoaded: false, loadProgress: 0 }),

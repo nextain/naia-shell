@@ -513,6 +513,34 @@ describe("SettingsTab", () => {
 		);
 	});
 
+	it("R41 shows VRoid Hub for web VRM and the creator for web NVA", async () => {
+		await setLocale("en");
+		setWebAssetsModeForTests(true);
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID, avatarProvider: "vrm" }),
+		);
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("avatar");
+			const creator = () => screen.queryByRole("button", { name: "Create NVA avatar" });
+			const link = screen.getByRole("link", { name: "VRoid Hub" });
+			expect(link).toHaveAttribute("href", "https://hub.vroid.com/");
+			expect(link).toHaveAttribute("target", "_blank");
+			expect(link).toHaveAttribute("rel", "noopener noreferrer");
+			expect(creator()).not.toBeInTheDocument();
+
+			fireEvent.change(document.querySelector("#avatar-provider")!, {
+				target: { value: "naia-video-avatar" },
+			});
+			expect(creator()).toBeInTheDocument();
+			expect(link).not.toBeInTheDocument();
+		} finally {
+			setWebAssetsModeForTests(null);
+		}
+	});
+
 	it("keeps the Avatar tab usable and logs an NVA creator opener failure", async () => {
 		await setLocale("en");
 		mockInvoke.mockResolvedValue([]);

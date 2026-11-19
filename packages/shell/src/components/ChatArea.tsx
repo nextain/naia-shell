@@ -19,6 +19,7 @@ import {
 	KIOSK_DEMO_THINKING_LEVEL,
 	applyKioskDemoMainModel,
 	isKioskLocalAnswerEnabled,
+	resolveShellAvatarSelection,
 	setKioskLocalAnswerEnabled,
 } from "../lib/config-seed";
 import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
@@ -131,6 +132,7 @@ import {
 import { getConversationHistory } from "../lib/conversation-store";
 import {
 	formatApproxCredits,
+	formatSavedVoiceCostSummary,
 	formatUsageCost,
 	formatUsageTotal,
 } from "../lib/credits-usage";
@@ -571,6 +573,16 @@ export async function loadOrCreateSession(): Promise<void> {
 	}
 }
 
+function getWebVrmLipSyncSink() {
+	if (
+		!isWebMode() ||
+		resolveShellAvatarSelection(loadConfig()).avatarProvider !== "vrm"
+	) {
+		return null;
+	}
+	return useAvatarStore.getState().setLipSyncSource;
+}
+
 export function ChatArea({
 	variant = "floating",
 	headerControls,
@@ -810,6 +822,7 @@ export function ChatArea({
 					? null
 					: renderer;
 			},
+			getVrmLipSyncSink: getWebVrmLipSyncSink,
 			beginCascadeJob: () => beginCascadeTtsJob(),
 			setOutputStage: (stage) => {
 				if (acceptPipelineOutputStage(ttsTextSyncRef.current))
@@ -1650,6 +1663,7 @@ export function ChatArea({
 		if (!audioQueueRef.current) {
 			audioQueueRef.current = new AudioQueue({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
+				measureSpeech: () => Boolean(getWebVrmLipSyncSink()),
 				onPlaybackStart: () => {
 					if (activeSlidePresenterSpeechRef.current?.appId)
 						activeSlidePresenterSpeechRef.current.started = true;
@@ -4397,6 +4411,7 @@ export function ChatArea({
 
 				const queue = new AudioQueue({
 					outputDeviceId: config.ttsOutputDeviceId || undefined,
+					measureSpeech: () => Boolean(getWebVrmLipSyncSink()),
 					onPlaybackStart: () => {
 						useAvatarStore.getState().setSpeaking(true);
 						ttsPlayingRef.current = true;
@@ -5532,7 +5547,11 @@ export function ChatArea({
 							provider !== "vllm" && (
 								<button
 									type="button"
-									className="cost-badge session-cost cost-badge-clickable"
+									className={
+										isWebMode() && totalSessionCostNaia === totalSessionCost
+											? "cost-badge session-cost cost-badge-clickable credit-amount"
+											: "cost-badge session-cost cost-badge-clickable"
+									}
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
 									{formatUsageTotal(
@@ -5786,7 +5805,12 @@ export function ChatArea({
 										{msg.role === "assistant" ? (
 											// #571 — 음성 상태와 무관하게 본문을 그대로 그린다.
 											<DeferredChatMarkdown>
-												{extractExpression(msg.content).cleanText}
+												{extractExpression(
+													msg.cost?.provider === "nextain" &&
+														(msg.cost.model === "naia-omni" || msg.cost.model === "azure-realtime")
+														? formatSavedVoiceCostSummary(msg.content, msg.cost.cost)
+														: msg.content,
+												).cleanText}
 											</DeferredChatMarkdown>
 										) : (
 											msg.content

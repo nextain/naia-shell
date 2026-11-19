@@ -19,8 +19,8 @@ const repoDir = resolve(shellDir, "../..");
 const miniAppsRepo = "https://github.com/nextain/naia-shell.git";
 const miniAppsCommit = "0912f5016a2ae81c028d375dfc7dbd837d9ba6bb";
 const apps = [
-	{ name: "charcard", slug: "naia-charcard", id: "land.naia.charcard" },
-	{ name: "slides", slug: "naia-slides", id: "land.naia.slides" },
+	{ name: "charcard", slug: "naia-charcard", id: "land.naia.charcard", inShell: true },
+	{ name: "slides", slug: "naia-slides", id: "land.naia.slides", inShell: true },
 	{ name: "ieumoffice", slug: "ieumoffice", id: "land.naia.ieumoffice" },
 	{
 		name: "cafelua-tarot",
@@ -70,7 +70,7 @@ function extractMiniAppSources(scratchDir) {
 
 	const archive = join(scratchDir, "mini-apps.tar");
 	const files = ["src", "package.json", "tsconfig.json"];
-	for (const { name } of apps.filter(({ name }) => name !== "slides")) {
+	for (const { name } of apps.filter(({ inShell }) => !inShell)) {
 		files.push(`${name}.html`, `vite.${name}.config.ts`);
 	}
 	git(
@@ -161,9 +161,8 @@ export function stageWebHostedApps(outDir) {
 		const staged = mkdtempSync(join(outDir, ".hosted-apps-"));
 		const vite = join(shellDir, "node_modules/vite/bin/vite.js");
 		try {
-			for (const { name, slug } of apps) {
-				const isSlides = name === "slides";
-				const cwd = isSlides ? shellDir : sourceDir;
+			for (const { name, slug, inShell } of apps) {
+				const cwd = inShell ? shellDir : sourceDir;
 				const target = join(staged, slug);
 				console.log(`[web-hosted-apps] Building ${slug}`);
 				execFileSync(
@@ -173,11 +172,11 @@ export function stageWebHostedApps(outDir) {
 						"build",
 						"--config",
 						`vite.${name}.config.ts`,
-						...(isSlides ? ["--mode", "web", "--outDir", target] : []),
+						...(inShell ? ["--mode", "web", "--outDir", target] : []),
 					],
 					{ cwd, stdio: "inherit" },
 				);
-				if (!isSlides) {
+				if (!inShell) {
 					// The pinned configs rename the HTML inside their default dist-*.
 					cpSync(join(cwd, `dist-${name}`), target, { recursive: true });
 				}

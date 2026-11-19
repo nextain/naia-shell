@@ -54,6 +54,11 @@ export function formatCreditsExact(
 	return num.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
+/** Web credit amounts share a short unit and show the full grouped number. */
+export function formatWebCredits(credits: number, maximumFractionDigits = 4): string {
+	return `${credits.toLocaleString("en-US", { maximumFractionDigits })} Cr`;
+}
+
 // ---------------------------------------------------------------------------
 // USD -> credit conversion for usage-cost displays (#727).
 //
@@ -78,15 +83,18 @@ export function usdToCredits(usd: number): number {
 	return usd * CREDITS_PER_USD;
 }
 
-/** Round a credit amount for display: fine below 10, coarse above, then K form. */
-function formatCreditAmount(credits: number): string {
+/** Preserve more digits for small charges. */
+function roundCreditAmount(credits: number): number {
 	const abs = Math.abs(credits);
 	const digits = abs < 1 ? 3 : abs < 10 ? 2 : abs < 100 ? 1 : 0;
-	const rounded = Number(credits.toFixed(digits));
-	return formatCredits(rounded);
+	return Number(credits.toFixed(digits));
 }
 
 /** "5,000" / "2.55K" style credit amount converted from a USD figure. */
 export function formatCreditsFromUsd(usd: number): string {
-	return formatCreditAmount(usdToCredits(usd));
+	return formatCredits(roundCreditAmount(usdToCredits(usd)));
+}
+
+export function formatWebCreditsFromUsd(usd: number): string {
+	return formatWebCredits(roundCreditAmount(usdToCredits(usd)));
 }

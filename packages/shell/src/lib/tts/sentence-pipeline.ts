@@ -9,12 +9,13 @@
  *    authored clip is the one exception: it carries its own recorded voice for
  *    an exact known phrase, so playing it replaces synthesis instead of racing
  *    it. The renderer only ever reacts to real playback via setSpeakingVisual.
- *  - Mouth motion (naia-shell#760, SoT 8): the canonical NVA player only.
+ *  - NVA mouth motion (naia-shell#760, SoT 8) uses the canonical player.
  *    Shell TTS sentences get an "aligned" plan (or gateway/G2P browser-timed
  *    plan in web/kiosk mode) driven by that sentence's audio clock; browser
  *    speech gets a "browser-timed" plan driven by time since onstart and
  *    revised on boundary events. Plan sources are ports (speech-timing.ts);
- *    with no source the avatar stays idle.
+ *    with no source the NVA stays idle. Web VRM uses the queued speech clock
+ *    and audio signal, or browser speech timing for a system utterance.
  *  - Client-side providers speak through the browser's speechSynthesis.
  *  - Every other provider is synthesized in the Shell (the new-core agent has
  *    no TTS); the 6GB local path is admitted through LocalVoiceScheduler.
@@ -48,6 +49,11 @@ import { getLocale } from "../i18n";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import { PcmStreamSource, wavDurationSeconds } from "../voice/audio-queue";
+import {
+	createAudioVrmLipSync,
+	createBrowserVrmLipSync,
+	type VrmLipSyncSource,
+} from "../vrm/lip-sync";
 import { isWebMode } from "../web-runtime/web-assets";
 import { estimateTtsCost } from "./cost";
 import { getTtsProviderMeta } from "./index";
@@ -146,6 +152,7 @@ export interface TtsCostEntry {
 export interface SentenceTtsPipelineDeps {
 	getVoiceConfig(): PipelineVoiceConfig | null;
 	getRenderer(): CascadeSpeechRenderer | null | undefined;
+	getVrmLipSyncSink?(): ((source: VrmLipSyncSource | null) => void) | null;
 	getQueue(): OrderedTtsQueue | null;
 	getScheduler(): LocalVoiceScheduler | null;
 	generateRequestId(): string;
@@ -493,6 +500,17 @@ export function createSentenceTtsPipeline(
 			? deps.getBrowserSpeechPlanSource()
 			: (getBrowserSpeechPlanSource() ??
 				(isWebMode() || isKioskDemo() ? defaultWebBrowserSource : null));
+
+	function trackVrmAudio(
+		text: string,
+		lang: string,
+		playback?: AudioPlaybackClock,
+	) {
+		const setSource = deps.getVrmLipSyncSink?.();
+		if (setSource) {
+			setSource(playback ? createAudioVrmLipSync(text, lang, playback) : null);
+		}
+	}
 
 	function isPrefetchInGroup(prefetchId: string, groupId: string): boolean {
 		return prefetchId === groupId || prefetchId.startsWith(`${groupId}/`);
@@ -1149,6 +1167,7 @@ export function createSentenceTtsPipeline(
 			);
 			queue.enqueueOrdered(seq, prepared.audioBase64, {
 				onPlaybackStart: (playback) => {
+					trackVrmAudio(clean, getLocale(), playback);
 					revealText();
 					deps.onPlaybackStart?.();
 					if (alignedPlan) {
@@ -1364,6 +1383,10 @@ export function createSentenceTtsPipeline(
 				}
 				const planSource = skipSpeechPlan ? null : browserSource();
 				const activeRenderer = deps.getRenderer() ?? cascadeAvatar;
+				const vrmTiming =
+					!skipSpeechPlan && deps.getVrmLipSyncSink?.()
+						? createBrowserVrmLipSync(clean, utter.lang)
+						: null;
 				const session =
 					activeRenderer?.playSpeechTiming && planSource
 						? planSource({ text: clean, lang: utter.lang })
@@ -1386,6 +1409,7 @@ export function createSentenceTtsPipeline(
 					markSpeechSequenceStarted(seq);
 					options.onPlaybackStarted?.();
 					deps.setSpeaking(true);
+					if (vrmTiming) deps.getVrmLipSyncSink?.()?.(vrmTiming.start());
 					(deps.getRenderer() ?? cascadeAvatar)?.setSpeakingVisual(true);
 					void session?.ready
 						.then((plan) => {
@@ -1399,13 +1423,16 @@ export function createSentenceTtsPipeline(
 						.catch(() => {});
 				};
 				utter.onboundary = (event) => {
-					if (!session || !isCurrentBrowserTurn()) return;
-					revise(
-						session.boundary(
-							event.charIndex,
-							Math.round(elapsedSeconds() * 1_000_000),
-						),
-					);
+					if (!isCurrentBrowserTurn()) return;
+					vrmTiming?.boundary(event.charIndex, event.elapsedTime);
+					if (session) {
+						revise(
+							session.boundary(
+								event.charIndex,
+								Math.round(elapsedSeconds() * 1_000_000),
+							),
+						);
+					}
 				};
 				utter.onend = () => {
 					if (!isCurrentBrowserTurn()) return;
@@ -1520,6 +1547,11 @@ export function createSentenceTtsPipeline(
 					);
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
 				onPlaybackStart: (playback) => {
+					trackVrmAudio(
+						clean,
+						speechLang,
+						skipSpeechPlan ? undefined : playback,
+					);
 					revealText();
 					deps.onPlaybackStart?.();
 					if (alignedPlan) {
@@ -1691,6 +1723,11 @@ export function createSentenceTtsPipeline(
 							);
 					queue.enqueueOrdered(seq, audioBase64, {
 						onPlaybackStart: (playback) => {
+							trackVrmAudio(
+								clean,
+								speechLang,
+								skipSpeechPlan ? undefined : playback,
+							);
 							revealText();
 							deps.onPlaybackStart?.();
 							if (alignedPlan) {

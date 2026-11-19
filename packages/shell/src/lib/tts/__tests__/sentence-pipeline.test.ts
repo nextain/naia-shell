@@ -76,8 +76,9 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		expect(deps.setOutputStage).toHaveBeenCalledWith("render");
 	});
 
-	it("routes a client-side provider through browser speechSynthesis", () => {
+	it("R43 routes a client-side provider through browser speech and starts VRM timing on playback", () => {
 		const speak = vi.fn();
+		const setLipSync = vi.fn();
 		vi.stubGlobal("speechSynthesis", { speak, cancel: vi.fn() });
 		vi.stubGlobal(
 			"SpeechSynthesisUtterance",
@@ -94,10 +95,17 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		);
 		const { deps } = makeDeps({
 			getVoiceConfig: () => ({ ttsProvider: "browser" }),
+			getVrmLipSyncSink: () => setLipSync,
 		});
 		createSentenceTtsPipeline(deps).sendSentence("Hello there.");
 		expect(speak).toHaveBeenCalledTimes(1);
 		expect(synthesizeMock).not.toHaveBeenCalled();
+		expect(setLipSync).not.toHaveBeenCalled();
+		const utterance = speak.mock.calls[0][0];
+		utterance.onstart();
+		expect(setLipSync).toHaveBeenCalledWith(expect.any(Function));
+		utterance.onend();
+		expect(deps.setSpeaking).toHaveBeenLastCalledWith(false);
 	});
 
 	it("selects matching SpeechSynthesisVoice when browser voice is configured in web mode", () => {

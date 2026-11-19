@@ -639,6 +639,18 @@ export function normalizeCardJsonObject(
 	return { ok: true, card };
 }
 
+export function createCharacterCardV2(
+	name: string,
+	description = "",
+	firstMessage = "",
+): CardParseResult {
+	return normalizeCardJsonObject({
+		spec: "chara_card_v2",
+		spec_version: "2.0",
+		data: { name, description, first_mes: firstMessage },
+	}, "json");
+}
+
 export function parseCharacterCardJsonText(
 	jsonText: string,
 	sourceFormat: CardSourceFormat = "json",

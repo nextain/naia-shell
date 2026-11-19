@@ -2147,3 +2147,42 @@ Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-ru
 | FR-WEB-VISUAL-AGENT-SLUG.1 | 웹판(브라우저) 프로필 설정은 기본 슬러그 `naia`와 `https://naia.land/visual-agent/{slug}` 형태의 공개 주소를 보여 줍니다. 기존 개인 공간 경로 `/u/{slug}` 및 오래된 링크의 소유자 확인은 유지합니다. (UC-WEB-VISUAL-AGENT-SLUG) | Done |
 | FR-WEB-VISUAL-AGENT-SLUG.2 | 영문 소문자·숫자·하이픈 3~32자를 검증합니다. 유효한 주소를 미리 보고 로그인한 계정의 포털 설정에 이름을 저장합니다. 저장한 주소를 복사하고, 입력이나 저장 오류를 수정하거나 재시도할 수 있습니다. | Done |
 | FR-WEB-VISUAL-AGENT-SLUG.3 | 웹 셸은 포털에서 넘긴 `/app/?visualAgent={slug}`의 슬러그를 확인해 브라우저 제목에 표시합니다. 공개 주소를 열면 방문자의 브라우저 설정으로 기존 비주얼 에이전트 화면을 엽니다. | Done |
+
+## 웹판 캐릭터 카드 만들기·파일 추가·적용 (R40)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-CHARCARD.1 | 웹판 상단과 모바일 메뉴의 캐릭터 카드는 같은 셸 앱의 목록과 상세를 엽니다. 카드 선택은 그 상세를 앱 안에서 갱신합니다. (UC-WEB-CHARCARD) | Done (local) |
+| FR-WEB-CHARCARD.2 | 같은 줄에서 캐릭터 카드를 만들거나 실리태번 V2/V3 PNG·JSON을 추가할 수 있습니다. 목록과 상세에 원본 카드 그림 또는 아바타 그림을 표시합니다. (UC-WEB-CHARCARD) | Done (local) |
+| FR-WEB-CHARCARD.3 | 선택된 카드를 적용하는 버튼을 파일 추가 바로 옆에 두고 390×844 첫 화면에서도 접근할 수 있게 합니다. 적용하면 해당 카드로 대화를 시작합니다. (UC-WEB-CHARCARD) | Done (local) |
+
+기준 재현. 상단 버튼 `WebRuntimeHarnessBar.tsx:191`에서 `land.naia.charcard`를 열면 iframe이 `/hosted-apps/naia-charcard/index.html`을 요청했습니다. `git log -S`로 추적한 최초 URL은 `e0033299`의 `app-store-adapter.ts:449`에 있습니다. `96ba5bf7`은 기본 URL에 `/app/`을 붙였습니다. 로컬 Vite에서는 기본 경로로도 카드 HTML이 제공되지 않아 셸 HTML이 HTTP 200으로 반환됐습니다. 새 웹판은 같은 카드 소스로 개발·빌드 경로를 제공하며 기존 카탈로그 URL보다 셸에 포함된 카드 경로를 사용합니다.
+
+검증. 표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.
+
+## 웹판 3D VRM 아바타 선택의 VRoid Hub 링크 (R41)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-VRM-HUB.1 | 웹판 아바타 설정은 `3D VRM`에서 `VRoid Hub`를 새 탭으로 열고, `비디오 아바타(NVA)`에서 `NVA 아바타 만들기`를 표시합니다. (UC-WEB-VRM-HUB) | Done (local) |
+
+검증. 표적 Vitest 3건과 Playwright 1280×720·390×844 2건 통과. 키보드로 새 탭을 열고 격리 응답 오류 뒤 원래 설정에서 NVA 선택으로 전환. 캡처 shots/r40-card/R41-1280.png·R41-390.png.
+
+## 웹판 크레딧 금액 표기 (R42)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-CREDIT-FORMAT.1 | 브라우저의 상단 잔액, 설정, 모델 가격, 대화 사용량 및 음성 비용에서 크레딧 금액을 `1,234 Cr` 형식으로 표시합니다. 한국어와 영어에서 `약`, `≈`를 크레딧 금액에 붙이지 않습니다. 환산과 결제 계산은 동일합니다. (UC-WEB-CREDIT-FORMAT) | Done (local) |
+
+검증. 표적 Vitest 95건과 Playwright 1280×720·390×844 2건 통과. 한국어·영어 모델 요금과 잔액을 확인하고 조회 실패에서 재시도. 캡처 shots/r40-card/R42-1280.png·R42-390.png.
+
+## 웹판 VRM 발화 입 모양 (R43)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-VRM-LIP-SYNC.1 | 웹판에서 TTS 오디오 재생 위치와 음성 구간을 VRM의 `aa`·`ih`·`ou` 등 모음 표정으로 전달합니다. 시스템 음성을 사용할 때는 브라우저가 제공하는 발화 시간과 경계를 사용합니다. (UC-WEB-VRM-LIP-SYNC) | Done (local) |
+| FR-WEB-VRM-LIP-SYNC.2 | 재생 종료·중단·오류 뒤 발화용 표정을 해제합니다. 기존 NVA(2D) 음성 재생을 대조해 확인합니다. (UC-WEB-VRM-LIP-SYNC) | Done (local) |
+
+기준 재현. 로컬 브라우저에서 TTS WAV가 0.62초 진행한 동안 VRM 모음 표정 호출은 0건이었습니다. 기존 코드의 문장 타이밍 수신기는 NVA에 연결되어 있었고 VRM 프레임 루프에는 발화 입력이 비어 있었습니다. 웹판 VRM은 현재 문장의 음원 위치·음량과 시스템 음성의 발화 이벤트를 받아 표정을 갱신합니다.
+
+검증. 표적 Vitest 218건과 Playwright 1280×720·390×844 4건 통과. 디코딩한 시험 음원에 맞춰 VRM 모음 표정이 바뀌고 재생 종료·Esc 중단 뒤 해제됨을 확인. 같은 음원으로 데스크톱 NVA 타이밍과 모바일 NVA 말하기 클립을 대조. 캡처 shots/r40-card/R43-1280.png·R43-390.png.

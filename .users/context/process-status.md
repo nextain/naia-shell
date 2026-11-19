@@ -1,10 +1,32 @@
-<!-- src-sha: f3411609f963302b -->
+<!-- src-sha: 529875b7df8ebcbe -->
 
-## 웹판 비주얼 에이전트 공개 주소 (R39) — 2026-11-20
+## 웹판 VRM 립싱크 (R43) — 2026-11-20
 
-- P01–P05 완료. 셸 설정의 프로필에서 기본 `naia` 주소를 읽고, 로그인 후 공개 슬러그를 저장해 복사합니다. 포털에서 넘긴 공개 슬러그를 웹 셸의 탭 제목에 표시합니다.
-- 관련 Vitest 25통과, Playwright 1280×720·390×844 2통과. 두 폭의 캡처와 키보드, 오류 복구, 주소 줄바꿈을 확인했습니다. 전체 셸 Vitest는 3,671통과·14실패·34제외입니다.
-- `UC-WEB-VISUAL-AGENT-SLUG`, `FR-WEB-VISUAL-AGENT-SLUG.1–3`, `packages/shell/e2e/web-visual-agent-slug-r39.spec.ts`, `shots/r39-slug/`.
+- 표적 Vitest 218건과 Playwright 1280×720·390×844 4건 통과. 디코딩한 시험 음원에 맞춰 VRM 모음 표정이 바뀌고 재생 종료·Esc 중단 뒤 해제됨을 확인. 같은 음원으로 데스크톱 NVA 타이밍과 모바일 NVA 말하기 클립을 대조. 캡처 shots/r40-card/R43-1280.png·R43-390.png.
+- `UC-WEB-VRM-LIP-SYNC` · `FR-WEB-VRM-LIP-SYNC.1~2` · `packages/shell/e2e/web-vrm-lip-sync-r43.spec.ts`
+
+<!-- src-sha: 5b6f75184999a42d -->
+
+## 웹판 크레딧 금액 표기 (R42) — 2026-11-20
+
+- 표적 Vitest 95건과 Playwright 1280×720·390×844 2건 통과. 한국어·영어 모델 요금과 잔액을 확인하고 조회 실패에서 재시도. 캡처 shots/r40-card/R42-1280.png·R42-390.png.
+- `UC-WEB-CREDIT-FORMAT` · `FR-WEB-CREDIT-FORMAT.1` · `packages/shell/e2e/web-credits-r42.spec.ts`
+
+<!-- src-sha: 1d79769912aad3b5 -->
+
+## 웹판 VRM 설정의 VRoid Hub 링크 (R41) — 2026-11-20
+
+- 표적 Vitest 3건과 Playwright 1280×720·390×844 2건 통과. 키보드로 새 탭을 열고 격리 응답 오류 뒤 원래 설정에서 NVA 선택으로 전환. 캡처 shots/r40-card/R41-1280.png·R41-390.png.
+- `UC-WEB-VRM-HUB` · `FR-WEB-VRM-HUB.1` · `packages/shell/e2e/web-vroid-hub-r41.spec.ts`
+
+<!-- src-sha: 4f83c9966f571f68 -->
+
+## 웹판 캐릭터 카드 추가·적용 (R40) — 2026-11-20
+
+- 표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.
+- `UC-WEB-CHARCARD` · `FR-WEB-CHARCARD.1~3` · `packages/shell/e2e/web-charcard-r40.spec.ts`
+
+<!-- src-sha: 7d4dedb15f471806 -->
 
 ## 웹판 설정 창의 재생 중 카드 겹침 해소 (R36) — 2026-11-20
 

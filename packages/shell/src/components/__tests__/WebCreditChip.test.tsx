@@ -96,6 +96,15 @@ describe("WebCreditChip", () => {
 		);
 	});
 
+	it("R42 shows grouped credit amounts in the accessible chip and balance popover", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 1234 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /1,234 Cr/ });
+		expect(chip).toHaveTextContent("1,234 Cr");
+		fireEvent.click(chip);
+		expect(screen.getAllByText("1,234 Cr")).toHaveLength(2);
+	});
+
 	it("marks a low balance orange", async () => {
 		mocks.fetchBalance.mockResolvedValue({ credits: 12 });
 		render(<WebCreditChip />);
@@ -108,6 +117,7 @@ describe("WebCreditChip", () => {
 		mocks.fetchBalance.mockResolvedValue({ credits: 0 });
 		render(<WebCreditChip />);
 		const card = await screen.findByRole("alert");
+		expect(screen.getByRole("button", { name: /0 Cr/ })).toBeInTheDocument();
 		expect(card.textContent).toContain("webCredit.emptyTitle");
 		fireEvent.click(screen.getByText("webCredit.dismiss"));
 		expect(screen.queryByRole("alert")).toBeNull();

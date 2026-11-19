@@ -32,6 +32,9 @@ export type SpeechClock = () => number;
 export interface AudioPlaybackClock {
 	/** Playback position of this sentence's sound (seconds, >= 0). */
 	clock: SpeechClock;
+	/** Duration and signal level available when measuring a queued voice clip. */
+	duration?: SpeechClock;
+	readSpeechLevel?: () => number;
 }
 
 /** A plan already loaded into the canonical player, waiting for its sound. */
