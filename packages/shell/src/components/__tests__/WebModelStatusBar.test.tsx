@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebModelStatusBar } from "../WebModelStatusBar";
 import { t } from "../../lib/i18n";
@@ -64,7 +64,7 @@ describe("WebModelStatusBar", () => {
 		expect(el.textContent).toContain("NVIDIA · Ada · RTX 4060");
 	});
 
-	it("renders ready phase with fallback model and invokes onSwitchModel on return to default", () => {
+	it("renders ready phase with fallback model and invokes onSwitchModel on return to default", async () => {
 		const onSwitchModel = vi.fn();
 		setWebModelStatus({
 			phase: "ready",
@@ -76,11 +76,23 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.textContent).toContain(t("webModel.fallbackActive"));
+		const details = screen.getByTestId("web-model-ready-details") as HTMLDetailsElement;
+		const summary = details.querySelector("summary");
+		expect(details.open).toBe(false);
+		expect(el.hasAttribute("tabindex")).toBe(false);
+		expect(summary?.textContent).toContain(t("webModel.fallbackActive"));
+		expect(summary?.textContent).toContain("Qwen3 4B (4bit f32)");
+		if (!summary) throw new Error("model details summary missing");
+		fireEvent.click(summary);
+		expect(details.open).toBe(true);
+		await waitFor(() => expect(el.getAttribute("tabindex")).toBe("0"));
 
 		const backBtn = screen.getByTestId("web-model-back-to-default");
 		expect(backBtn.textContent).toContain("Qwen3 4B (4bit f16)");
 		fireEvent.click(backBtn);
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_MODEL_ID);
+		fireEvent.click(summary);
+		await waitFor(() => expect(el.hasAttribute("tabindex")).toBe(false));
 	});
 
 	it("renders no-webgpu error as role alert with no fallback button and functional retry", () => {

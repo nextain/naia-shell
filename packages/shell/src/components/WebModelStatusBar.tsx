@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { t } from "../lib/i18n";
 import {
 	fallbackModelFor,
@@ -27,6 +27,10 @@ export function WebModelStatusBar(props: {
 	onRetry?: () => void;
 }) {
 	const status = useWebModelStatus();
+	const [readyDetailsOpen, setReadyDetailsOpen] = useState(false);
+	useEffect(() => {
+		setReadyDetailsOpen(false);
+	}, [status.phase]);
 
 	const handleSwitchModel = (model: WebLlmModelId) => {
 		if (props.onSwitchModel) {
@@ -85,7 +89,7 @@ export function WebModelStatusBar(props: {
 			<div
 				id="web-model-status"
 				data-testid="web-model-status"
-				tabIndex={props.scrollDuringSetup ? 0 : undefined}
+				tabIndex={0}
 				data-phase={status.phase}
 				data-model={status.model}
 				data-error-kind={status.errorKind}
@@ -132,7 +136,7 @@ export function WebModelStatusBar(props: {
 		<div
 			id="web-model-status"
 			data-testid="web-model-status"
-			tabIndex={props.scrollDuringSetup ? 0 : undefined}
+			tabIndex={props.scrollDuringSetup || (status.phase === "ready" && readyDetailsOpen) ? 0 : undefined}
 			data-phase={status.phase}
 			data-model={status.model}
 			className="chat-compaction-notice"
@@ -153,25 +157,30 @@ export function WebModelStatusBar(props: {
 				</>
 			)}
 			{status.phase === "ready" && (
-				<>
-					<div>{t("webModel.ready", { model: modelLabel })}</div>
+				<details
+					data-testid="web-model-ready-details"
+					onToggle={(event) => setReadyDetailsOpen(event.currentTarget.open)}
+				>
+					<summary>
+						{t("webModel.ready", { model: modelLabel })}
+						{status.model !== WEB_LLM_MODEL_ID && (
+							<> · {t("webModel.fallbackActive")}</>
+						)}
+					</summary>
 					{adapterLine && <div>{adapterLine}</div>}
 					{status.model !== WEB_LLM_MODEL_ID && (
-						<div>
-							<span>{t("webModel.fallbackActive")}</span>{" "}
-							<button
-								type="button"
-								className="chat-error-notice__retry"
-								data-testid="web-model-back-to-default"
-								onClick={() => handleSwitchModel(WEB_LLM_MODEL_ID)}
-							>
-								{t("webModel.backToDefault", {
-									model: formatWebLlmModelLabel(WEB_LLM_MODEL_ID),
-								})}
-							</button>
-						</div>
+						<button
+							type="button"
+							className="chat-error-notice__retry"
+							data-testid="web-model-back-to-default"
+							onClick={() => handleSwitchModel(WEB_LLM_MODEL_ID)}
+						>
+							{t("webModel.backToDefault", {
+								model: formatWebLlmModelLabel(WEB_LLM_MODEL_ID),
+							})}
+						</button>
 					)}
-				</>
+				</details>
 			)}
 		</div>
 	);
