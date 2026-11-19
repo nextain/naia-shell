@@ -3283,3 +3283,16 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 형식 | 맨 이름·`naia-voice:`·Dragon·Google 이름 정규화, `user-voice:`·빈 값 거절 | `web-studio-voice.test.ts` R16 |
 | 빈 값·오류 | 목소리 없는 새 캐릭터·`user-voice:` 카드 → 앞 캐릭터 목소리 제거 | `web-studio-voice.test.ts` R16 |
 | 화면 | 받는 쪽은 화면 변화가 설정값뿐이라 단위 시험으로 확인(화면 캡처 없음) | — |
+
+## UC-WEB-VOICE-LANG-GROUP. 음성 목록이 현재 언어 기준으로 묶여 보인다 (R25-v)
+
+경로: 웹(브라우저) 빌드 설정 > 음성 탭의 목소리 고르기(`#tts-voice-select`). 웹 기본인 브라우저 내장 목소리(speechSynthesis, Chrome 은 여러 언어 목소리를 줌)와 Naia Cloud TTS 목록 모두 해당합니다. 한국어 화면의 사용자가 목소리 목록을 열면 맨 앞에 "한국어" 묶음(한국어 목소리 + 한국어를 말하는 다국어 목소리)이 있고, 나머지 목소리는 14개 언어 순서(ko·en·ja·zh·fr·de·ru·es·ar·hi·bn·pt·id·vi)로 언어별 묶음에 들어갑니다. 그 밖의 언어(it·th 등)는 뒤에 둡니다. 포르투갈어 목소리가 한국어 목소리 사이에 섞여 보이지 않습니다. 다른 언어 목소리도 숨기지 않고 고를 수 있습니다. 언어 표시(lang)가 없는 목소리는 맨 뒤 묶음에 둡니다. 묶음 정보가 없는 목록(Edge 등 다른 공급자)은 예전처럼 한 줄 목록입니다.
+
+### Test Coverage Map — UC-WEB-VOICE-LANG-GROUP
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·성공 | 한국어 화면에서 브라우저 목소리 묶음 순서 ko·en·ja·pt·it, Naia Cloud TTS 첫 묶음 = ko(current), pt-BR-Thalita 는 첫 묶음에 없고 pt 묶음에 있음 | `e2e/web-voice-r25v.spec.ts` R25-v (1280×720, 390×844) |
+| 14개 언어 | 각 언어에서 첫 묶음이 그 언어, 모든 목소리가 정확히 한 번 나옴, 묶음 순서 | `src/lib/tts/__tests__/registry.test.ts` R25-v |
+| 빈 목록·언어 없음 | 빈 목록은 묶음 없음, lang 없는 브라우저 목소리는 맨 뒤 묶음 | `registry.test.ts` R25-v |
+| 좁은 폭 | 390×844 에서 ☰ 메뉴 > 설정 > 음성 탭의 목록이 보임 | `e2e/web-voice-r25v.spec.ts` R25-v 390 |

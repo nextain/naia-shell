@@ -2026,3 +2026,11 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-STUDIO-VOICE.2 | 카드에 쓸 수 있는 목소리가 없으면(없음·`user-voice:`) 앞 캐릭터 목소리를 지워 기본 목소리로 돌아갑니다. | Done (local) |
 
 검증: `UC-WEB-STUDIO-VOICE-APPLY`. 게이트웨이 규칙(`naia-voice:` 머리말만 나이아 목소리)은 참고 사본 코드로 확인했고 운영 게이트웨이와 같은지는 미확인입니다. 스튜디오 `user-voice:`(내 목소리)를 셸 실시간 합성에서 쓰는 경로는 없습니다.
+
+## 음성 목록 언어 묶음 (R25-v)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-VOICE-LANG.1 | 웹(브라우저) 빌드 설정의 목소리 목록(브라우저 내장·Naia Cloud TTS)은 현재 UI 언어로 말할 수 있는 목소리를 맨 앞 묶음(`optgroup`)에 두고, 나머지를 14개 언어 순서의 언어별 묶음으로 보입니다. 다른 언어 목소리가 현재 언어 묶음에 섞이지 않습니다. | Done (local) |
+
+검증: `UC-WEB-VOICE-LANG-GROUP`.

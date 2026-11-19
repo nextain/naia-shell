@@ -29,8 +29,8 @@ export function silentWav(): Buffer {
 	return buf;
 }
 
-/** 웹 작업 공간을 준비하고 음악 앱을 연다. */
-export async function openWebShellWithBgm(page: Page) {
+/** 웹 작업 공간을 준비하고 음악 앱을 연다(openBgm=false 면 셸만 준비). */
+export async function openWebShellWithBgm(page: Page, opts: { openBgm?: boolean } = {}) {
 	await page.route("**/web-adk/*.json", async (route) => {
 		const response = await route.fetch();
 		const bundle = await response.json();
@@ -49,7 +49,7 @@ export async function openWebShellWithBgm(page: Page) {
 	await page.goto("/");
 	await page.getByTestId("web-workspace-start-default").click();
 	await waitWebWorkspaceReady(page);
-	await openBgmApp(page);
+	if (opts.openBgm !== false) await openBgmApp(page);
 }
 
 export async function waitWebWorkspaceReady(page: Page) {
