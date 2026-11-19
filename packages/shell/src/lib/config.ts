@@ -310,6 +310,7 @@ export interface LlmRoleConfig {
 }
 
 export interface AppConfig {
+    installedWebApps?: string[];
 	provider: ProviderId;
 	model: string;
 	/** Settings-only model catalog ordering. Persisted in ui-config.json. */

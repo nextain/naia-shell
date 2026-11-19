@@ -45,9 +45,69 @@ interface StoreProductsResponse {
 	}>;
 }
 
+<<<<<<< Updated upstream
+=======
+export interface StoreProductMetadata {
+	name: string | null;
+	description: string | null;
+	thumbnailUrl: string | null;
+	permissions: string[] | null;
+}
+
+function pickLocalized(
+	localized: Record<string, string> | undefined,
+	locale: string,
+	legacy: string | undefined,
+	root: string | undefined,
+): string | null {
+	return localized?.[locale] || legacy || localized?.en || root || null;
+}
+
+function mergeLegacyLanguages(
+	localized: Record<string, string> | undefined,
+	korean: string | undefined,
+	english: string | undefined,
+): Record<string, string> {
+	const merged = { ...localized };
+	if (!merged.ko && korean) merged.ko = korean;
+	if (!merged.en && english) merged.en = english;
+	return merged;
+}
+
+export async function getStoreProductName(
+	appId: string,
+	locale = getLocale(),
+): Promise<StoreProductMetadata | null> {
+	const response = await fetch(`${getStoreGatewayUrl()}/v1/apps/products`);
+	if (!response.ok) return null;
+	const body = (await response.json()) as StoreProductsResponse;
+	const product = body.data?.find((item) => item.app_id === appId);
+	const manifest = product?.manifest;
+	if (!manifest) return null;
+	const names = mergeLegacyLanguages(manifest.names, manifest.nameKo, manifest.nameEn);
+	const descriptions = mergeLegacyLanguages(
+		manifest.descriptions,
+		manifest.descriptionKo,
+		manifest.descriptionEn,
+	);
+	return {
+		name: pickLocalized(names, locale, manifest.nameEn || manifest.nameKo, manifest.name),
+		description: pickLocalized(
+			descriptions,
+			locale,
+			manifest.descriptionEn || manifest.descriptionKo,
+			manifest.description,
+		),
+		thumbnailUrl: manifest.thumbnailUrl || manifest.thumbnail_url || null,
+		permissions: Array.isArray(manifest.permissions) && manifest.permissions.every((p) => typeof p === "string") ? manifest.permissions : null,
+	};
+}
+
+>>>>>>> Stashed changes
 export async function getStoreProductName(
 	appId: string,
 ): Promise<string | null> {
+<<<<<<< Updated upstream
 	const response = await fetch(`${getStoreGatewayUrl()}/v1/apps/products`);
 	if (!response.ok) return null;
 	const body = (await response.json()) as StoreProductsResponse;
@@ -58,4 +118,7 @@ export async function getStoreProductName(
 		product?.manifest?.nameEn ||
 		null
 	);
+=======
+	return (await getStoreProductName(appId, locale))?.name ?? null;
+>>>>>>> Stashed changes
 }
