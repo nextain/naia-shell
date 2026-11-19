@@ -3287,3 +3287,14 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 성공 | set·get·keys·delete가 앱 id 범위 안에서 동작, 다른 앱 id 사칭 무시 | `installed-app-host-bridge.test.ts` R11 |
 | 오류 | 권한 없음, 빈 키, 8MB 초과, 모르는 동작, 저장소 실패를 오류 코드로 회신 | `installed-app-host-bridge.test.ts` R11 |
 | 앱 묶음 연결 | 캐릭터 카드 묶음이 자체 IndexedDB 대신 이 프로토콜을 씀 | 미완(묶음 소스가 이 저장소 밖) |
+
+## UC-WEB-A-R28. 웹판 대화창이 상태줄에 가려지지 않고 키보드로 닿기
+
+웹판 사용자가 800×450, 1280×720, 1920×1080 창에서 대화합니다. 대화 내용, 입력란, 모델 선택 단추가 상태줄 밑으로 들어가지 않습니다. Tab 키로 차례로 이동하면 대화창의 조작 요소에 닿습니다. 음악 플레이어를 접어 두면 숨은 플레이어 안의 단추는 Tab 순서와 화면 낭독기에서 빠집니다. 플레이어를 펼치면 다시 조작할 수 있습니다.
+
+### Test Coverage Map — UC-WEB-A-R28
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·진행 | 세 창 크기에서 메시지, 입력란, 모델 조작이 화면 안에 있고 Tab으로 닿음 | `e2e/web-chat-visibility.spec.ts` (800×450·1280×720·1920×1080) |
+| 접힌 음악 플레이어 | 접힌 플레이어 내부가 `inert`·`aria-hidden`이라 Tab 순서에 없음 | 같은 시험의 Tab 순회 |

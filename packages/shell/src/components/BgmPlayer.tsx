@@ -2453,6 +2453,10 @@ export function BgmPlayer({ naia }: Props) {
 				createPortal(
 					<div
 						className={`bgm-yt-app${appExpanded ? "" : " bgm-yt-app--hidden"}`}
+						// R28: the collapsed panel is invisible (opacity 0, scaleY 0) but
+						// stays mounted; keep its ~30 controls out of the Tab order and
+						// the accessibility tree until the user opens it.
+						{...(appExpanded ? {} : { inert: "", "aria-hidden": true })}
 						style={{
 							position: "fixed",
 							top: appPos.top,

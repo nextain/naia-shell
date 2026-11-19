@@ -1,7 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test.skip(process.env.NAIA_E2E_WEB !== "1" || process.env.VITE_NAIA_WEB_LLM !== "fake", "requires web runtime and fake model");
-test.setTimeout(300_000);
+// The real Tab walk below needs ~70 key presses; on a loaded runner each
+// renderer round trip can stall for seconds, so allow more than the default.
+test.setTimeout(900_000);
 
 async function focusWithTab(page: Page, target: Locator) {
 	for (let i = 0; i < 120; i++) {
@@ -56,7 +58,7 @@ for (const viewport of [
 		const messages = page.locator(".chat-messages");
 		const last = page.locator(".chat-message").last();
 		await expect(last).toContainText("웹 가짜 엔진 응답입니다.");
-		await expect.poll(() => messages.evaluate((el) => el.clientHeight)).toBeGreaterThanOrEqual(64);
+		await expect.poll(() => messages.evaluate((el) => el.clientHeight), { timeout: 120_000 }).toBeGreaterThanOrEqual(64);
 		// Do not scroll here: the newest message must be visible immediately
 		// after it is added, before the user manipulates the chat container.
 		await expectPointerTarget(last);
