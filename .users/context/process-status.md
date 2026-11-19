@@ -1,4 +1,10 @@
-<!-- src-sha: 441f280a16a1abc3 -->
+<!-- src-sha: 88790bed4ce3b9e3 -->
+
+## 웹판 ADK 기본 배경·아바타와 가져온 미디어 (R32) — 2026-11-20
+
+- Vitest web-settings-catalog.test.ts 7/7. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-SETTINGS-FILES · FR-WEB-SETTINGS-FILES.1–4 · packages/shell/e2e/web-settings-files-r32.spec.ts
+
 
 ## S2 키오스크 웹 기억 — 2026-11-05
 

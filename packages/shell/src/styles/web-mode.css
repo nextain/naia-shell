@@ -178,6 +178,7 @@
 	border: 1px solid transparent;
 	text-align: left;
 	box-sizing: border-box;
+	overflow-wrap: anywhere;
 }
 .web-workspace-list button:hover,
 .web-workspace-list summary:hover {
@@ -188,6 +189,17 @@
 	border-color: var(--accent, #7ca0ff);
 	color: var(--accent, #9bbcff);
 	font-weight: 600;
+}
+/* R32: naia-settings 의 앱 기본 파일 표시(복사본 아님). */
+.web-workspace-bundled {
+	margin-left: 6px;
+	padding: 0 5px;
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 500;
+	color: var(--text-secondary, #aab);
+	background: rgba(255, 255, 255, 0.08);
+	white-space: nowrap;
 }
 .web-workspace-viewer {
 	display: flex;

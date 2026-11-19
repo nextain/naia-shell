@@ -3449,3 +3449,18 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 오류 | ZIP 아님·발표 아님·장 없음 → `slides_invalid_pptx`, 패키지 밖 경로 거부; e2e 깨진 PPTX 안내 | `slides-pptx.test.ts`; e2e "unreadable PPTX" |
 | PDF 작성 | 장마다 JPEG 한 쪽, xref 위치 정확 | `slides-pptx.test.ts` "image PDF writer" |
 | 좁은 폭 | 390px 에서 열기 단추·슬라이드·발표문이 화면 안 | e2e 390×844 |
+
+## UC-WEB-SETTINGS-FILES. 웹판 ADK 파일 목록에서 naia-settings 보기 (R32, 2026-11-20)
+
+웹판(브라우저) 사용자가 작업공간을 열면 `naia-settings` 아래에 데스크톱 ADK와 같은 `background`·`vrm-files`·`bgm-musics`·`nva-files` 폴더가 보입니다. 기본 배경과 아바타는 “앱 기본” 표시가 있는 기존 앱 자산으로 열립니다. 사용자가 가져오기 대상으로 배경 또는 아바타 폴더를 고르면, 올린 파일이 그 폴더에 표시되고 내려받을 수 있습니다.
+
+### Test Coverage Map — UC-WEB-SETTINGS-FILES
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 루트에 `naia-settings`, 그 안에 네 폴더 이름 | `web-settings-catalog.test.ts` R32; e2e 두 폭 |
+| 빈 목록 | 기본 배경·아바타를 탐색하는 동안 브라우저 저장소에 사용자 미디어가 생기지 않음 | e2e R32, `web-settings-catalog.test.ts` |
+| 진행 | 가져올 폴더와 저장 중 상태가 표시되고 저장 중 파일 선택을 잠금 | e2e R32 |
+| 성공 | 기본 배경 그림이 열리고 VRM·NVA가 목록에 보임. 올린 배경·VRM·NVA 파일은 저장 뒤 같은 목록에 나타남 | `e2e/web-settings-files-r32.spec.ts` (1280×720, 390×844) |
+| 오류 | 지원하지 않는 파일 형식은 안내 후 다시 선택할 수 있음. 미리 보기를 지원하지 않는 아바타는 내려받기 안내 표시 | e2e R32, `web-settings-catalog.test.ts` |
+| 좁은 폭 | 390×844에서 파일 목록을 다시 열고 새 파일을 선택할 수 있음 | e2e R32, `shots/r32-settings-files/R32-390.png` |

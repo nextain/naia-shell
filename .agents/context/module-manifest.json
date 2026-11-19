@@ -888,6 +888,11 @@
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-model-status.md"
     },
+    "packages/shell/src/lib/web-runtime/web-settings-catalog.ts": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-SETTINGS-FILES"],
+      "contract": "docs/requirements.md#웹판-adk-파일-목록의-naia-settings-r32-2026-11-20"
+    },
     "packages/shell/src/lib/web-runtime/web-storage-persist.ts": {
       "layer": "adapters",
       "uc": [

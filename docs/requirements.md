@@ -2087,3 +2087,12 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-SLIDES-PPTX.4 | 웹판 슬라이드 창(opaque-origin 샌드박스)에서 `sessionStorage` 접근이 앱을 멈추지 않습니다. | Done (local) |
 
 로컬 검증: vitest `slides-pptx.test.ts` 와 기존 슬라이드 시험. Playwright `e2e/web-slides-pptx.spec.ts` 는 NAIA_E2E_WEB=1 로, `vite --mode web --cors` 와 Chrome `--disable-features=LocalNetworkAccessChecks` 를 켜고 돌립니다(샌드박스 창이 루프백 dev 서버에서 모듈을 받기 때문). 배포된 `hosted-apps/naia-slides` 빌드와 실제 업무용 PPTX의 그림 품질은 미확인.
+
+## 웹판 ADK 파일 목록의 naia-settings (R32, 2026-11-20)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-SETTINGS-FILES.1 | 웹판(브라우저) 작업공간 루트의 `naia-settings` 안에 `background`·`vrm-files`·`bgm-musics`·`nva-files`가 보입니다. 폴더 이름은 데스크톱 ADK의 `{adkPath}/naia-settings/` 계약을 따릅니다(naia-adk `naia-settings/README.md`, FR-WS.2). 시연판은 기존 열람 허용 목록을 따릅니다. (UC-WEB-SETTINGS-FILES) | Pending |
+| FR-WEB-SETTINGS-FILES.2 | 기본 배경, VRM, NVA 묶음의 매니페스트는 “앱 기본”으로 표시되고 기존 `/backgrounds`·`/avatars`·`/nva` 자산을 읽습니다. 실제 브라우저 저장소 파일과 이름이 같으면 저장된 파일을 엽니다. 기본 자산은 브라우저 파일 저장소에 따로 보관하지 않습니다. | Pending |
+| FR-WEB-SETTINGS-FILES.3 | 작업공간 가져오기에서 `background`·`vrm-files`·`nva-files`를 선택할 수 있습니다. 올린 배경과 `.vrm`·`.nva`는 지정한 폴더에 원래 바이트로 보관되며 목록에 바로 나타납니다. `.nva`는 원본 묶음 파일로 내릴 수 있습니다. | Pending |
+| FR-WEB-SETTINGS-FILES.4 | 선택한 폴더에서 지원하는 파일 형식을 안내하고 형식이 맞으면 저장합니다. VRM·NVA 파일을 열면 내려받기 안내를 표시합니다. | Pending |
