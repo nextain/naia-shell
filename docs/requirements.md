@@ -2102,3 +2102,9 @@ Web startup must select the web runtime using the build mode, even after the web
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
 | FR-WEB-SETTINGS-MUSIC.1 | 웹판(브라우저) 음악 앱에서 올린 곡은 작업공간 `naia-settings/bgm-musics/`에 보이며, 같은 브라우저 저장소의 원본을 오디오 플레이어로 엽니다. 곡을 올리거나 지우면 열려 있는 목록이 갱신됩니다. (UC-WEB-SETTINGS-MUSIC) | Pending |
+
+## 웹판 "재생 중" 카드가 화면을 덮지 않기 (R36, 2026-11-20)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-BGM-NOWPLAYING.1 | 웹판에서 YouTube 곡이 새로 시작되면 오른쪽 위 “재생 중” 카드를 4초간 표시합니다. 카드에 포인터나 키보드 초점이 머무는 동안은 유지합니다. 1280px과 390px 모두 설정을 열면 즉시 카드를 숨깁니다. 음악 바는 곡 정보와 정지를 계속 제공합니다. (UC-WEB-BGM-NOWPLAYING) | Pending |

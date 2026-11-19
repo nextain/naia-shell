@@ -3478,3 +3478,19 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 성공 | 같은 파일을 오디오 플레이어로 열고 음악 앱에서 지우면 목록도 갱신 | e2e R34 |
 | 오류 | 음악 형식 오류가 표시되고 목록에는 파일이 추가되지 않음 | e2e R34 |
 | 좁은 폭 | 390×844에서 음악 목록을 열고 곡을 선택할 수 있음 | e2e R34, `shots/r32-settings-files/R34-390.png` |
+
+## UC-WEB-BGM-NOWPLAYING. 웹판 "재생 중" 카드가 설정 창을 가리지 않기 (R36, 2026-11-20)
+
+웹판에서 YouTube 곡이 재생되기 시작하면 오른쪽 위에 “재생 중” 카드가 4초 동안 표시됩니다. 카드를 마우스 또는 키보드로 조작하는 동안은 카드를 계속 쓸 수 있습니다. 설정을 열면 카드가 숨겨져 탭과 닫기 단추를 바로 사용할 수 있습니다. 곡이 재생되는 동안 음악 바에서 곡 정보와 정지를 사용할 수 있습니다.
+
+배경: 대표님 원문(11/20 00:45~00:47) "그리고 이거 너무 가리고 겹치는데" (그림: yt-repro/luke-img/1573001374919037069.png, 1573001579957846058.png — 카드가 설정 창 탭 줄 오른쪽을 덮음).
+
+### Test Coverage Map — UC-WEB-BGM-NOWPLAYING
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 상태·진행 | 대기 중에는 카드가 없고 새 곡 재생 시 표시 | `BgmPlayer.test.tsx` R36, e2e R36 |
+| 성공 | 4초 뒤 카드 사라짐, 재생 상태는 `playing` 유지 | `BgmPlayer.test.tsx` R36 |
+| 유지 | 포인터나 카드 내 키보드 초점 중 하나가 남아 있으면 카드 유지 | `BgmPlayer.test.tsx` R36 |
+| 오류·정지 | 재생이 끝나거나 중단되면 카드도 닫힘 | e2e R36, `BgmPlayer.test.tsx` fix7d |
+| 좁은 폭·넓은 폭 | 1280×720·390×844에서 음악이 시작되어도 설정 탭과 닫기 단추를 누를 수 있음 | `e2e/web-bgm-nowplaying-r36.spec.ts`, `shots/r32-settings-files/R36-1280.png`·`R36-390.png` |
