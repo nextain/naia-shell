@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "Pilih folder kerja sebelum mengimpor file.",
+	"settings.webRefAudioNotice": "Suara yang diunggah dipakai di obrolan suara langsung Naia Omni. Naia Cloud TTS (membacakan balasan) belum memakainya.",
+	"settings.webRefAudioLogin": "Masuk untuk mengunggah suara Anda sendiri.",
 	"bgm.webUpload": "Tambah musik",
 	"bgm.webUploading": "Menambahkan…",
 	"bgm.webNoTracks": "Belum ada musik. File yang ditambahkan hanya disimpan di browser ini.",

@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "导入前请选择工作文件夹。",
+	"settings.webRefAudioNotice": "上传的声音用于 Naia Omni 实时语音对话。朗读回复的 Naia Cloud TTS 暂不使用它。",
+	"settings.webRefAudioLogin": "登录后即可上传自己的声音。",
 	"bgm.webUpload": "添加音乐",
 	"bgm.webUploading": "正在添加…",
 	"bgm.webNoTracks": "还没有音乐。添加的文件只保存在此浏览器中。",

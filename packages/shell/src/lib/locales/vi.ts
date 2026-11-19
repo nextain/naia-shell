@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "Chọn thư mục làm việc trước khi nhập tệp.",
+	"settings.webRefAudioNotice": "Giọng đã tải lên được dùng trong trò chuyện giọng nói trực tiếp Naia Omni. Naia Cloud TTS (đọc câu trả lời) chưa dùng giọng này.",
+	"settings.webRefAudioLogin": "Đăng nhập để tải lên giọng của bạn.",
 	"bgm.webUpload": "Thêm nhạc",
 	"bgm.webUploading": "Đang thêm…",
 	"bgm.webNoTracks": "Chưa có nhạc. Tệp đã thêm chỉ lưu trong trình duyệt này.",

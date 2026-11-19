@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "Selecione uma pasta de trabalho antes de importar.",
+	"settings.webRefAudioNotice": "A voz enviada é usada no chat de voz ao vivo do Naia Omni. O Naia Cloud TTS (leitura das respostas) ainda não a usa.",
+	"settings.webRefAudioLogin": "Entre para enviar sua própria voz.",
 	"bgm.webUpload": "Adicionar música",
 	"bgm.webUploading": "Adicionando…",
 	"bgm.webNoTracks": "Ainda não há músicas. Os arquivos adicionados ficam só neste navegador.",

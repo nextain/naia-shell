@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "ফাইল আমদানির আগে একটি কাজের ফোল্ডার বেছে নিন।",
+	"settings.webRefAudioNotice": "আপলোড করা কণ্ঠ Naia Omni লাইভ ভয়েস চ্যাটে ব্যবহৃত হয়। উত্তর পড়ে শোনানো Naia Cloud TTS এখনও এটি ব্যবহার করে না।",
+	"settings.webRefAudioLogin": "নিজের কণ্ঠ আপলোড করতে সাইন ইন করুন।",
 	"bgm.webUpload": "সংগীত যোগ করুন",
 	"bgm.webUploading": "যোগ করা হচ্ছে…",
 	"bgm.webNoTracks": "এখনো কোনো সংগীত নেই। যোগ করা ফাইল শুধু এই ব্রাউজারে থাকে।",

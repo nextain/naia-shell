@@ -2034,3 +2034,14 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-VOICE-LANG.1 | 웹(브라우저) 빌드 설정의 목소리 목록(브라우저 내장·Naia Cloud TTS)은 현재 UI 언어로 말할 수 있는 목소리를 맨 앞 묶음(`optgroup`)에 두고, 나머지를 14개 언어 순서의 언어별 묶음으로 보입니다. 다른 언어 목소리가 현재 언어 묶음에 섞이지 않습니다. | Done (local) |
 
 검증: `UC-WEB-VOICE-LANG-GROUP`.
+
+## 웹판 내 목소리 올리기 (R13)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-REF-AUDIO.1 | 웹(브라우저) 빌드에서 Naia 계정으로 로그인하면 TTS 공급자와 상관없이 설정 음성 탭에 목소리 녹음·파일 올리기(RefAudioSection)가 보입니다. 로그아웃이면 로그인 안내를 보입니다. 키오스크는 제외합니다. | Done (local) |
+| FR-WEB-REF-AUDIO.2 | 올리기는 게이트웨이 `POST /v1/ref-audio` 형식(multipart `file` = base64 RIFF/WAVE PCM16 16kHz 모노, `Authorization: Bearer`)을 지킵니다. | Done (local) |
+| FR-WEB-REF-AUDIO.4 | 웹판은 게이트웨이가 올린 목소리를 보관하므로, 올리기·지우기·불러오기 뒤 Tauri 전용 로컬 사본(`write/read/delete_naia_ref_audio`)을 부르지 않습니다. 예전에는 올리기(차감)는 성공했는데 이 호출이 브라우저에서 던져 "알 수 없는 오류"가 뜨고 현재 음색이 바뀌지 않았습니다(`lib/voice/ref-audio-api.ts`). | Done (local) |
+| FR-WEB-REF-AUDIO.3 | 올린 목소리가 쓰이는 곳(Naia Omni 실시간 대화)과 쓰이지 않는 곳(Naia Cloud TTS 문장 읽기)을 올리기 옆에 알립니다. | Done (local) |
+
+검증: `UC-WEB-REF-AUDIO-UPLOAD`. 남은 문제: 게이트웨이 `/v1/audio/speech` 가 사용자 참조 음성을 받지 않아 웹 기본 목소리(Naia Cloud TTS)로 내 목소리를 들을 수 없습니다 — 게이트웨이 변경이 필요합니다(참고 사본 `routes/tts.py`·`routes/naia_voice.py` 기준, 운영 게이트웨이와 같은지는 미확인). 웹판에서 Naia Omni 실시간 대화를 고를 수 있는지는 두뇌 공급자 묶음 몫이라 확인하지 않았습니다. 브라우저에서 게이트웨이 `/v1/ref-audio` 로의 CORS 허용 여부는 미확인입니다.

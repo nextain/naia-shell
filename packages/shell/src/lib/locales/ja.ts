@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "インポートする前に作業フォルダーを選択してください。",
+	"settings.webRefAudioNotice": "アップロードした声は Naia Omni のリアルタイム音声会話で使われます。返答を読み上げる Naia Cloud TTS ではまだ使われません。",
+	"settings.webRefAudioLogin": "ログインすると自分の声をアップロードできます。",
 	"bgm.webUpload": "音楽を追加",
 	"bgm.webUploading": "追加中…",
 	"bgm.webNoTracks": "まだ音楽がありません。追加したファイルはこのブラウザにだけ保存されます。",

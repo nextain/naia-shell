@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "Wählen Sie vor dem Import einen Arbeitsordner.",
+	"settings.webRefAudioNotice": "Die hochgeladene Stimme wird im Live-Sprachchat von Naia Omni verwendet. Naia Cloud TTS (Vorlesen der Antworten) nutzt sie noch nicht.",
+	"settings.webRefAudioLogin": "Melden Sie sich an, um Ihre eigene Stimme hochzuladen.",
 	"bgm.webUpload": "Musik hinzufügen",
 	"bgm.webUploading": "Wird hinzugefügt…",
 	"bgm.webNoTracks": "Noch keine Musik. Hinzugefügte Dateien bleiben nur in diesem Browser.",

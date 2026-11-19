@@ -4606,10 +4606,15 @@ export function SettingsTab() {
 	// selected (VoxCPM2 GPU voice cloning). Gemini Live is omni too but has no
 	// voice-clone surface, so mounting RefAudioSection there just 404s on
 	// GET /v1/ref-audio. Gate the section on this.
+	// R13: 정식 웹판은 Naia 계정에 목소리를 올릴 수 있다(게이트웨이 /v1/ref-audio).
+	// 게이트웨이는 올린 목소리를 Naia Omni 실시간 대화(/v1/realtime)에서만 쓰고
+	// 문장 읽기(/v1/audio/speech)는 쓰지 않으므로, 웹판은 그 사실을 함께 알린다.
+	const webRefAudio = isWebMode() && !isKioskDemo();
 	const supportsRefAudio =
 		(isSelectedOmni &&
 			(modelIdLower.startsWith("naia-") || provider === "vllm")) ||
-		ttsProvider === "naia-local-voice";
+		ttsProvider === "naia-local-voice" ||
+		(webRefAudio && !!naiaKey);
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
 	const proactiveSpeechSettings: ProactiveSpeechSettings = {
@@ -7906,6 +7911,16 @@ export function SettingsTab() {
 					})()}
 
 					{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
+					{webRefAudio && !supportsRefAudio && (
+						<p className="settings-hint" style={{ gridColumn: "1 / -1" }} data-testid="web-ref-audio-login">
+							{t("settings.webRefAudioLogin")}
+						</p>
+					)}
+					{supportsRefAudio && webRefAudio && !isSelectedOmni && (
+						<p className="settings-hint" style={{ gridColumn: "1 / -1" }} data-testid="web-ref-audio-notice">
+							{t("settings.webRefAudioNotice")}
+						</p>
+					)}
 					{supportsRefAudio && (
 						<RefAudioSection
 							ensureLocalVoiceReady={ensureLocalVoiceReady}

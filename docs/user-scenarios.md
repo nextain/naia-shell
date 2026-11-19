@@ -3296,3 +3296,20 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 14개 언어 | 각 언어에서 첫 묶음이 그 언어, 모든 목소리가 정확히 한 번 나옴, 묶음 순서 | `src/lib/tts/__tests__/registry.test.ts` R25-v |
 | 빈 목록·언어 없음 | 빈 목록은 묶음 없음, lang 없는 브라우저 목소리는 맨 뒤 묶음 | `registry.test.ts` R25-v |
 | 좁은 폭 | 390×844 에서 ☰ 메뉴 > 설정 > 음성 탭의 목록이 보임 | `e2e/web-voice-r25v.spec.ts` R25-v 390 |
+
+## UC-WEB-REF-AUDIO-UPLOAD. 웹판에서 내 목소리 올리기 (R13)
+
+경로: 웹(브라우저) 빌드 설정 > 음성 탭. 로그인하지 않은 사용자는 "로그인하면 내 목소리를 올릴 수 있습니다." 안내를 봅니다. Naia 계정으로 로그인한 사용자는 웹 기본 목소리(Naia Cloud TTS·브라우저 내장)에서도 [목소리 녹음]·[파일 올리기]를 봅니다(예전에는 naia-omni·naia-local-voice 일 때만 보였음). 파일을 고르면 셸이 16kHz 모노 PCM16 WAV 로 바꿔 base64 로 게이트웨이 `POST /v1/ref-audio`(multipart `file`, `Authorization: Bearer <naiaKey>`, `Idempotency-Key`)에 올립니다. 1회 $0.01 이 차감됩니다.
+
+올린 목소리는 게이트웨이가 Naia Omni 실시간 대화(`/v1/realtime`)에서만 씁니다. 답을 읽어 주는 Naia Cloud TTS(`/v1/audio/speech`)는 올린 목소리를 받지 않습니다(나이아 목소리는 번들 견본 `tpl-*` 만 참조 음성으로 씀). 그래서 웹판은 올리기 위에 "올린 목소리는 Naia Omni 실시간 음성 대화에서 쓰입니다. 답을 읽어 주는 Naia Cloud TTS 에는 아직 쓰이지 않습니다." 를 함께 보입니다. 키오스크 체험판에는 보이지 않습니다.
+
+### Test Coverage Map — UC-WEB-REF-AUDIO-UPLOAD
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본(로그아웃) | 로그인 안내 보임, 올리기 단추 없음 | `e2e/web-ref-audio-r13.spec.ts` R13 (1280×720, 390×844) |
+| 성공(로그인) | 안내 문구(Naia Omni)와 올리기 단추 보임, 파일을 고르면 `POST /v1/ref-audio` 에 `Bearer` 키와 `ref-audio.b64` base64 RIFF 가 감 | `e2e/web-ref-audio-r13.spec.ts` R13 (게이트웨이는 흉내, 실제 차감 없음) |
+| 진행→성공 표시 | 올리기 뒤 "알 수 없는 오류" 없음, 현재 음색 카드가 "내 업로드"로 바뀜 | `e2e/web-ref-audio-r13.spec.ts` R13 |
+| 웹 로컬 사본 | 웹판에서 올리기·불러오기·지우기가 Tauri invoke 를 부르지 않음 | `src/lib/voice/__tests__/ref-audio-api-web-r13.test.ts` R13 |
+| 오류 | 형식·용량·인증·크레딧 부족 오류 문구 | 기존 `src/components/__tests__/RefAudioSection.test.tsx` |
+| 좁은 폭 | 390×844 에서 ☰ 메뉴 > 설정 > 음성 탭의 안내·단추 표시 | `e2e/web-ref-audio-r13.spec.ts` R13 390 |

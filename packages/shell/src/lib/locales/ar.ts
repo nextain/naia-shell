@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "اختر مجلد عمل قبل استيراد الملف.",
+	"settings.webRefAudioNotice": "يُستخدم الصوت الذي رفعته في محادثة Naia Omni الصوتية المباشرة. لا يستخدمه Naia Cloud TTS (قراءة الردود) بعد.",
+	"settings.webRefAudioLogin": "سجّل الدخول لرفع صوتك.",
 	"bgm.webUpload": "إضافة موسيقى",
 	"bgm.webUploading": "جارٍ الإضافة…",
 	"bgm.webNoTracks": "لا توجد موسيقى بعد. الملفات المضافة تبقى في هذا المتصفح فقط.",

@@ -1553,6 +1553,8 @@ export default {
 	"webExplorer.download": "Download",
 	"webExplorer.close": "Close",
 	"webExplorer.importChoose": "Choisissez un dossier de travail avant d’importer.",
+	"settings.webRefAudioNotice": "La voix importée est utilisée par la conversation vocale en direct Naia Omni. Naia Cloud TTS (lecture des réponses) ne l'utilise pas encore.",
+	"settings.webRefAudioLogin": "Connectez-vous pour importer votre voix.",
 	"bgm.webUpload": "Ajouter de la musique",
 	"bgm.webUploading": "Ajout…",
 	"bgm.webNoTracks": "Aucune musique. Les fichiers ajoutés restent dans ce navigateur.",
