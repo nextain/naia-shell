@@ -3509,3 +3509,14 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 유지 | 포인터나 카드 내 키보드 초점 중 하나가 남아 있으면 카드 유지 | `BgmPlayer.test.tsx` R36 |
 | 오류·정지 | 재생이 끝나거나 중단되면 카드도 닫힘 | e2e R36, `BgmPlayer.test.tsx` fix7d |
 | 좁은 폭·넓은 폭 | 1280×720·390×844에서 음악이 시작되어도 설정 탭과 닫기 단추를 누를 수 있음 | `e2e/web-bgm-nowplaying-r36.spec.ts`, `shots/r32-settings-files/R36-1280.png`·`R36-390.png` |
+## UC-WEB-HOSTED-APPS. 웹판 앱스토어에서 내장 미니앱 4개를 연다 (R35 2단계, 2026-11-20)
+
+웹판(브라우저) 사용자가 앱스토어에서 캐릭터 카드, 나이아 슬라이드, 이음오피스, 카페루아 타로를 실행합니다. `/app/` 아래에 설치된 셸은 각 앱의 HTML과 자산을 `/app/hosted-apps/<slug>/`에서 읽습니다. 처음 열린 앱을 닫고 스토어에서 다시 실행해도 같은 앱 화면으로 돌아갑니다. 서비스 워커가 활성화된 상태에서도 앱 요청은 앱 파일로 전달됩니다.
+
+### Test Coverage Map — UC-WEB-HOSTED-APPS
+
+| 기본·빈 외부 목록 | 앱스토어 카드의 이름과 실행 단추를 읽을 수 있고 외부 목록이 없어도 내장 4개가 표시됩니다. | `e2e/web-hosted-apps-r35.spec.ts` R35, 기존 `e2e/web-app-store-catalog.spec.ts` |
+| 진행 | 목록을 조회하는 동안 기존 로딩 안내가 표시됩니다. 실행하면 스토어에서 앱 화면으로 전환됩니다. | `e2e/web-hosted-apps-r35.spec.ts` R35 |
+| 성공 | 네 앱 각각이 실제 배포 번들에서 렌더링되고 이름·아이콘·실행 파일이 빌드에 포함됩니다. 앱을 닫고 다시 실행할 수 있습니다. | `e2e/web-hosted-apps-r35.spec.ts` R35, `scripts/__tests__/web-hosted-apps.test.ts` |
+| 오류·복구 | 원본 또는 필수 파일이 누락되면 빌드가 실패합니다. 서비스 워커는 앱 경로에 셸 첫 화면을 반환하지 않습니다. | `scripts/__tests__/web-hosted-apps.test.ts`, `scripts/__tests__/web-sw-version.test.ts` R35 |
+| 좁은 폭·접근성 | 1280×720·390×844에서 앱스토어와 앱 화면의 주요 조작을 읽고 실행할 수 있습니다. | `e2e/web-hosted-apps-r35.spec.ts` R35 |

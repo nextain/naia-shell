@@ -248,6 +248,21 @@ describe("web-sw-version & sw.js", () => {
 		);
 	});
 
+	it.each(["/", "/app/"])("R35 passes hosted app navigation through with service worker base %s", async (base) => {
+		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
+		const origin = "https://demo.example.test";
+		const env = createFakeSwEnv(
+			swTemplate,
+			async (url) => makeBasicResponse(url, "<html>shell</html>"),
+			{ swPath: `${base}sw.js` },
+		);
+
+		const appUrl = `${origin}${base}hosted-apps/cafelua-tarot/index.html`;
+		await expect(env.dispatchFetch({ url: appUrl, mode: "navigate" })).resolves.toBeUndefined();
+		const shell = await env.dispatchFetch({ url: `${origin}${base}`, mode: "navigate" });
+		expect(await shell?.text()).toBe("<html>shell</html>");
+	});
+
 	it("purges prior caches on activate, calls skipWaiting/clients.claim, and fetches navigate requests network-first with cache no-cache", async () => {
 		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
 		const stamped = injectServiceWorkerVersion(swTemplate, "r16-test0002");

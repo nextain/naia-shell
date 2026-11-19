@@ -43,7 +43,7 @@ Scope: the official web shell (browser, `vite --mode web`). The desktop
 
 | Surface | List source | Install / open |
 |---|---|---|
-| In-shell mini-app store (`WebAppStoreModal`, App bar "앱스토어" in web) | gateway `GET /v1/apps/products` merged with the hard-coded `STAGE1_HOSTED_MINI_APPS` (4 apps); Stage-2 ids hidden | `WebHttpAppStoreAdapter.installApp` → `installedWebApps` in config → iframe `${shell}/hosted-apps/<slug>/index.html` |
+| In-shell mini-app store (`WebAppStoreModal`, App bar "앱스토어" in web) | gateway `GET /v1/apps/products` merged with the hard-coded `STAGE1_HOSTED_MINI_APPS` (4 apps); Stage-2 ids hidden | `WebHttpAppStoreAdapter.installApp` → `installedWebApps` in config → iframe `${shellOrigin}${shellBase}hosted-apps/<slug>/index.html` |
 | Portal storefront `naia.land/{locale}/apps` (desktop opens it in the `app-store` window) | portal `listApps()` → the same gateway products, all active items (shows Stage-2 apps, lacks `charcard`) | portal purchase → `naia://` install deep link (desktop only) |
 
 The two lists differ and an admin had no way to add an app to either.
@@ -60,6 +60,26 @@ build one list, in this order; earlier sources win on an id collision:
 A failure of 2 or 3 (offline, timeout 4 s, non-2xx, malformed body) is silent:
 the store then shows the built-in list only. Installing any catalog item uses
 the same `installedWebApps` list and the same iframe sandbox checks.
+
+### Built-in hosted app bundles (R35)
+
+`pnpm --filter naia-shell build:web` builds the current checkout's Slides entry
+with `vite.slides.config.ts` in web mode. `scripts/web-hosted-apps.mjs` also
+builds Character Card, IeumOffice and Cafe Lua Tarot from the `nextain/naia-shell`
+source pinned at `0912f5016a2ae81c028d375dfc7dbd837d9ba6bb`. It uses the local
+Git object if available and fetches that exact commit otherwise. The web build
+stages each bundle's `index.html`, manifest, icon and assets under
+`dist-web/hosted-apps/<slug>/`. Missing source or invalid artifacts fail the
+build. The static host serves this directory under the shell base (for example
+`/app/hosted-apps/`), and the shell service worker lets hosted app requests pass
+through to the static host.
+
+The build uses relative asset URLs. Serve app documents and assets with
+`Cross-Origin-Embedder-Policy: credentialless` and
+`Cross-Origin-Resource-Policy: cross-origin`. Use `Access-Control-Allow-Origin: *`
+on this public directory so the sandboxed iframe can request app modules and
+the Slides PDF worker from its opaque origin. Web-mode Vite preview sets these
+headers on the mounted hosted-apps path.
 
 ### Portal catalog contract — `GET /api/apps`
 

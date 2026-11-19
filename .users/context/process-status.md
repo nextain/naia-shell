@@ -17,6 +17,13 @@
 - Vitest web-settings-catalog.test.ts 7/7. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
 - UC-WEB-SETTINGS-FILES · FR-WEB-SETTINGS-FILES.1–4 · packages/shell/e2e/web-settings-files-r32.spec.ts
 
+<!-- src-sha: 8910c93b2b43f753 -->
+
+## 웹판 내장 미니앱 번들 R35 2단계 — 2026-11-20
+
+- P01~P03 완료. `UC-WEB-HOSTED-APPS`와 `FR-WEB-HOSTED-APPS.1~2`에 네 앱의 빌드·실행 계약을 기록했다.
+- 표적 Vitest 44 통과. 셸·BGM·웹 워커 타입 검사와 고정 원본 가져오기 통과. 기존 원본 번들 네 개의 HTML과 스크립트는 `/app/` Vite 미리보기에서 HTTP로 확인했다.
+- P04는 빌드 실행기의 디스크 조건에 막혔다. 새 `dist-web`, Playwright 1280·390, 화면 캡처 및 포털 실제 헤더는 미확인이다. P05는 대기 중이다.
 
 ## S2 키오스크 웹 기억 — 2026-11-05
 

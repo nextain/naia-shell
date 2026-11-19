@@ -88,6 +88,8 @@
 
 - `packages/shell/scripts/web-sw-version.mjs`: 웹 빌드 산출물 `sw.js` 에 `<커밋>-<index 해시>` 판 번호를 주입해 새 판마다 서비스워커 바이트와 캐시 이름이 바뀌게 한다 (`packages/shell/scripts/__tests__/web-sw-version.test.ts`).
 
+- `packages/shell/scripts/web-hosted-apps.mjs`: 웹 빌드에서 내장 앱 4개의 배포 번들을 빌드·검증하고 `dist-web/hosted-apps/`에 포함한다 (R35).
+
 - `packages/shell/scripts/deploy-web-demo.mjs`: 웹 시연 정적 사이트(`$web`) 올림 대본 — 해시 자산을 먼저 긴 캐시(`public, max-age=31536000, immutable`)로 올리고 `index.html`·`sw.js`(및 등록 파일)는 마지막에 `Cache-Control: no-cache` 로 올린다. `--dry-run` 지원 (`packages/shell/scripts/__tests__/deploy-web-demo.test.ts`).
 
 S2 기억: `scripts/conform/check.py --all`은 manifest의 `typescript-exports` 영역에서 문서와 공개 함수 이름을 대조한다. `.agents/hooks/conform-gate.js`는 TS 편집의 불일치를 즉시 차단한다. 타입 시그니처는 tsc가 검증한다.

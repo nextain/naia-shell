@@ -11,6 +11,7 @@ import {
 	ensureWebKioskPrivateSlides,
 } from "./scripts/web-kiosk-private-slides.mjs";
 import { stampBuiltServiceWorker } from "./scripts/web-sw-version.mjs";
+import { stageWebHostedApps } from "./scripts/web-hosted-apps.mjs";
 import { WEB_CSP } from "./src/lib/web-runtime/csp";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -196,6 +197,31 @@ function webServiceWorkerPlugin(revision: string): Plugin {
 	};
 }
 
+function webHostedAppsPlugin(): Plugin {
+	let outputDirectory = "";
+	return {
+		name: "web-hosted-apps",
+		configResolved(config) {
+			outputDirectory = path.resolve(config.root, config.build.outDir);
+		},
+		writeBundle() {
+			stageWebHostedApps(outputDirectory);
+		},
+		configurePreviewServer(server) {
+			const prefix = `${server.config.base}hosted-apps/`;
+			server.middlewares.use((req, res, next) => {
+				if (req.url?.startsWith(prefix)) {
+					// The public app assets can be loaded by an iframe whose origin is null.
+					res.setHeader("Access-Control-Allow-Origin", "*");
+					res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+					res.setHeader("Cross-Origin-Embedder-Policy", "credentialless");
+				}
+				next();
+			});
+		},
+	};
+}
+
 function readPositiveIntegerEnv(
 	name: string,
 	fallback: number,
@@ -251,7 +277,13 @@ export default defineConfig(async ({ mode, command }) => {
 			...(command === "build" && !isWeb ? [desktopPublicAssetsPlugin()] : []),
 			virtualAgentWorkerPlugin(mode),
 			kioskPrivateSlidesPlugin(mode, command),
-			...(isWeb ? [webCspPlugin(), webAdkPlugin(), kioskSlidesAssetsPlugin(), webServiceWorkerPlugin(revision)] : []),
+			...(isWeb ? [
+				webCspPlugin(),
+				webAdkPlugin(),
+				kioskSlidesAssetsPlugin(),
+				webServiceWorkerPlugin(revision),
+				webHostedAppsPlugin(),
+			] : []),
 		],
 		build: {
 			// Bundle-budget verification uses this graph to prove that large optional

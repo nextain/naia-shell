@@ -383,7 +383,8 @@
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .nva-gesture-actions__shortcut { display: none; }
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .chat-input-bar { padding: 6px 10px max(6px, env(safe-area-inset-bottom)); gap: 6px; }
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:not(:has(.right-content--onboarding)) { top: 0; pointer-events: none; }
-	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)):not(:has([data-app-id="land.naia.slides"].app-bar-tab--active)) .right-area { visibility: hidden; }
+	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:not([data-web-hosted-app]):not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)):not(:has([data-app-id="land.naia.slides"].app-bar-tab--active)) .right-area { visibility: hidden; }
+	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout[data-web-hosted-app],
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has(.app-bar-settings--active),
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="workspace"].app-bar-tab--active),
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="land.naia.slides"].app-bar-tab--active) { pointer-events: auto; z-index: 20; }
@@ -399,6 +400,7 @@
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .web-mobile-workspace-close { display: block; position: fixed; right: 8px; top: 8px; z-index: 110; width: 40px; height: 40px; border: 0; border-radius: 10px; color: white; background: #172136; font-size: 20px; }
 	[data-naia-mobile="true"] .settings-tab-bar { margin-right: 52px; padding-right: 8px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
 	[data-naia-mobile="true"] .settings-tab-btn { padding: 10px 10px; font-size: 12.5px; }
+	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout[data-web-hosted-app] .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has(.app-bar-settings--active) .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="land.naia.slides"].app-bar-tab--active) .app-bar { height: 0; min-height: 0; padding: 0; }
@@ -613,7 +615,8 @@
 	:root:not([data-layout-orientation="landscape"]) .nva-gesture-actions__shortcut { display: none; }
 	:root:not([data-layout-orientation="landscape"]) .chat-input-bar { padding: 6px 10px max(6px, env(safe-area-inset-bottom)); gap: 6px; }
 	:root:not([data-layout-orientation="landscape"]) .app-layout:not(:has(.right-content--onboarding)) { top: 0; pointer-events: none; }
-	:root:not([data-layout-orientation="landscape"]) .app-layout:not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)):not(:has([data-app-id="land.naia.slides"].app-bar-tab--active)) .right-area { visibility: hidden; }
+	:root:not([data-layout-orientation="landscape"]) .app-layout:not([data-web-hosted-app]):not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)):not(:has([data-app-id="land.naia.slides"].app-bar-tab--active)) .right-area { visibility: hidden; }
+	:root:not([data-layout-orientation="landscape"]) .app-layout[data-web-hosted-app],
 	:root:not([data-layout-orientation="landscape"]) .app-layout:has(.app-bar-settings--active),
 	:root:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="workspace"].app-bar-tab--active),
 	:root:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="land.naia.slides"].app-bar-tab--active) { pointer-events: auto; z-index: 20; }
@@ -631,6 +634,7 @@
 	.settings-tab,
 	.settings-model-roles,
 	.skills-list { grid-template-columns: minmax(0, 1fr); }
+	:root:not([data-layout-orientation="landscape"]) .app-layout[data-web-hosted-app] .app-bar,
 	:root:not([data-layout-orientation="landscape"]) .app-layout:has(.app-bar-settings--active) .app-bar,
 	:root:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar,
 	:root:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="land.naia.slides"].app-bar-tab--active) .app-bar { height: 0; min-height: 0; padding: 0; }
@@ -860,9 +864,10 @@
 [data-layout-orientation="portrait"] .app-root:has(> .titlebar) .app-layout:not(:has(.right-content--onboarding)) {
 	top: 32px;
 }
-[data-layout-orientation="portrait"] .app-layout:not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)):not(:has([data-app-id="land.naia.slides"].app-bar-tab--active)) .right-area {
+[data-layout-orientation="portrait"] .app-layout:not([data-web-hosted-app]):not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)):not(:has([data-app-id="land.naia.slides"].app-bar-tab--active)) .right-area {
 	visibility: hidden;
 }
+[data-layout-orientation="portrait"] .app-layout[data-web-hosted-app],
 [data-layout-orientation="portrait"] .app-layout:has(.app-bar-settings--active),
 [data-layout-orientation="portrait"] .app-layout:has([data-app-id="workspace"].app-bar-tab--active),
 [data-layout-orientation="portrait"] .app-layout:has([data-app-id="land.naia.slides"].app-bar-tab--active) {
@@ -872,12 +877,23 @@
 [data-layout-orientation="portrait"] .app-bar {
 	visibility: hidden;
 }
+[data-layout-orientation="portrait"] .app-layout[data-web-hosted-app] .app-bar,
 [data-layout-orientation="portrait"] .app-layout:has(.app-bar-settings--active) .app-bar,
 [data-layout-orientation="portrait"] .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar,
 [data-layout-orientation="portrait"] .app-layout:has([data-app-id="land.naia.slides"].app-bar-tab--active) .app-bar {
 	height: 0;
 	min-height: 0;
 	padding: 0;
+}
+[data-layout-orientation="portrait"] .app-layout[data-web-hosted-app] {
+	--content-app-titlebar-h: 48px;
+}
+[data-layout-orientation="portrait"] .app-layout[data-web-hosted-app] .content-app__titlebar {
+	padding-right: 56px;
+}
+[data-layout-orientation="portrait"] .app-layout[data-web-hosted-app] .content-app__close-btn {
+	width: 36px;
+	height: 36px;
 }
 [data-layout-orientation="portrait"] .slides-app__header {
 	padding-right: 54px;
