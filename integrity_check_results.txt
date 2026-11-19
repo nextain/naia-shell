@@ -1,0 +1,20 @@
+[compile-integrity] ❌ shell(packages/shell) src 컴파일 에러:
+  src/components/AppInstallDialog.tsx(11,2): error TS2724: '"../lib/app-store-client"' has no exported member named 'getStoreProductMetadata'. Did you mean 'getStoreProductName'?
+  src/components/AppInstallDialog.tsx(71,11): error TS7006: Parameter 'metadata' implicitly has an 'any' type.
+  src/lib/app-store-adapter.ts(6,27): error TS2307: Cannot find module './web-runtime/web-assets' or its corresponding type declarations.
+  src/lib/app-store-adapter.ts(447,22): error TS2339: Property 'installedWebApps' does not exist on type 'AppConfig'.
+  src/lib/app-store-adapter.ts(449,25): error TS2353: Object literal may only specify known properties, and 'installedWebApps' does not exist in type 'AppConfig'.
+  src/lib/app-store-adapter.ts(456,32): error TS2339: Property 'installedWebApps' does not exist on type 'AppConfig'.
+  src/lib/app-store-adapter.ts(459,5): error TS2353: Object literal may only specify known properties, and 'installedWebApps' does not exist in type 'AppConfig'.
+  src/lib/app-store-adapter.ts(459,27): error TS2339: Property 'installedWebApps' does not exist on type 'AppConfig'.
+  src/lib/app-store-adapter.ts(459,52): error TS7006: Parameter 'id' implicitly has an 'any' type.
+  src/lib/app-store-adapter.ts(469,26): error TS2339: Property 'installedWebApps' does not exist on type 'AppConfig'.
+  src/lib/app-store-adapter.ts(470,23): error TS2339: Property 'installedWebApps' does not exist on type 'AppConfig'.
+  src/lib/app-store-client.ts(4,27): error TS2307: Cannot find module './web-runtime/web-assets' or its corresponding type declarations.
+  src/lib/tts/resolve-web-tts-provider.ts(2,29): error TS2307: Cannot find module '../kiosk-demo/flag' or its corresponding type declarations.
+  src/lib/tts/resolve-web-tts-provider.ts(4,27): error TS2307: Cannot find module '../web-runtime/web-assets' or its corresponding type declarations.
+  src/lib/web-runtime/web-auth.ts(4,29): error TS2307: Cannot find module '../kiosk-demo/flag' or its corresponding type declarations.
+  src/lib/web-runtime/web-auth.ts(13,30): error TS2307: Cannot find module './event-bus' or its corresponding type declarations.
+  src/lib/web-runtime/web-auth.ts(14,30): error TS2307: Cannot find module './web-adk-path' or its corresponding type declarations.
+  src/lib/web-runtime/web-auth.ts(15,27): error TS2307: Cannot find module './web-assets' or its corresponding type declarations.
+[compile-integrity] ❌ RED — 컴파일 무결성 위반 18건. 깨진/불완전 상태(예: 삭제된 파일 import).
