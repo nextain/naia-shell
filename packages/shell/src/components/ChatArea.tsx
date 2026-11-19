@@ -2111,6 +2111,7 @@ export function ChatArea({
 					ollamaNumCtx = policy.contextDefaultTokens;
 				}
 			}
+			const thinkingLevel = resolveThinkingLevel(config);
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -2158,8 +2159,10 @@ export function ChatArea({
 					config.enableTools === true
 						? boundary!.toolsAllowed
 						: config.enableTools,
-				enableThinking: resolveThinkingLevel(config) !== "off",
-				thinking: { level: resolveThinkingLevel(config) },
+				enableThinking: thinkingLevel !== "off",
+				// The desktop agent wire contract accepts up to high; keep xhigh in
+				// saved settings but use its strongest supported level on the wire.
+				thinking: { level: thinkingLevel === "xhigh" ? "high" : thinkingLevel },
 				gatewayUrl,
 				disabledSkills:
 					config.enableTools === true

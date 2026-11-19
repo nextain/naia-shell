@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { LAB_GATEWAY_URL } from "./config";
 import { getLocale } from "./i18n";
+import { isWebMode } from "./web-runtime/web-assets";
 
 export interface AppInstallRequest {
 	appId: string;
@@ -27,7 +28,11 @@ export function getStoreGatewayUrl(): string {
 	return httpGatewayUrl(LAB_GATEWAY_URL);
 }
 
-export function hasStoreEntitlement(appId: string): Promise<boolean> {
+export async function hasStoreEntitlement(appId: string): Promise<boolean> {
+	if (isWebMode()) {
+		const { getPlatformAppStoreAdapter } = await import("./app-store-adapter");
+		return getPlatformAppStoreAdapter().checkEntitlement(appId);
+	}
 	return invoke<boolean>("app_store_has_entitlement", {
 		appId,
 		gatewayUrl: getStoreGatewayUrl(),

@@ -86,6 +86,15 @@ class MockBridge implements NaiaContextBridge {
 // ─── Tests: App Registry CRUD ──────────────────────────────────────────────
 
 describe("App Registry", () => {
+	it("keeps the settings app name aligned with the selected locale", async () => {
+		const { setLocale } = await import("../../lib/i18n");
+		await import("../settings/index");
+		await setLocale("ko");
+		expect(appRegistry.get("settings")?.name).toBe("설정");
+		await setLocale("en");
+		expect(appRegistry.get("settings")?.name).toBe("Settings");
+	});
+
 	let originalApps: ReturnType<typeof appRegistry.list>;
 
 	beforeEach(() => {

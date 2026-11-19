@@ -1826,6 +1826,7 @@ Test Coverage Map (P02):
 - Mermaid 코드 블록을 실제로 열면 렌더러를 한 번 초기화해 기존과 같은 strict 설정으로 SVG를 만들고 정화한 뒤 표시한다.
 - 렌더러 로드나 문법 해석이 실패하면 기존처럼 원문과 오류 상태를 표시한다.
 - 이미 설정을 마친 사용자의 초기 진입에서는 온보딩 wizard를 내려받지 않으며, 신규 사용자가 온보딩에 진입할 때만 별도 청크를 불러온다. 청크 로딩 중에는 진행 상태를, 실패 시에는 셸을 재시작하지 않는 재시도 동작을 제공한다.
+- 설치 앱 화면 구현은 설치 목록에 앱이 있을 때만 불러온다. 로드 중 작업공간이 바뀌면 오래된 목록을 등록하지 않고, 구현을 읽지 못하면 기존 등록을 보존한 채 셸 재시작 후 다시 시도한다.
 - ChatArea와 음성·STT/TTS 전이 의존성은 초기 진입 파일과 분리한다. ChatArea가 마운트되면 별도 청크를 요청한다. 로딩 중 도착한 슬라이드 나레이션 요청은 채팅 가시성과 무관하게 eager 경량 버퍼가 보존해 마운트 직후 전달하며, 표면이 해제되면 cancelled 결과로, 청크 로드가 실패하면 failed 결과로 정산한다. 상관된 실패·취소 결과를 받은 프레젠터는 speaking에서 재개 가능한 paused 상태로 전이한다. 로딩·오류 상태는 해당 영역에 표시하되, 운영 청크 실패의 재시도는 동일 URL import 캐시의 한계 때문에 셸을 재로드한다.
 - CI는 초기 진입 JS의 raw/gzip 크기와 전체 배포 디렉터리 크기를 재고, 예산을 넘으면 실패하면서 기계 판독 가능한 보고서를 남긴다.
 - #431 최종 후보 측정에서 초기 진입 파일은 raw 2,913,442→439,810바이트, gzip 836,096→138,469바이트로 감소했다. 빌드 시각이 엔트리에 포함되어 gzip 값은 수 바이트 변동할 수 있다. 이 값은 파싱·평가 대상 엔트리 파일의 크기이며, 즉시 마운트되는 ChatArea 청크까지 포함한 초기 총 전송량 지표로 해석하지 않는다.
@@ -1840,6 +1841,7 @@ Test Coverage Map (P02):
 | UC-PERF-BUNDLE-BUDGET | vitest `packages/shell/src/components/__tests__/DeferredChatArea.test.tsx`, `packages/shell/src/apps/__tests__/slides-center-area.test.tsx`, `packages/shell/src/lib/__tests__/slide-presenter.test.ts` | ChatArea 청크 로딩·오류 격리·StrictMode 1회 전달·숨김 상태 버퍼 보존·실제 소비 경로 전달·언마운트 취소 정산·청크 실패 정산·발표자 paused 복구 |
 | UC-PERF-BUNDLE-BUDGET | Playwright `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts`, production-preview `packages/shell/e2e/deferred-chat-area.spec.ts` | 실제 초기 진입에서 지연 로드된 wizard와 Chat 로딩 상태가 표시된다. Chat은 빌드된 `dist`와 manifest가 지정한 해시 청크를 직접 지연·실패시켜 접근 가능한 재시도에서 셸 재로드 후 복구하며, 협폭에서도 주변 셸과 Chat이 유지됨을 검증한다. |
 | UC-PERF-BUNDLE-BUDGET | vitest `packages/shell/scripts/__tests__/check-bundle-budget.test.mjs` | 진입점 탐색, raw/gzip/전체 크기, 동적 import 도달성, orphan 청크 거부, 예산 초과 fail-closed, JSON 보고서 |
+| UC-PERF-BUNDLE-BUDGET | vitest `packages/shell/src/lib/__tests__/app-loader.test.ts`, `app-loader-deferred.test.ts`, production manifest | 설치 목록·등록·로드 실패·작업공간 전환 보존 및 설치 앱 구현의 진입점 분리 |
 | UC-PERF-BUNDLE-BUDGET | production build + CI artifact | 초기 번들에서 Mermaid·ChatArea 분리, 강화된 예산 및 보고서 보존 |
 
 Chat 지연 로드 UI 상태 매트릭스: **기본**은 variant를 지정하지 않은 지연 경계가 기본 Chat 표면을 렌더링하는 상태, **빈 상태**는 대화 기록이 없어 `.chat-message`가 0개인 실제 ChatArea, **진행**은 `aria-live` 로딩 출력, **성공**은 로드된 Chat 입력, **오류**는 `alert`와 접근 가능한 재시도 버튼, **좁은 폭**은 480×800에서 주변 AppBar와 Chat을 유지하고 수평 overflow가 없는 상태로 검증한다. `DeferredChatArea.test.tsx`가 기본 variant·진행·성공·오류 및 재시도 분기를 고정한다. production-preview `deferred-chat-area.spec.ts`는 빌드된 청크에서 빈 대화 상태와 주변 셸, 진행→성공, 오류 버튼의 키보드 초점→재로드→복구 및 좁은 폭 레이아웃을 검증한다.
@@ -2727,3 +2729,30 @@ Test Coverage Map (P02)
 | UC-MACOS-NVA-AND-QUALITY-20261116 | 데스크톱 `stacked_alpha` 라우팅 해제, `blob:` URL `dataset.naiaStackedAlpha` 보존, WebKit `.stacked.mp4`/`.mp4` 자동 폴백 및 디코드 실패 감지 | `packages/shell/src/lib/avatar/__tests__/macos-nva-fallback.test.ts`, `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/vite.config.ts` (`desktopPublicAssetsPlugin` NVA 매니페스트/폴백 보존 검증) |
 | UC-MACOS-NVA-AND-QUALITY-20261116 | macOS `Info.plist`(`NSMicrophoneUsageDescription`) 및 최소 권한 `entitlements.app.plist`(`audio-input`) 번들 연결, 한글 폰트 스택(`Apple SD Gothic Neo` 우선), Retina DPR 상한(`1.5`) | `packages/shell/scripts/__tests__/platform-matrix.test.ts`, `packages/shell/src/lib/avatar/__tests__/macos-nva-fallback.test.ts` | `packages/shell/src-tauri/tauri.conf.json` |
 | UC-MACOS-NVA-AND-QUALITY-20261116 | `Cmd+Q`(`RunEvent::ExitRequested`/`RunEvent::Exit`) 사이드카 일괄 종료 멱등 보장, macOS Linux PipeWire 실행 차단 및 30바이트 자리표시 `ffmpeg` 방어 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src-tauri/src/lib.rs` | `cargo check` / `cargo test --lib` |
+
+### UC-WEB-WORKSPACE-READ-RECOVERY-886 — 웹 작업공간 목록 읽기 복구
+
+웹 작업공간 사용자는 폴더 목록을 읽지 못했을 때 오류를 확인하고 재시도하여 같은 폴더의 목록을 다시 불러온다. 실패한 요청이 뒤늦게 도착해 새 결과를 덮어쓰지 않으며, 다른 폴더와 열린 파일은 유지한다. 이 시나리오는 웹 제품 전체 경로의 수락이나 인증·권한 검증을 뜻하지 않는다.
+루트 폴더 열기, 하위 폴더 열기, 다운로드 실패도 각각 재시도할 수 있어야 하며, 성공하면 해당 오류가 사라진다. 각 경로의 실패·재시도·성공은 단위 시험으로 검증한다. 목록 오류의 좁은 폭 컴포넌트 브라우저 검사는 실행했으나, 나머지 실제 웹 진입 경로와 전체 시각 검토는 보류다.
+
+| 상태 (P02) | 확인 내용 및 증거 |
+|---|---|
+| 기본 | 읽은 폴더와 파일을 표시한다. `web-workspace-recovery.test.tsx`; 실제 웹 진입 브라우저 검사 대기 |
+| 빈 목록 | 항목이 없으면 빈 목록을 표시한다. 단위 시험 및 `web-workspace-recovery.spec.ts` |
+| 진행 | 재시도 중 중복 요청을 막고 진행 상태를 표시한다. 단위 시험 및 컴포넌트 브라우저 검사 |
+| 성공 | 재시도한 폴더의 결과가 나타나고 오류가 사라진다. 단위 시험 및 빈 목록 컴포넌트 브라우저 검사 |
+| 오류 | 디렉터리 읽기 실패를 알리고 키보드로 재시도한다. 단위 시험 및 컴포넌트 브라우저 검사 |
+| 좁은 폭 | 600px 폭에서 오류와 재시도 행동에 접근할 수 있다. 브라우저 레이아웃 확인 |
+
+### UC-APP-STORE-ADAPTER-REMOVE-886 — 데스크톱 어댑터의 앱 제거 확인
+
+데스크톱 스토어 어댑터에 설치 앱 제거가 요청되면 사용자는 되돌릴 수 없는 디스크 삭제를 확인하거나 취소한다. 취소와 유효하지 않은 앱 ID는 삭제 명령을 보내지 않고, 승인한 경우에만 삭제 결과 또는 오류를 호출자에게 돌려준다. 현재 이 어댑터의 제거 메서드는 UI 호출처가 없는 별도 경로이며 기존 AppBar 확인 흐름을 유지한다. 기본·취소·진행·성공·오류와 키보드/좁은 폭은 시스템 확인 대화상자와 기존 AppBar UI 검증에 연결하고, 어댑터의 승인·취소·오류 계약은 단위 시험으로 확인한다. 실제 어댑터 사용 UI가 연결되기 전까지 전체 경로 수락은 Pending이다.
+
+UC-USAGE-EVENTS의 웹 로그인·모델·작업공간 고정 버튼도 같은 동의 및 차단 계약을 따른다. 파일·지식 항목 반복 버튼은 같은 고정 사건 이름으로 집계하며 경로, 파일명, 모델이나 입력값은 전송하지 않는다. P02: `usage-inventory.test.ts` 전수 대조, `usage-events.test.ts` 동의 전 0건·허용 목록·개인정보 경계 및 `e2e/usage-events.spec.ts` 실제 동의 UI. 수신처·권한 검토는 기존 보류 상태다.
+
+Test Coverage Map (P02)
+
+| UC | 시험 경로 | 확인하는 것 |
+|---|---|---|
+| UC-WEB-WORKSPACE-READ-RECOVERY-886 | `packages/shell/src/apps/workspace/__tests__/web-workspace-recovery.test.tsx`; `packages/shell/e2e/web-workspace-recovery.spec.ts` | 목록·루트·폴더·다운로드 오류 재시도, 빈 목록과 오래된 응답 차단; 컴포넌트의 좁은 폭·키보드 상태 |
+| UC-APP-STORE-ADAPTER-REMOVE-886 | `packages/shell/src/lib/__tests__/app-store-client.test.ts` | 제거 승인·취소·유효하지 않은 ID·IPC 오류; 연결된 실제 UI 검증은 대기 |

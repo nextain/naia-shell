@@ -7,6 +7,7 @@ import {
 	within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale, t } from "../../lib/i18n";
 import {
 	MarkdownCodeBlock,
 	MermaidBlock,
@@ -51,9 +52,18 @@ describe("MarkdownCodeBlock", () => {
 			).toBeInTheDocument(),
 		);
 		fireEvent.click(
-			screen.getByRole("button", { name: "워크스페이스에서 열기" }),
+			screen.getByRole("button", { name: t("chat.openInWorkspace") }),
 		);
 		expect(openWorkspace).toHaveBeenCalledWith("const answer = 42;", "ts");
+	});
+
+	it("renders the workspace action in the selected locale", async () => {
+		await setLocale("ko");
+		const { rerender, container } = render(<MarkdownCodeBlock className="language-ts" onOpenWorkspace={() => {}}>x</MarkdownCodeBlock>);
+		expect(within(container).getByRole("button", { name: "워크스페이스에서 열기" })).toBeInTheDocument();
+		await setLocale("en");
+		rerender(<MarkdownCodeBlock className="language-ts" onOpenWorkspace={() => {}}>x</MarkdownCodeBlock>);
+		expect(within(container).getByRole("button", { name: "Open in workspace" })).toBeInTheDocument();
 	});
 
 	it("highlights known languages and escapes executable markup", () => {

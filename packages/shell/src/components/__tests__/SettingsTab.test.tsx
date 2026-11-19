@@ -1229,8 +1229,8 @@ describe("SettingsTab", () => {
 				labels.some(
 					(l) =>
 						l.includes("Motif 3") &&
-						l.includes("260 credits") &&
-						l.includes("1.04K credits"),
+						l.includes("260 크레딧") &&
+						l.includes("1.04K 크레딧"),
 				),
 			).toBe(true);
 		});
@@ -1298,8 +1298,8 @@ describe("SettingsTab", () => {
 				labels.some(
 					(l) =>
 						l.includes("Motif 3") &&
-						l.includes("260 credits") &&
-						l.includes("1.04K credits"),
+						l.includes("260 크레딧") &&
+						l.includes("1.04K 크레딧"),
 				),
 			).toBe(true);
 		});

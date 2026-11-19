@@ -1204,6 +1204,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-BUNDLE.5** | 완료된 사용자의 초기 진입에서는 온보딩 wizard와 그 전이 의존성을 내려받지 않는다. 신규 사용자의 온보딩 진입 시 로딩 상태를 표시하고, 청크 로드 실패는 셸 전체를 새로고침하지 않고 해당 화면만 재시도할 수 있어야 한다. | UC-PERF-BUNDLE-BUDGET | `DeferredOnboardingWizard.test.tsx`, `205-onboarding-avatar-grid.spec.ts`, production build chunk inspection | Done |
 | **FR-BUNDLE.6** | ChatArea와 전이 의존성은 초기 진입 파일에서 분리한다. 로딩 중에는 진행 상태를 표시하고, 그 사이 도착한 슬라이드 나레이션 요청은 채팅 가시성과 무관하게 마운트된 지연 표면의 eager 경량 버퍼가 보존해 React StrictMode 재마운트 뒤에도 한 번만 전달한다. 지연 표면이 해제되면 버퍼된 요청을 cancelled 결과로, Chat 청크 로드가 실패하면 failed 결과로 정산하고, 상관된 실패·취소 결과를 받은 프레젠터는 speaking에서 재개 가능한 paused 상태로 전이한다. 동일 URL의 실패한 동적 import는 브라우저 캐시상 새 요청을 보장할 수 없으므로 운영 청크 실패는 명시적인 셸 재로드로 복구한다. 빌드 검사는 대상 청크가 초기 엔트리의 동적 import 그래프에서 실제로 도달 가능한지도 확인한다. | UC-PERF-BUNDLE-BUDGET | `DeferredChatArea.test.tsx`, `slides-center-area.test.tsx`, `slide-presenter.test.ts`, `check-bundle-budget.test.mjs`, production build chunk inspection | Done |
 | **FR-BUNDLE.7** | #431 기준 초기 진입 예산을 개선된 측정값에 맞춰 raw 500,000바이트, gzip 160,000바이트로 강화한다. 최종 후보 실측은 기준선 2,913,442/836,096바이트에서 raw 439,810바이트/gzip 138,469바이트로 감소했다. 빌드 시각이 엔트리에 포함되어 gzip 값은 수 바이트 변동할 수 있으며, 이 수치는 엔트리 파일 크기 감소이지 초기 총 네트워크 전송량 감소를 뜻하지 않는다. | UC-PERF-BUNDLE-BUDGET | production build + `bundle-budget-report.json` | Done |
+| **FR-BUNDLE.8** | 설치 앱 화면 구현은 설치 목록이 비어 있지 않을 때 로드한다. 로드 중 더 새로운 목록이 요청되면 기존 결과를 버리고, 로드 오류 시 기존 등록을 보존하며 셸 재시작 후 재시도할 수 있다. | UC-PERF-BUNDLE-BUDGET | `app-loader.test.ts`, `app-loader-deferred.test.ts`, production manifest | Done |
 
 
 ## 기능 요구사항 (FR) — 앱 샌드박스 · BGM 라이브러리 · 슬라이드 녹화 (2026-09-05, #528 #543 #546 통합 완성)
@@ -1538,3 +1539,15 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-MACOS-QUALITY.3** | macOS `Cmd+Q` 종료처럼 `WindowEvent::Destroyed` 없이 `RunEvent::ExitRequested`·`RunEvent::Exit`로 직행하는 경로에서도 `agent-core`, `bgm-server`, `cascade`, `voxcpm2`, `gateway`, `ollama_runtime`, `ego_host` 등 소유 사이드카 프로세스가 멱등(1회) 정리되도록 공통 종료 헬퍼를 연결하고, Dock 아이콘 재클릭(`RunEvent::Reopen`) 시 숨겨진 메인 창을 복원한다. | UC-MACOS-NVA-AND-QUALITY-20261116 | `packages/shell/src-tauri/src/lib.rs` 단위 시험 | Done |
 | **FR-MACOS-QUALITY.4** | `global.css`의 `@font-face` `"KoreanUI"` 및 전역 글꼴 스택에서 `"Pretendard"`, `"Apple SD Gothic Neo"`, `-apple-system`이 구형 나눔고딕 및 일본어/중국어 한자 글꼴보다 먼저 선택되도록 교정하고, macOS Retina 환경에서 VRM WebGL `devicePixelRatio` 상한을 `1.5`로 제한해 과부하를 줄인다. | UC-MACOS-NVA-AND-QUALITY-20261116 | `macos-nva-fallback.test.ts` | Done |
 | **FR-MACOS-QUALITY.5** | `broadcast.rs`의 기본 화면 캡처 소스와 PipeWire 오디오 싱크·링크 명령을 `target_os = "linux"`로 한정하여 macOS에서 Linux 전용 PipeWire/Portal 경로가 호출되지 않게 막고, `resolve_ffmpeg_path_from`·`validate_ffmpeg_executable`·`slides_recording_start`에서 30바이트 개발용 자리표시(`#!naia-ffmpeg-dev-placeholder`) 실행을 원천 차단한다. | UC-MACOS-NVA-AND-QUALITY-20261116 | `packages/shell/src-tauri/src/broadcast.rs` 단위 시험 | Done |
+
+### 웹 작업공간 목록 읽기 복구 (#886)
+
+| 요구사항 | 시나리오 | 검증 | 상태 |
+|---|---|---|---|
+| **FR-WEB-WORKSPACE-RECOVERY.1** 폴더 목록 읽기가 실패하면 오류와 현지화된 재시도 행동을 제공한다. 재시도 중 중복 요청을 막고, 이전 요청의 응답이 현재 결과를 덮지 않게 한다. 실패는 빈 목록 성공으로 위장하지 않는다. | UC-WEB-WORKSPACE-READ-RECOVERY-886 | `WebWorkspace` 단위 및 브라우저 검사: 기본·빈 목록·진행·성공·오류·좁은 폭 | Pending |
+
+**FR-APP-STORE-ADAPTER-REMOVE.1 (#886, Pending):** 데스크톱 스토어 어댑터의 설치 앱 삭제는 기존 현지화 확인 문구로 명시 승인한 뒤에만 IPC를 호출한다. 취소는 성공으로 보고하지 않으며 유효하지 않은 ID는 삭제하지 않는다. UC-APP-STORE-ADAPTER-REMOVE-886; `app-store-client.test.ts` 승인·취소·오류 검증, 실제 연결 UI 검증 대기.
+
+**FR-USAGE-WEB-CONTROLS.1 (#886, Pending):** 웹 로그인·모델·작업공간의 고정 UI 동작은 기존 동의 기반 사용 통계 허용 목록과 대조표에 등록한다. 동적 파일명·경로·모델·입력값은 사건 이름이나 속성에 넣지 않는다. 검증: `usage-inventory.test.ts`, `usage-events.test.ts`, `e2e/usage-events.spec.ts`. 실수신과 권한 검토는 별도 보류.
+
+**FR-WEB-WORKSPACE-RECOVERY.2 (#886, Pending):** 루트 또는 하위 폴더 열기 및 파일 다운로드 실패는 해당 동작의 재시도 경로를 제공하며, 성공 시 해당 오류를 지운다. 동시 재시도는 중복되지 않는다. `WebWorkspace` 단위 및 브라우저 검사로 확인한다.

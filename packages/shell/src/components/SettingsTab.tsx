@@ -666,7 +666,7 @@ function DeviceSelect({
 	value,
 	options,
 	onChange,
-	placeholder = "기본 장치",
+	placeholder = t("settings.defaultDevice"),
 }: {
 	value: string;
 	options: { value: string; label: string }[];
@@ -972,7 +972,7 @@ export function SettingsTab() {
 	>(getStaticModelsRecord);
 	const [naiaModelsSettled, setNaiaModelsSettled] = useState(false);
 	const [modelSortMode, setModelSortMode] = useState<ModelSortMode>(
-		existing?.modelSortMode ?? "price",
+		existing?.modelSortMode === "performance" ? "performance" : "price",
 	);
 	const [ollamaHost, setOllamaHost] = useState(
 		existing?.ollamaHost ?? DEFAULT_OLLAMA_HOST,
@@ -4451,7 +4451,7 @@ export function SettingsTab() {
 					</div>
 
 					<div className="settings-field">
-						<label>카메라 위치 초기화</label>
+						<label>{t("settings.cameraReset")}</label>
 						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
 							<button
 								type="button"
@@ -4462,11 +4462,11 @@ export function SettingsTab() {
 									window.location.reload();
 								}}
 							>
-								기본값으로 (앱 재시작)
+								{t("settings.cameraResetBtn")}
 							</button>
 						</div>
 						<div className="settings-hint">
-							저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
+							{t("settings.cameraResetHint")}
 						</div>
 					</div>
 
@@ -5993,8 +5993,8 @@ export function SettingsTab() {
 							/>
 							<div className="settings-hint">
 								{vllmConnected
-									? `연결됨 — ${(dynamicModels.vllm ?? []).length}개 모델`
-									: "연결 안 됨 — vLLM 서버가 실행 중인지 확인하세요"}
+									? t("settings.ollamaConnected", { n: (dynamicModels.vllm ?? []).length })
+									: t("settings.vllmDisconnected")}
 							</div>
 						</div>
 					)}
@@ -6132,7 +6132,7 @@ export function SettingsTab() {
 								}}
 							>
 								{!hasSelectedModel && model ? (
-									<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+									<option value="__custom__">{t("settings.currentModel", { model, asr: isSelectedAsr ? " 🎤" : "" })}</option>
 								) : null}
 								{displayedProviderModels
 									.filter((m) => !m.capabilities.includes("asr"))
@@ -6952,19 +6952,19 @@ export function SettingsTab() {
 
 					{/* 오디오 장치 */}
 					<div className="settings-section-divider">
-						<span>오디오 장치</span>
+						<span>{t("settings.audioDeviceSection")}</span>
 					</div>
 
 					{/* 마이크 + 스피커 2-column layout */}
 					<div className="audio-device-col">
-						<label>마이크 (입력 장치)</label>
+						<label>{t("settings.micLabel")}</label>
 						<DeviceSelect
 							value={sttInputDeviceId}
 							options={audioInputDevices.map((d) => ({
 								value: d.deviceId,
 								label:
 									sanitizeDeviceLabel(d.label) ||
-									`마이크 ${d.deviceId.slice(0, 8)}`,
+									`${t("settings.micDevicePrefix")} ${d.deviceId.slice(0, 8)}`,
 							}))}
 							onChange={(v) => {
 								setSttInputDeviceId(v);
@@ -6980,7 +6980,7 @@ export function SettingsTab() {
 								data-usage-event="settings-tab.stop-mic-test-83.click"
 								onClick={micTestActive ? stopMicTest : startMicTest}
 							>
-								{micTestActive ? "중지" : "마이크 테스트"}
+								{micTestActive ? t("settings.micTestStop") : t("settings.micTest")}
 							</button>
 							{micTestActive && (
 								<div className="mic-level-bar-outer">
@@ -6994,14 +6994,14 @@ export function SettingsTab() {
 					</div>
 
 					<div className="audio-device-col">
-						<label>스피커 (출력 장치)</label>
+						<label>{t("settings.speakerLabel")}</label>
 						<DeviceSelect
 							value={ttsOutputDeviceId}
 							options={audioOutputDevices.map((d) => ({
 								value: d.deviceId,
 								label:
 									sanitizeDeviceLabel(d.label) ||
-									`스피커 ${d.deviceId.slice(0, 8)}`,
+									`${t("settings.speakerDevicePrefix")} ${d.deviceId.slice(0, 8)}`,
 							}))}
 							onChange={(v) => {
 								setTtsOutputDeviceId(v);
@@ -7011,7 +7011,7 @@ export function SettingsTab() {
 										ttsOutputDeviceId: v || undefined,
 									});
 							}}
-							placeholder="기본 장치"
+							placeholder={t("settings.defaultDevice")}
 						/>
 						<button
 							type="button"
@@ -7024,7 +7024,7 @@ export function SettingsTab() {
 							data-usage-event="settings-tab.button-84.click"
 							onClick={playTestBeep}
 						>
-							스피커 테스트
+							{t("settings.speakerTest")}
 						</button>
 					</div>
 					<div className="settings-actions">

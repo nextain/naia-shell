@@ -20,6 +20,8 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 vi.mock("../../lib/adk-store", () => ({ getAdkPath: () => "/adk" }));
 
+import { setLocale } from "../../lib/i18n";
+import { KIOSK_SOURCE, KIOSK_SOURCE_LABEL } from "../../lib/knowledge-config";
 import { KnowledgeSettingsTab } from "../KnowledgeSettingsTab";
 
 function defaultInvoke(empty = true) {
@@ -44,6 +46,17 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () => {
+	it("localizes the bundled source label while retaining custom labels", async () => {
+		await setLocale("en");
+		mockInvoke.mockImplementation(async (cmd: string) => cmd === "read_naia_knowledge_config"
+			? JSON.stringify({ version: 1, scope: "kiosk-demo", sources: [
+				{ path: KIOSK_SOURCE, label: KIOSK_SOURCE_LABEL },
+				{ path: "/custom", label: "My library" },
+			] }) : "");
+		render(<KnowledgeSettingsTab />);
+		expect(await screen.findByText("Nextain and Naia public knowledge")).toBeInTheDocument();
+		expect(screen.getByText("My library")).toBeInTheDocument();
+	});
 	it("초기: 빈 config → 스코프 default·소스 없음 안내·컴파일 비활성", async () => {
 		render(<KnowledgeSettingsTab />);
 		await waitFor(() =>

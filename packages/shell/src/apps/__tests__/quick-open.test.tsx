@@ -14,6 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
+import { t } from "../../lib/i18n";
 import { QuickOpen } from "../workspace/QuickOpen";
 
 afterEach(() => {
@@ -84,7 +85,7 @@ describe("QuickOpen", () => {
 		);
 
 		// Input is rendered
-		expect(screen.getByPlaceholderText(/파일 이름/)).toBeInTheDocument();
+		expect(screen.getByPlaceholderText(t("workspace.searchFileName"))).toBeInTheDocument();
 
 		// Files should appear after loading
 		await waitFor(() => {
@@ -118,7 +119,7 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(t("workspace.searchFileName"));
 		fireEvent.change(input, { target: { value: "edit" } });
 
 		// Only Editor.tsx should match
@@ -142,7 +143,7 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(t("workspace.searchFileName"));
 		fireEvent.keyDown(input, { key: "Enter" });
 
 		expect(onSelect).toHaveBeenCalled();
@@ -161,7 +162,7 @@ describe("QuickOpen", () => {
 			/>,
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(t("workspace.searchFileName"));
 		fireEvent.keyDown(input, { key: "Escape" });
 
 		expect(onClose).toHaveBeenCalled();
@@ -181,7 +182,7 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(t("workspace.searchFileName"));
 
 		// First item is selected by default
 		expect(
@@ -215,9 +216,9 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(t("workspace.searchFileName"));
 		fireEvent.change(input, { target: { value: "zzzznoexist" } });
 
-		expect(screen.getByText("일치하는 파일이 없습니다")).toBeInTheDocument();
+		expect(screen.getByText(t("workspace.noMatchingFiles"))).toBeInTheDocument();
 	});
 });

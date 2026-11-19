@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { getLocale, t } from "../lib/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
 	formatPrimaryShortcut,
@@ -15,6 +17,12 @@ export function TitleBar({
 	onToggleApp,
 	title = "Naia",
 }: TitleBarProps) {
+	const [, setRenderedLocale] = useState(getLocale);
+	useEffect(() => {
+		const refresh = () => setRenderedLocale(getLocale());
+		window.addEventListener("naia:locale-change", refresh);
+		return () => window.removeEventListener("naia:locale-change", refresh);
+	}, []);
 	const appWindow = getCurrentWindow();
 	const platform = shortcutPlatform();
 	const isMac = platform === "macos";
@@ -41,7 +49,7 @@ export function TitleBar({
 		</div>
 	);
 
-	const toggleVerb = appVisible ? "채팅 숨기기" : "채팅 보이기";
+	const toggleVerb = appVisible ? t("titlebar.hideChat") : t("titlebar.showChat");
 	const toggleBtn = (
 		<button
 			type="button"
@@ -80,7 +88,7 @@ export function TitleBar({
 			data-macos-traffic={isMac ? "minimize" : undefined}
 			data-usage-event="title-bar.button-2.click"
 			onClick={() => appWindow.minimize()}
-			title="최소화"
+			title={t("titlebar.minimize")}
 		>
 			&#8211;
 		</button>
@@ -103,7 +111,7 @@ export function TitleBar({
 					appWindow.maximize();
 				}
 			}}
-			title="최대화"
+			title={t("titlebar.maximize")}
 		>
 			&#9633;
 		</button>
@@ -120,7 +128,7 @@ export function TitleBar({
 			data-macos-traffic={isMac ? "close" : undefined}
 			data-usage-event="title-bar.button-4.click"
 			onClick={() => appWindow.close()}
-			title="닫기"
+			title={t("apps.close")}
 		>
 			&#10005;
 		</button>

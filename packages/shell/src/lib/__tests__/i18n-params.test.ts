@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { setLocale, t } from "../i18n";
+import { type Locale, setLocale, t } from "../i18n";
 
 /**
  * 값이 끼어드는 문구가 로케일을 지나는지 본다.
@@ -39,4 +39,17 @@ describe("t() 자리표시자", () => {
 	it("모르는 이름은 건드리지 않는다", () => {
 		expect(t("voice.ref.recording", { other: 1 })).toContain("{seconds}");
 	});
+});
+
+
+it("keeps the new UI parameters aligned in every supported locale", async () => {
+	const locales: Locale[] = ["ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "ko", "pt", "ru", "vi", "zh"];
+	for (const locale of locales) {
+		await setLocale(locale);
+		for (const [key, parameter] of [["workspace.imageOpenFailed", "image"], ["workspace.externalLink", "label"]] as const) {
+			const raw = t(key);
+			expect([...raw.matchAll(/\{(\w+)\}/g)].map((m) => m[1]), `${locale} ${key}`).toEqual([parameter]);
+			expect(t(key, { [parameter]: "TEST_VALUE" })).toContain("TEST_VALUE");
+		}
+	}
 });

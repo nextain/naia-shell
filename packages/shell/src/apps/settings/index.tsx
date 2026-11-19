@@ -1,4 +1,5 @@
 import { Suspense, lazy } from "react";
+import { t } from "../../lib/i18n";
 import { appRegistry } from "../../lib/app-registry";
 
 const SettingsTab = lazy(() =>
@@ -26,8 +27,9 @@ function SettingsCenterArea() {
 
 appRegistry.register({
 	id: "settings",
-	name: "설정",
-	names: { ko: "설정", en: "Settings" },
+	get name() {
+		return t("settings.title");
+	},
 	icon: "⚙️",
 	builtIn: true,
 	keepAlive: true, // SettingsTab must stay mounted during browser-app login to keep naia_auth_complete listener alive

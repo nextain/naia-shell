@@ -1,3 +1,5 @@
+import kioskHarnessConfig from "./kiosk-demo/knowledge/harness/config.json";
+
 /** 지식 소스 관리 — 순수 로직(영속화·폴더 다이얼로그·invoke 는 KnowledgeSettingsTab).
  *
  *  설정 정본 = `naia-settings/knowledge.json`(셸 전용 write, 에이전트 읽기전용 — FR-KB-OS.9).
@@ -18,6 +20,9 @@ export interface KnowledgeConfig {
 	scope: string;
 	sources: KnowledgeSource[];
 }
+
+export const KIOSK_SOURCE = "opfs://naia-adk/kiosk-demo/knowledge";
+export const KIOSK_SOURCE_LABEL = kioskHarnessConfig.publicKnowledgeSourceLabel;
 
 export const KNOWLEDGE_CONFIG_VERSION = 1;
 export const DEFAULT_KNOWLEDGE_SCOPE = "default";

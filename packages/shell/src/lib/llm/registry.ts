@@ -13,6 +13,11 @@ export function registerLlmProvider(meta: LlmProviderMeta): void {
 	providers.set(meta.id, meta);
 }
 
+/** Unregister an LLM provider by id. */
+export function unregisterLlmProvider(id: string): void {
+	providers.delete(id);
+}
+
 /** Get a registered LLM provider by id. */
 export function getLlmProvider(id: string): LlmProviderMeta | undefined {
 	return providers.get(id);

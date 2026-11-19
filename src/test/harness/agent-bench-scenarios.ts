@@ -121,6 +121,10 @@ const HEADING = /^###\s+(UC-[A-Z0-9-]+)/gm;
 // UC-PERF- 는 #431 성능 줄기다. 범용 에이전트 에픽(#497)이 소유하지 않으므로
 // 그 하네스의 계열에 자리가 없다 — 검사기가 안내한 대로 여기 적는다.
 const NOT_OWNED_BY_EPIC: readonly string[] = [
+  // 셸 파일 목록의 사용자 복구와 스토어 삭제 확인은 에이전트 능력 평가가 아니다.
+  // 두 항목만 명시하며 각 UI/IPC 시험은 시나리오의 P02 표에 별도로 둔다.
+  "UC-WEB-WORKSPACE-READ-RECOVERY-886",
+  "UC-APP-STORE-ADAPTER-REMOVE-886",
   // 셸의 동의·UI 사용 통계이며 에이전트 능력 축이 아니다. P02 표의 시험으로 검증한다.
   "UC-USAGE-EVENTS",
   "UC-DISCORD-",

@@ -8,6 +8,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../lib/i18n";
 import {
 	MarkdownPreview,
 	resolveWorkspaceReference,
@@ -77,7 +78,7 @@ describe("MarkdownPreview workspace boundary", () => {
 			/>,
 		);
 		expect(
-			screen.getByRole("article", { name: "Markdown 미리보기" }),
+			screen.getByRole("article", { name: t("workspace.markdownPreview") }),
 		).toBeInTheDocument();
 		expect(screen.getByRole("table")).toBeInTheDocument();
 		expect(screen.getByRole("checkbox")).toBeChecked();
@@ -94,7 +95,7 @@ describe("MarkdownPreview workspace boundary", () => {
 				onOpenFile={onOpenFile}
 			/>,
 		);
-		fireEvent.click(screen.getByRole("link", { name: /site.*외부 링크/ }));
+		fireEvent.click(screen.getByRole("link", { name: t("workspace.externalLink", { label: "site" }) }));
 		expect(mockOpenUrl).toHaveBeenCalledWith("https://example.com");
 		fireEvent.click(screen.getByRole("link", { name: "guide" }));
 		expect(onOpenFile).toHaveBeenCalledWith("/work/docs/guide.md");
@@ -129,7 +130,7 @@ describe("MarkdownPreview workspace boundary", () => {
 		);
 		await waitFor(() =>
 			expect(screen.getByRole("status")).toHaveTextContent(
-				"이미지를 열 수 없습니다",
+				t("workspace.imageOpenFailed", { image: "missing" }),
 			),
 		);
 	});

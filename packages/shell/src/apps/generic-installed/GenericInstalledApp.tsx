@@ -6,6 +6,7 @@ import {
 	validateAppToolParameters,
 } from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
+import { t } from "../../lib/i18n";
 import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
@@ -161,10 +162,10 @@ export function createGenericInstalledApp(
 			<div className="generic-installed-app">
 				<div className="generic-installed-app__icon">📦</div>
 				<p className="generic-installed-app__msg">
-					이 앱은 설치됐지만 아직 로드되지 않았습니다.
+					{t("apps.missingEntry")}
 				</p>
 				<p className="generic-installed-app__hint">
-					앱 디렉터리에 index.html을 추가하면 즉시 표시됩니다.
+					{t("apps.missingEntryHint")}
 				</p>
 			</div>
 		);

@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createGenericInstalledApp } from "../apps/generic-installed/GenericInstalledApp";
 import { useAppStore } from "../stores/app";
 import { appRegistry } from "./app-registry";
 import type { AppDataUseSpec, AppSkillSpec, NaiaTool } from "./app-registry";
@@ -263,6 +262,18 @@ export async function loadInstalledApps(): Promise<void> {
 	// pending. The older result belongs to the previous ADK and must not mutate
 	// the registry after the newer request has started.
 	if (loadGeneration !== installedAppsLoadGeneration) return;
+	let createGenericInstalledApp: typeof import("../apps/generic-installed/GenericInstalledApp").createGenericInstalledApp | null = null;
+	if (manifests.length > 0) {
+		try {
+			({ createGenericInstalledApp } = await import("../apps/generic-installed/GenericInstalledApp"));
+		} catch (err) {
+			if (loadGeneration !== installedAppsLoadGeneration) return;
+			Logger.warn("AppLoader", "Failed to load installed app renderer", { err: String(err) });
+			installedAppsSettled = true;
+			return;
+		}
+		if (loadGeneration !== installedAppsLoadGeneration) return;
+	}
 	installedManifestSignature = JSON.stringify(manifests);
 	const listedIds = new Set(manifests.map((manifest) => manifest.id));
 	for (const appId of entitlementCache.keys()) {
@@ -338,6 +349,7 @@ export async function loadInstalledApps(): Promise<void> {
 	}
 
 	for (const manifest of manifests) {
+		if (!createGenericInstalledApp) break;
 		const manifestVersion =
 			manifest.manifest_version ?? manifest.manifestVersion;
 		const profile: "legacy" | "v2" =

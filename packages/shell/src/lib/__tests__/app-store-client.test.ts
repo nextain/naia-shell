@@ -42,6 +42,26 @@ describe("app-store-client", () => {
 		});
 	});
 
+	it("routes web entitlement checks through the web adapter", async () => {
+		const { setWebAssetsModeForTests } = await import("../web-runtime/web-assets");
+		const { WebHttpAppStoreAdapter, setPlatformAppStoreAdapterForTests } = await import("../app-store-adapter");
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ entitled: false }) });
+		setWebAssetsModeForTests(true);
+		setPlatformAppStoreAdapterForTests(new WebHttpAppStoreAdapter({
+			fetchImpl: fetchImpl as typeof fetch,
+			getGatewayUrl: () => "https://gateway.example",
+			getAuthKey: () => "naia_test_key_for_login_123",
+		}));
+		try {
+			await expect(hasStoreEntitlement("land.naia.slides")).resolves.toBe(false);
+			expect(fetchImpl).toHaveBeenCalledOnce();
+			expect(invoke).not.toHaveBeenCalled();
+		} finally {
+			setPlatformAppStoreAdapterForTests(null);
+			setWebAssetsModeForTests(null);
+		}
+	});
+
 	it("resolves the localized product name from the public catalog", async () => {
 		vi.stubGlobal(
 			"fetch",
@@ -81,5 +101,39 @@ describe("app-store-client", () => {
 		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ app_id: "app", manifest: { name: "Default", nameKo: "한국어", nameEn: "English", description: "Default description", descriptionKo: "설명", descriptionEn: "Description", thumbnailUrl: "/thumb.png" } }] }) }));
 		await expect(getStoreProductMetadata("app", "ko")).resolves.toEqual({ name: "한국어", description: "설명", thumbnailUrl: "/thumb.png", permissions: null });
 		await expect(getStoreProductMetadata("app", "en")).resolves.toEqual({ name: "English", description: "Description", thumbnailUrl: "/thumb.png", permissions: null });
+	});
+});
+
+describe("desktop adapter removal", () => {
+	beforeEach(() => { invoke.mockReset(); });
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	it("does not remove an app when confirmation is declined", async () => {
+		vi.stubGlobal("confirm", vi.fn(() => false));
+		const { DesktopTauriAppStoreAdapter } = await import("../app-store-adapter");
+		await expect(new DesktopTauriAppStoreAdapter().uninstallApp("land.naia.slides"))
+			.rejects.toMatchObject({ name: "AbortError" });
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it("validates the id before asking and propagates deletion errors", async () => {
+		const confirm = vi.fn(() => true);
+		vi.stubGlobal("confirm", confirm);
+		const { DesktopTauriAppStoreAdapter } = await import("../app-store-adapter");
+		const adapter = new DesktopTauriAppStoreAdapter();
+		await expect(adapter.uninstallApp("invalid")).rejects.toMatchObject({ code: "invalid_app_id" });
+		expect(confirm).not.toHaveBeenCalled();
+		invoke.mockRejectedValueOnce(new Error("delete failed"));
+		await expect(adapter.uninstallApp("land.naia.slides")).rejects.toThrow("delete failed");
+		expect(invoke).toHaveBeenCalledWith("app_remove_installed", { appId: "land.naia.slides" });
+	});
+
+	it("removes only after confirmation", async () => {
+		vi.stubGlobal("confirm", vi.fn(() => true));
+		invoke.mockResolvedValueOnce(undefined);
+		const { DesktopTauriAppStoreAdapter } = await import("../app-store-adapter");
+		await expect(new DesktopTauriAppStoreAdapter().uninstallApp("land.naia.slides")).resolves.toBeUndefined();
+		expect(invoke).toHaveBeenCalledOnce();
+		expect(invoke).toHaveBeenCalledWith("app_remove_installed", { appId: "land.naia.slides" });
 	});
 });

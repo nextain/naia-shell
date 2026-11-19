@@ -1,12 +1,15 @@
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import type { AppConfig } from "../lib/config";
+import { KIOSK_DEMO_TTS_VOICE } from "../lib/kiosk-demo/model-config";
 import { paymentLinksHiddenNow } from "../lib/distribution";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import type {
 	VoiceCloseReason,
 	VoiceConnectionStatus,
 } from "../lib/voice/index";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 
 const DEFAULT_LOCAL_VOICE = "cc0-ko-female-01.wav";
 
@@ -21,13 +24,16 @@ export function naiaLocalVoiceId(voiceRefUrl?: string): string {
 /** Keep provider-specific voice selection in one place for live and pipeline TTS. */
 export function resolveTtsVoiceId(config: AppConfig): string | undefined {
 	if (config.ttsProvider === "nextain") {
-		return (
-			config.ttsVoice ||
-			`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
-		);
+		if (isKioskDemo()) return KIOSK_DEMO_TTS_VOICE;
+		if (config.ttsVoice) return config.ttsVoice;
+		if (isWebMode() && !config.voice) return KIOSK_DEMO_TTS_VOICE;
+		return `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`;
 	}
 	if (config.ttsProvider === "naia-local-voice") {
 		if (getLocalRefAudioB64()) return "naia-current";
+		if (isKioskDemo() && !config.voiceRefUrl && config.ttsVoice) {
+			return config.ttsVoice;
+		}
 		return naiaLocalVoiceId(config.voiceRefUrl);
 	}
 	if (config.ttsProvider === "vllm") return "default";
