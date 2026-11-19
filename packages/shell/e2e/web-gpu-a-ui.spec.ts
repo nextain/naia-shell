@@ -91,8 +91,8 @@ for (const viewport of [
 			});
 			await page.route("**/hosted-apps/cafelua-tarot/app.json", (route) => route.fulfill({ json: { id: "land.naia.cafelua-tarot", iconUrl: "icon.svg" } }));
 			await page.route("**/hosted-apps/cafelua-tarot/icon.svg", (route) => route.fulfill({ body: ICON_SVG, contentType: "image/svg+xml" }));
-			await page.route("**/hosted-apps/cafelua-tarot/index.html", (route) => route.fulfill({ body: TAROT_HTML, contentType: "text/html" }));
-			await page.route("**/hosted-apps/naia-charcard/index.html", (route) => route.fulfill({ body: CHARCARD_HTML, contentType: "text/html" }));
+			await page.route("**/hosted-apps/cafelua-tarot/index.html", (route) => route.fulfill({ body: TAROT_HTML, contentType: "text/html; charset=utf-8" }));
+			await page.route("**/hosted-apps/naia-charcard/index.html", (route) => route.fulfill({ body: CHARCARD_HTML, contentType: "text/html; charset=utf-8" }));
 			await page.addInitScript(() => {
 				if (!localStorage.getItem("naia-config")) localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model: "Qwen3-4B-q4f32_1-MLC", ttsEnabled: false, locale: "ko" }));
 				if (!localStorage.getItem("naia-web-llm-model")) localStorage.setItem("naia-web-llm-model", "Qwen3-4B-q4f32_1-MLC");
@@ -168,6 +168,44 @@ for (const viewport of [
 			}
 			await select.scrollIntoViewIfNeeded();
 			await shot(page, "R1", viewport.width);
+		});
+
+		test(`R2: settings apply button is a readable, aligned primary button (${viewport.width})`, async () => {
+			test.setTimeout(180_000);
+			const save = page.locator(".settings-save-btn:visible").first();
+			await save.scrollIntoViewIfNeeded();
+			await expect(save).toBeVisible();
+			const style = await save.evaluate((el) => {
+				const cs = getComputedStyle(el);
+				const parse = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+				const lum = ([r, g, b]: number[]) => {
+					const f = (v: number) => {
+						const s = v / 255;
+						return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+					};
+					return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+				};
+				const fg = lum(parse(cs.color));
+				const bg = lum(parse(cs.backgroundColor));
+				const r = el.getBoundingClientRect();
+				return {
+					contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+					height: r.height,
+					radius: Number.parseFloat(cs.borderTopLeftRadius),
+					shadow: cs.boxShadow,
+					wraps: el.scrollHeight > el.clientHeight + 2,
+					insideViewport: r.left >= 0 && r.right <= window.innerWidth,
+				};
+			});
+			expect(style.contrast).toBeGreaterThanOrEqual(4.5);
+			expect(style.height).toBeGreaterThanOrEqual(36);
+			expect(style.radius).toBeLessThanOrEqual(10);
+			expect(style.shadow).toBe("none");
+			expect(style.wraps).toBe(false);
+			expect(style.insideViewport).toBe(true);
+			await save.focus();
+			await shot(page, "R2", viewport.width);
+			await closeSettings(page);
 		});
 
 	});

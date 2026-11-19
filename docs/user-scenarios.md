@@ -3298,3 +3298,14 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 |---|---|---|
 | 기본·진행 | 세 창 크기에서 메시지, 입력란, 모델 조작이 화면 안에 있고 Tab으로 닿음 | `e2e/web-chat-visibility.spec.ts` (800×450·1280×720·1920×1080) |
 | 접힌 음악 플레이어 | 접힌 플레이어 내부가 `inert`·`aria-hidden`이라 Tab 순서에 없음 | 같은 시험의 Tab 순회 |
+
+## UC-WEB-A-R2. 설정 적용 단추를 읽기 쉬운 기본 단추로 보이기
+
+웹판 사용자가 설정 아래쪽의 적용 단추를 봅니다. 단추는 동작 막대 안의 평범한 기본 단추입니다. 떠 있는 그림자가 없고, 모서리는 8px이며, 높이는 36px 이상입니다. 글자는 한 줄로 보입니다. 밝은 강조색 테마에서는 어두운 글자를 써서 대비를 4.5:1 이상으로 유지합니다. 키보드로 옮겨 오면 초점 테두리가 보입니다.
+
+### Test Coverage Map — UC-WEB-A-R2
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·좁은 화면 | 대비 4.5 이상, 높이 36px 이상, 모서리 10px 이하, 그림자 없음, 줄바꿈 없음 | `e2e/web-gpu-a-ui.spec.ts` R2 (1280·390) |
+| 키보드 | `:focus-visible` 테두리 | CSS 규칙(`global.css` `.settings-save-btn:focus-visible`) |

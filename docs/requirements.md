@@ -2008,3 +2008,4 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-A-R6 | 웹판 설치 앱 목록은 묶음 `app.json`의 `iconUrl`이 가리키는 앱 폴더 안 같은 출처 SVG를 데스크톱과 같이 `iconSvg`로 쓴다. 실패하면 그림 문자 아이콘을 쓴다. 검증: `UC-WEB-A-R6`. | Done (local) |
 | FR-WEB-A-R11 | 셸은 `storage` 권한을 가진 sandbox 설치 앱에 `naia-app:storage`(get·set·delete·keys) 저장을 제공하고 셸 IndexedDB에 앱 id별로 보관한다. 캐릭터 카드는 이 권한을 가진다. 묶음 쪽 저장 경로 전환은 앱 저장소 작업으로 남는다. 검증: `UC-WEB-A-R11`. | In Progress (셸 쪽 Done) |
 | FR-WEB-A-R28 | 웹판 대화창의 메시지·입력란·모델 조작은 800×450·1280×720·1920×1080에서 상태줄에 가려지지 않고 Tab으로 닿는다. 접힌 음악 플레이어 내부는 Tab 순서와 접근성 트리에서 빠진다. 검증: `UC-WEB-A-R28`. | Done (local) |
+| FR-WEB-A-R2 | 설정 적용 단추는 그림자 없는 8px 모서리 기본 단추로, 높이 36px 이상, 글자 대비 4.5:1 이상, 한 줄 글자, 초점 테두리를 가진다. 검증: `UC-WEB-A-R2`. | Done (local) |
