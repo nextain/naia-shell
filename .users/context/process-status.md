@@ -1,3 +1,10 @@
+<!-- src-sha: 370ffd13122f50f5 -->
+
+## 웹판 모델 준비 오류 중 입력칸 배치 (R44) — 2026-11-20
+
+- 표적 Vitest 120건과 Playwright 2건 통과. 1280×720·390×844 초기 및 양방향 크기 변경에서 입력칸 하단 712px·838px와 오류 상세의 키보드 접근을 확인. 캡처 bundle-runs/r44-shots/R44-1280.png·R44-390.png.
+- `UC-WEB-CHAT-MODEL-ERROR` · `FR-WEB-CHAT-MODEL-ERROR.1~2` · `packages/shell/e2e/web-chat-model-error-r44.spec.ts`
+
 <!-- src-sha: 20f73d9390f3a095 -->
 
 ## 웹판 Naia 모델 적용 시 계정 인증 유지 (R45) — 2026-11-20

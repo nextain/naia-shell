@@ -3814,6 +3814,33 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
+	it("R44 keeps an editable composer beside the web model alert and preserves its draft on recovery", () => {
+		vi.stubEnv("MODE", "web");
+		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
+		const model = "Qwen3-4B-q4f32_1-MLC";
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model }));
+		setWebModelStatus({ phase: "error", model, errorKind: "no-webgpu", errorMessage: "어댑터 없음" });
+
+		const { container } = render(<ChatArea />);
+		const chat = container.querySelector(".chat-app");
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		const alert = screen.getByTestId("web-model-status");
+		expect(alert).toHaveAttribute("role", "alert");
+		expect(alert).toHaveAttribute("data-phase", "error");
+		expect(alert).toHaveAttribute("tabindex", "0");
+		expect(alert.parentElement).toBe(chat);
+		expect(input.closest(".chat-input-bar")?.parentElement).toBe(chat);
+		fireEvent.change(input, { target: { value: "준비 중 작성한 메시지" } });
+		expect(input).toHaveValue("준비 중 작성한 메시지");
+
+		act(() => setWebModelStatus({ phase: "ready", model, progress: 1 }));
+		expect(screen.getByTestId("web-model-status")).toHaveAttribute("role", "status");
+		expect(screen.getByTestId("web-model-status")).toHaveAttribute("data-phase", "ready");
+		expect(screen.getByPlaceholderText(/메시지|message/i)).toBe(input);
+		expect(input).toHaveValue("준비 중 작성한 메시지");
+	});
+
 	it("sends request when pre-ready event subscription callback is invoked after ready in web mode", async () => {
 		vi.stubEnv("MODE", "web");
 		setWebModelStatus({ phase: "checking" });

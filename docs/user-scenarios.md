@@ -3627,3 +3627,17 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 성공 | Terra·Luna에 적용할 때 계정 열쇠가 유지되고 새로고침 없이 두 모델의 응답이 대화에 표시됨. 각 요청의 `X-AnyLLM-Key`와 모델 ID를 가짜 게이트웨이에서 확인함 | `SettingsTab.test.tsx`, `e2e/web-main-model-r45.spec.ts` R45 |
 | 오류 | 로그인하지 않은 상태에서 Naia 모델 적용을 시도하면 로그인 안내가 표시됨. 다른 공급자의 빈 API 키는 명시 해제로 전달됨 | `SettingsTab.test.tsx` R45 |
 | 좁은 폭·키보드 | 1280×720과 390×844에서 적용과 입력을 찾을 수 있고 키보드로 메시지를 보낼 수 있음 | `e2e/web-main-model-r45.spec.ts` R45 |
+
+## UC-WEB-CHAT-MODEL-ERROR. 웹판에서 모델 준비 오류가 떠도 대화 입력칸에 접근한다 (R44)
+
+브라우저 사용자가 대화창을 열었으나 WebGPU 어댑터를 얻지 못해 로컬 모델 준비 오류가 뜹니다. 첫 화면과 창 크기를 바꾼 화면에서 입력칸 전체가 대화창 아래에 보입니다. 사용자는 오류 안내와 자세한 내용을 읽거나 다시 시도할 수 있고, 입력칸에 키보드로 초점을 옮겨 작성할 수 있습니다.
+
+### Test Coverage Map — UC-WEB-CHAT-MODEL-ERROR
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 대화 | 빈 대화에서도 대화창 바닥에 입력 영역 표시 | `e2e/web-chat-model-error-r44.spec.ts` R44 |
+| 진행 | 모델 준비 확인 중 안내와 입력칸을 화면 안에서 읽을 수 있음 | `e2e/web-chat-model-error-r44.spec.ts` R44 |
+| 성공 | 모델 상태를 준비 완료로 바꾸면 기존 준비 완료 배치와 입력 위치가 유지됨 | `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` R44 |
+| 오류 | GPU 어댑터를 얻지 못하면 오류를 알리고, 다시 시도와 자세히 보기를 키보드로 조작할 수 있음. 상세가 열려도 입력칸 하단이 뷰포트 안에 있음 | `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` R44 |
+| 좁은 폭 | 1280×720·390×844에서 처음 열었을 때와 두 크기를 오갈 때 입력칸의 상단과 하단을 측정함 | `e2e/web-chat-model-error-r44.spec.ts` R44 |

@@ -1567,6 +1567,18 @@
 	overflow-y: auto;
 }
 
+/* On model errors the two scrollable blocks share the space above the composer. */
+[data-naia-web="true"] .chat-app:has(> #web-model-status[data-phase="error"]) > .chat-messages,
+[data-naia-web="true"] .chat-app > #web-model-status[data-phase="error"] {
+	min-height: 0;
+	flex-shrink: 1;
+}
+
+/* The compact portrait sheet also needs room for the error above its composer. */
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app > #web-model-status[data-phase="error"]) {
+	min-height: 148px !important;
+}
+
 /* On short landscape windows the default 40%-height chat cannot fit the
    message, controls and composer together. Respect a user-resized or hidden
    chat, and leave the independently managed workspace and kiosk layouts alone. */

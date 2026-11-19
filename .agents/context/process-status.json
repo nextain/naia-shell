@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T20:49:44Z",
+  "last_updated": "2026-11-19T21:29:25Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_chat_model_error_r44_20261120": {
+      "requirement_id": "R44",
+      "title": "웹판 모델 준비 오류 중 입력칸 배치",
+      "branch": "alpha/webgpu-r45-creds-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CHAT-MODEL-ERROR",
+      "requirements": "docs/requirements.md FR-WEB-CHAT-MODEL-ERROR.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "표적 Vitest 120건과 Playwright 2건 통과. 1280×720·390×844 초기 및 양방향 크기 변경에서 입력칸 하단 712px·838px와 오류 상세의 키보드 접근을 확인. 캡처 bundle-runs/r44-shots/R44-1280.png·R44-390.png.",
+      "evidence": "packages/shell/e2e/web-chat-model-error-r44.spec.ts",
+      "last_updated": "2026-11-19T21:29:25Z"
+    },
     "web_main_model_auth_r45_20261120": {
       "requirement_id": "R45",
       "title": "웹판 Naia 모델 적용 시 계정 인증 유지",
