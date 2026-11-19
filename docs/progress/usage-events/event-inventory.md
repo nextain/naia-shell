@@ -8,7 +8,7 @@
 
 | 항목 | 구현 계약 / 이유 |
 |---|---|
-| 세부 누름 보완 | 아래 452개 네이티브 JSX 누름/선택/제출/문맥 메뉴 위치. 코드에 고정 data-usage-event를 선언한다. 동적 텍스트·앱 이름·주소를 이름표로 만들지 않는다. 반복 목록은 같은 동작 이름으로 합산한다. |
+| 세부 누름 보완 | 아래 472개 셸 소유 JSX 누름/선택/제출/문맥 메뉴 위치. 코드에 고정 data-usage-event를 선언한다. 동적 텍스트·앱 이름·주소를 이름표로 만들지 않는다. 반복 목록은 같은 동작 이름으로 합산한다. |
 | 이름 안정성 | 화면.요소.동작; 요소 뒤 번호는 같은 화면의 중복 요소를 구별하는 영구 식별자. 코드 행이 바뀌어도 바꾸지 않는다. 새 요소는 새 이름을 배정한다. |
 | 입력 | 자유 입력·슬라이더 값은 수집하지 않는다. 세부 선택값은 보내지 않고, 정본 의미 사건에 필요한 choice는 고정 허용값만 센다. 소개 단계·로그인 결과 등은 아래 의미 사건으로 별도 기록한다. |
 | 개인정보 최소화 | 정본 4·7절의 event_id·순번·시각·로그인 시도 번호는 중복·순서·성공 분모 보존을 위해 유지. 그 밖에는 설치 난수·이름표·고정 화면·고정 choice·앱 판·OS 종류·배포 채널만 허용한다. |
@@ -512,3 +512,29 @@
 | `char-card-app.main-merge-12.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:868 |
 | `char-card-app.main-merge-13.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:1018 |
 | `char-card-app.main-merge-14.click` | char-card-app | button / onClick | packages/shell/src/apps/charcard/CharCardApp.tsx:1027 |
+
+## 웹 제어 추가 (#886)
+
+고정 이름만 기록한다. 파일명·경로·모델 ID·입력값은 포함하지 않는다. 기존 동의 및 전송 중단 계약을 따른다.
+
+| 이름표 | 화면 | 제어 | 소스 |
+|---|---|---|---|
+| `web-login.start.click` | web-login | button / onClick | packages/shell/src/components/WebLoginScreen.tsx |
+| `web-model.fallback.click` | web-model | button / onClick | packages/shell/src/components/WebModelStatusBar.tsx |
+| `web-model.retry.click` | web-model | button / onClick | packages/shell/src/components/WebModelStatusBar.tsx |
+| `web-model.default.click` | web-model | button / onClick | packages/shell/src/components/WebModelStatusBar.tsx |
+| `web-workspace-setup.start.click` | web-workspace-setup | button / onClick | packages/shell/src/components/WebWorkspaceSetup.tsx |
+| `web-workspace-setup.retry.click` | web-workspace-setup | button / onClick | packages/shell/src/components/WebWorkspaceSetup.tsx |
+| `web-workspace.retry.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.open-file.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.toggle-path.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.collapse.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.offline.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.knowledge.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.open-knowledge.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.expand.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.download.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.close-file.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.retry-folder.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.retry-root.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |
+| `web-workspace.retry-download.click` | web-workspace | button / onClick | packages/shell/src/apps/workspace/WebWorkspace.tsx |

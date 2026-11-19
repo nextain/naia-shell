@@ -145,7 +145,7 @@ export function MarkdownCodeBlock({
 						data-usage-event="markdown-code-block.on-open-workspace-3.click"
 						onClick={() => onOpenWorkspace(code, language)}
 					>
-						워크스페이스에서 열기
+						{t("chat.openInWorkspace")}
 					</button>
 				) : null}
 			</div>

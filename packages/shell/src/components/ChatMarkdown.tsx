@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import type { ReactNode } from "react";
 import Markdown from "react-markdown";
@@ -62,7 +63,7 @@ function processFilePaths(text: string): ReactNode[] {
 				className="chat-file-deeplink"
 				data-usage-event="chat-markdown.open-file-in-workspace-1.click"
 				onClick={() => openFileInWorkspace(part)}
-				title={`워크스페이스에서 열기: ${part}`}
+				title={`${t("chat.openInWorkspace")}: ${part}`}
 			>
 				{part}
 			</button>

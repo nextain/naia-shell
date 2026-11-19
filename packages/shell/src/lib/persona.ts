@@ -1,5 +1,6 @@
 import type { NvaGestureAction } from "./avatar/camera-actions";
 import { nvaGestureShortcutLabel } from "./avatar/nva-action-hotkeys";
+import jinaPersona from "./kiosk-demo/jina-persona.json";
 
 /** Default Naia persona — editable by user in settings */
 export const DEFAULT_PERSONA = `You are Naia (낸), a friendly AI companion living inside Naia.
@@ -264,5 +265,7 @@ export function buildSystemPrompt(
 	return parts.join("\n");
 }
 
-export const KIOSK_DEMO_GREETING =
-	"게스트님, 안녕하세요. 넥스테인의 안내를 맡은 지나입니다. 나이아와 넥스테인이 궁금하시면 편하게 물어봐 주세요.";
+/** IR 시연 전용. 선택은 config-seed의 isKioskDemo 분기에서만 한다. */
+export const KIOSK_DEMO_PERSONA: string = jinaPersona.persona;
+
+export const KIOSK_DEMO_GREETING: string = jinaPersona.greeting;

@@ -23,6 +23,8 @@ function localeWriteMock(failFirstWrite = false): string {
 		window.__TAURI_INTERNALS__.unregisterCallback = function() {};
 		window.__TAURI_INTERNALS__.convertFileSrc = function(path, proto) { return (proto || "asset") + "://localhost/" + encodeURIComponent(path); };
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
+		if (cmd === "read_naia_knowledge_config") return window.__localeKnowledgeConfig || "";
+		if (cmd === "read_naia_knowledge_kb") return "";
 		if (cmd === "write_naia_config") {
 			if (window.__failLocaleNextWrite) { window.__failLocaleNextWrite = false; throw new Error("locale write failed"); }
 		if (window.__holdLocaleWrite) await new Promise(function(resolve) {
@@ -83,6 +85,62 @@ async function openSettings(
 }
 
 test.describe("Settings locale persistence", () => {
+	test("localizes the bundled knowledge source and window controls at narrow width", async ({ page }) => {
+		await page.setViewportSize({ width: 800, height: 800 });
+		await openSettings(page);
+		await page.evaluate(() => {
+			(window as any).__localeKnowledgeConfig = JSON.stringify({ version: 1, scope: "kiosk-demo", sources: [
+				{ path: "opfs://naia-adk/kiosk-demo/knowledge", label: "넥스테인·나이아 공개 지식" },
+				{ path: "/custom", label: "My library" },
+			] });
+		});
+		await page.locator('[data-settings-tab="knowledge"]').click();
+		await expect(page.getByText("넥스테인·나이아 공개 지식", { exact: true })).toBeVisible();
+		await page.locator('[data-settings-tab="general"]').click();
+		await page.locator("#locale-select").click();
+		await page.getByRole("button", { name: "English" }).click();
+		await expect(page.locator("#locale-select")).toHaveAttribute("data-value", "en");
+		await page.locator('[data-settings-tab="knowledge"]').click();
+		const label = page.getByText("Nextain and Naia public knowledge", { exact: true });
+		await expect(label).toBeVisible();
+		await expect(page.getByText("My library", { exact: true })).toBeVisible();
+		const bounds = await label.boundingBox();
+		expect(bounds).not.toBeNull();
+		expect(bounds!.x).toBeGreaterThanOrEqual(0);
+		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(800);
+		const row = label.locator("xpath=..");
+		const rowBounds = await row.boundingBox();
+		const removeBounds = await row.getByTestId("knowledge-source-remove").boundingBox();
+		expect(rowBounds).not.toBeNull();
+		expect(removeBounds).not.toBeNull();
+		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(removeBounds!.x);
+		expect(removeBounds!.x + removeBounds!.width).toBeLessThanOrEqual(rowBounds!.x + rowBounds!.width);
+		await expect(page.getByTitle("Minimize", { exact: true })).toBeVisible();
+		await page.screenshot({ path: "test-results/i18n-knowledge.png" });
+	});
+
+	test("translates audio device controls when the locale changes", async ({ page }) => {
+		await page.setViewportSize({ width: 800, height: 800 });
+		await openSettings(page);
+		await page.locator('[data-settings-tab="voice"]').click();
+		await expect(page.getByText("마이크 (입력 장치)", { exact: true })).toBeVisible();
+		await expect(page.getByRole("button", { name: "스피커 테스트" })).toBeVisible();
+		await page.locator('[data-settings-tab="general"]').click();
+		await page.locator("#locale-select").click();
+		await page.getByRole("button", { name: "English" }).click();
+		await expect(page.locator("#locale-select")).toHaveAttribute("data-value", "en");
+		await page.locator('[data-settings-tab="voice"]').click();
+		await expect(page.getByText("Microphone (input)", { exact: true })).toBeVisible();
+		const speakerTest = page.getByRole("button", { name: "Speaker Test" });
+		await expect(speakerTest).toBeVisible();
+		await speakerTest.scrollIntoViewIfNeeded();
+		const bounds = await speakerTest.boundingBox();
+		expect(bounds).not.toBeNull();
+		expect(bounds!.x).toBeGreaterThanOrEqual(0);
+		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(800);
+		await page.screenshot({ path: "test-results/i18n-audio.png" });
+	});
+
 	test("keeps detected locale out of the partial first-run config snapshot", async ({
 		page,
 	}) => {

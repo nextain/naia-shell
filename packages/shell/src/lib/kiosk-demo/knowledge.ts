@@ -1,6 +1,8 @@
 /** UC-KIOSK-KNOWLEDGE-S1: portable local compiler and desktop-compatible serving. */
 import { Logger } from "../logger";
 import {
+	KIOSK_SOURCE,
+	KIOSK_SOURCE_LABEL,
 	parseKnowledgeConfig,
 	serializeKnowledgeConfig,
 } from "../knowledge-config";
@@ -14,54 +16,19 @@ import { MarkdownExtractAdapter } from "./kb-compiler/adapters/extract/markdown"
 import { Bm25RetrievalAdapter } from "./kb-compiler/adapters/retrieval/bm25";
 import { MemoryStoreAdapter } from "./kb-compiler/adapters/store/memory";
 import type { Kb } from "./kb-compiler/domain/types";
+import harnessPrompts from "./knowledge/harness/prompts.json";
+import harnessConfig from "./knowledge/harness/config.json";
 import kbRaw from "./knowledge/kb.json?raw";
 
 export const KIOSK_SCOPE = "kiosk-demo";
-export const KIOSK_SOURCE = "opfs://naia-adk/kiosk-demo/knowledge";
+export { KIOSK_SOURCE } from "../knowledge-config";
 export const KIOSK_ADK_KNOWLEDGE_DIR = "opfs://naia-adk/knowledge";
 
-export const KIOSK_AGENTS_MD = `# AGENTS.md — ADK 하네스 지침
+export const KIOSK_AGENTS_MD = harnessPrompts.KIOSK_AGENTS_MD;
 
-이 \`AGENTS.md\`는 화면에 보여 주기 위한 꾸밈 글이 아니라, 매 대화 턴마다 에이전트 워커가 실제로 읽어 시스템 지침으로 결합하는 하네스 정본(Single Source of Truth)입니다.
+export const KIOSK_RULES_MD = harnessPrompts.KIOSK_RULES_MD;
 
-## 1. 캐릭터 정체성 (페르소나)
-
-지금 캐릭터는 페르소나 설정(캐릭터 카드)을 따른다.
-
-## 2. 무엇을 읽고 대답하는가 (참조 경로)
-
-대답을 만들 때 아래 ADK 작업 공간 파일들과 페르소나 설정(캐릭터 카드)을 실제로 읽고 결합합니다:
-
-- \`AGENTS.md\`: 하네스 최상위 지침 (역할·참조 경로·응답 원칙)
-- 페르소나 설정(캐릭터 카드): 지금 적용된 캐릭터의 이름·소개·성격·상황·첫 인사·예시 대화·로어북
-- \`memory/guest-memory.md\`: 이번 방문에서 기억한 사실과 최근 대화 흐름
-- \`knowledge/*.md\`: 넥스테인·나이아·성장·제품·가능성에 관한 공개 지식 원고 카드 (21종)
-- \`rules/response-rules.md\`: 근거 보존·기준일 명시·비공개 추측 금지 규칙
-
-## 3. 어떤 규칙으로 대답하는가 (응답 원칙)
-
-1. 넥스테인·나이아·성장·제품·가능성 질문에는 \`skill_knowledge_search\` 또는 \`skill_knowledge_ask\` 도구로 \`knowledge/*.md\` 공개 지식을 먼저 확인합니다.
-2. 대답할 때 참고한 지식 원고의 **기준일**을 보존하되 대답 글에 파일 이름·근거 줄을 쓰지 않고, 계획은 확정 사실이 아닌 계획으로 구분해 설명합니다.
-3. 공개 지식 원고에 없는 수치나 비공개 내부 정보는 추측하지 않고 공개 가능한 범위만 정직하게 안내합니다.
-4. 음성 합성(TTS)으로 자연스럽게 읽히도록 핵심부터 또렷하고 간결한 한국어 문장으로 답합니다.
-`;
-
-export const KIOSK_RULES_MD = `# 대답 및 근거 규칙 (Response Rules)
-
-1. **공개 지식 우선 확인**: 넥스테인·나이아·제품·기술·비전 질문에는 반드시 \`knowledge/*.md\` 공개 지식 원고를 먼저 조회합니다.
-2. **근거·기준일 보존**: 지식 카드에 적힌 기준일은 보존하되, 대답 글에 파일 이름·근거 줄을 쓰지 않습니다.
-3. **계획과 사실 구분**: 로드맵·향후 일정은 현재 완료된 사실과 구분하여 계획으로 안내합니다.
-4. **비공개 정보 추측 금지**: 원고에 없는 내부 수치·열쇠·비공개 주소는 추측하거나 만들어 내지 않습니다.
-`;
-
-export const KIOSK_INITIAL_MEMORY_MD = `# 게스트 기억 (Guest Memory)
-
-## 기억된 사실 (Facts)
-- 사용자 호칭은 게스트님이다.
-
-## 최근 대화 (Episodes)
-- 아직 기록된 대화가 없습니다.
-`;
+export const KIOSK_INITIAL_MEMORY_MD = harnessPrompts.KIOSK_INITIAL_MEMORY_MD;
 const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
 	eager: true,
 	query: "?raw",
@@ -186,7 +153,7 @@ export async function seedKioskKnowledge(fs: WebFs): Promise<void> {
 						version: 1,
 						scope: KIOSK_SCOPE,
 						sources: [
-							{ path: KIOSK_SOURCE, label: "넥스테인·나이아 공개 지식" },
+							{ path: KIOSK_SOURCE, label: KIOSK_SOURCE_LABEL },
 						],
 					}),
 				);
@@ -252,8 +219,7 @@ export const seedKioskAdkWorkspace = async (
 			const existingAgents = await fs.readText(agentsPath);
 			if (
 				!existingAgents ||
-				existingAgents.includes("**근거와 기준일**을 보존하고") ||
-				existingAgents.includes("## 1. 지나가 누구인가")
+				harnessConfig.legacyAgentsMarkers.some((marker) => existingAgents.includes(marker))
 			) {
 				await fs.writeBytes(agentsPath, KIOSK_AGENTS_MD);
 			}
@@ -261,7 +227,7 @@ export const seedKioskAdkWorkspace = async (
 			const existingRules = await fs.readText(rulesPath);
 			if (
 				!existingRules ||
-				existingRules.includes("출처(`knowledge/*.md`)를 대답 근거로 남깁니다")
+				harnessConfig.legacyRulesMarkers.some((marker) => existingRules.includes(marker))
 			) {
 				await fs.writeBytes(rulesPath, KIOSK_RULES_MD);
 			}

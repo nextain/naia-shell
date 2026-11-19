@@ -8,6 +8,22 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"workspace.noMatchingFiles": "Aucun fichier correspondant",
+	"workspace.searchFileName": "Rechercher par nom… (initiales coréennes acceptées)",
+	"titlebar.showChat": "Afficher le chat",
+	"titlebar.hideChat": "Masquer le chat",
+	"titlebar.minimize": "Réduire",
+	"titlebar.maximize": "Agrandir",
+	"workspace.imageOpenFailed": "Impossible d’ouvrir l’image : {image}",
+	"workspace.unknownImage": "Image inconnue",
+	"workspace.imageLoading": "Chargement de l’image…",
+	"workspace.markdownPreview": "Aperçu Markdown",
+	"workspace.externalLink": "{label} (lien externe)",
+	"settings.kioskPublicKnowledge": "Connaissances publiques de Nextain et Naia",
+	"settings.currentModel": "{model}{asr} (actuel)",
+	"chat.openInWorkspace": "Ouvrir dans l’espace de travail",
+	"sampleNote.hint": "Demandez à Naia de lire ou de modifier cette note.",
+	"sampleNote.placeholder": "Écrivez une note ou demandez à Naia de le faire...",
 	"webStorage.title": "Browser storage",
 	"webStorage.usageQuota": "Usage {usage} / {quota}",
 	"webStorage.usage": "Usage {usage}",

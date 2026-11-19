@@ -1,6 +1,7 @@
 import { useAppStore } from "../../stores/app";
 import { useChatStore } from "../../stores/chat";
 import { isKioskDemo } from "./flag";
+import irConfig from "./slides/ir-config.json";
 import rawIrPublicDeck from "./slides/ir-public.json";
 
 export interface KioskIrSlide {
@@ -43,25 +44,13 @@ export interface KioskSlidesController {
 
 export const KIOSK_IR_SLIDES_PDF_PATH =
 	"opfs://naia-adk/kiosk-demo/slides/nextain-ir-public.pdf";
-export const KIOSK_IR_SLIDES_PDF_NAME = "넥스테인 공개 IR 발표.pdf";
+export const KIOSK_IR_SLIDES_PDF_NAME = irConfig.pdfName;
 export const KIOSK_IR_SLIDES_SCRIPT_PATH =
 	"opfs://naia-adk/kiosk-demo/slides/nextain-ir-public.md";
-export const KIOSK_IR_SLIDES_SCRIPT_NAME = "넥스테인 공개 IR 발표.md";
+export const KIOSK_IR_SLIDES_SCRIPT_NAME = irConfig.scriptName;
 
-export const FORBIDDEN_IR_SLIDE_WORDS = [
-	"매출",
-	"투자",
-	"억",
-	"밸류",
-	"계약금",
-	"계약 금액",
-	"영업이익",
-	"순이익",
-	"지분",
-	"기업가치",
-	"개인 정보",
-	"개인정보",
-] as const;
+export const FORBIDDEN_IR_SLIDE_WORDS: readonly string[] =
+	irConfig.forbiddenWords;
 
 const FORBIDDEN_IR_SLIDE_PATTERNS: readonly RegExp[] = [
 	/\d[\d,.]*\s*(?:원|달러|불|만원|천만원|억원|조원|usd|krw)\b/i,
@@ -426,49 +415,41 @@ export const getActiveKioskIrSlide = (): KioskIrSlide | null => {
 	return null;
 };
 
+function renderKioskSlidePrompt(
+	templateLines: readonly string[],
+	slide: KioskIrSlide,
+	question?: string,
+): string {
+	const bullets = slide.bullets.map((b) => `- ${b}`).join("\n");
+	const vars: Record<string, string> = {
+		page: String(slide.page),
+		title: slide.title,
+		subtitleSuffix: slide.subtitle ? ` (${slide.subtitle})` : "",
+		source: slide.source,
+		bullets,
+		script: slide.script,
+	};
+	const lines = templateLines.map((line) =>
+		line.replace(
+			/\{(page|title|subtitleSuffix|source|bullets|script)\}/g,
+			(_, key: string) => vars[key] ?? "",
+		),
+	);
+	if (question?.trim()) {
+		lines.push(`${irConfig.userQuestionPrefix}${question.trim()}`);
+	}
+	return lines.join("\n");
+}
+
 export const buildKioskSlideQuestionPrompt = (
 	slide: KioskIrSlide,
 	question?: string,
-): string => {
-	const bullets = slide.bullets.map((b) => `- ${b}`).join("\n");
-	const lines = [
-		`[현재 발표 중인 슬라이드: ${slide.page}장 — ${slide.title}${slide.subtitle ? ` (${slide.subtitle})` : ""}]`,
-		`장 원고 파일: knowledge/${slide.source}`,
-		`장 본문 요점:\n${bullets}`,
-		`장 발표문:\n${slide.script}`,
-		`규칙:`,
-		`1. 발표 중간 질문에는 반드시 지금 보고 있는 ${slide.page}장('${slide.title}')의 장 본문 요점과 장 발표문에 적힌 내용만으로 답하세요.`,
-		`2. 다른 슬라이드 장이나 다른 지식 카드(marketing.md, growth.md 등)를 검색하거나 끌어오지 말고, 이 장에 없는 고유명사·별자리 이름·수치를 절대 지어내지 마세요.`,
-		`3. 질문한 항목(예: 핵심 지표, 수치, 통계, 실적, 가격 등)이 이 장의 본문·발표문에 없으면 "이 장에는 지표가 없어요"(또는 "이 장에는 핵심 지표가 없어요"·"이 장에는 가격 내용이 없어요")라고 먼저 분명하게 말한 뒤, 지금 ${slide.page}장에 실제로 적힌 핵심 내용만 짧게 안내하세요.`,
-		`4. 질문한 항목(예: 이 장에 나오는 용어 설명, 방금 장 요약 등)이 이 장의 본문·발표문에 있으면 이 장에 적힌 내용만 사용해 정확히 답하세요.`,
-		`5. 근거 파일은 오직 knowledge/${slide.source} 하나만 사용하세요.`,
-	];
-	if (question?.trim()) {
-		lines.push(`사용자 질문: ${question.trim()}`);
-	}
-	return lines.join("\n");
-};
+): string => renderKioskSlidePrompt(irConfig.questionPromptLines, slide, question);
 
 export const buildKioskSlideReferencePrompt = (
 	slide: KioskIrSlide,
 	question?: string,
-): string => {
-	const bullets = slide.bullets.map((b) => `- ${b}`).join("\n");
-	const lines = [
-		`[현재 열려 있는 슬라이드 참고: ${slide.page}장 — ${slide.title}${slide.subtitle ? ` (${slide.subtitle})` : ""}]`,
-		`장 원고 파일: knowledge/${slide.source}`,
-		`장 본문 요점:\n${bullets}`,
-		`장 발표문:\n${slide.script}`,
-		`참고 안내:`,
-		`1. 현재 슬라이드 발표는 진행 중이 아니라 멈춤·대기 또는 완료 상태입니다.`,
-		`2. 지금 열려 있는 ${slide.page}장('${slide.title}')에 대한 질문이면 위 장 본문 요점과 발표문(knowledge/${slide.source})을 참고해 답하세요.`,
-		`3. 다른 슬라이드 장이나 회사·제품·기억·성장 등 다른 주제에 대한 질문이면 이 장에만 가두지 말고 skill_knowledge_search 또는 skill_knowledge_ask로 공개 지식 카드를 검색해 답하세요.`,
-	];
-	if (question?.trim()) {
-		lines.push(`사용자 질문: ${question.trim()}`);
-	}
-	return lines.join("\n");
-};
+): string => renderKioskSlidePrompt(irConfig.referencePromptLines, slide, question);
 
 export async function handleKioskSlidesChatTurn(
 	rawText: string,

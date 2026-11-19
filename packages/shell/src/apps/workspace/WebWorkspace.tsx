@@ -132,8 +132,11 @@ function Directory({
 }) {
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [error, setError] = useState(false);
+	const [loading, setLoading] = useState(true);
+	const [attempt, setAttempt] = useState(0);
 	useEffect(() => {
 		let active = true;
+		setLoading(true);
 		(async () => {
 			try {
 				const found: Entry[] = [];
@@ -142,16 +145,31 @@ function Directory({
 					found.push({ name: entry.name, kind: entry.kind });
 				}
 				const sorted = sortWebWorkspaceEntries(found, path);
-				if (active) setEntries(sorted);
+				if (active) {
+					setEntries(sorted);
+					setError(false);
+				}
 			} catch {
 				if (active) setError(true);
+			} finally {
+				if (active) setLoading(false);
 			}
 		})();
 		return () => {
 			active = false;
 		};
-	}, [dir, path]);
-	if (error) return <p role="alert">Unable to read directory</p>;
+	}, [dir, path, attempt]);
+	if (error) return (
+		<div role="alert">
+			<p>{t("webExplorer.readFailed")}</p>
+			<button data-usage-event="web-workspace.retry.click" type="button" disabled={loading} onClick={() => setAttempt((value) => value + 1)}>
+				{t("common.retry")}
+			</button>
+			{loading && <span role="status">{t("fileTree.loading")}</span>}
+		</div>
+	);
+	if (loading) return <p role="status">{t("fileTree.loading")}</p>;
+	if (entries.length === 0) return <p>{t("fileTree.empty")}</p>;
 	return (
 		<ul className="web-workspace-list">
 			{entries.map((entry) =>
@@ -166,7 +184,7 @@ function Directory({
 					/>
 				) : (
 					<li key={entry.name}>
-						<button
+						<button data-usage-event="web-workspace.open-file.click"
 							type="button"
 							aria-pressed={activeFile === `${path}/${entry.name}`}
 							onClick={() => onOpen(`${path}/${entry.name}`)}
@@ -195,31 +213,57 @@ function Folder({
 }) {
 	const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
 	const [error, setError] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const pending = useRef(false);
+	const generation = useRef(0);
+	useEffect(() => {
+		generation.current += 1;
+		setDir(null);
+		setError(false);
+		return () => { generation.current += 1; pending.current = false; };
+	}, [parent, name]);
 	const shouldAutoOpen = Boolean(
 		activeFile && activeFile.startsWith(`${path}/`),
 	);
-	useEffect(() => {
-		if (shouldAutoOpen && !dir) {
-			void parent
-				.getDirectoryHandle(name)
-				.then(setDir)
-				.catch(() => setError(true));
+	async function openFolder() {
+		if (pending.current || dir) return;
+		pending.current = true;
+		const requestGeneration = generation.current;
+		setLoading(true);
+		try {
+			const opened = await parent.getDirectoryHandle(name);
+			if (requestGeneration === generation.current) {
+				setDir(opened);
+				setError(false);
+			}
+		} catch {
+			if (requestGeneration === generation.current) setError(true);
+		} finally {
+			if (requestGeneration === generation.current) {
+				pending.current = false;
+				setLoading(false);
+			}
 		}
-	}, [shouldAutoOpen, dir, parent, name]);
+	}
+	useEffect(() => {
+		if (shouldAutoOpen && !dir && !error) void openFolder();
+	}, [shouldAutoOpen, dir, error, parent, name]);
 	return (
 		<li>
 			<details
 				open={shouldAutoOpen || undefined}
 				onToggle={(event) => {
-					if (event.currentTarget.open && !dir)
-						void parent
-							.getDirectoryHandle(name)
-							.then(setDir)
-							.catch(() => setError(true));
+					if (event.currentTarget.open && !dir && !error) void openFolder();
 				}}
 			>
 				<summary>📁 {name}</summary>
-				{error && <p role="alert">Unable to open folder</p>}
+				{error && (
+					<div role="alert">
+						<p>{t("webExplorer.readFailed")}</p>
+						<button data-usage-event="web-workspace.retry-folder.click" type="button" disabled={loading} onClick={() => void openFolder()}>{t("common.retry")}</button>
+						{loading && <span role="status">{t("fileTree.loading")}</span>}
+					</div>
+				)}
 				{dir && (
 					<Directory
 						dir={dir}
@@ -257,7 +301,13 @@ export function isMobileWorkspaceViewport(): boolean {
 export default function WebWorkspace() {
 	const status = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
 	const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
-	const [error, setError] = useState(false);
+	const [rootError, setRootError] = useState(false);
+	const [rootLoading, setRootLoading] = useState(true);
+	const [rootAttempt, setRootAttempt] = useState(0);
+	const [downloadError, setDownloadError] = useState(false);
+	const [downloadLoading, setDownloadLoading] = useState(false);
+	const downloadPending = useRef(false);
+	const downloadGeneration = useRef(0);
 	const [activeTab, setActiveTab] = useState<"offline" | "knowledge">(
 		"offline",
 	);
@@ -274,6 +324,13 @@ export default function WebWorkspace() {
 		}
 		return isKioskDemo() ? `${WEB_ADK_PATH}/AGENTS.md` : "";
 	});
+	useEffect(() => {
+		downloadGeneration.current += 1;
+		downloadPending.current = false;
+		setDownloadLoading(false);
+		setDownloadError(false);
+		return () => { downloadGeneration.current += 1; };
+	}, [file]);
 	const [treeWidth, setTreeWidth] = useState(() => (isKioskDemo() ? 236 : 180));
 	const workspaceRef = useRef<HTMLDivElement>(null);
 	const kioskManuscripts = useMemo(
@@ -311,6 +368,7 @@ export default function WebWorkspace() {
 	}, []);
 	useEffect(() => {
 		let active = true;
+		setRootLoading(true);
 		void Promise.resolve()
 			.then(async () => {
 				if (isKioskDemo()) {
@@ -324,16 +382,20 @@ export default function WebWorkspace() {
 			.then((dir) => {
 				if (active) {
 					setRoot(dir);
-					setError(false);
+					setRootError(false);
 				}
 			})
 			.catch(() => {
-				if (active && status.phase === "ready") setError(true);
-			});
+				if (active && status.phase === "ready") {
+					setRoot(null);
+					setRootError(true);
+				}
+			})
+			.finally(() => { if (active) setRootLoading(false); });
 		return () => {
 			active = false;
 		};
-	}, [status.phase]);
+	}, [status.phase, rootAttempt]);
 	function handleResizerMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
 		event.preventDefault();
 		const container = workspaceRef.current;
@@ -352,6 +414,10 @@ export default function WebWorkspace() {
 		window.addEventListener("mouseup", onUp);
 	}
 	async function download() {
+		if (downloadPending.current) return;
+		downloadPending.current = true;
+		const requestGeneration = downloadGeneration.current;
+		setDownloadLoading(true);
 		try {
 			const blob = await getWebWorkspaceFile(file);
 			const url = URL.createObjectURL(blob);
@@ -360,8 +426,14 @@ export default function WebWorkspace() {
 			link.download = blob.name;
 			link.click();
 			setTimeout(() => URL.revokeObjectURL(url), 1000);
+			if (requestGeneration === downloadGeneration.current) setDownloadError(false);
 		} catch {
-			setError(true);
+			if (requestGeneration === downloadGeneration.current) setDownloadError(true);
+		} finally {
+			if (requestGeneration === downloadGeneration.current) {
+				downloadPending.current = false;
+				setDownloadLoading(false);
+			}
 		}
 	}
 	const showExplorer = explorerOpen || !file;
@@ -377,7 +449,7 @@ export default function WebWorkspace() {
 					data-testid="web-workspace-tree"
 				>
 					<header className="herdr-workspace__section-title">
-						<button
+						<button data-usage-event="web-workspace.toggle-path.click"
 							type="button"
 							className="herdr-workspace__toggle-btn"
 							aria-expanded={showPath}
@@ -386,7 +458,7 @@ export default function WebWorkspace() {
 							{t("webExplorer.title")}
 						</button>
 						{file && (
-							<button
+							<button data-usage-event="web-workspace.collapse.click"
 								type="button"
 								className="web-workspace-tree-collapse"
 								data-testid="web-workspace-tree-collapse"
@@ -398,7 +470,7 @@ export default function WebWorkspace() {
 						)}
 					</header>
 					<div className="web-workspace-tabs">
-						<button
+						<button data-usage-event="web-workspace.offline.click"
 							type="button"
 							data-testid="web-workspace-tab-offline"
 							aria-pressed={activeTab === "offline"}
@@ -407,7 +479,7 @@ export default function WebWorkspace() {
 							{t("webExplorer.offline")}
 						</button>
 						{kioskDemo && (
-							<button
+							<button data-usage-event="web-workspace.knowledge.click"
 								type="button"
 								data-testid="web-workspace-tab-knowledge"
 								aria-pressed={activeTab === "knowledge"}
@@ -432,7 +504,7 @@ export default function WebWorkspace() {
 						>
 							{kioskManuscripts.map((item) => (
 								<li key={item.name}>
-									<button
+									<button data-usage-event="web-workspace.open-knowledge.click"
 										type="button"
 										aria-pressed={file === item.uri}
 										onClick={() => setFile(item.uri)}
@@ -447,7 +519,13 @@ export default function WebWorkspace() {
 							{showPath && (
 								<code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>
 							)}
-							{error && <p role="alert">{t("webExplorer.readFailed")}</p>}
+							{rootError && (
+								<div role="alert">
+									<p>{t("webExplorer.readFailed")}</p>
+									<button data-usage-event="web-workspace.retry-root.click" type="button" disabled={rootLoading} onClick={() => setRootAttempt((value) => value + 1)}>{t("common.retry")}</button>
+									{rootLoading && <span role="status">{t("fileTree.loading")}</span>}
+								</div>
+							)}
 							{root && (
 								<Directory
 									key={status.phase}
@@ -475,7 +553,7 @@ export default function WebWorkspace() {
 					)}
 					<main className="web-workspace-viewer" data-testid="web-workspace-viewer">
 						<div className="web-workspace-viewer-bar">
-							<button
+							<button data-usage-event="web-workspace.expand.click"
 								type="button"
 								className="web-workspace-tree-toggle"
 								data-testid="web-workspace-tree-toggle"
@@ -488,10 +566,10 @@ export default function WebWorkspace() {
 							<code title={file}>
 								{file.split("/").filter(Boolean).pop() ?? file}
 							</code>
-							<button type="button" onClick={() => void download()}>
+							<button data-usage-event="web-workspace.download.click" type="button" onClick={() => void download()}>
 								{t("webExplorer.download")}
 							</button>
-							<button
+							<button data-usage-event="web-workspace.close-file.click"
 								type="button"
 								onClick={() => setFile("")}
 								aria-label={t("webExplorer.close")}
@@ -499,6 +577,13 @@ export default function WebWorkspace() {
 								✕
 							</button>
 						</div>
+						{downloadError && (
+							<div role="alert">
+								<p>{t("webExplorer.readFailed")}</p>
+								<button data-usage-event="web-workspace.retry-download.click" type="button" disabled={downloadLoading} onClick={() => void download()}>{t("common.retry")}</button>
+								{downloadLoading && <span role="status">{t("fileTree.loading")}</span>}
+							</div>
+						)}
 						<Suspense fallback={null}>
 							<Editor filePath={file} readOnly workspaceRoot={WEB_ADK_PATH} />
 						</Suspense>

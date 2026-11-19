@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "../../lib/i18n";
 import { collectFilesOnly, fuzzyMatch } from "../../lib/file-search";
 
 interface QuickOpenProps {
@@ -120,14 +121,14 @@ export function QuickOpen({
 					ref={inputRef}
 					type="text"
 					className="quick-open__input"
-					placeholder="파일 이름으로 검색… (한글 초성 지원)"
+					placeholder={t("workspace.searchFileName")}
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
 					onKeyDown={handleKeyDown}
 				/>
 				<div ref={listRef} className="quick-open__list">
 					{loading && (
-						<div className="quick-open__empty">파일 목록 불러오는 중…</div>
+						<div className="quick-open__empty">{t("agents.filesLoading")}</div>
 					)}
 					{results.map((r, i) => (
 						<div
@@ -144,7 +145,7 @@ export function QuickOpen({
 						</div>
 					))}
 					{!loading && results.length === 0 && query.trim() && (
-						<div className="quick-open__empty">일치하는 파일이 없습니다</div>
+						<div className="quick-open__empty">{t("workspace.noMatchingFiles")}</div>
 					)}
 				</div>
 			</div>

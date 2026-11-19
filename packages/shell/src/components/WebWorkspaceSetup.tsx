@@ -82,7 +82,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 							style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}
 						>
 							<li>
-								<button
+								<button data-usage-event="web-workspace-setup.start.click"
 									type="button"
 									className="web-workspace-btn"
 									data-testid="web-workspace-start-default"
@@ -144,7 +144,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 							style={{ listStyle: "none", padding: 0, margin: 0 }}
 						>
 							<li>
-								<button
+								<button data-usage-event="web-workspace-setup.retry.click"
 									type="button"
 									className="web-workspace-btn"
 									data-testid="web-workspace-retry"

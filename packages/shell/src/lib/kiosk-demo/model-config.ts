@@ -116,4 +116,3 @@ export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
 	}
 	return next;
 }
-

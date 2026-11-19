@@ -94,7 +94,7 @@ export function WebModelStatusBar(props: {
 				{adapterLine && <p className="chat-error-notice__adapter">{adapterLine}</p>}
 				<div className="update-banner-actions">
 					{fallbackModel && (
-						<button
+						<button data-usage-event="web-model.fallback.click"
 							type="button"
 							className="chat-error-notice__retry"
 							data-testid="web-model-fallback"
@@ -105,7 +105,7 @@ export function WebModelStatusBar(props: {
 							})}
 						</button>
 					)}
-					<button
+					<button data-usage-event="web-model.retry.click"
 						type="button"
 						className="chat-error-notice__retry"
 						data-testid="web-model-retry"
@@ -156,7 +156,7 @@ export function WebModelStatusBar(props: {
 					{status.model !== WEB_LLM_MODEL_ID && (
 						<div>
 							<span>{t("webModel.fallbackActive")}</span>{" "}
-							<button
+							<button data-usage-event="web-model.default.click"
 								type="button"
 								className="chat-error-notice__retry"
 								data-testid="web-model-back-to-default"

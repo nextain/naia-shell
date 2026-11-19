@@ -5,6 +5,8 @@ import { getAdkPath } from "../lib/adk-store";
 import { t } from "../lib/i18n";
 import {
 	addSource,
+	KIOSK_SOURCE,
+	KIOSK_SOURCE_LABEL,
 	emptyKnowledgeConfig,
 	type KnowledgeConfig,
 	type KnowledgeKbStats,
@@ -183,7 +185,9 @@ export function KnowledgeSettingsTab() {
 								key={src.path}
 							>
 								<span className="knowledge-source-label" title={src.path}>
-									{sourceLabel(src)}
+									{src.path === KIOSK_SOURCE && src.label === KIOSK_SOURCE_LABEL
+										? t("settings.kioskPublicKnowledge")
+										: sourceLabel(src)}
 								</span>
 								<span className="knowledge-source-path">{src.path}</span>
 								<button

@@ -103,3 +103,37 @@ describe("app-store-client", () => {
 		await expect(getStoreProductMetadata("app", "en")).resolves.toEqual({ name: "English", description: "Description", thumbnailUrl: "/thumb.png", permissions: null });
 	});
 });
+
+describe("desktop adapter removal", () => {
+	beforeEach(() => { invoke.mockReset(); });
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	it("does not remove an app when confirmation is declined", async () => {
+		vi.stubGlobal("confirm", vi.fn(() => false));
+		const { DesktopTauriAppStoreAdapter } = await import("../app-store-adapter");
+		await expect(new DesktopTauriAppStoreAdapter().uninstallApp("land.naia.slides"))
+			.rejects.toMatchObject({ name: "AbortError" });
+		expect(invoke).not.toHaveBeenCalled();
+	});
+
+	it("validates the id before asking and propagates deletion errors", async () => {
+		const confirm = vi.fn(() => true);
+		vi.stubGlobal("confirm", confirm);
+		const { DesktopTauriAppStoreAdapter } = await import("../app-store-adapter");
+		const adapter = new DesktopTauriAppStoreAdapter();
+		await expect(adapter.uninstallApp("invalid")).rejects.toMatchObject({ code: "invalid_app_id" });
+		expect(confirm).not.toHaveBeenCalled();
+		invoke.mockRejectedValueOnce(new Error("delete failed"));
+		await expect(adapter.uninstallApp("land.naia.slides")).rejects.toThrow("delete failed");
+		expect(invoke).toHaveBeenCalledWith("app_remove_installed", { appId: "land.naia.slides" });
+	});
+
+	it("removes only after confirmation", async () => {
+		vi.stubGlobal("confirm", vi.fn(() => true));
+		invoke.mockResolvedValueOnce(undefined);
+		const { DesktopTauriAppStoreAdapter } = await import("../app-store-adapter");
+		await expect(new DesktopTauriAppStoreAdapter().uninstallApp("land.naia.slides")).resolves.toBeUndefined();
+		expect(invoke).toHaveBeenCalledOnce();
+		expect(invoke).toHaveBeenCalledWith("app_remove_installed", { appId: "land.naia.slides" });
+	});
+});

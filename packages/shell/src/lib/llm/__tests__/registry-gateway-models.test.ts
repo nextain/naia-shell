@@ -18,6 +18,20 @@ const NEXTAIN_ACCOUNT_PICKER_IDS = [
 ] as const;
 
 describe("LLM registry — Naia-account picker (#670)", () => {
+	it("uses the active locale for the model availability and price labels", async () => {
+		const { setLocale } = await import("../../i18n");
+		const { formatModelLabel } = await import("../model-label.js");
+		const model = { id: "x", label: "X", capabilities: ["llm"] as ("llm")[], pricing: [1, 2] as [number, number], comingSoon: true };
+		await setLocale("ko");
+		const ko = formatModelLabel(model);
+		await setLocale("en");
+		const en = formatModelLabel(model);
+		expect(ko).toContain("준비중");
+		expect(en).toContain("Coming Soon");
+		expect(en).toContain("Price per 1M tokens");
+		expect(en).not.toBe(ko);
+	});
+
 	it("Naia (gateway) provider exposes the hosted chat models in order", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");

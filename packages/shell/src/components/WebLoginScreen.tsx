@@ -101,7 +101,7 @@ export function WebLoginScreen({
 						{displayedError}
 					</div>
 				)}
-				<button
+				<button data-usage-event="web-login.start.click"
 					type="button"
 					data-testid="web-login-submit"
 					className="voice-preview-btn"

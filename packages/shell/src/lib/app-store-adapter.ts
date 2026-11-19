@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { InstalledAppManifest } from "./app-loader";
 import { getStoreGatewayUrl } from "./app-store-client";
 import { loadConfig, saveConfig } from "./config";
+import { t } from "./i18n";
 import { markNaiaKeyUnauthorized } from "./lab-balance";
 import { isWebMode } from "./web-runtime/web-assets";
 import {
@@ -221,6 +222,9 @@ export class DesktopTauriAppStoreAdapter implements PlatformAppStoreAdapter {
 	async uninstallApp(appId: string): Promise<void> {
 		if (!isValidStoreAppId(appId)) {
 			throw new AppStoreHttpError("invalid_app_id", `Invalid app id: ${appId}`);
+		}
+		if (!globalThis.confirm(t("apps.removeConfirm"))) {
+			throw new DOMException("App removal cancelled", "AbortError");
 		}
 		await invoke("app_remove_installed", { appId });
 	}

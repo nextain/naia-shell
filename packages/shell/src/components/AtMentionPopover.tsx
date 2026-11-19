@@ -12,6 +12,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { t } from "../lib/i18n";
 import { loadConfig } from "../lib/config";
 import { collectFiles, fuzzyMatch, getFileIcon } from "../lib/file-search";
 import { appRegistry } from "../lib/app-registry";
@@ -225,13 +226,13 @@ export const AtMentionPopover = forwardRef<
 			onMouseDown={(e) => e.preventDefault()}
 		>
 			{loading && (
-				<div className="chat-at-popover__empty">파일 목록 불러오는 중...</div>
+				<div className="chat-at-popover__empty">{t("agents.filesLoading")}</div>
 			)}
 			{!loading && results.length === 0 && (
 				<div className="chat-at-popover__empty">
 					{!workspaceRoot
-						? "워크스페이스가 설정되지 않았습니다"
-						: "일치하는 파일이 없습니다"}
+						? t("workspace.contextNoRoot")
+						: t("workspace.noMatchingFiles")}
 				</div>
 			)}
 			<div ref={listRef} className="chat-at-popover__list">

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { Logger } from "../../lib/logger";
 import type { AppCenterProps } from "../../lib/app-registry";
@@ -56,14 +57,14 @@ export function SampleNoteCenterArea({ naia }: AppCenterProps) {
 			<div className="sample-note-app__header">
 				<span className="sample-note-app__title">📝 Sample Note</span>
 				<span className="sample-note-app__hint">
-					Naia에게 이 메모를 읽거나 수정하도록 요청해보세요
+					{t("sampleNote.hint")}
 				</span>
 			</div>
 			<textarea
 				className="sample-note-app__editor"
 				value={content}
 				onChange={handleChange}
-				placeholder="메모를 입력하거나 Naia에게 써달라고 하세요..."
+				placeholder={t("sampleNote.placeholder")}
 			/>
 		</div>
 	);

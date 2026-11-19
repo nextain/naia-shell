@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -35,6 +36,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 	}),
 }));
 
+import { setLocale, t } from "../../lib/i18n";
 import { TitleBar } from "../TitleBar";
 
 function stubNavigatorPlatform(platform: string, userAgent: string) {
@@ -43,6 +45,16 @@ function stubNavigatorPlatform(platform: string, userAgent: string) {
 }
 
 describe("TitleBar platform window controls and shortcut labels", () => {
+	it("uses the active locale for window controls", async () => {
+		await setLocale("ko");
+		render(<TitleBar appVisible onToggleApp={() => {}} />);
+		expect(screen.getByTitle("최소화")).toBeInTheDocument();
+		await act(async () => {
+			await setLocale("en");
+			window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: "en" }));
+		});
+		expect(screen.getByTitle("Minimize")).toBeInTheDocument();
+	});
 	beforeEach(() => {
 		mockMinimize.mockReset();
 		mockMaximize.mockReset();
@@ -75,16 +87,16 @@ describe("TitleBar platform window controls and shortcut labels", () => {
 
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.map((b) => b.getAttribute("title"))).toEqual([
-			"채팅 숨기기 (Ctrl+B)",
-			"최소화",
-			"최대화",
-			"닫기",
+			`${t("titlebar.hideChat")} (Ctrl+B)`,
+			t("titlebar.minimize"),
+			t("titlebar.maximize"),
+			t("apps.close"),
 		]);
 
 		rerender(
 			<TitleBar appVisible={false} onToggleApp={onToggleApp} title="Naia" />,
 		);
-		expect(screen.getByTitle("채팅 보이기 (Ctrl+B)")).toBeInTheDocument();
+		expect(screen.getByTitle(`${t("titlebar.showChat")} (Ctrl+B)`)).toBeInTheDocument();
 	});
 
 	it("renders left-side macOS traffic lights (close -> minimize -> maximize) and ⌘B tooltip on Darwin", async () => {
@@ -108,10 +120,10 @@ describe("TitleBar platform window controls and shortcut labels", () => {
 
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.map((b) => b.getAttribute("title"))).toEqual([
-			"닫기",
-			"최소화",
-			"최대화",
-			"채팅 숨기기 (⌘B)",
+			t("apps.close"),
+			t("titlebar.minimize"),
+			t("titlebar.maximize"),
+			`${t("titlebar.hideChat")} (⌘B)`,
 		]);
 		expect(
 			buttons.slice(0, 3).map((b) => b.getAttribute("data-macos-traffic")),
@@ -143,7 +155,7 @@ describe("TitleBar platform window controls and shortcut labels", () => {
 		rerender(
 			<TitleBar appVisible={false} onToggleApp={onToggleApp} title="Studio" />,
 		);
-		expect(screen.getByTitle("채팅 보이기 (⌘B)")).toBeInTheDocument();
+		expect(screen.getByTitle(`${t("titlebar.showChat")} (⌘B)`)).toBeInTheDocument();
 
 		// Dragging and double-clicking the titlebar surface still work on macOS.
 		fireEvent.mouseDown(bar!, { detail: 1 });

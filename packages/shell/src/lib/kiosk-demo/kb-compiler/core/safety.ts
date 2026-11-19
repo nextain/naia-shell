@@ -2,6 +2,8 @@
  * 내부 기밀자료를 외부 LLM(클라우드)에 보내기 전 스캔 → 경고/레닥션/차단.
  */
 
+import koLexicon from "../data/ko-lexicon.json";
+
 export type SensitiveKind = "rrn" | "phone" | "email" | "card" | "account" | "passport" | "confidential";
 export type Severity = "pii" | "confidential";
 
@@ -32,7 +34,7 @@ const PII_RULES: Rule[] = [
 ];
 
 // 대외비/기밀 마커 (텍스트는 redact 안 함 — 경고만)
-const CONFIDENTIAL_TERMS = ["대외비", "기밀", "비밀", "영업비밀", "내부자료", "내부용", "대외주의", "confidential", "secret", "proprietary", "do not distribute"];
+const CONFIDENTIAL_TERMS = [...koLexicon.confidentialTerms, "confidential", "secret", "proprietary", "do not distribute"];
 
 function maskSample(s: string): string {
   if (s.length <= 4) return "█".repeat(s.length);
