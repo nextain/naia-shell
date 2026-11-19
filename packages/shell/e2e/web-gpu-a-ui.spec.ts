@@ -232,5 +232,26 @@ for (const viewport of [
 			await expect(titlebar).toHaveCount(0);
 		});
 
+		test(`R12: starting a character card opens chat with the card greeting (${viewport.width})`, async () => {
+			test.setTimeout(180_000);
+			await openInstalledApp(page, "land.naia.charcard");
+			const frame = page.frameLocator('iframe[src*="/hosted-apps/naia-charcard/"]');
+			const start = frame.locator("#start");
+			const first = page.locator(".chat-message").first();
+			// The fixture button exists as soon as the frame parses, which can be a
+			// moment before the shell attaches its context listener on load; press
+			// again until the shell reacts (repeats of the same card are ignored).
+			await expect(async () => {
+				if (isPortrait(page)) await start.evaluate((el) => (el as HTMLButtonElement).click());
+				else await start.click();
+				await expect(first).toContainText("어서 와요! 저는 시계공 틴커예요.", { timeout: 5_000 });
+			}).toPass({ timeout: 90_000 });
+			const wrapper = page.locator(".naia-chat-wrapper");
+			await expect(wrapper).not.toHaveClass(/naia-chat-wrapper--hidden/);
+			await expect(first).toContainText("오늘은 어떤 이야기를 해 볼까요?");
+			await expect(page.locator(".chat-message")).toHaveCount(1);
+			await expect(page.locator(".naia-chat-area .chat-input")).toBeFocused();
+			await shot(page, "R12", viewport.width);
+		});
 	});
 }

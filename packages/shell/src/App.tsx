@@ -116,6 +116,7 @@ import "./apps/settings/index"; // register settings app
 import "./apps/slides/index"; // register slides app in kiosk demo mode
 // sample-note app removed — will be replaced by a proper memo app later
 import { useAppStore } from "./stores/app";
+import { useCharcardChatStart } from "./lib/charcard-chat-start";
 
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
@@ -1188,6 +1189,13 @@ export function App() {
 			return next;
 		});
 	}, []);
+
+	// R12 (web): starting a character-card roleplay opens the chat with its greeting.
+	const openChatForCharcard = useCallback(() => {
+		setNaiaVisible(true);
+		setChatVisible(true);
+	}, []);
+	useCharcardChatStart(openChatForCharcard);
 
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {

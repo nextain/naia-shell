@@ -2010,3 +2010,4 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-A-R28 | 웹판 대화창의 메시지·입력란·모델 조작은 800×450·1280×720·1920×1080에서 상태줄에 가려지지 않고 Tab으로 닿는다. 접힌 음악 플레이어 내부는 Tab 순서와 접근성 트리에서 빠진다. 검증: `UC-WEB-A-R28`. | Done (local) |
 | FR-WEB-A-R2 | 설정 적용 단추는 그림자 없는 8px 모서리 기본 단추로, 높이 36px 이상, 글자 대비 4.5:1 이상, 한 줄 글자, 초점 테두리를 가진다. 검증: `UC-WEB-A-R2`. | Done (local) |
 | FR-WEB-A-R5 | 내장이 아닌 설치 앱은 앱 이름과 닫기 단추를 가진 셸 제목 막대 아래에 표시되어, 앱 자체 머리 영역의 단추가 셸 닫기 단추에 가려지지 않는다. 앱 묶음 내부 디자인(저장소 밖)은 해당 앱 저장소에서 맞춘다. 검증: `UC-WEB-A-R5`. | Done (local, 셸 쪽) |
+| FR-WEB-A-R12 | 웹판에서 캐릭터 카드 앱이 `charcard` 대화 문맥을 보내면 셸은 새 대화를 만들고 카드 첫 인사를 첫 메시지로 넣은 뒤 대화창을 열고 입력란에 초점을 준다. 검증: `UC-WEB-A-R12`. | Done (local) |

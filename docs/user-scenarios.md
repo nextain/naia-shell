@@ -3321,3 +3321,14 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본 | 제목 막대에 앱 이름, 닫기 단추 아래 끝 ≤ 앱 화면 위 끝, 앱 메뉴 단추 클릭이 앱에 전달됨 | `e2e/web-gpu-a-ui.spec.ts` R5 (1280) |
 | 좁은 세로 화면 | 390×844 세로 배치는 설치 앱 화면을 보이지 않으므로 해당 없음 | `e2e/web-gpu-a-ui.spec.ts` R5 (390, 건너뜀) |
 | 닫기 | 제목 막대의 닫기 단추로 앱이 닫힘 | `app-close-lifecycle.test.tsx` |
+
+## UC-WEB-A-R12. 캐릭터 카드에서 "이 캐릭터로 대화 시작"으로 바로 대화하기
+
+웹판 사용자가 캐릭터 카드 앱에서 [이 캐릭터로 대화 시작]을 누릅니다. 대화창이 바로 열리고 새 대화가 시작되며, 첫 메시지로 그 캐릭터의 첫 인사가 보입니다. 입력란에 초점이 가서 바로 답할 수 있습니다. 같은 캐릭터 문맥이 다시 전달돼도 대화가 중복으로 열리지 않습니다. 다른 앱의 문맥이나 데스크톱 앱에서는 이 동작이 일어나지 않습니다.
+
+### Test Coverage Map — UC-WEB-A-R12
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 성공 | 대화창 보임, 첫 메시지 = 카드 첫 인사, 메시지 1개, 입력란 초점 | `charcard-chat-start.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R12 (1280·390) |
+| 다른 앱·데스크톱 | 다른 앱이 보낸 문맥과 데스크톱 빌드에서는 대화를 열지 않음 | `charcard-chat-start.test.ts` |
