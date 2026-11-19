@@ -832,10 +832,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					</div>,
 					document.body,
 				)}
-			{/* ── BGM (right side of app-bar) ─── */}
-			<Suspense fallback={null}><BgmPlayer naia={bgmBridge} /></Suspense>
 			<WebRuntimeHarnessBar />
 			<WebCreditChip />
+			{/* ── BGM (right end, before settings; R8: web keeps it after the status pills and credit) ─── */}
+			<Suspense fallback={null}><BgmPlayer naia={bgmBridge} /></Suspense>
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

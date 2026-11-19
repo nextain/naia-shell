@@ -1998,3 +1998,9 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존됩니다. 저장소 미지원과 용량 부족은 사용자에게 알려 줍니다. | Done (local) |
 
 로컬 후보 검증은 2026-11-19 03:53 UTC Chromium 탐색기 실동작과 탐색기 회귀 시험 7건입니다. 시스템 기본 작업 공간 준비는 별도 진입 시험에서 확인합니다.
+
+## 웹판 화면 묶음 A (2026-11-19)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-A-R8 | 웹판 상단 막대는 WebGPU 상태·공개 하네스·캐릭터 카드 바로가기·크레딧 다음에 음악 플레이어를 두고, 설정 단추를 맨 끝에 둔다. 데스크톱 앱 배치는 바꾸지 않는다. 검증: `UC-WEB-A-R8`. | Done (local) |

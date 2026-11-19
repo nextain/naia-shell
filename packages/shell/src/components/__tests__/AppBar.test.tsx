@@ -626,6 +626,29 @@ describe("AppBar — edit mode (#295)", () => {
 		}
 	});
 
+	it("R8: web mode places the BGM player after the web status pills and before settings", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			const { container } = render(<AppBar />);
+			await act(async () => {});
+			await waitFor(() =>
+				expect(container.querySelector(".bgm-player")).not.toBeNull(),
+			);
+			const harness = container.querySelector('[data-testid="web-runtime-harness-bar"]');
+			const bgm = container.querySelector(".bgm-player")!;
+			const settings = container.querySelector(".app-bar-settings")!;
+			expect(harness).not.toBeNull();
+			expect(
+				harness!.compareDocumentPosition(bgm) & Node.DOCUMENT_POSITION_FOLLOWING,
+			).toBeTruthy();
+			expect(
+				bgm.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
+			).toBeTruthy();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
 	it("renders BgmPlayer in desktop mode", async () => {
 		const { container } = render(<AppBar />);
 		await act(async () => {});
