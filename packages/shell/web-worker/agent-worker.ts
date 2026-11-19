@@ -79,29 +79,26 @@ const diag: DiagnosticLog = {
 	},
 };
 
-let lastReportedProgress = -1;
-function handleProgress(p: { progress: number; text: string }): void {
-	if (p.progress - lastReportedProgress >= 0.05 || p.progress === 1) {
-		lastReportedProgress = p.progress;
-		self.postMessage({
-			kind: "engine-progress",
-			progress: p.progress,
-			text: p.text,
-		});
-	}
-}
-
+let engineRevision = 0;
 async function loadEngine(model: WebLlmModelId): Promise<WebLLMEngineLike> {
+	const revision = ++engineRevision;
 	const startTime = performance.now();
-	try {
-		if (import.meta.env.VITE_NAIA_WEB_LLM === "fake") {
-			const { makeFakeWebLLMEngine } = await import("./fake-engine");
-			const engine = makeFakeWebLLMEngine();
+	let lastReportedProgress = -1;
+	const reportReady = () => {
+		if (revision === engineRevision) {
 			self.postMessage({
 				kind: "engine-ready",
 				model,
 				elapsedMs: Math.round(performance.now() - startTime),
 			});
+		}
+	};
+	diag.debug?.("Loading browser model", { model });
+	try {
+		if (import.meta.env.VITE_NAIA_WEB_LLM === "fake") {
+			const { makeFakeWebLLMEngine } = await import("./fake-engine");
+			const engine = makeFakeWebLLMEngine();
+			reportReady();
 			return engine;
 		}
 		if (
@@ -109,12 +106,14 @@ async function loadEngine(model: WebLlmModelId): Promise<WebLLMEngineLike> {
 			import.meta.env.VITE_NAIA_WEB_LLM === "webllm"
 		) {
 			const { createWebLLMEngine } = await import("./webllm-engine");
-			const engine = await createWebLLMEngine(model, handleProgress);
-			self.postMessage({
-				kind: "engine-ready",
-				model,
-				elapsedMs: Math.round(performance.now() - startTime),
+			const engine = await createWebLLMEngine(model, (p) => {
+				if (revision !== engineRevision) return;
+				if (p.progress - lastReportedProgress >= 0.05 || p.progress === 1) {
+					lastReportedProgress = p.progress;
+					self.postMessage({ kind: "engine-progress", progress: p.progress, text: p.text });
+				}
 			});
+			reportReady();
 			return engine;
 		}
 		throw new Error(
@@ -123,7 +122,9 @@ async function loadEngine(model: WebLlmModelId): Promise<WebLLMEngineLike> {
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
 		const name = err instanceof Error ? err.name : "Error";
-		self.postMessage({ kind: "engine-error", name, message });
+		if (revision === engineRevision) {
+			self.postMessage({ kind: "engine-error", name, message });
+		}
 		throw err;
 	}
 }
@@ -150,6 +151,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 		data.kind === "naia-agent-select-model"
 	) {
 		if (data.model === null) {
+			engineRevision += 1;
 			selectedModel = null;
 			enginePromise = null;
 		} else if (typeof data.model === "string" && isWebLlmModelId(data.model)) {
@@ -220,14 +222,6 @@ self.addEventListener("message", (event: MessageEvent) => {
 			);
 		};
 
-		const getEngineWithThinking = async (): Promise<WebLLMEngineLike> => {
-			const baseEngine = await getEngine();
-			return wrapEngineWithEnableThinking(
-				baseEngine,
-				() => activeEnableThinking,
-			);
-		};
-
 		const localToolNames = isKioskDemo()
 			? [
 					...BROWSER_READ_TOOL_NAMES,
@@ -241,16 +235,28 @@ self.addEventListener("message", (event: MessageEvent) => {
 					SKILL_YOUTUBE_BGM.name,
 				];
 
-		const localProvider = makeWebLLMProvider({
-			getEngine: getEngineWithThinking,
-			model: selectedModel ?? WEB_LLM_MODEL_ID,
-			toolNames: localToolNames,
-		});
+		// Each engine shares one provider and one generation lock across its turns.
+		const localProviders = new WeakMap<Promise<WebLLMEngineLike>, ProviderPort>();
 
 		const provider: ProviderPort = {
 			chat(config, messages, opts) {
-				if (config.provider === "webllm")
+				if (config.provider === "webllm") {
+					if (!selectedModel) throw new Error("webllm-not-started");
+					const engine = getEngine();
+					let localProvider = localProviders.get(engine);
+					if (!localProvider) {
+						localProvider = makeWebLLMProvider({
+							getEngine: async () => wrapEngineWithEnableThinking(
+								await engine,
+								() => activeEnableThinking,
+							),
+							model: selectedModel,
+							toolNames: localToolNames,
+						});
+						localProviders.set(engine, localProvider);
+					}
 					return localProvider.chat(config, messages, opts);
+				}
 				if (config.provider !== "nextain")
 					throw new Error(`Unsupported web provider: ${config.provider}`);
 				if (!config.naiaKey)

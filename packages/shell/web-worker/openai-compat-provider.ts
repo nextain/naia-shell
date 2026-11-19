@@ -323,6 +323,7 @@ export function makeOpenAICompatProvider(deps: {
 	idleTimeoutMs?: number;
 	fetch?: FetchLike;
 }): ProviderPort {
+	const emptyStreamMessage = "Naia gateway closed the stream without sending any answer";
 	const doFetch: FetchLike =
 		deps.fetch ?? (globalThis.fetch as unknown as FetchLike);
 	const base = deps.baseUrl.replace(/\/+$/, "");
@@ -405,7 +406,7 @@ export function makeOpenAICompatProvider(deps: {
 				}),
 				...(opts.signal ? { signal: opts.signal } : {}),
 			});
-			if (!resp.ok || !resp.body) {
+			if (!resp.ok) {
 				// ⚠️ 비-OK(429/403/404 등)도 응답 본문이 딸려온다 — throw 전 **반드시 소비/취소**한다. 안 그러면 undici
 				//    소켓이 dangling 으로 남아, 호스트가 곧장 process.exit() 하는 경로(CLI once-mode)에서 libuv
 				//    "UV_HANDLE_CLOSING"(async.c) 어설션 크래시를 유발(실 키 round-trip 테스트로 적발 2026-06-26).
@@ -420,6 +421,7 @@ export function makeOpenAICompatProvider(deps: {
 					),
 				);
 			}
+			if (!resp.body) throw new Error(emptyStreamMessage);
 
 			const reader = resp.body.getReader();
 			const decoder = new TextDecoder();
@@ -427,6 +429,7 @@ export function makeOpenAICompatProvider(deps: {
 			let inTok = 0,
 				outTok = 0;
 			let finishReason: string | undefined;
+			let sawData = false;
 			const thinkingFilter = new ThinkingTagFilter();
 			const acc = new Map<number, ToolAcc>(); // 슬롯 별 tool_call 누적(§C.2)
 			// #122 — any-llm(deepseek) 게이트웨이는 호출마다 wire index 를 0 으로 재사용한다(2026-08-29
@@ -469,6 +472,7 @@ export function makeOpenAICompatProvider(deps: {
 					throw new Error(
 						`OpenAI-compat stream error: ${JSON.stringify(o.error)}`,
 					);
+				if (Array.isArray(o.choices) || o.usage) sawData = true;
 				const out: ProviderChunk[] = [];
 				const rawFinishReason = o.choices?.[0]?.finish_reason;
 				if (typeof rawFinishReason === "string" && rawFinishReason !== "")
@@ -665,6 +669,8 @@ export function makeOpenAICompatProvider(deps: {
 						for (const c of parseData(last.slice(5))) yield c;
 					}
 				}
+				// R33: the development gateway returned HTTP 200 with a zero-byte body.
+				if (!sawData && !opts.signal?.aborted) throw new Error(emptyStreamMessage);
 				yield* finalize(); // 단일 finalize(toolUse→usage→finish, abort-gated)
 			} finally {
 				try {

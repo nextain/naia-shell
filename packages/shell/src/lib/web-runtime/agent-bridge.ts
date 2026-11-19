@@ -20,7 +20,7 @@ import {
 	createWebRadioDj,
 	generateDjLineViaChat,
 } from "./web-radio-dj";
-import { isWebLlmModelId } from "./webllm-model";
+import { isWebLlmModelId, type WebLlmModelId } from "./webllm-model";
 import { executeBgmSkill } from "../bgm-skill";
 import { isKioskDemo } from "../kiosk-demo/flag";
 
@@ -51,6 +51,7 @@ export function createAgentBridge(deps: {
 	let channelPort: MessagePort | null = null;
 	let started = false;
 	let startedModel: string | null = null;
+	let readyModel: WebLlmModelId | null = null;
 	const pendingLines: string[] = [];
 	const activeTurns = new Map<
 		string,
@@ -213,12 +214,17 @@ export function createAgentBridge(deps: {
 
 	function start(opts: { model: string | null }): void {
 		if (started) {
+			if (readyModel && readyModel === opts.model) {
+				setWebModelStatus({ phase: "ready", model: readyModel, progress: 1 });
+				return;
+			}
 			if (
 				worker &&
 				startedModel !== opts.model &&
 				(opts.model === null || isWebLlmModelId(opts.model))
 			) {
 				startedModel = opts.model;
+				readyModel = null;
 				worker.postMessage({
 					kind: "naia-agent-select-model",
 					model: opts.model,
@@ -334,18 +340,20 @@ export function createAgentBridge(deps: {
 					model: data.model,
 					elapsedMs: data.elapsedMs,
 				});
-				if (isWebLlmModelId(data.model)) {
+				if (data.model === startedModel && isWebLlmModelId(data.model)) {
+					readyModel = data.model;
 					setWebModelStatus({
 						phase: "ready",
 						progress: 1,
 						model: data.model,
 					});
-				} else {
+				} else if (!isWebLlmModelId(data.model)) {
 					Logger.error("WebAgent", "unknown model in engine-ready", {
 						model: data.model,
 					});
 				}
 			} else if (data.kind === "engine-error") {
+				readyModel = null;
 				Logger.error("WebAgent", "webllm-error", {
 					message: data.message,
 				});
@@ -361,6 +369,7 @@ export function createAgentBridge(deps: {
 		});
 
 		worker.addEventListener("error", (event: unknown) => {
+			readyModel = null;
 			const err = event as ErrorEvent;
 			const message = err?.message || String(err);
 			Logger.error("WebAgent", "worker-error", {

@@ -3520,3 +3520,19 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 성공 | 네 앱 각각이 실제 배포 번들에서 렌더링되고 이름·아이콘·실행 파일이 빌드에 포함됩니다. 앱을 닫고 다시 실행할 수 있습니다. | `e2e/web-hosted-apps-r35.spec.ts` R35, `scripts/__tests__/web-hosted-apps.test.ts` |
 | 오류·복구 | 원본 또는 필수 파일이 누락되면 빌드가 실패합니다. 서비스 워커는 앱 경로에 셸 첫 화면을 반환하지 않습니다. | `scripts/__tests__/web-hosted-apps.test.ts`, `scripts/__tests__/web-sw-version.test.ts` R35 |
 | 좁은 폭·접근성 | 1280×720·390×844에서 앱스토어와 앱 화면의 주요 조작을 읽고 실행할 수 있습니다. | `e2e/web-hosted-apps-r35.spec.ts` R35 |
+## UC-WEB-MAIN-MODEL-LIVE. 웹판 메인 모델 즉시 전환과 Naia Terra 대화 (R33)
+
+웹 브라우저에서 설정 > 두뇌 탭을 열고 공급자와 메인 모델을 고릅니다. WebLLM에서 Naia의 `gpt-6.1-terra`로 바꾸거나, WebLLM으로 돌아가거나, WebLLM 모델을 교체해도 같은 페이지와 대화 이력이 유지됩니다. 저장 뒤 보낸 첫 채팅부터 그 모델을 씁니다.
+
+Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 오면 기존 생각 영역에서 처리합니다. 게이트웨이가 데이터를 보내기 전에 연결을 닫으면 오류와 다시 시도 버튼이 나타납니다. 상세 정보에서 응답이 비어 있었다는 사실을 확인할 수 있습니다.
+
+### Test Coverage Map — UC-WEB-MAIN-MODEL-LIVE
+
+| 기본·빈 대화 | 이전 대화가 없는 웹 셸에서 두뇌 설정의 공급자와 모델을 선택할 수 있음 | `e2e/web-main-model-r33.spec.ts` R33, 1280×720·390×844 |
+| 성공 | 페이지 새로 고침 없이 WebLLM에서 Terra로 바꿔 답을 받고 다시 WebLLM으로 돌아감 | `e2e/web-main-model-r33.spec.ts` R33, 게이트웨이 응답 견본 |
+| 진행 | WebLLM으로 돌아갈 때 모델 준비 상태를 거쳐 로컬 엔진으로 응답 | `e2e/web-main-model-r33.spec.ts` R33, 가짜 WebLLM 엔진 |
+| 오류·복구 | 빈 스트림에 오류와 다시 시도 버튼을 표시하고, 다시 시도하면 Terra 답이 도착함 | `e2e/web-main-model-r33.spec.ts`, `web-worker/__tests__/openai-compat-provider.test.ts`, naia-agent `src/test/uc1-agent.contract.test.ts` R33 |
+| 저장 실패 | 오류를 알리고 엔진 전환을 보류함 | `src/components/__tests__/SettingsTab.test.tsx` R33 |
+| WebLLM 모델 교체 | 실행 중인 Worker가 교체된 모델로 다음 요청을 처리함 | `src/components/__tests__/SettingsTab.test.tsx` R33 |
+| 좁은 폭 | 390×844에서 메뉴, 두뇌 설정, 대화와 오류 복구를 사용할 수 있음 | `e2e/web-main-model-r33.spec.ts` R33 390 |
+| 게이트웨이 | 이미지 라우팅 설정이 있는 환경에서 Terra 본문과 종료 신호를 스트리밍하고 Terra 사용량을 기록함 | naia-anyllm `tests/gateway/test_chat_model_fallback.py` R33, Azure 응답 견본 |
