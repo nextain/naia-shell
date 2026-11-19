@@ -2045,3 +2045,12 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-REF-AUDIO.3 | 올린 목소리가 쓰이는 곳(Naia Omni 실시간 대화)과 쓰이지 않는 곳(Naia Cloud TTS 문장 읽기)을 올리기 옆에 알립니다. | Done (local) |
 
 검증: `UC-WEB-REF-AUDIO-UPLOAD`. 남은 문제: 게이트웨이 `/v1/audio/speech` 가 사용자 참조 음성을 받지 않아 웹 기본 목소리(Naia Cloud TTS)로 내 목소리를 들을 수 없습니다 — 게이트웨이 변경이 필요합니다(참고 사본 `routes/tts.py`·`routes/naia_voice.py` 기준, 운영 게이트웨이와 같은지는 미확인). 웹판에서 Naia Omni 실시간 대화를 고를 수 있는지는 두뇌 공급자 묶음 몫이라 확인하지 않았습니다. 브라우저에서 게이트웨이 `/v1/ref-audio` 로의 CORS 허용 여부는 미확인입니다.
+
+## 웹판 음성 대화 마이크 오류 (R26)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-VOICE-MIC.1 | 웹(브라우저) 빌드 음성 대화에서 브라우저 SpeechRecognition 이 `not-allowed`·`service-not-allowed`·`audio-capture`·`network`·`language-not-supported` 를 내거나 음성 인식이 없으면, 음성 대화를 끄고 원래 오류 코드 대신 사용자가 고칠 수 있는 방법(마이크 허용·장치 확인·연결 확인·Chrome 사용)을 대화에 알립니다. 모르는 코드는 예전처럼 코드를 보입니다. 데스크톱 문구는 바꾸지 않습니다. | Done (local) |
+| FR-WEB-VOICE-MIC.2 | 웹판 음성 대화를 끌 때 데스크톱 전용 Tauri STT 플러그인 정지(`plugin:stt|stop_listening`)를 부르지 않습니다. | Done (local) |
+
+검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.

@@ -100,6 +100,37 @@ export function webSpeechSttOptions(webMode: boolean): WebSpeechSttOptions {
 	};
 }
 
+export type WebSpeechErrorMessageKey =
+	| "chat.webSpeechErrorNotAllowed"
+	| "chat.webSpeechErrorAudioCapture"
+	| "chat.webSpeechErrorNetwork"
+	| "chat.webSpeechErrorLanguage"
+	| "chat.webSpeechErrorUnsupported";
+
+/**
+ * R26: Web Speech 오류 코드를 사용자가 고칠 수 있게 알려 주는 문구 키로 바꾼다.
+ * 모르는 코드는 null — 부르는 쪽이 원래 코드를 그대로 보인다.
+ */
+export function webSpeechErrorMessageKey(
+	code: string,
+): WebSpeechErrorMessageKey | null {
+	switch (code) {
+		case "not-allowed":
+		case "service-not-allowed":
+			return "chat.webSpeechErrorNotAllowed";
+		case "audio-capture":
+			return "chat.webSpeechErrorAudioCapture";
+		case "network":
+			return "chat.webSpeechErrorNetwork";
+		case "language-not-supported":
+			return "chat.webSpeechErrorLanguage";
+		case "NOT_AVAILABLE":
+			return "chat.webSpeechErrorUnsupported";
+		default:
+			return null;
+	}
+}
+
 const DEFAULT_MAX_AUDIO_CAPTURE_RETRIES = 3;
 const DEFAULT_RECOVERY_DELAY_MS = 150;
 

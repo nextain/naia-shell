@@ -211,6 +211,7 @@ import {
 import {
 	createApiSttSession,
 	createWebSpeechSttSession,
+	webSpeechErrorMessageKey,
 	webSpeechSttOptions,
 	getSttProvider,
 	isWebSpeechAvailable,
@@ -4247,7 +4248,8 @@ export function ChatArea({
 		sttBufferRef.current = "";
 		setSttPartial("");
 		setSttState("idle");
-		sttStop().catch(() => {});
+		// 웹판 STT 는 브라우저 SpeechRecognition 뿐이라 Tauri STT 플러그인 정지는 부르지 않는다(R26).
+		if (!isWebMode()) sttStop().catch(() => {});
 	}
 
 	function handleWebSpeechSttError(err: {
@@ -4259,9 +4261,13 @@ export function ChatArea({
 			code: err.code,
 			message: err.message,
 		});
-		const detail = [err.code, err.message?.trim()]
-			.filter((part) => part.length > 0)
-			.join(": ");
+		// R26: 웹판은 마이크 권한·장치·연결 오류를 원래 코드 대신 고치는 방법으로 보인다.
+		const hintKey = isWebMode() ? webSpeechErrorMessageKey(err.code) : null;
+		const detail = hintKey
+			? t(hintKey)
+			: [err.code, err.message?.trim()]
+					.filter((part) => part.length > 0)
+					.join(": ");
 		const content = `${t("chat.voiceError")}${detail ? `: ${detail}` : ""}`;
 		cleanupPipeline();
 		const terminal: VoiceConnectionStatus = {

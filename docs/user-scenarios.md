@@ -3313,3 +3313,17 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 웹 로컬 사본 | 웹판에서 올리기·불러오기·지우기가 Tauri invoke 를 부르지 않음 | `src/lib/voice/__tests__/ref-audio-api-web-r13.test.ts` R13 |
 | 오류 | 형식·용량·인증·크레딧 부족 오류 문구 | 기존 `src/components/__tests__/RefAudioSection.test.tsx` |
 | 좁은 폭 | 390×844 에서 ☰ 메뉴 > 설정 > 음성 탭의 안내·단추 표시 | `e2e/web-ref-audio-r13.spec.ts` R13 390 |
+
+## UC-WEB-VOICE-MIC-ERROR. 웹판 음성 대화와 마이크 오류 안내 (R26)
+
+경로: 웹(브라우저) 빌드 채팅의 음성 대화 단추(`.chat-voice-btn`). 누르면 브라우저 SpeechRecognition(무료, 게이트웨이를 거치지 않음)으로 듣고, 말이 끝나면 답을 받아 읽어 준 뒤 다시 듣습니다. 마이크 권한이 막혔거나(`not-allowed`), 마이크가 없거나 다른 앱이 쓰거나(`audio-capture`, 세 번 다시 시도한 뒤), 브라우저 음성 서버에 닿지 못하거나(`network`), 현재 언어를 못 알아듣거나, 음성 인식이 없는 브라우저면 음성 대화가 꺼지고 "음성 대화 연결 실패: 마이크 권한이 막혀 있습니다. 주소창의 자물쇠 아이콘에서 마이크를 허용한 뒤 음성 대화 단추를 다시 눌러 주세요." 처럼 고치는 방법을 봅니다. 예전에는 "음성 대화 연결 실패: not-allowed" 처럼 코드만 보였고, 끌 때 데스크톱 전용 STT 정지를 불러 경고가 남았습니다.
+
+### Test Coverage Map — UC-WEB-VOICE-MIC-ERROR
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·진행·성공 | 단추를 누르면 듣기(active) → "안녕하세요" 사용자 말 → 답을 읽어 줌(speechSynthesis) → 다시 듣기 → 단추로 끔 | `e2e/web-voice-r26.spec.ts` R26 (1280×720, 390×844, 브라우저 음성은 흉내) |
+| 오류 | 권한 거부 → 음성 대화 꺼짐, "마이크 권한이 막혀 있습니다" 안내, `not-allowed` 코드 안 보임, `plugin:stt|stop_listening` 호출 없음 | `e2e/web-voice-r26.spec.ts` R26 |
+| 오류 코드 표 | 6가지 코드 → 안내 문구 키, 모르는 코드는 null | `src/lib/stt/__tests__/web-speech-stt.test.ts` R26 |
+| 데스크톱 회귀 | 데스크톱 Web Speech 권한 오류 문구는 그대로 | `src/components/__tests__/ChatArea.test.tsx` |
+| 좁은 폭 | 390×844 에서 채팅 위 안내 문구가 잘리지 않음 | `e2e/web-voice-r26.spec.ts` R26 390 |
