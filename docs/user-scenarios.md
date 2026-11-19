@@ -3275,3 +3275,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 |---|---|---|
 | 기본 | 카페루아 타로 탭 `<img>` 내용이 묶음 `icon.svg`와 같음 | `app-store-adapter-package-icon.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R6 (1280·390) |
 | 아이콘 없음·오류 | SPA 대체 HTML, 다른 출처, `..` 경로, SVG 아님이면 그림 문자 유지 | `app-store-adapter-package-icon.test.ts`, e2e R6의 캐릭터 카드 🃏 |
+
+## UC-WEB-A-R11. 웹판 캐릭터 카드를 다음 실행에도 남기기
+
+웹판의 캐릭터 카드 앱은 보안 경계(`allow-same-origin` 없는 sandbox iframe) 안에서 돕니다. 그래서 앱 자신의 IndexedDB는 열리지 않고, 이것이 "이번 실행 동안만 보관됩니다" 안내의 원인입니다. 셸은 sandbox를 유지한 채 `storage` 권한을 가진 앱에 `naia-app:storage` 메시지로 저장소를 빌려줍니다. 데이터는 셸 IndexedDB에 앱 id별로 따로 저장되어 다른 앱이 읽지 못합니다. 저장소가 정말 없거나 가득 차면 앱은 짧은 사용자 말로 알립니다.
+
+### Test Coverage Map — UC-WEB-A-R11
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 성공 | set·get·keys·delete가 앱 id 범위 안에서 동작, 다른 앱 id 사칭 무시 | `installed-app-host-bridge.test.ts` R11 |
+| 오류 | 권한 없음, 빈 키, 8MB 초과, 모르는 동작, 저장소 실패를 오류 코드로 회신 | `installed-app-host-bridge.test.ts` R11 |
+| 앱 묶음 연결 | 캐릭터 카드 묶음이 자체 IndexedDB 대신 이 프로토콜을 씀 | 미완(묶음 소스가 이 저장소 밖) |

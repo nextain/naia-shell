@@ -140,7 +140,7 @@ export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
 			},
 			version: "1.0.0",
 			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask"],
+			permissions: ["speech", "locale", "model.ask", "storage"],
 			keepAlive: true,
 		},
 	},

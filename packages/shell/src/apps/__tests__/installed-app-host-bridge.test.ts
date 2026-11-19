@@ -8,7 +8,11 @@ import {
 	INSTALLED_APP_CANCEL_EVENT,
 	INSTALLED_APP_SPEECH_RESULT_EVENT,
 } from "../generic-installed/installed-app-host-bridge";
-vi.mock("../../lib/logger", () => ({ Logger: { debug: vi.fn() } }));
+import {
+	createMemoryAppStorage,
+	setInstalledAppStorageForTests,
+} from "../generic-installed/installed-app-storage";
+vi.mock("../../lib/logger", () => ({ Logger: { debug: vi.fn(), warn: vi.fn() } }));
 const locale = vi.hoisted(() => ({ current: "ko" }));
 vi.mock("../../lib/i18n", () => ({ getLocale: () => locale.current }));
 const disposers: (() => void)[] = [];
@@ -296,5 +300,70 @@ describe("installed app host bridge", () => {
 			}),
 			expect.anything(),
 		);
+	});
+	describe("R11 web: shell-kept storage for sandboxed apps", () => {
+		const flush = () => new Promise((r) => setTimeout(r, 0));
+		afterEach(() => setInstalledAppStorageForTests(null));
+		const results = (post: ReturnType<typeof vi.fn> | { mock: { calls: unknown[][] } }) =>
+			post.mock.calls
+				.map((c) => c[0] as { type?: string })
+				.filter((m) => m?.type === "naia-app:storage-result");
+		it("R11 saves, reads, lists and deletes values scoped to the calling app", async () => {
+			setInstalledAppStorageForTests(createMemoryAppStorage());
+			const a = frame("land.naia.charcard", ["storage"]);
+			const b = frame("app.other", ["storage"]);
+			message(a.target, { type: "naia-app:storage", appId: "land.naia.charcard", id: "s1", op: "set", key: "card:1", value: { name: "미나" } });
+			await flush();
+			message(a.target, { type: "naia-app:storage", appId: "land.naia.charcard", id: "s2", op: "get", key: "card:1" });
+			message(a.target, { type: "naia-app:storage", appId: "land.naia.charcard", id: "s3", op: "keys" });
+			message(b.target, { type: "naia-app:storage", appId: "app.other", id: "s4", op: "get", key: "card:1" });
+			// A frame cannot speak for another app id.
+			message(b.target, { type: "naia-app:storage", appId: "land.naia.charcard", id: "s5", op: "get", key: "card:1" });
+			await flush();
+			expect(results(a.post)).toEqual([
+				{ type: "naia-app:storage-result", id: "s1", ok: true },
+				{ type: "naia-app:storage-result", id: "s2", ok: true, value: { name: "미나" } },
+				{ type: "naia-app:storage-result", id: "s3", ok: true, keys: ["card:1"] },
+			]);
+			expect(results(b.post)).toEqual([
+				{ type: "naia-app:storage-result", id: "s4", ok: true, value: null },
+			]);
+			message(a.target, { type: "naia-app:storage", appId: "land.naia.charcard", id: "s6", op: "delete", key: "card:1" });
+			await flush();
+			message(a.target, { type: "naia-app:storage", appId: "land.naia.charcard", id: "s7", op: "keys" });
+			await flush();
+			expect(results(a.post).at(-1)).toEqual({ type: "naia-app:storage-result", id: "s7", ok: true, keys: [] });
+		});
+		it("R11 refuses apps without the storage permission and bad requests", async () => {
+			setInstalledAppStorageForTests(createMemoryAppStorage());
+			const denied = frame("app.nostore", ["model.ask"]);
+			message(denied.target, { type: "naia-app:storage", appId: "app.nostore", id: "d1", op: "keys" });
+			const ok = frame("app.store", ["storage"]);
+			message(ok.target, { type: "naia-app:storage", appId: "app.store", id: "k1", op: "get", key: "" });
+			message(ok.target, { type: "naia-app:storage", appId: "app.store", id: "k2", op: "set", key: "big", value: "x".repeat(8 * 1024 * 1024 + 1) });
+			message(ok.target, { type: "naia-app:storage", appId: "app.store", id: "k3", op: "drop", key: "a" });
+			await flush();
+			expect(results(denied.post)).toEqual([
+				{ type: "naia-app:storage-result", id: "d1", ok: false, error: "permission_denied" },
+			]);
+			expect(results(ok.post).map((m) => (m as { error?: string }).error)).toEqual([
+				"invalid_key",
+				"too_large",
+				"invalid_op",
+			]);
+		});
+		it("R11 reports unavailable storage instead of throwing", async () => {
+			const broken = createMemoryAppStorage();
+			broken.get = async () => {
+				throw new Error("blocked");
+			};
+			setInstalledAppStorageForTests(broken);
+			const a = frame("app.store", ["storage"]);
+			message(a.target, { type: "naia-app:storage", appId: "app.store", id: "u1", op: "get", key: "a" });
+			await flush();
+			expect(results(a.post)).toEqual([
+				{ type: "naia-app:storage-result", id: "u1", ok: false, error: "unavailable" },
+			]);
+		});
 	});
 });

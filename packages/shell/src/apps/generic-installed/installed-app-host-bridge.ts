@@ -1,5 +1,10 @@
 import { getLocale } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
+import {
+	MAX_APP_STORAGE_KEY_CHARS,
+	MAX_APP_STORAGE_VALUE_CHARS,
+	getInstalledAppStorage,
+} from "./installed-app-storage";
 
 export const INSTALLED_APP_ASK_EVENT = "naia:installed-app:ask";
 export const INSTALLED_APP_RESPONSE_EVENT = "naia:installed-app:response";
@@ -11,6 +16,8 @@ export const INSTALLED_APP_SPEECH_RESULT_EVENT =
 const CHILD_ASK = "naia-app:ask";
 const CHILD_REPLY = "naia-app:response";
 const CHILD_LOCALE = "naia-app:locale";
+const CHILD_STORAGE = "naia-app:storage";
+const CHILD_STORAGE_RESULT = "naia-app:storage-result";
 const MAX_PROMPT_LENGTH = 9_000;
 
 function validRequestId(value: unknown): value is string {
@@ -51,6 +58,72 @@ export function installInstalledAppHostBridge(
 
 	const postLocale = () =>
 		permissions.includes("locale") && send({ type: CHILD_LOCALE, locale: getLocale() });
+
+	// R11: sandboxed apps cannot open their own IndexedDB; the shell stores
+	// their data in its own database under this app id only.
+	const handleStorage = async (message: {
+		id: string;
+		op?: unknown;
+		key?: unknown;
+		value?: unknown;
+	}) => {
+		const reply = (body: object) =>
+			send({ type: CHILD_STORAGE_RESULT, id: message.id, ...body });
+		if (!permissions.includes("storage")) {
+			reply({ ok: false, error: "permission_denied" });
+			return;
+		}
+		const storage = getInstalledAppStorage();
+		const op = message.op;
+		const key = message.key;
+		const validKey =
+			typeof key === "string" &&
+			key.length > 0 &&
+			key.length <= MAX_APP_STORAGE_KEY_CHARS;
+		try {
+			if (op === "keys") {
+				reply({ ok: true, keys: await storage.keys(appId) });
+				return;
+			}
+			if (!validKey) {
+				reply({ ok: false, error: "invalid_key" });
+				return;
+			}
+			if (op === "get") {
+				reply({ ok: true, value: (await storage.get(appId, key)) ?? null });
+			} else if (op === "delete") {
+				await storage.delete(appId, key);
+				reply({ ok: true });
+			} else if (op === "set") {
+				let size: number;
+				try {
+					size = JSON.stringify(message.value ?? null).length;
+				} catch {
+					reply({ ok: false, error: "invalid_value" });
+					return;
+				}
+				if (size > MAX_APP_STORAGE_VALUE_CHARS) {
+					reply({ ok: false, error: "too_large" });
+					return;
+				}
+				await storage.set(appId, key, message.value ?? null);
+				reply({ ok: true });
+			} else {
+				reply({ ok: false, error: "invalid_op" });
+			}
+		} catch (err) {
+			const name = (err as { name?: string })?.name;
+			Logger.warn("InstalledAppHostBridge", "storage failed", {
+				appId,
+				op: String(op),
+				err: String(err),
+			});
+			reply({
+				ok: false,
+				error: name === "QuotaExceededError" ? "quota_exceeded" : "unavailable",
+			});
+		}
+	};
 	const onLoad = () => postLocale();
 	const onMessage = (event: MessageEvent) => {
 		const expectedEventOrigin = isOpaqueSandbox() ? "null" : origin;
@@ -111,6 +184,11 @@ export function installInstalledAppHostBridge(
 					},
 				}),
 			);
+			return;
+		}
+		if (message.type === CHILD_STORAGE) {
+			if (message.appId !== appId || !validRequestId(message.id)) return;
+			void handleStorage(message);
 			return;
 		}
 		if (message.type !== CHILD_ASK) return;
