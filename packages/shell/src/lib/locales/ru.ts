@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "Просмотреть приложения во внешнем браузере",
 	"appbar.addItem": "Добавить",
 	"appbar.removeShortcut": "Удалить ярлык",
+	"appbar.closeApp": "Закрыть приложение",
 	"appbar.removeApp": "Удалить приложение",
 	"appbar.enterUrl": "Введите URL (например: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

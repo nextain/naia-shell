@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "在外部浏览器中浏览应用",
 	"appbar.addItem": "添加",
 	"appbar.removeShortcut": "删除快捷方式",
+	"appbar.closeApp": "关闭应用",
 	"appbar.removeApp": "移除应用",
 	"appbar.enterUrl": "输入 URL（例如 https://example.com）",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

@@ -88,6 +88,7 @@
 | `app-bar.stop-propagation-24.click` | app-bar | form / stop-propagation / onClick | packages/shell/src/components/AppBar.tsx:686 |
 | `app-bar.set-icon-editing-25.click` | app-bar | button / set-icon-editing / onClick | packages/shell/src/components/AppBar.tsx:709 |
 | `app-bar.set-active-app-26.click` | app-bar | button / set-active-app / onClick | packages/shell/src/components/AppBar.tsx:731 |
+| `app-bar.handle-ctx-close-app-27.click` | app-bar | button / handle-ctx-close-app / onClick | packages/shell/src/components/AppBar.tsx:569 |
 | `app-install-dialog.on-close-1.click` | app-install-dialog | div / on-close / onClick | packages/shell/src/components/AppInstallDialog.tsx:125 |
 | `app-install-dialog.stop-propagation-2.click` | app-install-dialog | div / stop-propagation / onClick | packages/shell/src/components/AppInstallDialog.tsx:130 |
 | `app-install-dialog.on-close-3.click` | app-install-dialog | button / on-close / onClick | packages/shell/src/components/AppInstallDialog.tsx:137 |
@@ -99,6 +100,7 @@
 | `app-main-content.set-chat-mode-1.click` | app-main-content | button / set-chat-mode / onClick | packages/shell/src/components/AppMainContent.tsx:289 |
 | `app-main-content.set-chat-mode-2.click` | app-main-content | button / set-chat-mode / onClick | packages/shell/src/components/AppMainContent.tsx:298 |
 | `app-main-content.toggle-rail-collapsed-3.click` | app-main-content | button / toggle-rail-collapsed / onClick | packages/shell/src/components/AppMainContent.tsx:323 |
+| `app-main-content.close-active-app-4.click` | app-main-content | button / close-active-app / onClick | packages/shell/src/components/AppMainContent.tsx:444 |
 | `app-switcher.set-active-app-1.click` | app-switcher | button / set-active-app / onClick | packages/shell/src/components/AppSwitcher.tsx:13 |
 | `at-mention-popover.handle-select-1.click` | at-mention-popover | div / handle-select / onClick | packages/shell/src/components/AtMentionPopover.tsx:239 |
 | `bgm-player.set-app-expanded-1.click` | bgm-player | span / set-app-expanded / onClick | packages/shell/src/components/BgmPlayer.tsx:2263 |

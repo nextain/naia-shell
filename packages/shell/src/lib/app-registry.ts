@@ -421,7 +421,9 @@ export interface AppDescriptor {
 export function shouldMountKeepAliveApp(
 	descriptor: AppDescriptor,
 	activatedAppIds: ReadonlySet<string>,
+	closedAppIds?: ReadonlySet<string>,
 ): boolean {
+	if (closedAppIds?.has(descriptor.id)) return false;
 	return (
 		!descriptor.deferMountUntilActive || activatedAppIds.has(descriptor.id)
 	);

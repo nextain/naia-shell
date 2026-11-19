@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "外部ブラウザでアプリを探します",
 	"appbar.addItem": "追加",
 	"appbar.removeShortcut": "ショートカットを削除",
+	"appbar.closeApp": "アプリを閉じる",
 	"appbar.removeApp": "アプリを削除",
 	"appbar.enterUrl": "URLを入力 (例: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

@@ -1251,6 +1251,7 @@ export default {
 	"appbar.appStoreDesc": "सिस्टम ब्राउज़र में ऐप्स देखें",
 	"appbar.addItem": "जोड़ें",
 	"appbar.removeShortcut": "शॉर्टकट हटाएं",
+	"appbar.closeApp": "ऐप बंद करें",
 	"appbar.removeApp": "ऐप हटाएं",
 	"appbar.enterUrl": "URL दर्ज करें (उदा: https://example.com)",
 	"bgm.defaultYouTubeTrack": "YouTube BGM",

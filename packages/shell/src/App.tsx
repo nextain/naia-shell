@@ -399,10 +399,12 @@ export function App() {
 		prevAppRef.current = activeApp;
 
 		if (prev && prev !== activeApp) {
-			// keepAlive apps stay mounted — don't clear their skills so the
-			// LLM can still call them (e.g. skill_browser_navigate from Chat).
+			// keepAlive apps stay mounted — don't clear their skills on ordinary
+			// switch so the LLM can still call them; clear when explicitly closed.
 			const prevDescriptor = appRegistry.get(prev);
-			if (!prevDescriptor?.keepAlive) {
+			const prevClosed =
+				useAppStore.getState().closedApps?.includes(prev) === true;
+			if (!prevDescriptor?.keepAlive || prevClosed) {
 				sendAppSkillsClear(prev).catch(() => {});
 			}
 			prevDescriptor?.onDeactivate?.();
@@ -490,6 +492,7 @@ export function App() {
 		for (const descriptor of all) {
 			if (
 				descriptor.keepAlive &&
+				!descriptor.deferMountUntilActive &&
 				descriptor.tools &&
 				descriptor.tools.length > 0
 			) {
