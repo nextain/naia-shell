@@ -8,7 +8,7 @@ import {
 import {
 	type AppInstallRequest,
 	getStoreGatewayUrl,
-	getStoreProductMetadata,
+	getStoreProductName,
 	hasStoreEntitlement,
 } from "../lib/app-store-client";
 import { isKnownPermission } from "../lib/app-permissions";
@@ -67,7 +67,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 	useEffect(() => {
 		if (!request) return;
 		let cancelled = false;
-		void getStoreProductMetadata(request.appId, locale)
+		void getStoreProductName(request.appId, locale)
 			.then((metadata) => {
 				if (cancelled) return;
 				setDisplayName(metadata?.name || request.name || request.appId);
