@@ -3241,3 +3241,19 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·빈 폴더·읽기 전용 | 목적지가 없을 때 안내를 보이고 작업 폴더를 고르면 해당 위치가 보임 | `web-workspace-path.test.tsx` |
 | 진행·성공·좁은 화면 | 진행 상태, 새 항목 열기·내려받기, 키보드·400px 폭에서 목적지와 단추 표시 | `web-workspace-path.test.tsx`와 좁은 화면 브라우저 확인 |
 | 오류·충돌 | 기존 파일 보존, 새 파일 바이트 확인, 작업 폴더 교체·용량 부족 때 재선택 또는 재시도 | `web-workspace-path.test.tsx` |
+
+## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
+
+정식 웹판(브라우저) 사용자가 앱 막대의 [앱스토어]를 누릅니다. 셸 안 미니앱 스토어에는 내장 앱 4개(캐릭터 카드·슬라이드·이음오피스·카페루아 타로), 게이트웨이 상품, 포털 어드민이 등록한 앱이 한 목록으로 보입니다. 어드민 앱은 로그인 없이 [실행]으로 바로 열리고, 설치된 뒤에는 앱 막대에 내장 앱과 같은 방식으로 남습니다.
+
+포털 서버가 없거나 실패하면 오류 없이 내장 목록만 보입니다. 어드민이 내장 앱과 같은 id 로 등록해도 내장 앱 이름·주소는 바뀌지 않습니다. 허용된 앱 주소(포털 `/hosted-apps/` 또는 앱 샌드박스 출처)가 아닌 앱, 공개가 아닌 앱, 현재 언어에서 제공하지 않는 앱은 보이지 않습니다. 계약: `docs/app-store-protocol.md` "Unified web app catalog".
+
+### Test Coverage Map — UC-WEB-APP-CATALOG
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본(서버 정상) | 내장 4개 뒤에 게이트웨이·어드민 앱이 순서대로, 중복 없이 보임 | `app-catalog.test.ts` "R3 R4 appends…"; `e2e/web-app-store-catalog.spec.ts` 1280×720·390×844 |
+| 빈 목록·실패 | 포털 끊김·500·HTML 응답·게이트웨이 503 이면 내장 목록만, 오류 알림 없음 | `app-catalog.test.ts` "never throws", "only built-in"; e2e "portal catalog is unreachable" |
+| 진행·성공 | 어드민 앱 [실행] → 구매 요청 없이 설치 → 앱 iframe 이 열림 | `app-catalog.test.ts` "launch without login"; e2e 두 폭 |
+| 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts` 계약 시험; e2e 가짜 슬라이드 미표시 |
+| 좁은 폭 | 390px 에서 카드·[실행] 단추가 화면 안 | e2e 390×844 상자 검사, `shots/D/R3-390.png` |

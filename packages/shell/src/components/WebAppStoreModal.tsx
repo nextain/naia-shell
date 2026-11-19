@@ -107,7 +107,9 @@ export function WebAppStoreModal() {
 				className="sync-dialog-card"
 				role="dialog"
 				aria-modal="true"
-				aria-label={isKo ? "나이아 웹 미니앱 스토어" : "Naia Web Mini-App Store"}
+				aria-label={
+					isKo ? "나이아 웹 미니앱 스토어" : "Naia Web Mini-App Store"
+				}
 				data-testid="web-app-store-modal"
 				onClick={(e) => e.stopPropagation()}
 				style={{
@@ -222,7 +224,17 @@ export function WebAppStoreModal() {
 												flexShrink: 0,
 											}}
 										>
-											{item.manifest.icon || "📦"}
+											{item.iconUrl ? (
+												<img
+													src={item.iconUrl}
+													alt=""
+													width={28}
+													height={28}
+													style={{ borderRadius: 6, objectFit: "cover" }}
+												/>
+											) : (
+												item.manifest.icon || "📦"
+											)}
 										</span>
 										<div style={{ minWidth: 0 }}>
 											<div

@@ -1998,3 +1998,14 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존됩니다. 저장소 미지원과 용량 부족은 사용자에게 알려 줍니다. | Done (local) |
 
 로컬 후보 검증은 2026-11-19 03:53 UTC Chromium 탐색기 실동작과 탐색기 회귀 시험 7건입니다. 시스템 기본 작업 공간 준비는 별도 진입 시험에서 확인합니다.
+
+## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-APP-CATALOG.1 | 정식 웹판의 셸 안 미니앱 스토어는 내장 Stage-1 앱 → 게이트웨이 `GET /v1/apps/products` → 포털 `GET {NAIA_WEB_BASE_URL}/api/apps` 순서로 합친 한 목록을 보여 줍니다. 같은 id 는 앞 출처가 이깁니다. (UC-WEB-APP-CATALOG) | Done (local) |
+| FR-WEB-APP-CATALOG.2 | 포털 목록은 4초 안에 응답이 없거나 실패·형식 오류면 빈 목록으로 처리하고, 스토어는 오류 없이 내장 목록만 보입니다. | Done (local) |
+| FR-WEB-APP-CATALOG.3 | 어드민 앱은 `docs/app-store-protocol.md` 계약을 따르고, 공개(`visibility`)·제공 언어(`locales`)·허용 출처(`url`) 검사를 통과한 것만 보입니다. 어드민 앱은 무료 호스팅 앱으로 로그인·구매 없이 설치·실행합니다. 유료 앱은 게이트웨이 상품으로만 등록합니다. | Done (local) |
+| FR-WEB-APP-CATALOG.4 | 포털 상점 화면 `/{locale}/apps` 도 같은 `/api/apps` 목록으로 그립니다. | 포털 작업(이 저장소 밖), 미착수 |
+
+로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`, Playwright `e2e/web-app-store-catalog.spec.ts`(NAIA_E2E_WEB=1, `vite --mode web`, 1280×720·390×844). 실제 포털 서버 응답은 미확인.

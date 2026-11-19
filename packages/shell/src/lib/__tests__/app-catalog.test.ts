@@ -1,0 +1,250 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
+import {
+	fetchPortalCatalog,
+	isOfferedInLocale,
+	parsePortalCatalog,
+} from "../app-catalog";
+import { WebHttpAppStoreAdapter } from "../app-store-adapter";
+
+function jsonResponse(status: number, body: unknown): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+const SHELL = "https://dev.naia.land";
+const BUILTIN_IDS = [
+	"land.naia.charcard",
+	"land.naia.slides",
+	"land.naia.ieumoffice",
+	"land.naia.cafelua-tarot",
+];
+
+function adapterWith(
+	routes: Record<string, () => Response | Promise<Response>>,
+	locale = "ko",
+) {
+	const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+		const url = String(input);
+		const route = Object.entries(routes).find(([prefix]) =>
+			url.startsWith(prefix),
+		);
+		if (!route) throw new TypeError(`network down: ${url}`);
+		return route[1]();
+	}) as unknown as typeof fetch;
+	return {
+		fetchImpl,
+		adapter: new WebHttpAppStoreAdapter({
+			stage1HostedCatalog: true,
+			fetchImpl,
+			getGatewayUrl: () => "https://api-dev.naia.land",
+			getShellOrigin: () => SHELL,
+			getPortalBaseUrl: () => SHELL,
+			getLocale: () => locale,
+			getAuthKey: () => undefined,
+		}),
+	};
+}
+
+describe("R4 portal catalog contract (GET /api/apps)", () => {
+	it("R4 parses the contract shape and hides non-public items", () => {
+		const entries = parsePortalCatalog({
+			apps: [
+				{
+					id: "land.naia.quiz",
+					name: "Quiz",
+					icon: "❓",
+					url: `${SHELL}/hosted-apps/quiz/index.html`,
+					description: "Daily quiz",
+					locales: ["ko", "en"],
+					version: "0.3.0",
+					visibility: "public",
+				},
+				{ id: "land.naia.draft", name: "Draft", visibility: "draft" },
+				{ id: "bad id!", name: "Broken" },
+				{ id: "land.naia.quiz", name: "Duplicate" },
+			],
+		});
+		expect(entries).toHaveLength(1);
+		expect(entries[0]).toMatchObject({
+			appId: "land.naia.quiz",
+			version: "0.3.0",
+			hostedEntryUrl: `${SHELL}/hosted-apps/quiz/index.html`,
+			offeredLocales: ["ko", "en"],
+			manifest: { name: "Quiz", icon: "❓", description: "Daily quiz" },
+		});
+	});
+
+	it("R4 accepts the legacy portal AppRecord shape and per-locale names", () => {
+		const [legacy, localized] = parsePortalCatalog({
+			apps: [
+				{
+					id: "db-row-1",
+					slug: "land.naia.memo",
+					nameKo: "메모",
+					nameEn: "Memo",
+					descriptionKo: "짧은 메모",
+					version: "1.2.0",
+				},
+				{
+					id: "poem",
+					name: "Poem",
+					icon: "https://cdn.example.com/poem.png",
+					locales: { ko: { name: "시", description: "시 쓰기" } },
+				},
+				{ slug: "land.naia.soon", nameKo: "곧", comingSoon: true },
+			],
+		});
+		expect(legacy.appId).toBe("land.naia.memo");
+		expect(legacy.manifest.names).toEqual({ ko: "메모", en: "Memo" });
+		expect(legacy.manifest.descriptions).toEqual({ ko: "짧은 메모" });
+		expect(localized.appId).toBe("land.naia.poem");
+		expect(localized.manifest.names).toEqual({ ko: "시" });
+		expect(localized.manifest.icon).toBeUndefined();
+		expect(localized.iconUrl).toBe("https://cdn.example.com/poem.png");
+		expect(parsePortalCatalog({ data: [] })).toEqual([]);
+		expect(parsePortalCatalog(null)).toEqual([]);
+	});
+
+	it("R4 locale filter matches base language", () => {
+		expect(isOfferedInLocale({ offeredLocales: ["en"] }, "en-US")).toBe(true);
+		expect(isOfferedInLocale({ offeredLocales: ["en"] }, "ko")).toBe(false);
+		expect(isOfferedInLocale({}, "ko")).toBe(true);
+	});
+
+	it("R4 fetchPortalCatalog never throws on server failure", async () => {
+		const down = vi.fn(async () => {
+			throw new TypeError("offline");
+		}) as unknown as typeof fetch;
+		await expect(fetchPortalCatalog(down, SHELL)).resolves.toEqual([]);
+		const err = vi.fn(async () =>
+			jsonResponse(500, { error: "x" }),
+		) as unknown as typeof fetch;
+		await expect(fetchPortalCatalog(err, SHELL)).resolves.toEqual([]);
+		const notJson = vi.fn(
+			async () => new Response("<html>", { status: 200 }),
+		) as unknown as typeof fetch;
+		await expect(fetchPortalCatalog(notJson, SHELL)).resolves.toEqual([]);
+		const ok = vi.fn(async () =>
+			jsonResponse(200, { apps: [{ id: "quiz", name: "Quiz" }] }),
+		) as unknown as typeof fetch;
+		const result = await fetchPortalCatalog(ok, `${SHELL}/`);
+		expect(result.map((e) => e.appId)).toEqual(["land.naia.quiz"]);
+		expect(String(vi.mocked(ok).mock.calls[0][0])).toBe(`${SHELL}/api/apps`);
+	});
+});
+
+describe("R3 unified web catalog (built-in + gateway + admin)", () => {
+	it("R3 shows only built-in apps when gateway and portal are both down", async () => {
+		const { adapter } = adapterWith({});
+		const catalog = await adapter.listCatalog();
+		expect(catalog.map((c) => c.appId)).toEqual(BUILTIN_IDS);
+	});
+
+	it("R3 R4 appends admin apps after built-in and gateway apps without overriding them", async () => {
+		const { adapter } = adapterWith({
+			"https://api-dev.naia.land/v1/apps/products": () =>
+				jsonResponse(200, {
+					data: [
+						{
+							app_id: "land.naia.gateway-extra",
+							version: "1.0.0",
+							price_credits: "10",
+							hosted_entry_url: `${SHELL}/hosted-apps/gateway-extra/index.html`,
+							manifest: { name: "Gateway Extra" },
+						},
+					],
+				}),
+			[`${SHELL}/api/apps`]: () =>
+				jsonResponse(200, {
+					apps: [
+						{
+							id: "land.naia.slides",
+							name: "Hijacked slides",
+							url: "https://evil.example/x",
+						},
+						{ id: "land.naia.gateway-extra", name: "Dup" },
+						{
+							id: "land.naia.quiz",
+							name: "Quiz",
+							icon: "❓",
+							version: "0.3.0",
+						},
+						{ id: "land.naia.english-only", name: "EN", locales: ["en"] },
+						{
+							id: "land.naia.external",
+							name: "Ext",
+							url: "https://evil.example/app",
+						},
+						{ id: "land.naia.blackjack", name: "Blackjack" },
+					],
+				}),
+		});
+		const catalog = await adapter.listCatalog();
+		expect(catalog.map((c) => c.appId)).toEqual([
+			...BUILTIN_IDS,
+			"land.naia.gateway-extra",
+			"land.naia.quiz",
+		]);
+		const slides = catalog.find((c) => c.appId === "land.naia.slides")!;
+		expect(slides.manifest.name).toBe("슬라이드");
+		expect(slides.hostedEntryUrl).toBe(
+			`${SHELL}/hosted-apps/naia-slides/index.html`,
+		);
+		const quiz = catalog.find((c) => c.appId === "land.naia.quiz")!;
+		expect(quiz).toMatchObject({
+			version: "0.3.0",
+			priceCredits: 0,
+			hostedEntryUrl: `${SHELL}/hosted-apps/land.naia.quiz/index.html`,
+		});
+	});
+
+	it("R3 R4 short admin slug becomes a canonical land.naia id in the catalog", async () => {
+		const { adapter } = adapterWith(
+			{
+				[`${SHELL}/api/apps`]: () =>
+					jsonResponse(200, {
+						apps: [
+							{
+								id: "quiz",
+								name: "Quiz",
+								url: `${SHELL}/hosted-apps/quiz/index.html`,
+							},
+						],
+					}),
+			},
+			"en",
+		);
+		const catalog = await adapter.listCatalog();
+		expect(catalog.at(-1)?.appId).toBe("land.naia.quiz");
+	});
+
+	it("R4 admin apps launch without login and join the installed list", async () => {
+		localStorage.clear();
+		const { adapter, fetchImpl } = adapterWith({
+			[`${SHELL}/api/apps`]: () =>
+				jsonResponse(200, { apps: [{ id: "quiz", name: "Quiz" }] }),
+		});
+		await adapter.listCatalog();
+		await expect(adapter.checkEntitlement("land.naia.quiz")).resolves.toBe(
+			true,
+		);
+		await adapter.installApp("land.naia.quiz");
+		const purchases = vi
+			.mocked(fetchImpl)
+			.mock.calls.filter(([url]) => String(url).includes("/v1/apps/purchases"));
+		expect(purchases).toEqual([]);
+		const installed = await adapter.listInstalledManifests();
+		const quiz = installed.find((m) => m.id === "land.naia.quiz");
+		expect(quiz?.htmlEntry).toBe(
+			`${SHELL}/hosted-apps/land.naia.quiz/index.html`,
+		);
+		// A gateway-only app still needs login.
+		await expect(adapter.checkEntitlement("land.naia.other")).rejects.toThrow(
+			/login is required/,
+		);
+		localStorage.clear();
+	});
+});
