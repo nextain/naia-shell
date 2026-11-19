@@ -3309,3 +3309,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 |---|---|---|
 | 기본·좁은 화면 | 대비 4.5 이상, 높이 36px 이상, 모서리 10px 이하, 그림자 없음, 줄바꿈 없음 | `e2e/web-gpu-a-ui.spec.ts` R2 (1280·390) |
 | 키보드 | `:focus-visible` 테두리 | CSS 규칙(`global.css` `.settings-save-btn:focus-visible`) |
+
+## UC-WEB-A-R5. 설치 앱의 메뉴 단추가 셸 닫기 단추에 가려지지 않기
+
+웹판 사용자가 카페루아 타로 같은 설치 앱을 엽니다. 앱 위에는 셸 디자인의 얇은 제목 막대가 있고, 그 안에 앱 이름과 닫기 단추가 있습니다. 앱 화면은 제목 막대 아래에서 시작합니다. 그래서 앱 오른쪽 위의 메뉴 단추가 닫기 단추와 겹치지 않고, 누르면 앱 메뉴가 열립니다. 기본 내장 앱의 화면은 바뀌지 않습니다.
+
+### Test Coverage Map — UC-WEB-A-R5
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 제목 막대에 앱 이름, 닫기 단추 아래 끝 ≤ 앱 화면 위 끝, 앱 메뉴 단추 클릭이 앱에 전달됨 | `e2e/web-gpu-a-ui.spec.ts` R5 (1280) |
+| 좁은 세로 화면 | 390×844 세로 배치는 설치 앱 화면을 보이지 않으므로 해당 없음 | `e2e/web-gpu-a-ui.spec.ts` R5 (390, 건너뜀) |
+| 닫기 | 제목 막대의 닫기 단추로 앱이 닫힘 | `app-close-lifecycle.test.tsx` |

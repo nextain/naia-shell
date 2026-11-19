@@ -208,5 +208,29 @@ for (const viewport of [
 			await closeSettings(page);
 		});
 
+		test(`R5: hosted app menu is not covered by the shell close button (${viewport.width})`, async () => {
+			test.setTimeout(180_000);
+			// Narrow portrait windows show only the companion and chat (existing
+			// layout, web-mode.css), so installed app screens are not on screen there.
+			test.skip(isPortrait(page), "portrait layout does not show installed app screens");
+			await openInstalledApp(page, "land.naia.cafelua-tarot");
+			const titlebar = page.getByTestId("active-app-titlebar");
+			const close = page.getByTestId("active-app-close-btn");
+			await expect(titlebar).toBeVisible({ timeout: 60_000 });
+			await expect(titlebar).toContainText("카페루아 타로");
+			const frameEl = page.locator('iframe[src*="/hosted-apps/cafelua-tarot/"]');
+			await expect(frameEl).toBeVisible({ timeout: 60_000 });
+			const c = await close.boundingBox();
+			const f = await frameEl.boundingBox();
+			if (!c || !f) throw new Error("missing app geometry");
+			expect(c.y + c.height).toBeLessThanOrEqual(f.y + 1);
+			const frame = page.frameLocator('iframe[src*="/hosted-apps/cafelua-tarot/"]');
+			await frame.locator("#menu").click();
+			await expect(frame.locator("#hit")).toHaveText("menu-open");
+			await shot(page, "R5", viewport.width);
+			await close.click();
+			await expect(titlebar).toHaveCount(0);
+		});
+
 	});
 }

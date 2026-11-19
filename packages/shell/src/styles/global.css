@@ -1549,11 +1549,43 @@ body.resizing-col .naia-work-rail::before {
 	pointer-events: auto;
 }
 
-.content-app__close-btn {
+/* R5: installed (non built-in) apps sit under a slim shell title bar that
+   owns the close button, so app headers (menus, music toggles) never sit
+   under it. */
+.content-app__titlebar {
 	position: absolute;
-	top: 8px;
-	right: 8px;
+	top: 0;
+	left: 0;
+	right: 0;
 	z-index: 30;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: var(--content-app-titlebar-h, 40px);
+	padding: 0 8px 0 14px;
+	border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+	background: var(--espresso, #181c26);
+	color: var(--cream, #e8eaed);
+	box-sizing: border-box;
+}
+
+.content-app__title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: calc(13px * var(--ui-font-scale, 1));
+	font-weight: 600;
+}
+
+.content-app--with-titlebar > .content-app__slot {
+	top: var(--content-app-titlebar-h, 40px);
+}
+
+.content-app__close-btn {
+	position: relative;
+	flex: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;

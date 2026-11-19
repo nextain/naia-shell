@@ -14,7 +14,7 @@ import type { AppInstallRequest } from "../lib/app-store-client";
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import { loadConfig } from "../lib/config";
 import { usePaymentLinksHidden } from "../lib/distribution";
-import { t } from "../lib/i18n";
+import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	getStoredChatHeightRatio,
@@ -180,6 +180,7 @@ export function AppMainContent(props: AppMainContentProps) {
 	} = props;
 	const activeAppDescriptor = activeApp ? appRegistry.get(activeApp) : null;
 	const CenterComponent = activeAppDescriptor?.center ?? null;
+	const showAppTitlebar = Boolean(activeAppDescriptor && !activeAppDescriptor.builtIn);
 	const chatVariant: "rail" | "floating" =
 		chatModeOverride === "workspace" ? "rail" : "floating";
 	const appListVersion = useAppStore((state) => state.appListVersion);
@@ -896,7 +897,7 @@ export function AppMainContent(props: AppMainContentProps) {
 							<DeferredOnboardingWizard onComplete={onOnboardingComplete} />
 						) : (
 							<div
-								className={`content-app${!activeApp ? " content-app--hidden" : ""}`}
+								className={`content-app${!activeApp ? " content-app--hidden" : ""}${showAppTitlebar ? " content-app--with-titlebar" : ""}`}
 							>
 								{keepAliveApps.map((app) => {
 									// WO-03 / 지시서 #3: 웹판은 브라우저 탭이 꺼져 있어 마운트 자체를 막는다 (browser_wv_create 오류 방지).
@@ -947,9 +948,17 @@ export function AppMainContent(props: AppMainContentProps) {
 											</ErrorBoundary>
 										</div>
 									)}
-								{activeApp &&
-									activeAppDescriptor &&
-									!activeAppDescriptor.builtIn && (
+								{activeApp && showAppTitlebar && activeAppDescriptor && (
+									// R5: installed apps get a shell title bar so the close
+									// button never covers the app's own top-right controls.
+									<div
+										className="content-app__titlebar"
+										data-testid="active-app-titlebar"
+									>
+										<span className="content-app__title">
+											{activeAppDescriptor.names?.[getLocale()] ??
+												activeAppDescriptor.name}
+										</span>
 										<button
 											type="button"
 											className="content-app__close-btn"
@@ -960,7 +969,8 @@ export function AppMainContent(props: AppMainContentProps) {
 										>
 											✕
 										</button>
-									)}
+									</div>
+								)}
 							</div>
 						)}
 					</div>

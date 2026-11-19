@@ -222,6 +222,13 @@ describe("Mini-app floating close button and full background termination (#872)"
 
 		const closeBtn = screen.getByTestId("active-app-close-btn");
 		expect(closeBtn).toHaveAttribute("aria-label", "appbar.closeApp");
+		// R5: the close button lives in a shell title bar above the app slot,
+		// not floating over the app's own header controls.
+		const titlebar = screen.getByTestId("active-app-titlebar");
+		expect(titlebar).toContainElement(closeBtn);
+		expect(titlebar.parentElement).toHaveClass("content-app--with-titlebar");
+		expect(titlebar.parentElement?.contains(firstIframe)).toBe(true);
+		expect(titlebar.contains(firstIframe)).toBe(false);
 
 		// Ordinary switch to built-in Settings keeps mini-app iframe mounted in background,
 		// and built-in Settings does not show the mini-app close button

@@ -2009,3 +2009,4 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-A-R11 | 셸은 `storage` 권한을 가진 sandbox 설치 앱에 `naia-app:storage`(get·set·delete·keys) 저장을 제공하고 셸 IndexedDB에 앱 id별로 보관한다. 캐릭터 카드는 이 권한을 가진다. 묶음 쪽 저장 경로 전환은 앱 저장소 작업으로 남는다. 검증: `UC-WEB-A-R11`. | In Progress (셸 쪽 Done) |
 | FR-WEB-A-R28 | 웹판 대화창의 메시지·입력란·모델 조작은 800×450·1280×720·1920×1080에서 상태줄에 가려지지 않고 Tab으로 닿는다. 접힌 음악 플레이어 내부는 Tab 순서와 접근성 트리에서 빠진다. 검증: `UC-WEB-A-R28`. | Done (local) |
 | FR-WEB-A-R2 | 설정 적용 단추는 그림자 없는 8px 모서리 기본 단추로, 높이 36px 이상, 글자 대비 4.5:1 이상, 한 줄 글자, 초점 테두리를 가진다. 검증: `UC-WEB-A-R2`. | Done (local) |
+| FR-WEB-A-R5 | 내장이 아닌 설치 앱은 앱 이름과 닫기 단추를 가진 셸 제목 막대 아래에 표시되어, 앱 자체 머리 영역의 단추가 셸 닫기 단추에 가려지지 않는다. 앱 묶음 내부 디자인(저장소 밖)은 해당 앱 저장소에서 맞춘다. 검증: `UC-WEB-A-R5`. | Done (local, 셸 쪽) |
