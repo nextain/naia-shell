@@ -12,12 +12,13 @@ import { createMemoryWebFs } from "../web-fs";
 import {
 	getWebModelStatus,
 	resetWebModelStatusForTests,
+	setWebModelStatus,
 } from "../web-model-status";
 import {
 	handleWebWorkspaceCommand,
 	resolveWebConversationsDir,
 } from "../web-workspace-commands";
-import { WEB_LLM_MODEL_ID } from "../webllm-model";
+import { WEB_LLM_FALLBACK_F32, WEB_LLM_MODEL_ID } from "../webllm-model";
 
 class FakeWorker implements WorkerLike {
 	posted: { message: unknown; transfer?: Transferable[] }[] = [];
@@ -242,6 +243,24 @@ describe("agent-bridge", () => {
 			errorKind: "load-failed",
 			errorMessage: "Worker runtime fatal error",
 		});
+	});
+
+	it("R33 reuses a ready engine and ignores readiness from a previous model", () => {
+		const worker = new FakeWorker();
+		const bridge = createAgentBridge({ createWorker: () => worker, emit: () => {} });
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		worker.dispatchMessage({ kind: "engine-ready", model: WEB_LLM_MODEL_ID });
+		setWebModelStatus({ phase: "checking", progress: 0 });
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		expect(getWebModelStatus()).toMatchObject({ phase: "ready", model: WEB_LLM_MODEL_ID });
+		expect(worker.posted).toHaveLength(1);
+
+		setWebModelStatus({ phase: "loading", model: WEB_LLM_FALLBACK_F32, progress: 0 });
+		bridge.start({ model: WEB_LLM_FALLBACK_F32 });
+		worker.dispatchMessage({ kind: "engine-ready", model: WEB_LLM_MODEL_ID });
+		expect(getWebModelStatus()).toMatchObject({ phase: "loading", model: WEB_LLM_FALLBACK_F32 });
+		worker.dispatchMessage({ kind: "engine-ready", model: WEB_LLM_FALLBACK_F32 });
+		expect(getWebModelStatus()).toMatchObject({ phase: "ready", model: WEB_LLM_FALLBACK_F32 });
 	});
 
 	it("persists user and assistant turns from AgentResponseChunk.text when finish arrives", async () => {

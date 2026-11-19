@@ -73,7 +73,11 @@ import {
 	requestWebPersistentStorage,
 	subscribeWebStoragePersistState,
 } from "../lib/web-runtime/web-storage-persist";
-import { getWebModelStatus } from "../lib/web-runtime/web-model-status";
+import {
+	getWebModelStatus,
+	setWebModelStatus,
+} from "../lib/web-runtime/web-model-status";
+import { readNavigatorGpu } from "../lib/web-runtime/webgpu-check";
 import {
 	KIOSK_DEMO_ENABLE_TOOLS,
 	KIOSK_DEMO_ENVIRONMENT_AWARENESS,
@@ -87,6 +91,7 @@ import {
 	WEB_LLM_MODEL_PREF_KEY,
 	formatWebLlmModelLabel,
 	isWebLlmModelId,
+	type WebLlmModelId,
 } from "../lib/web-runtime/webllm-model";
 import { isWebSpeechAvailable } from "../lib/stt";
 import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
@@ -789,14 +794,6 @@ async function openNvaAvatarCreator(): Promise<void> {
 			error: String(error),
 		});
 	}
-}
-
-export async function reloadAfterWebProviderWrite(
-	write: Promise<void>,
-	reload: () => void,
-): Promise<void> {
-	await write;
-	reload();
 }
 
 export function SettingsTab() {
@@ -2013,6 +2010,7 @@ export function SettingsTab() {
 	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken] = useState(existing?.gatewayToken ?? "");
 	const [error, setError] = useState("");
+	const webModelSelectionRevision = useRef(0);
 	const [saved, setSaved] = useState(false);
 	const [isPreviewing, setIsPreviewing] = useState(false);
 	const [dynamicTtsVoices, setDynamicTtsVoices] = useState<
@@ -3564,6 +3562,91 @@ export function SettingsTab() {
 		});
 	}
 
+	async function applyWebMainModel(next: AppConfig, preference?: WebLlmModelId) {
+		const revision = ++webModelSelectionRevision.current;
+		const isLatest = () => revision === webModelSelectionRevision.current;
+		const isCurrent = () =>
+			isLatest() && loadConfig()?.provider === next.provider;
+		const previous = loadConfig();
+		const previousStatus = getWebModelStatus();
+		Logger.debug("SettingsTab", "Applying browser model selection", {
+			provider: next.provider,
+			model: next.model,
+		});
+		setError("");
+		if (next.provider === "webllm") {
+			setWebModelStatus({ phase: "checking", progress: 0 });
+		}
+		try {
+			saveConfig(next);
+			await writeNaiaConfig(next as unknown as Record<string, unknown>);
+		} catch (error) {
+			if (!isLatest()) return;
+			if (next.provider === "webllm") setWebModelStatus(previousStatus);
+			const current = loadConfig();
+			if (previous && current?.provider === next.provider && current?.model === next.model) {
+				saveConfig({
+					...current,
+					provider: previous.provider,
+					model: previous.model,
+					llmRoles: { ...current.llmRoles, main: previous.llmRoles?.main },
+					thinkingLevel: previous.thinkingLevel,
+					enableThinking: previous.enableThinking,
+					webAutoDefaultModel: previous.webAutoDefaultModel,
+				});
+			}
+			const restored = loadConfig();
+			if (restored) {
+				setProvider(restored.provider as ProviderId);
+				setModel(restored.model);
+				setThinkingLevel(resolveThinkingLevel(restored));
+			}
+			Logger.warn("SettingsTab", "Browser model selection could not be saved", {
+				error: String(error),
+			});
+			setError(t("settings.saveFailed"));
+			return;
+		}
+		if (!isCurrent()) return;
+		try {
+			const [{ startWebModel }, { getStartableAgentBridge }] = await Promise.all([
+				import("../lib/web-runtime/model-start"),
+				import("../lib/web-runtime/agent-bridge"),
+			]);
+			if (!isCurrent()) return;
+			const bridge = getStartableAgentBridge();
+			if (next.provider !== "webllm") {
+				bridge.start({ model: null });
+				return;
+			}
+			if (preference) {
+				try {
+					localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, preference);
+				} catch {
+					// The selected model is already recorded in the workspace.
+				}
+			}
+			await startWebModel({
+				gpu: readNavigatorGpu(),
+				storage: typeof localStorage !== "undefined" ? localStorage : null,
+				engineKind: import.meta.env.VITE_NAIA_WEB_LLM,
+				buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
+				preferredModel: preference,
+				isCurrent,
+				bridge,
+			});
+		} catch (error) {
+			if (!isCurrent()) return;
+			Logger.warn("SettingsTab", "Browser model could not be started", {
+				error: String(error),
+			});
+			if (next.provider === "webllm") {
+				setWebModelStatus({ phase: "error", errorKind: "load-failed" });
+			}
+			setError(t("settings.saveFailed"));
+		}
+	}
+
 	function handleProviderChange(id: ProviderId) {
 		if (isKioskDemo()) {
 			return;
@@ -3621,25 +3704,17 @@ export function SettingsTab() {
 			{ provider: id, model: selectedModel },
 			loadConfig() ?? undefined,
 		);
+		if (isWebMode()) provSel.webAutoDefaultModel = false;
 		setThinkingLevel(resolveThinkingLevel(provSel));
-		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
-		const write = writeNaiaConfig(
-			provSel as unknown as Record<string, unknown>,
-		);
 		if (
 			isWebMode() &&
 			id !== provider &&
 			(id === "webllm" || provider === "webllm")
 		) {
-			void reloadAfterWebProviderWrite(write, () => window.location.reload())
-				.catch((error) => {
-					Logger.warn("SettingsTab", "Provider switch could not be saved", {
-						error: String(error),
-					});
-					setError(t("settings.saveFailed"));
-				});
+			void applyWebMainModel(provSel);
 		} else {
-			void write;
+			saveConfig(provSel);
+			void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
 		}
 	}
 
@@ -6744,21 +6819,11 @@ export function SettingsTab() {
 									if (e.target.value === "__custom__") return;
 									ollamaPullSelectionRevisionRef.current += 1;
 									const nextModel = e.target.value;
-									setModel(nextModel);
-									if (
-										isWebMode() &&
-										provider === "webllm" &&
-										isWebLlmModelId(nextModel)
-									) {
-										// 실행 중인 worker 는 처음 받은 모델로만 돈다. 상태만 바꾸면 화면과 실제 엔진이
-										// 어긋나므로, 상태 표시줄의 모델 전환과 같게 선택을 저장하고 다시 불러온다.
-										try {
-											localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, nextModel);
-										} catch {
-											// ignore storage errors
-										}
-										setTimeout(() => window.location.reload(), 0);
+									if (isWebMode() && isNaiaConfigHydrationPending()) {
+										setError(t("settings.saveFailed"));
+										return;
 									}
+									setModel(nextModel);
 									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
 									// agent loads THIS model. Previously only Save persisted → a stale model
 									// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
@@ -6792,12 +6857,12 @@ export function SettingsTab() {
 										);
 										setThinkingLevel(resolveThinkingLevel(nextSel));
 										if (isWebMode()) nextSel.webAutoDefaultModel = false;
-										saveConfig(
-											nextSel as unknown as Parameters<typeof saveConfig>[0],
-										);
-										void writeNaiaConfig(
-											nextSel as unknown as Record<string, unknown>,
-										);
+										if (isWebMode() && provider === "webllm" && isWebLlmModelId(nextModel)) {
+											void applyWebMainModel(nextSel, nextModel);
+										} else {
+											saveConfig(nextSel);
+											void writeNaiaConfig(nextSel as unknown as Record<string, unknown>);
+										}
 									}
 									// When switching to an omni model, set default voice if not already set
 									const newMeta = providerModels.find(

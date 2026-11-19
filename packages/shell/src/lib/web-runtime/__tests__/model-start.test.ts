@@ -30,6 +30,25 @@ describe("model-start", () => {
 		expect(getWebModelStatus().phase).toBe("loading");
 	});
 
+	it("R33 discards a GPU probe when a newer main model selection takes effect", async () => {
+		const bridge = { start: vi.fn() };
+		let finishProbe!: (adapter: null) => void;
+		const probe = new Promise<null>((resolve) => { finishProbe = resolve; });
+		let current = true;
+		const started = startWebModel({
+			gpu: { requestAdapter: () => probe },
+			storage: null,
+			engineKind: undefined,
+			isCurrent: () => current,
+			bridge,
+		});
+		current = false;
+		finishProbe(null);
+		await started;
+		expect(bridge.start).not.toHaveBeenCalled();
+		expect(getWebModelStatus().phase).toBe("checking");
+	});
+
 	it("sets no-webgpu error and starts with model null when gpu is undefined", async () => {
 		const bridge = { start: vi.fn() };
 		await startWebModel({

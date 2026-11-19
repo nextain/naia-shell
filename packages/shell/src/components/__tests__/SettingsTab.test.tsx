@@ -151,6 +151,16 @@ const chatServiceMocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
+// R33: web engine switches run in place; record them instead of starting a real worker.
+const { startWebModelSpy, agentBridgeStart } = vi.hoisted(() => ({
+	startWebModelSpy: vi.fn().mockResolvedValue(undefined),
+	agentBridgeStart: vi.fn(),
+}));
+vi.mock("../../lib/web-runtime/model-start", () => ({ startWebModel: startWebModelSpy }));
+vi.mock("../../lib/web-runtime/agent-bridge", () => ({
+	getStartableAgentBridge: () => ({ start: agentBridgeStart, sendLine: vi.fn() }),
+}));
+
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
@@ -171,7 +181,7 @@ import {
 	WEB_LLM_MODEL_PREF_KEY,
 	formatWebLlmModelLabel,
 } from "../../lib/web-runtime/webllm-model";
-import { SettingsTab, reloadAfterWebProviderWrite } from "../SettingsTab";
+import { SettingsTab } from "../SettingsTab";
 import { WebModelStatusBar } from "../WebModelStatusBar";
 
 // SettingsTab order:
@@ -213,41 +223,76 @@ function gotoAvatarVrm() {
 }
 
 describe("web provider switch persistence", () => {
-	it("persists a user's existing local model when switching from the server", async () => {
+	beforeEach(() => {
 		setWebAssetsModeForTests(true);
 		registerWebLlmProvider();
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
-		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "deepseek-v4-flash", llmRoles: { main: { provider: "nextain", model: "deepseek-v4-flash" } } }));
-		localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, WEB_LLM_FALLBACK_F32);
-		let finishWrite!: () => void;
-		const pendingWrite = new Promise<void>((resolve) => { finishWrite = resolve; });
-		mockInvoke.mockImplementation((command: string) => command === "write_naia_config" ? pendingWrite : Promise.resolve([]));
-		render(<SettingsTab />);
-		gotoSettingsTab("brain");
-		fireEvent.change(document.getElementById("provider-select")!, { target: { value: "webllm" } });
-		await waitFor(() => expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "write_naia_config")).toBe(true));
-		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({ provider: "webllm", model: WEB_LLM_FALLBACK_F32 });
-		await act(async () => { finishWrite(); await pendingWrite; });
+		startWebModelSpy.mockClear();
+		agentBridgeStart.mockClear();
+		mockInvoke.mockReset().mockResolvedValue([]);
+	});
+
+	afterEach(() => {
 		cleanup();
 		localStorage.clear();
 		setWebAssetsModeForTests(null);
+		resetWebModelStatusForTests();
 		mockInvoke.mockReset();
 	});
 
-	it("reloads only after the workspace write succeeds", async () => {
-		let resolveWrite!: () => void;
-		const write = new Promise<void>((resolve) => { resolveWrite = resolve; });
-		const reload = vi.fn();
-		const pending = reloadAfterWebProviderWrite(write, reload);
-		expect(reload).not.toHaveBeenCalled();
-		resolveWrite();
-		await pending;
-		expect(reload).toHaveBeenCalledOnce();
+	it("R33 starts the saved local model after the workspace write", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
+		localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, WEB_LLM_FALLBACK_F32);
+		let finishWrite!: () => void;
+		const pendingWrite = new Promise<void>((resolve) => { finishWrite = resolve; });
+		mockInvoke.mockImplementation((command: string) =>
+			command === "write_naia_config" ? pendingWrite : Promise.resolve([]),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		fireEvent.change(document.getElementById("provider-select")!, { target: { value: "webllm" } });
+		await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("write_naia_config", expect.anything()));
+		expect(getWebModelStatus().phase).toBe("checking");
+		expect(startWebModelSpy).not.toHaveBeenCalled();
+		await act(async () => { finishWrite(); await pendingWrite; });
+		await waitFor(() => expect(startWebModelSpy).toHaveBeenCalledOnce());
+		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+			provider: "webllm",
+			model: WEB_LLM_FALLBACK_F32,
+		});
 	});
-	it("does not reload when saving fails", async () => {
-		const reload = vi.fn();
-		await expect(reloadAfterWebProviderWrite(Promise.reject(new Error("write failed")), reload)).rejects.toThrow("write failed");
-		expect(reload).not.toHaveBeenCalled();
+
+	it("R33 detaches the local model when switching to the Naia gateway", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model: WEB_LLM_FALLBACK_F32 }));
+		localStorage.setItem("naia-remote-key", "test-r33-fixture");
+		localStorage.setItem("naia-web-nextain-model", "gpt-6.1-terra");
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		fireEvent.change(document.getElementById("provider-select")!, { target: { value: "nextain" } });
+		await waitFor(() => expect(agentBridgeStart).toHaveBeenCalledWith({ model: null }));
+		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+		});
+	});
+
+	it("R33 keeps the previous engine and model when saving fails", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
+		mockInvoke.mockImplementation((command: string) =>
+			command === "write_naia_config" ? Promise.reject(new Error("write failed")) : Promise.resolve([]),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const select = document.getElementById("provider-select")!;
+		fireEvent.change(select, { target: { value: "webllm" } });
+		await screen.findByText(t("settings.saveFailed"));
+		expect(select).toHaveValue("nextain");
+		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+		});
+		expect(startWebModelSpy).not.toHaveBeenCalled();
+		expect(agentBridgeStart).not.toHaveBeenCalled();
 	});
 });
 
@@ -5785,7 +5830,7 @@ describe("web mode brain tab (r4)", () => {
 		expect(statusBar.textContent).toContain(expectedF16Label);
 	});
 
-	it("switches the running engine on web model select (save choice + reload) instead of only rewriting runtime status", () => {
+	it("R33 switches the running engine on web model select without a page reload", async () => {
 		registerWebLlmProvider();
 		setWebAssetsModeForTests(true);
 		localStorage.setItem(
@@ -5803,7 +5848,7 @@ describe("web mode brain tab (r4)", () => {
 			configurable: true,
 			value: { ...originalLocation, reload },
 		});
-		vi.useFakeTimers();
+		startWebModelSpy.mockClear();
 		try {
 			render(<SettingsTab />);
 			gotoSettingsTab("brain");
@@ -5816,13 +5861,13 @@ describe("web mode brain tab (r4)", () => {
 
 			// 실행 중 엔진은 아직 f32 이므로 상태를 미리 f16 으로 바꾸지 않는다.
 			expect(getWebModelStatus().model).toBe(WEB_LLM_FALLBACK_F32);
+			await waitFor(() => expect(startWebModelSpy).toHaveBeenCalledTimes(1));
 			expect(localStorage.getItem(WEB_LLM_MODEL_PREF_KEY)).toBe(WEB_LLM_MODEL_ID);
-			act(() => {
-				vi.runOnlyPendingTimers();
-			});
-			expect(reload).toHaveBeenCalledTimes(1);
+			expect(startWebModelSpy).toHaveBeenCalledWith(expect.objectContaining({
+				preferredModel: WEB_LLM_MODEL_ID,
+			}));
+			expect(reload).not.toHaveBeenCalled();
 		} finally {
-			vi.useRealTimers();
 			Object.defineProperty(window, "location", {
 				configurable: true,
 				value: originalLocation,

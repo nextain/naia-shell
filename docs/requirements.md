@@ -2087,3 +2087,18 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-SLIDES-PPTX.4 | 웹판 슬라이드 창(opaque-origin 샌드박스)에서 `sessionStorage` 접근이 앱을 멈추지 않습니다. | Done (local) |
 
 로컬 검증: vitest `slides-pptx.test.ts` 와 기존 슬라이드 시험. Playwright `e2e/web-slides-pptx.spec.ts` 는 NAIA_E2E_WEB=1 로, `vite --mode web --cors` 와 Chrome `--disable-features=LocalNetworkAccessChecks` 를 켜고 돌립니다(샌드박스 창이 루프백 dev 서버에서 모듈을 받기 때문). 배포된 `hosted-apps/naia-slides` 빌드와 실제 업무용 PPTX의 그림 품질은 미확인.
+
+## 웹판 메인 모델 즉시 전환과 Naia Terra 대화 (R33)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-MAIN-MODEL-LIVE.1 | 웹 브라우저에서 WebLLM과 Naia 게이트웨이 사이를 전환하면 페이지와 기존 대화를 유지합니다. 저장 뒤 로컬 엔진을 전환하고 다음 채팅 요청은 선택한 공급자로 보냅니다. 저장에 실패하면 오류를 표시하고 엔진 전환을 보류합니다. | Implemented (브라우저 검증 대기) |
+| FR-WEB-MAIN-MODEL-LIVE.2 | 웹판에서 WebLLM 모델을 고르면 같은 페이지에서 해당 모델을 로드해 다음 채팅 요청에 사용합니다. | Implemented (브라우저 검증 대기) |
+| FR-WEB-MAIN-MODEL-LIVE.3 | 웹판은 HTTP 200 스트림에 응답 데이터가 없으면 공급자 오류를 표시하고 다시 시도할 수 있게 합니다. 에이전트는 본문과 생각이 모두 비어 있는 응답을 빈 답으로 보고합니다. | Implemented (브라우저 검증 대기) |
+| FR-WEB-MAIN-MODEL-LIVE.4 | Naia 게이트웨이의 Terra 채팅은 이미지 라우팅 설정이 있는 경우에도 본문과 종료 신호를 스트리밍합니다. 채팅용 공급자 인자에서 이미지 라우팅 설정을 제외합니다. | Done (local) |
+
+개발 게이트웨이 실측(2026-11-19). `gpt-6.1-terra` 스트림은 출력 한도 2,048토큰에서 HTTP 200과 본문 0바이트를 반환했습니다. 추론 필드, 종료 이유, 사용량은 모두 없었습니다. 이전 비스트림 실측에서는 HTTP 500과 `ClientSession._request() got an unexpected keyword argument 'image_routes'`를 반환했습니다. 게이트웨이 참조본의 채팅 요청 조립에서 이미지 라우팅 설정이 Azure 클라이언트까지 전달되는 경로를 확인했습니다. 검증 경로는 `UC-WEB-MAIN-MODEL-LIVE`에 연결합니다.
+
+로컬 검증. Shell Vitest 188건 통과, 에이전트 계약 시험 29건 통과. 게이트웨이 `97f20de3`의 시험 37건 통과. Azure 응답 견본으로 Terra 본문, `stop`과 `[DONE]`, Terra 사용량 기록을 확인했습니다. 개발 게이트웨이에서 수정 후 실제 Terra 응답을 받는지는 미확인입니다.
+
+Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-run`이 요구한 디스크 여유 25GiB에 미달해 브라우저 실행 전에 대기가 종료됐습니다.

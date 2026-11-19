@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-09T00:40:44.605043+00:00",
+  "last_updated": "2026-11-19T18:09:42.822918+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,29 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "webgpu_r33_terra": {
+      "issue": "R33",
+      "title": "웹판 메인 모델 즉시 전환과 Naia Terra 대화",
+      "branch": "alpha/webgpu-r33-terra-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-MAIN-MODEL-LIVE",
+      "requirements": "docs/requirements.md FR-WEB-MAIN-MODEL-LIVE.1~4",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "blocked",
+        "P05": "pending"
+      },
+      "status": "partial",
+      "last_updated": "2026-11-19T18:09:42.822918+00:00",
+      "verification": "Shell focused Vitest 188 passed, 8 skipped. Shell full run 3638 passed, 14 failed, 34 skipped. Agent contract 29 passed. Gateway fixture 37 passed with regression reproduced before fix. Root build and Shell, Worker, and Agent typechecks passed. Playwright discovered both widths, but the heavy-run disk guard stopped both attempts before browser launch. Agent changes are staged because the repository has no Git author identity.",
+      "deliverables": [
+        "docs/user-scenarios.md UC-WEB-MAIN-MODEL-LIVE",
+        "docs/requirements.md FR-WEB-MAIN-MODEL-LIVE.1~4",
+        "packages/shell/e2e/web-main-model-r33.spec.ts",
+        "naia-anyllm gateway commit 97f20de3"
+      ]
+    },
     "web_ir_kiosk_fix7j_20261109": {
       "issue": 824,
       "title": "키오스크 시연판 7판 열째 묶음(fix7j): 매 장면 GPU 안팎 판정을 중단하고 원본 해상도 정확한 연결 성분(BFS/라벨링, 반복 상한 없음)으로 구운 .stacked.mp4 알파 재생 + result-fix7hrev1 반례 전수 순수 함수 시험 고정",

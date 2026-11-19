@@ -14,6 +14,8 @@ export async function startWebModel(deps: {
 	storage: { getItem(key: string): string | null } | null;
 	engineKind: string | undefined;
 	buildModel?: string;
+	preferredModel?: WebLlmModelId;
+	isCurrent?: () => boolean;
 	bridge: { start(opts: { model: WebLlmModelId | null }): void };
 }): Promise<void> {
 	try {
@@ -22,7 +24,9 @@ export async function startWebModel(deps: {
 				value: deps.buildModel,
 			});
 		}
-		const choice = readWebLlmModelChoice(deps.storage, deps.buildModel);
+		const choice = deps.preferredModel
+			? { model: deps.preferredModel, explicit: true }
+			: readWebLlmModelChoice(deps.storage, deps.buildModel);
 		let model = choice.model;
 		setWebModelStatus({ phase: "checking", model, progress: 0 });
 
@@ -33,6 +37,7 @@ export async function startWebModel(deps: {
 		}
 
 		const result = await checkWebGpu(deps.gpu);
+		if (deps.isCurrent && !deps.isCurrent()) return;
 		if (!result.ok) {
 			setWebModelStatus({
 				phase: "error",
@@ -70,6 +75,7 @@ export async function startWebModel(deps: {
 		});
 		deps.bridge.start({ model });
 	} catch (err: unknown) {
+		if (deps.isCurrent && !deps.isCurrent()) return;
 		const errorMessage = err instanceof Error ? err.message : String(err);
 		Logger.error("WebModel", "unexpected error during startWebModel", {
 			message: errorMessage,
