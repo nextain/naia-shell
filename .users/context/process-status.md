@@ -1,4 +1,22 @@
-<!-- src-sha: 441f280a16a1abc3 -->
+<!-- src-sha: 7d4dedb15f471806 -->
+
+## 웹판 설정 창의 재생 중 카드 겹침 해소 (R36) — 2026-11-20
+
+- Vitest BgmPlayer.test.tsx R36 1/1. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-BGM-NOWPLAYING · FR-WEB-BGM-NOWPLAYING.1 · packages/shell/e2e/web-bgm-nowplaying-r36.spec.ts
+
+
+## 웹판 ADK 작업공간의 로컬 음악 표시 (R34) — 2026-11-20
+
+- Vitest web-bgm-music.test.ts·web-workspace-path.test.tsx R34 2/2. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-SETTINGS-MUSIC · FR-WEB-SETTINGS-MUSIC.1 · packages/shell/e2e/web-settings-files-r32.spec.ts
+
+
+## 웹판 ADK 기본 배경·아바타와 가져온 미디어 (R32) — 2026-11-20
+
+- Vitest web-settings-catalog.test.ts 7/7. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-SETTINGS-FILES · FR-WEB-SETTINGS-FILES.1–4 · packages/shell/e2e/web-settings-files-r32.spec.ts
+
 
 ## S2 키오스크 웹 기억 — 2026-11-05
 

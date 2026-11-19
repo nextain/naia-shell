@@ -38,7 +38,7 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 
 import * as chatService from "../../lib/chat-service";
 import { Logger } from "../../lib/logger";
-import { BgmPlayer } from "../BgmPlayer";
+import { BgmPlayer, WEB_NOW_PLAYING_CARD_MS } from "../BgmPlayer";
 
 function bgmCommandHandler() {
 	const handler = listeners.get("bgm_command");
@@ -2084,6 +2084,53 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			expect(bgmPlayback.current()?.status).toBe("paused");
 			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
 		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R36 keeps the web Now Playing card while hovered or focused, then hides it without stopping playback", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.useFakeTimers();
+		try {
+			render(<BgmPlayer />);
+			const requested = bgmPlayback.request({ videoId: "5yx6BWlEVcY", title: "Lofi Chill" });
+			await act(async () => {
+				bgmCommandHandler()({
+					payload: JSON.stringify({
+						type: "bgm_youtube_play",
+						playbackId: requested.playbackId,
+						videoId: "5yx6BWlEVcY",
+						title: "Lofi Chill",
+					}),
+				});
+			});
+			const card = screen.getByTestId("bgm-youtube-now-playing");
+			act(() => useAppStore.setState({ activeApp: "settings" }));
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			expect(bgmPlayback.current()?.status).toBe("playing");
+			act(() => useAppStore.setState({ activeApp: null }));
+			const reopenedCard = screen.getByTestId("bgm-youtube-now-playing");
+			expect(card).not.toBeInTheDocument();
+			fireEvent.pointerEnter(reopenedCard);
+			act(() => {
+				vi.advanceTimersByTime(WEB_NOW_PLAYING_CARD_MS + 500);
+			});
+			expect(screen.getByTestId("bgm-youtube-now-playing")).toBeInTheDocument();
+			const stop = screen.getByTestId("bgm-web-stop-btn");
+			fireEvent.focus(stop);
+			fireEvent.pointerLeave(reopenedCard);
+			act(() => {
+				vi.advanceTimersByTime(WEB_NOW_PLAYING_CARD_MS + 500);
+			});
+			expect(reopenedCard).toBeInTheDocument();
+			fireEvent.blur(stop);
+			act(() => {
+				vi.advanceTimersByTime(WEB_NOW_PLAYING_CARD_MS + 500);
+			});
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			expect(bgmPlayback.current()?.status).toBe("playing");
+		} finally {
+			vi.useRealTimers();
 			vi.unstubAllEnvs();
 		}
 	});

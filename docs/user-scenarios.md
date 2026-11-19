@@ -3464,3 +3464,48 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 오류 | ZIP 아님·발표 아님·장 없음 → `slides_invalid_pptx`, 패키지 밖 경로 거부; e2e 깨진 PPTX 안내 | `slides-pptx.test.ts`; e2e "unreadable PPTX" |
 | PDF 작성 | 장마다 JPEG 한 쪽, xref 위치 정확 | `slides-pptx.test.ts` "image PDF writer" |
 | 좁은 폭 | 390px 에서 열기 단추·슬라이드·발표문이 화면 안 | e2e 390×844 |
+
+## UC-WEB-SETTINGS-FILES. 웹판 ADK 파일 목록에서 naia-settings 보기 (R32, 2026-11-20)
+
+웹판(브라우저) 사용자가 작업공간을 열면 `naia-settings` 아래에 데스크톱 ADK와 같은 `background`·`vrm-files`·`bgm-musics`·`nva-files` 폴더가 보입니다. 기본 배경과 아바타는 “앱 기본” 표시가 있는 기존 앱 자산으로 열립니다. 사용자가 가져오기 대상으로 배경 또는 아바타 폴더를 고르면, 올린 파일이 그 폴더에 표시되고 내려받을 수 있습니다.
+
+### Test Coverage Map — UC-WEB-SETTINGS-FILES
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 루트에 `naia-settings`, 그 안에 네 폴더 이름 | `web-settings-catalog.test.ts` R32; e2e 두 폭 |
+| 빈 목록 | 기본 배경·아바타를 탐색하는 동안 브라우저 저장소에 사용자 미디어가 생기지 않음 | e2e R32, `web-settings-catalog.test.ts` |
+| 진행 | 가져올 폴더와 저장 중 상태가 표시되고 저장 중 파일 선택을 잠금 | e2e R32 |
+| 성공 | 기본 배경 그림이 열리고 VRM·NVA가 목록에 보임. 올린 배경·VRM·NVA 파일은 저장 뒤 같은 목록에 나타남 | `e2e/web-settings-files-r32.spec.ts` (1280×720, 390×844) |
+| 오류 | 지원하지 않는 파일 형식은 안내 후 다시 선택할 수 있음. 미리 보기를 지원하지 않는 아바타는 내려받기 안내 표시 | e2e R32, `web-settings-catalog.test.ts` |
+| 좁은 폭 | 390×844에서 파일 목록을 다시 열고 새 파일을 선택할 수 있음 | e2e R32, `shots/r32-settings-files/R32-390.png` |
+
+## UC-WEB-SETTINGS-MUSIC. 웹판 ADK 파일 목록에서 올린 음악 보기 (R34, 2026-11-20)
+
+웹판(브라우저) 사용자가 음악 앱의 로컬 탭에 곡을 올리면, 작업공간의 `naia-settings/bgm-musics`에 같은 파일이 표시됩니다. 탐색기를 열어 둔 상태에서 곡을 올리거나 지워도 목록이 갱신되고, 곡을 선택하면 오디오 플레이어에서 열립니다.
+
+### Test Coverage Map — UC-WEB-SETTINGS-MUSIC
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 목록 | 음악이 없는 브라우저에서도 `bgm-musics` 폴더가 보임 | `e2e/web-settings-files-r32.spec.ts` R34 (두 폭) |
+| 진행 | 올리기 완료 후 열어 둔 폴더에 곡이 나타남 | `web-bgm-music.test.ts`와 `web-workspace-path.test.tsx` R34, e2e R34 |
+| 성공 | 같은 파일을 오디오 플레이어로 열고 음악 앱에서 지우면 목록도 갱신 | e2e R34 |
+| 오류 | 음악 형식 오류가 표시되고 목록에는 파일이 추가되지 않음 | e2e R34 |
+| 좁은 폭 | 390×844에서 음악 목록을 열고 곡을 선택할 수 있음 | e2e R34, `shots/r32-settings-files/R34-390.png` |
+
+## UC-WEB-BGM-NOWPLAYING. 웹판 "재생 중" 카드가 설정 창을 가리지 않기 (R36, 2026-11-20)
+
+웹판에서 YouTube 곡이 재생되기 시작하면 오른쪽 위에 “재생 중” 카드가 4초 동안 표시됩니다. 카드를 마우스 또는 키보드로 조작하는 동안은 카드를 계속 쓸 수 있습니다. 설정을 열면 카드가 숨겨져 탭과 닫기 단추를 바로 사용할 수 있습니다. 곡이 재생되는 동안 음악 바에서 곡 정보와 정지를 사용할 수 있습니다.
+
+배경: 대표님 원문(11/20 00:45~00:47) "그리고 이거 너무 가리고 겹치는데" (그림: yt-repro/luke-img/1573001374919037069.png, 1573001579957846058.png — 카드가 설정 창 탭 줄 오른쪽을 덮음).
+
+### Test Coverage Map — UC-WEB-BGM-NOWPLAYING
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 상태·진행 | 대기 중에는 카드가 없고 새 곡 재생 시 표시 | `BgmPlayer.test.tsx` R36, e2e R36 |
+| 성공 | 4초 뒤 카드 사라짐, 재생 상태는 `playing` 유지 | `BgmPlayer.test.tsx` R36 |
+| 유지 | 포인터나 카드 내 키보드 초점 중 하나가 남아 있으면 카드 유지 | `BgmPlayer.test.tsx` R36 |
+| 오류·정지 | 재생이 끝나거나 중단되면 카드도 닫힘 | e2e R36, `BgmPlayer.test.tsx` fix7d |
+| 좁은 폭·넓은 폭 | 1280×720·390×844에서 음악이 시작되어도 설정 탭과 닫기 단추를 누를 수 있음 | `e2e/web-bgm-nowplaying-r36.spec.ts`, `shots/r32-settings-files/R36-1280.png`·`R36-390.png` |

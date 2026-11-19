@@ -11,6 +11,7 @@ import {
 } from "react";
 import { t } from "../../lib/i18n";
 import { isKioskDemo } from "../../lib/kiosk-demo/flag";
+import { Logger } from "../../lib/logger";
 import { getStoredLayoutOrientation } from "../../lib/ui-preferences";
 import {
 	seedKioskAdkWorkspace,
@@ -29,6 +30,19 @@ import {
 } from "../../lib/web-runtime/web-adk-edit";
 import { getWebFs } from "../../lib/web-runtime/web-fs";
 import {
+	WEB_BGM_MUSIC_CHANGED_EVENT,
+	WEB_BGM_MUSIC_DIR,
+	readWebBgmMusicBlob,
+	webBgmFileName,
+} from "../../lib/web-runtime/web-bgm-music";
+import {
+	WEB_SETTINGS_ROOT,
+	isWebBundledSettingsDirectory,
+	mergeWebBundledSettingsEntries,
+	webSettingsImportExtensions,
+	type WebWorkspaceEntry,
+} from "../../lib/web-runtime/web-settings-catalog";
+import {
 	getWebWorkspaceFile,
 	importWebWorkspaceFile,
 	isWebWorkspaceImportDirectory,
@@ -39,12 +53,12 @@ import {
 	getWebAdkStatus,
 	subscribeWebAdkStatus,
 } from "../../lib/web-runtime/web-adk-status";
+import { resolveWorkspaceViewer } from "./viewer-registry";
 
 const Editor = lazy(() =>
 	import("./Editor").then((m) => ({ default: m.Editor })),
 );
-export type WebWorkspaceEntry = { name: string; kind: "file" | "directory" };
-type Entry = WebWorkspaceEntry;
+export type { WebWorkspaceEntry } from "../../lib/web-runtime/web-settings-catalog";
 type EntriesDirectory = FileSystemDirectoryHandle & {
 	values(): AsyncIterable<FileSystemHandle>;
 };
@@ -125,26 +139,38 @@ function Directory({
 	activeFile,
 	...importProps
 }: {
-	dir: FileSystemDirectoryHandle;
+	/** null 이면 OPFS 에 없는 앱 기본 폴더(R32). */
+	dir: FileSystemDirectoryHandle | null;
 	path: string;
 	onOpen: (path: string) => void;
 	activeFile?: string;
 } & ImportDirectoryProps) {
 	const { treeRevision } = importProps;
-	const [entries, setEntries] = useState<Entry[]>([]);
+	const [entries, setEntries] = useState<WebWorkspaceEntry[] | null>(null);
 	const [error, setError] = useState(false);
 	useEffect(() => {
 		let active = true;
 		(async () => {
 			try {
-				const found: Entry[] = [];
-				for await (const entry of (dir as EntriesDirectory).values()) {
-					if (!isVisibleWebWorkspaceEntry(entry.name, path)) continue;
-					found.push({ name: entry.name, kind: entry.kind });
+				const found: WebWorkspaceEntry[] = [];
+				if (dir) {
+					for await (const entry of (dir as EntriesDirectory).values()) {
+						if (!isVisibleWebWorkspaceEntry(entry.name, path)) continue;
+						found.push({ name: entry.name, kind: entry.kind });
+					}
 				}
-				const sorted = sortWebWorkspaceEntries(found, path);
-				if (active) setEntries(sorted);
-			} catch {
+				const merged = isKioskDemo()
+					? found
+					: mergeWebBundledSettingsEntries(path, found);
+				const sorted = sortWebWorkspaceEntries(merged, path);
+				if (active) {
+					setEntries(sorted);
+					setError(false);
+				}
+			} catch (cause) {
+				Logger.debug("WebWorkspace", "Could not list directory", {
+					error: cause instanceof Error ? cause.name : "UnknownError",
+				});
 				if (active) setError(true);
 			}
 		})();
@@ -152,10 +178,18 @@ function Directory({
 			active = false;
 		};
 	}, [dir, path, treeRevision]);
-	if (error) return <p role="alert">Unable to read directory</p>;
+	if (error) return <p role="alert">{t("webExplorer.readFailed")}</p>;
+	if (path === WEB_BGM_MUSIC_DIR) {
+		if (!entries) {
+			return <p className="web-workspace-edit-hint" role="status">{t("bgm.loading")}</p>;
+		}
+		if (entries.length === 0) {
+			return <p className="web-workspace-edit-hint">{t("bgm.webNoTracks")}</p>;
+		}
+	}
 	return (
 		<ul className="web-workspace-list">
-			{entries.map((entry) =>
+			{entries?.map((entry) =>
 				entry.kind === "directory" ? (
 					<Folder
 						key={entry.name}
@@ -173,7 +207,12 @@ function Directory({
 							aria-pressed={activeFile === `${path}/${entry.name}`}
 							onClick={() => onOpen(`${path}/${entry.name}`)}
 						>
-							📄 {entry.name}
+							📄 {entry.name}{" "}
+							{entry.bundled && (
+								<span className="web-workspace-bundled">
+									{t("webExplorer.bundled")}
+								</span>
+							)}
 						</button>
 					</li>
 				),
@@ -190,43 +229,63 @@ function Folder({
 	activeFile,
 	...importProps
 }: {
-	parent: FileSystemDirectoryHandle;
+	parent: FileSystemDirectoryHandle | null;
 	name: string;
 	path: string;
 	onOpen: (path: string) => void;
 	activeFile?: string;
 } & ImportDirectoryProps) {
-	const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
-	const [error, setError] = useState(false);
-	const { importTargetPath, onSelectImportTarget } = importProps;
+	const { importTargetPath, onSelectImportTarget, treeRevision } = importProps;
 	const shouldAutoOpen = Boolean(
 		activeFile?.startsWith(`${path}/`) ||
 		importTargetPath === path ||
 		importTargetPath?.startsWith(`${path}/`),
 	);
+	const [open, setOpen] = useState(shouldAutoOpen);
+	// undefined: 아직 안 읽음. null: 브라우저에 저장된 파일이 없는 기본 폴더.
+	const [dir, setDir] = useState<FileSystemDirectoryHandle | null>();
+	const [error, setError] = useState(false);
 	useEffect(() => {
-		if (shouldAutoOpen && !dir) {
-			void parent
-				.getDirectoryHandle(name)
-				.then(setDir)
-				.catch(() => setError(true));
-		}
-	}, [shouldAutoOpen, dir, parent, name]);
+		if (shouldAutoOpen) setOpen(true);
+	}, [shouldAutoOpen, activeFile, importTargetPath]);
+	useEffect(() => {
+		if (!open) return;
+		let active = true;
+		void (async () => {
+			try {
+				const handle = parent ? await parent.getDirectoryHandle(name) : null;
+				if (active) {
+					setDir(handle);
+					setError(false);
+				}
+			} catch (cause) {
+				if (!active) return;
+				const bundled = !isKioskDemo() && isWebBundledSettingsDirectory(path);
+				if (
+					bundled &&
+					cause instanceof DOMException &&
+					cause.name === "NotFoundError"
+				) {
+					setDir(null);
+					setError(false);
+					return;
+				}
+				setError(true);
+			}
+		})();
+		return () => {
+			active = false;
+		};
+	}, [open, parent, name, path, treeRevision]);
 	return (
 		<li>
 			<details
-				open={shouldAutoOpen || undefined}
-				onToggle={(event) => {
-					if (event.currentTarget.open && !dir)
-						void parent
-							.getDirectoryHandle(name)
-							.then(setDir)
-							.catch(() => setError(true));
-				}}
+				open={open}
+				onToggle={(event) => setOpen(event.currentTarget.open)}
 			>
 				<summary>📁 {name}</summary>
-				{error && <p role="alert">Unable to open folder</p>}
-				{dir && (
+				{error && <p role="alert">{t("webExplorer.readFailed")}</p>}
+				{!error && dir !== undefined && (
 					<>
 						{onSelectImportTarget && isWebWorkspaceImportDirectory(path) && (
 							<button
@@ -274,6 +333,7 @@ export function isMobileWorkspaceViewport(): boolean {
 
 function workspaceImportError(error: unknown) {
 	if (error instanceof DOMException) {
+		if (error.name === "DataError") return "webExplorer.importType";
 		if (error.name === "QuotaExceededError") return "webExplorer.importFull";
 		if (error.name === "NotFoundError" || error.name === "TypeMismatchError")
 			return "webExplorer.importFolderChanged";
@@ -281,6 +341,52 @@ function workspaceImportError(error: unknown) {
 			return "webExplorer.importUnavailable";
 	}
 	return "webExplorer.importFailed";
+}
+
+function WorkspaceMusicPreview({ path, name }: { path: string; name: string }) {
+	const [url, setUrl] = useState<string>();
+	const [error, setError] = useState(false);
+	useEffect(() => {
+		let active = true;
+		let objectUrl: string | undefined;
+		void readWebBgmMusicBlob(path)
+			.then((blob) => {
+				if (!active) return;
+				objectUrl = URL.createObjectURL(blob);
+				setUrl(objectUrl);
+			})
+			.catch((cause) => {
+				Logger.debug("WebWorkspace", "Could not open imported audio", {
+					error: cause instanceof Error ? cause.name : "UnknownError",
+				});
+				if (active) setError(true);
+			});
+		return () => {
+			active = false;
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		};
+	}, [path]);
+	return (
+		<div className="workspace-editor__media-viewer">
+			{error ? (
+				<p className="workspace-editor__media-error" role="alert">
+					{t("workspace.mediaOpenError")}
+				</p>
+			) : url ? (
+				<audio
+					controls
+					preload="metadata"
+					aria-label={name}
+					src={url}
+					onError={() => setError(true)}
+				>
+					<track kind="captions" />
+				</audio>
+			) : (
+				<p role="status">{t("bgm.loading")}</p>
+			)}
+		</div>
+	);
 }
 
 export default function WebWorkspace() {
@@ -307,6 +413,10 @@ export default function WebWorkspace() {
 	const importInput = useRef<HTMLInputElement>(null);
 	const pickedTarget = useRef<WebWorkspaceImportTarget | null>(null);
 	const [importTarget, setImportTarget] = useState<WebWorkspaceImportTarget | null>(null);
+	const importExtensions = importTarget
+		? webSettingsImportExtensions(importTarget.path)
+		: undefined;
+	const importTypes = { types: importExtensions?.join(", ") ?? "" };
 	const [importStatus, setImportStatus] = useState<"idle" | "saving" | "done">("idle");
 	const [importError, setImportError] = useState<ReturnType<typeof workspaceImportError> | null>(null);
 	const [importedPath, setImportedPath] = useState("");
@@ -330,12 +440,15 @@ export default function WebWorkspace() {
 				setExplorerOpen(false);
 			}
 		};
+		const refreshMusic = () => setTreeRevision((previous) => previous + 1);
+		window.addEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshMusic);
 		window.addEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
 		window.addEventListener(
 			"naia:layout-orientation-change",
 			syncExplorerForViewport,
 		);
 		return () => {
+			window.removeEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshMusic);
 			window.removeEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
 			window.removeEventListener(
 				"naia:layout-orientation-change",
@@ -449,6 +562,9 @@ export default function WebWorkspace() {
 		}
 	}
 	const showExplorer = explorerOpen || !file;
+	const isSettingsModel =
+		file.startsWith(`${WEB_SETTINGS_ROOT}/`) && /\.(vrm|nva)$/i.test(file);
+	const musicName = resolveWorkspaceViewer(file) === "audio" ? null : webBgmFileName(file);
 	return (
 		<div
 			ref={workspaceRef}
@@ -520,7 +636,16 @@ export default function WebWorkspace() {
 							>
 								{t("webExplorer.importFile")}
 							</button>
-							<input ref={importInput} type="file" hidden onChange={handleImportFile} />
+							{importExtensions && !importError && (
+								<p>{t("webExplorer.importType", importTypes)}</p>
+							)}
+							<input
+								ref={importInput}
+								type="file"
+								hidden
+								accept={importExtensions?.join(",")}
+								onChange={handleImportFile}
+							/>
 							{importStatus !== "idle" && (
 								<p role="status">
 									{importStatus === "saving"
@@ -528,7 +653,7 @@ export default function WebWorkspace() {
 										: t("webExplorer.importDone", { path: importedPath })}
 								</p>
 							)}
-							{importError && <p role="alert">{t(importError)}</p>}
+							{importError && <p role="alert">{t(importError, importTypes)}</p>}
 						</div>
 					)}
 					{showPath && (
@@ -610,14 +735,22 @@ export default function WebWorkspace() {
 									"고치면 바로 저장되고, 지나의 다음 대답부터 반영돼요. 새로고침하면 원본으로 돌아갑니다."}
 							</p>
 						)}
-						<Suspense fallback={null}>
-							<Editor
-								key={`${file}#${editorRevision}`}
-								filePath={file}
-								readOnly={!editable}
-								workspaceRoot={WEB_ADK_PATH}
-							/>
-						</Suspense>
+						{isSettingsModel ? (
+							<p className="web-workspace-edit-hint" role="status">
+								{t("webExplorer.binaryPreview")}
+							</p>
+						) : musicName ? (
+							<WorkspaceMusicPreview key={file} path={file} name={musicName} />
+						) : (
+							<Suspense fallback={null}>
+								<Editor
+									key={`${file}#${editorRevision}`}
+									filePath={file}
+									readOnly={!editable}
+									workspaceRoot={WEB_ADK_PATH}
+								/>
+							</Suspense>
+						)}
 					</main>
 				</>
 			)}

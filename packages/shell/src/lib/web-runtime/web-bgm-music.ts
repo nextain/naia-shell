@@ -11,6 +11,7 @@ import { WEB_ADK_OPFS_DIR, WEB_ADK_PATH } from "./web-adk-path";
 
 const BGM_PARTS = ["naia-settings", "bgm-musics"] as const;
 export const WEB_BGM_MUSIC_DIR = `${WEB_ADK_PATH}/${BGM_PARTS.join("/")}`;
+export const WEB_BGM_MUSIC_CHANGED_EVENT = "naia-web-bgm-music-changed";
 /** 한 파일 상한. 브라우저 저장소 할당량을 한 곡이 다 쓰지 않게 한다. */
 export const WEB_BGM_MAX_BYTES = 200 * 1024 * 1024;
 
@@ -164,6 +165,8 @@ export async function importWebBgmMusic(file: File): Promise<string> {
 			error instanceof Error ? error.message : String(error),
 		);
 	}
+	// R34: 열려 있는 ADK 파일 목록도 바로 갱신한다.
+	globalThis.window?.dispatchEvent(new Event(WEB_BGM_MUSIC_CHANGED_EVENT));
 	return `${WEB_BGM_MUSIC_DIR}/${name}`;
 }
 
@@ -187,4 +190,5 @@ export async function removeWebBgmMusic(path: string): Promise<void> {
 	} catch (error) {
 		if (!isNotFound(error)) throw error;
 	}
+	globalThis.window?.dispatchEvent(new Event(WEB_BGM_MUSIC_CHANGED_EVENT));
 }

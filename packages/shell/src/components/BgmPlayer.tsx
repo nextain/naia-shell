@@ -76,6 +76,7 @@ import {
 	useUiPreference,
 } from "../lib/ui-preferences";
 import { useAvatarStore } from "../stores/avatar";
+import { useAppStore } from "../stores/app";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
@@ -292,6 +293,8 @@ const YT_APP_H_KEY = "yt-app-height";
 // YouTube IFrame 치명 onError: 프레임 확정 전이라도 현 세대 것이면 곧장 넘긴다.
 const FATAL_YOUTUBE_ERROR_CODES = new Set(["2", "5", "100", "101", "150"]);
 const YT_APP_H_DEFAULT = 360;
+/** R36: 웹판 "재생 중" 카드가 새 곡 시작 뒤 떠 있는 시간. */
+export const WEB_NOW_PLAYING_CARD_MS = 4_000;
 const YT_APP_H_MIN = 200;
 const YT_APP_H_MAX = 700;
 // Marquee kicks in when track label exceeds this character count
@@ -1709,6 +1712,36 @@ export function BgmPlayer({ naia }: Props) {
 		currentYtRef.current = currentYt;
 	}, [currentYt]);
 
+	const settingsOpen = useAppStore((state) => state.activeApp === "settings");
+	const [nowPlayingCardShown, setNowPlayingCardShown] = useState(false);
+	const [nowPlayingCardHovered, setNowPlayingCardHovered] = useState(false);
+	const [nowPlayingCardFocused, setNowPlayingCardFocused] = useState(false);
+	const nowPlayingCardKey =
+		import.meta.env.MODE === "web" && playing && source === "youtube"
+			? currentYt?.id
+			: undefined;
+	useEffect(() => {
+		if (nowPlayingCardKey) {
+			Logger.debug("BgmPlayer", "Showing web Now Playing card", {
+				videoId: nowPlayingCardKey,
+			});
+		}
+		setNowPlayingCardShown(Boolean(nowPlayingCardKey));
+	}, [nowPlayingCardKey]);
+	useEffect(() => {
+		if (nowPlayingCardKey && !settingsOpen) return;
+		setNowPlayingCardHovered(false);
+		setNowPlayingCardFocused(false);
+	}, [nowPlayingCardKey, settingsOpen]);
+	useEffect(() => {
+		if (!nowPlayingCardShown || nowPlayingCardHovered || nowPlayingCardFocused) return;
+		const timer = setTimeout(
+			() => setNowPlayingCardShown(false),
+			WEB_NOW_PLAYING_CARD_MS,
+		);
+		return () => clearTimeout(timer);
+	}, [nowPlayingCardShown, nowPlayingCardHovered, nowPlayingCardFocused, nowPlayingCardKey]);
+
 	useEffect(() => {
 		const handleBgmEvent = (e: { payload: string }) => {
 			try {
@@ -2984,16 +3017,24 @@ export function BgmPlayer({ naia }: Props) {
 					</div>,
 					document.body,
 				)}
-			{import.meta.env.MODE === "web" &&
-				playing &&
-				source === "youtube" &&
+			{nowPlayingCardKey &&
 				currentYt &&
+				nowPlayingCardShown &&
+				!settingsOpen &&
 				createPortal(
 					<div
 						className="bgm-web-now-playing"
 						data-testid="bgm-youtube-now-playing"
 						role="region"
 						aria-label="YouTube 재생 중"
+						onPointerEnter={() => setNowPlayingCardHovered(true)}
+						onPointerLeave={() => setNowPlayingCardHovered(false)}
+						onFocus={() => setNowPlayingCardFocused(true)}
+						onBlur={(event) => {
+							if (!event.currentTarget.contains(event.relatedTarget)) {
+								setNowPlayingCardFocused(false);
+							}
+						}}
 					>
 						<div className="bgm-web-now-playing__preview">
 							<img

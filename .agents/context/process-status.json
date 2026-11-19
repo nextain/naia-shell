@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-09T00:40:44.605043+00:00",
+  "last_updated": "2026-11-19T18:02:26Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,60 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_bgm_nowplaying_r36_20261120": {
+      "requirement_id": "R36",
+      "title": "웹판 설정 창의 재생 중 카드 겹침 해소",
+      "branch": "alpha/webgpu-r32-settings-files-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-BGM-NOWPLAYING",
+      "requirements": "docs/requirements.md FR-WEB-BGM-NOWPLAYING.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "implementation_validating",
+      "verification": "Vitest BgmPlayer.test.tsx R36 1/1. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.",
+      "evidence": "packages/shell/e2e/web-bgm-nowplaying-r36.spec.ts",
+      "last_updated": "2026-11-19T18:02:26Z"
+    },
+    "web_settings_music_r34_20261120": {
+      "requirement_id": "R34",
+      "title": "웹판 ADK 작업공간의 로컬 음악 표시",
+      "branch": "alpha/webgpu-r32-settings-files-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-SETTINGS-MUSIC",
+      "requirements": "docs/requirements.md FR-WEB-SETTINGS-MUSIC.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "implementation_validating",
+      "verification": "Vitest web-bgm-music.test.ts·web-workspace-path.test.tsx R34 2/2. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.",
+      "evidence": "packages/shell/e2e/web-settings-files-r32.spec.ts",
+      "last_updated": "2026-11-19T18:02:19Z"
+    },
+    "web_settings_files_r32_20261120": {
+      "requirement_id": "R32",
+      "title": "웹판 ADK 기본 배경·아바타와 가져온 미디어",
+      "branch": "alpha/webgpu-r32-settings-files-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-SETTINGS-FILES",
+      "requirements": "docs/requirements.md FR-WEB-SETTINGS-FILES.1–4",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "implementation_validating",
+      "verification": "Vitest web-settings-catalog.test.ts 7/7. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.",
+      "evidence": "packages/shell/e2e/web-settings-files-r32.spec.ts",
+      "last_updated": "2026-11-19T18:02:05Z"
+    },
     "web_ir_kiosk_fix7j_20261109": {
       "issue": 824,
       "title": "키오스크 시연판 7판 열째 묶음(fix7j): 매 장면 GPU 안팎 판정을 중단하고 원본 해상도 정확한 연결 성분(BFS/라벨링, 반복 상한 없음)으로 구운 .stacked.mp4 알파 재생 + result-fix7hrev1 반례 전수 순수 함수 시험 고정",
