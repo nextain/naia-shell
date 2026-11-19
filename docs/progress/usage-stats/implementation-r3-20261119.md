@@ -34,3 +34,10 @@ az monitor app-insights component delete -g rg-naia-dev-koreacentral -a appi-nai
 az monitor log-analytics workspace delete -g rg-naia-dev-koreacentral -n law-naia-shell-dev-r3-20261119 --yes
 az consumption budget delete-with-rg -g rg-naia-dev-koreacentral -n usage-stats-shell-dev-r3-20261119
 ```
+
+## 독립 검수 기록
+
+- 1회차(codex luna max): 불통과, 막음 3·고침 2. 고침 회차에서 막음 1·2와 고침 1·2를 닫음.
+- 2회차(codex luna max): 불통과. 1회차 지적 1·2·4·5 닫힘, 3(운영 0건)은 운영 접속 금지 범위라 미확인으로 남김.
+- 남은 막음: 이 PR 의 대상 가지가 main 이 아니라 회차 2 가지(`naia/usage-stats-r2-20261119`)다. 회차 2 PR #883 이 0.3 웹판 통합과 함께 main 에 들어간 뒤 `gh pr edit 890 -R nextain/naia-shell --base main` 으로 바꾼다. 그전까지 의존으로 막힘이며 병합하지 않는다.
+- 남은 참고: 조회문에 실행 표식이 고정돼 있다. 다음 시험 회차에서 매개변수로 바꾼다.
