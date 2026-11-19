@@ -665,7 +665,7 @@ test("managed model pull confirms an exact tag, recovers, filters stale events a
 	await expect(
 		page.getByRole("link", { name: "Apache License 2.0" }),
 	).toHaveAttribute("href", "https://www.apache.org/licenses/LICENSE-2.0");
-	await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+	await page.getByTitle(/^Hide chat \((Ctrl\+B|⌘B)\)$/).click();
 	await page.setViewportSize({ width: 360, height: 800 });
 	const selectBox = await candidateSelect.boundingBox();
 	expect(selectBox).not.toBeNull();

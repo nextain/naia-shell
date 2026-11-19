@@ -623,7 +623,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await boot(page);
 		await setCatalog(page, READY_CATALOG);
 		await openProjectApp(page);
-		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+		await page.getByTitle(/^Hide chat \((Ctrl\+B|⌘B)\)$/).click();
 		await expect(page.locator(".naia-overlay")).toHaveCount(0);
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.getByRole("button", { name: /Example App/ }).click();
@@ -647,7 +647,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await boot(page);
 		await setCatalog(page, READY_CATALOG);
 		await openProjectApp(page);
-		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+		await page.getByTitle(/^Hide chat \((Ctrl\+B|⌘B)\)$/).click();
 		await expect(page.locator(".naia-overlay")).toHaveCount(0);
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.getByRole("button", { name: /Example App/ }).click();
@@ -797,7 +797,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			],
 		});
 		await openProjectApp(page);
-		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+		await page.getByTitle(/^Hide chat \((Ctrl\+B|⌘B)\)$/).click();
 		await expect(page.locator(".naia-overlay")).toHaveCount(0);
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.getByRole("button", { name: /Practice Class/ }).click();

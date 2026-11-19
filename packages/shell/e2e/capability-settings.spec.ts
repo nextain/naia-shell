@@ -142,7 +142,7 @@ test.describe("Capability-driven settings (#365)", () => {
 			page.locator('[data-testid="model-price-sort-basis"]'),
 		).toContainText(/3\s*:\s*.*1/);
 		await expect(modelSelect.locator('option[value="solar-mini"]')).toHaveText(
-			/Solar Mini \(Price per 1M tokens: Input 165 credits \/ Output 165 credits\)/,
+			"Solar Mini (100만 토큰당 가격: 입력 165 크레딧 / 출력 165 크레딧)",
 		);
 		await expect(modelSelect.locator("option")).toHaveCount(5);
 		await expect(
@@ -167,7 +167,7 @@ test.describe("Capability-driven settings (#365)", () => {
 			modelSelect.locator('option[value="gpt-5.6-sol"]'),
 		).toHaveCount(0);
 		await expect(modelSelect.locator('option[value="motif-3"]')).toHaveText(
-			/Motif 3 \(Price per 1M tokens: Input 260 credits \/ Output 1\.04K credits\)/,
+			"Motif 3 (100만 토큰당 가격: 입력 260 크레딧 / 출력 1.04K 크레딧)",
 		);
 		const priceOrder = await modelSelect
 			.locator("option")
