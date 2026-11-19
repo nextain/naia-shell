@@ -3464,3 +3464,17 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 성공 | 기본 배경 그림이 열리고 VRM·NVA가 목록에 보임. 올린 배경·VRM·NVA 파일은 저장 뒤 같은 목록에 나타남 | `e2e/web-settings-files-r32.spec.ts` (1280×720, 390×844) |
 | 오류 | 지원하지 않는 파일 형식은 안내 후 다시 선택할 수 있음. 미리 보기를 지원하지 않는 아바타는 내려받기 안내 표시 | e2e R32, `web-settings-catalog.test.ts` |
 | 좁은 폭 | 390×844에서 파일 목록을 다시 열고 새 파일을 선택할 수 있음 | e2e R32, `shots/r32-settings-files/R32-390.png` |
+
+## UC-WEB-SETTINGS-MUSIC. 웹판 ADK 파일 목록에서 올린 음악 보기 (R34, 2026-11-20)
+
+웹판(브라우저) 사용자가 음악 앱의 로컬 탭에 곡을 올리면, 작업공간의 `naia-settings/bgm-musics`에 같은 파일이 표시됩니다. 탐색기를 열어 둔 상태에서 곡을 올리거나 지워도 목록이 갱신되고, 곡을 선택하면 오디오 플레이어에서 열립니다.
+
+### Test Coverage Map — UC-WEB-SETTINGS-MUSIC
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 목록 | 음악이 없는 브라우저에서도 `bgm-musics` 폴더가 보임 | `e2e/web-settings-files-r32.spec.ts` R34 (두 폭) |
+| 진행 | 올리기 완료 후 열어 둔 폴더에 곡이 나타남 | `web-bgm-music.test.ts`와 `web-workspace-path.test.tsx` R34, e2e R34 |
+| 성공 | 같은 파일을 오디오 플레이어로 열고 음악 앱에서 지우면 목록도 갱신 | e2e R34 |
+| 오류 | 음악 형식 오류가 표시되고 목록에는 파일이 추가되지 않음 | e2e R34 |
+| 좁은 폭 | 390×844에서 음악 목록을 열고 곡을 선택할 수 있음 | e2e R34, `shots/r32-settings-files/R34-390.png` |

@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { zipSync } from "fflate";
 import {
+	openBgmApp,
 	openWebShellWithBgm,
+	silentWav,
 	WEB_BGM_VIEWPORTS,
 } from "./helpers/web-bgm";
 
@@ -236,6 +238,85 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 				await page.screenshot({
 					path: shots + "/R32-" + viewport.width + ".png",
 				});
+		});
+
+		test("R34 refreshes the open ADK music folder after upload and removal", async ({
+			page,
+		}) => {
+			await openWebShellWithBgm(page, { openBgm: false });
+			const tree = await openWorkspace(page);
+			const music = await openFolder(
+				await openFolder(tree, "naia-settings"),
+				"bgm-musics",
+			);
+			await expect(music).toContainText("아직 음악이 없습니다");
+
+			// Both widths use the music app's real picker and OPFS import path.
+			await openBgmApp(page);
+			await page.locator(".bgm-app-tab").nth(1).click();
+			const wav = silentWav();
+			await page.getByTestId("bgm-local-file-input").setInputFiles([
+				{ name: "내 노래.wav", mimeType: "audio/wav", buffer: wav },
+				{
+					name: "메모.txt",
+					mimeType: "text/plain",
+					buffer: Buffer.from("memo"),
+				},
+			]);
+			const rows = page.locator(".bgm-local-row");
+			await expect(rows).toHaveCount(1);
+			await expect(
+				page.getByTestId("bgm-local-import-message"),
+			).toHaveAttribute("role", "alert");
+			await expect(page.getByTestId("bgm-local-import-message")).toContainText(
+				"음악 파일",
+			);
+			await page
+				.locator(".bgm-icon")
+				.evaluate((element: HTMLElement) => element.click());
+
+			const song = music.getByRole("button", { name: /내 노래\.wav/ });
+			await expect(song).toBeVisible();
+			await expect(
+				music.getByRole("button", { name: /메모\.txt/ }),
+			).toHaveCount(0);
+			if (shots && viewport.width === 390)
+				await page.screenshot({ path: shots + "/R34-390.png" });
+
+			await song.click();
+			const viewer = page.getByTestId("web-workspace-viewer");
+			await expect(viewer.locator(".web-workspace-viewer-bar code")).toHaveText(
+				"내 노래.wav",
+			);
+			const audio = viewer.locator("audio");
+			await expect(viewer.locator(".workspace-editor__media-rate select")).toBeVisible();
+			await expect
+				.poll(() =>
+					audio.evaluate((element: HTMLAudioElement) => element.readyState),
+				)
+				.toBeGreaterThan(0);
+			const bytes = await audio.evaluate(async (element: HTMLAudioElement) =>
+				Array.from(
+					new Uint8Array(await (await fetch(element.src)).arrayBuffer()),
+				),
+			);
+			expect(Buffer.from(bytes)).toEqual(wav);
+			if (shots) {
+				const name =
+					viewport.width === 390 ? "R34-playback-390.png" : "R34-1280.png";
+				await page.screenshot({ path: shots + "/" + name });
+			}
+
+			await showTree(page, tree);
+			await openFolder(await openFolder(tree, "naia-settings"), "bgm-musics");
+			await openBgmApp(page);
+			await page.getByTestId("bgm-local-remove").click();
+			await expect(rows).toHaveCount(0);
+			await page
+				.locator(".bgm-icon")
+				.evaluate((element: HTMLElement) => element.click());
+			await expect(song).toHaveCount(0);
+			await expect(music).toContainText("아직 음악이 없습니다");
 		});
 	});
 }

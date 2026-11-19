@@ -30,6 +30,12 @@ import {
 } from "../../lib/web-runtime/web-adk-edit";
 import { getWebFs } from "../../lib/web-runtime/web-fs";
 import {
+	WEB_BGM_MUSIC_CHANGED_EVENT,
+	WEB_BGM_MUSIC_DIR,
+	readWebBgmMusicBlob,
+	webBgmFileName,
+} from "../../lib/web-runtime/web-bgm-music";
+import {
 	WEB_SETTINGS_ROOT,
 	isWebBundledSettingsDirectory,
 	mergeWebBundledSettingsEntries,
@@ -47,6 +53,7 @@ import {
 	getWebAdkStatus,
 	subscribeWebAdkStatus,
 } from "../../lib/web-runtime/web-adk-status";
+import { resolveWorkspaceViewer } from "./viewer-registry";
 
 const Editor = lazy(() =>
 	import("./Editor").then((m) => ({ default: m.Editor })),
@@ -172,6 +179,14 @@ function Directory({
 		};
 	}, [dir, path, treeRevision]);
 	if (error) return <p role="alert">{t("webExplorer.readFailed")}</p>;
+	if (path === WEB_BGM_MUSIC_DIR) {
+		if (!entries) {
+			return <p className="web-workspace-edit-hint" role="status">{t("bgm.loading")}</p>;
+		}
+		if (entries.length === 0) {
+			return <p className="web-workspace-edit-hint">{t("bgm.webNoTracks")}</p>;
+		}
+	}
 	return (
 		<ul className="web-workspace-list">
 			{entries?.map((entry) =>
@@ -328,6 +343,52 @@ function workspaceImportError(error: unknown) {
 	return "webExplorer.importFailed";
 }
 
+function WorkspaceMusicPreview({ path, name }: { path: string; name: string }) {
+	const [url, setUrl] = useState<string>();
+	const [error, setError] = useState(false);
+	useEffect(() => {
+		let active = true;
+		let objectUrl: string | undefined;
+		void readWebBgmMusicBlob(path)
+			.then((blob) => {
+				if (!active) return;
+				objectUrl = URL.createObjectURL(blob);
+				setUrl(objectUrl);
+			})
+			.catch((cause) => {
+				Logger.debug("WebWorkspace", "Could not open imported audio", {
+					error: cause instanceof Error ? cause.name : "UnknownError",
+				});
+				if (active) setError(true);
+			});
+		return () => {
+			active = false;
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		};
+	}, [path]);
+	return (
+		<div className="workspace-editor__media-viewer">
+			{error ? (
+				<p className="workspace-editor__media-error" role="alert">
+					{t("workspace.mediaOpenError")}
+				</p>
+			) : url ? (
+				<audio
+					controls
+					preload="metadata"
+					aria-label={name}
+					src={url}
+					onError={() => setError(true)}
+				>
+					<track kind="captions" />
+				</audio>
+			) : (
+				<p role="status">{t("bgm.loading")}</p>
+			)}
+		</div>
+	);
+}
+
 export default function WebWorkspace() {
 	const status = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
 	const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
@@ -379,12 +440,15 @@ export default function WebWorkspace() {
 				setExplorerOpen(false);
 			}
 		};
+		const refreshMusic = () => setTreeRevision((previous) => previous + 1);
+		window.addEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshMusic);
 		window.addEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
 		window.addEventListener(
 			"naia:layout-orientation-change",
 			syncExplorerForViewport,
 		);
 		return () => {
+			window.removeEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshMusic);
 			window.removeEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
 			window.removeEventListener(
 				"naia:layout-orientation-change",
@@ -500,6 +564,7 @@ export default function WebWorkspace() {
 	const showExplorer = explorerOpen || !file;
 	const isSettingsModel =
 		file.startsWith(`${WEB_SETTINGS_ROOT}/`) && /\.(vrm|nva)$/i.test(file);
+	const musicName = resolveWorkspaceViewer(file) === "audio" ? null : webBgmFileName(file);
 	return (
 		<div
 			ref={workspaceRef}
@@ -674,6 +739,8 @@ export default function WebWorkspace() {
 							<p className="web-workspace-edit-hint" role="status">
 								{t("webExplorer.binaryPreview")}
 							</p>
+						) : musicName ? (
+							<WorkspaceMusicPreview key={file} path={file} name={musicName} />
 						) : (
 							<Suspense fallback={null}>
 								<Editor

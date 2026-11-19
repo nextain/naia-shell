@@ -9,6 +9,7 @@ import {
 	setWebAdkStatus,
 } from "../../../lib/web-runtime/web-adk-status";
 import { setWebAssetsModeForTests } from "../../../lib/web-runtime/web-assets";
+import { WEB_BGM_MUSIC_CHANGED_EVENT } from "../../../lib/web-runtime/web-bgm-music";
 import {
 	getWebWorkspaceFile,
 	importWebWorkspaceFile,
@@ -142,6 +143,50 @@ describe("web workspace path", () => {
 		});
 		expect([...files.entries()]).toEqual(before);
 		expect(stagedFiles.size).toBe(0);
+	});
+
+	it("R34 refreshes an open bgm-musics folder when music is added and removed", async () => {
+		await setLocale("ko");
+		let songPresent = false;
+		const music = {
+			name: "bgm-musics",
+			kind: "directory",
+			async *values() {
+				if (songPresent) yield { name: "새 노래.wav", kind: "file" };
+			},
+		};
+		const settings = {
+			name: "naia-settings",
+			kind: "directory",
+			async *values() {
+				if (songPresent) yield music;
+			},
+			async getDirectoryHandle() {
+				if (!songPresent) throw new DOMException("Missing directory", "NotFoundError");
+				return music;
+			},
+		};
+		const workspace = {
+			getDirectoryHandle: async () => settings,
+			async *values() { yield settings; },
+		};
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => ({ getDirectoryHandle: async () => workspace }),
+			},
+		});
+		setWebAdkStatus({ phase: "ready" });
+		render(<WebWorkspace />);
+		fireEvent.click(await screen.findByText("📁 naia-settings"));
+		fireEvent.click(await screen.findByText("📁 bgm-musics"));
+		expect(await screen.findByText(/아직 음악이 없습니다/)).toBeVisible();
+
+		songPresent = true;
+		act(() => { window.dispatchEvent(new Event(WEB_BGM_MUSIC_CHANGED_EVENT)); });
+		expect(await screen.findByRole("button", { name: /새 노래\.wav/ })).toBeVisible();
+		songPresent = false;
+		act(() => { window.dispatchEvent(new Event(WEB_BGM_MUSIC_CHANGED_EVENT)); });
+		expect(await screen.findByText(/아직 음악이 없습니다/)).toBeVisible();
 	});
 
 	it("shows the configured browser workspace path", () => {

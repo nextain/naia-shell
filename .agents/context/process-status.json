@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T18:02:05Z",
+  "last_updated": "2026-11-19T18:02:19Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_settings_music_r34_20261120": {
+      "requirement_id": "R34",
+      "title": "웹판 ADK 작업공간의 로컬 음악 표시",
+      "branch": "alpha/webgpu-r32-settings-files-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-SETTINGS-MUSIC",
+      "requirements": "docs/requirements.md FR-WEB-SETTINGS-MUSIC.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "implementation_validating",
+      "verification": "Vitest web-bgm-music.test.ts·web-workspace-path.test.tsx R34 2/2. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.",
+      "evidence": "packages/shell/e2e/web-settings-files-r32.spec.ts",
+      "last_updated": "2026-11-19T18:02:19Z"
+    },
     "web_settings_files_r32_20261120": {
       "requirement_id": "R32",
       "title": "웹판 ADK 기본 배경·아바타와 가져온 미디어",

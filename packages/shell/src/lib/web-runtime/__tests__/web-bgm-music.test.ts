@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	WEB_BGM_MAX_BYTES,
+	WEB_BGM_MUSIC_CHANGED_EVENT,
 	WEB_BGM_MUSIC_DIR,
 	WebBgmImportError,
 	importWebBgmMusic,
@@ -151,4 +152,17 @@ describe("R10 web local music import (OPFS)", () => {
 		expect(isWebBgmAudioFile({ name: "voice", type: "audio/webm" })).toBe(true);
 		expect(isWebBgmAudioFile({ name: "a.png", type: "image/png" })).toBe(false);
 	});
+});
+
+it("R34 notifies the workspace after a music file is saved or removed", async () => {
+	const root = stubOpfs();
+	const window = new EventTarget();
+	vi.stubGlobal("window", window);
+	const sizes: number[] = [];
+	window.addEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, () => {
+		sizes.push(bgmDir(root)?.files.size ?? 0);
+	});
+	const path = await importWebBgmMusic(new File(["audio"], "song.wav"));
+	await removeWebBgmMusic(path);
+	expect(sizes).toEqual([1, 0]);
 });

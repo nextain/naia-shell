@@ -2096,3 +2096,9 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-SETTINGS-FILES.2 | 기본 배경, VRM, NVA 묶음의 매니페스트는 “앱 기본”으로 표시되고 기존 `/backgrounds`·`/avatars`·`/nva` 자산을 읽습니다. 실제 브라우저 저장소 파일과 이름이 같으면 저장된 파일을 엽니다. 기본 자산은 브라우저 파일 저장소에 따로 보관하지 않습니다. | Pending |
 | FR-WEB-SETTINGS-FILES.3 | 작업공간 가져오기에서 `background`·`vrm-files`·`nva-files`를 선택할 수 있습니다. 올린 배경과 `.vrm`·`.nva`는 지정한 폴더에 원래 바이트로 보관되며 목록에 바로 나타납니다. `.nva`는 원본 묶음 파일로 내릴 수 있습니다. | Pending |
 | FR-WEB-SETTINGS-FILES.4 | 선택한 폴더에서 지원하는 파일 형식을 안내하고 형식이 맞으면 저장합니다. VRM·NVA 파일을 열면 내려받기 안내를 표시합니다. | Pending |
+
+## 웹판 ADK 파일 목록에 올린 음악 표시 (R34, 2026-11-20)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-SETTINGS-MUSIC.1 | 웹판(브라우저) 음악 앱에서 올린 곡은 작업공간 `naia-settings/bgm-musics/`에 보이며, 같은 브라우저 저장소의 원본을 오디오 플레이어로 엽니다. 곡을 올리거나 지우면 열려 있는 목록이 갱신됩니다. (UC-WEB-SETTINGS-MUSIC) | Pending |
