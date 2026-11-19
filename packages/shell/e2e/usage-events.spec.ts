@@ -124,6 +124,17 @@ test("batches allowlisted clicks, uses Steam channel and stops immediately from 
 		expect(h.referer).toBeUndefined();
 		expect(h["x-naia-instance-id"]).toBeUndefined();
 	}
+	const syntheticMarkers = [
+		"Synthetic Person R2",
+		"r2-marker@example.test",
+		"Synthetic question R2: where is my private data?",
+		"https://marker.invalid/private/address?token=synthetic",
+		"/tmp/private-r2-marker/secret.txt",
+		"Synthetic raw failure R2: bearer=marker-token",
+	];
+	const requestArtifacts = JSON.stringify({ payloads, headers });
+	for (const marker of syntheticMarkers)
+		expect(requestArtifacts).not.toContain(marker);
 	// Same profile in a second real browser tab shares consent and atomic state.
 	const second = await context.newPage();
 	await second.goto("/");
@@ -140,6 +151,150 @@ test("batches allowlisted clicks, uses Steam channel and stops immediately from 
 	).not.toBeChecked();
 	await page.waitForTimeout(5500);
 	expect(payloads).toHaveLength(count);
+	await second.close();
+});
+
+test("T-05 sends fixed payloads and headers without synthetic personal markers", async ({
+	page,
+	context,
+}) => {
+	const payloads: unknown[] = [];
+	const headers: Record<string, string>[] = [];
+	await context.route(
+		"https://*.applicationinsights.azure.com/v2.1/track",
+		async (route) => {
+			if (route.request().method() === "OPTIONS") {
+				await route.fulfill({
+					status: 204,
+					headers: {
+						"access-control-allow-origin": "*",
+						"access-control-allow-headers": "content-type",
+					},
+				});
+				return;
+			}
+			payloads.push(route.request().postDataJSON());
+			headers.push(route.request().headers());
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: { "access-control-allow-origin": "*" },
+				body: '{"itemsAccepted":3}',
+			});
+		},
+	);
+	await page.goto("/");
+	await page
+		.getByRole("button", { name: "Allow usage statistics", exact: true })
+		.click();
+	await expect(page.locator(".chat-app")).toBeVisible();
+	await expect
+		.poll(() => payloads.length, { timeout: 15_000 })
+		.toBeGreaterThan(0);
+
+	const markers = [
+		"Synthetic Person R2",
+		"r2-marker@example.test",
+		"Synthetic question R2: where is my private data?",
+		"https://marker.invalid/private/address?token=synthetic",
+		"/tmp/private-r2-marker/secret.txt",
+		"Synthetic raw failure R2: bearer=marker-token",
+	];
+	const requestArtifacts = JSON.stringify({ payloads, headers });
+	for (const marker of markers) expect(requestArtifacts).not.toContain(marker);
+	for (const requestHeaders of headers) {
+		expect(requestHeaders.authorization).toBeUndefined();
+		expect(requestHeaders.cookie).toBeUndefined();
+		expect(requestHeaders.referer).toBeUndefined();
+		expect(requestHeaders["x-naia-instance-id"]).toBeUndefined();
+	}
+});
+
+test("T-06 shares event identity across two tabs and stops after consent is disabled", async ({
+	page,
+	context,
+}) => {
+	const payloads: any[][] = [];
+	await context.route(
+		"https://*.applicationinsights.azure.com/v2.1/track",
+		async (route) => {
+			if (route.request().method() === "OPTIONS") {
+				await route.fulfill({
+					status: 204,
+					headers: {
+						"access-control-allow-origin": "*",
+						"access-control-allow-headers": "content-type",
+					},
+				});
+				return;
+			}
+			payloads.push(route.request().postDataJSON());
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: { "access-control-allow-origin": "*" },
+				body: '{"itemsAccepted":3}',
+			});
+		},
+	);
+	await page.goto("/");
+	await page
+		.getByRole("button", { name: "Allow usage statistics", exact: true })
+		.click();
+	await expect(page.locator(".chat-app")).toBeVisible();
+
+	const second = await context.newPage();
+	await second.goto("/");
+	await expect(second.locator(".chat-app")).toBeVisible();
+	await page.locator(".app-bar-settings").click();
+	await second.locator(".app-bar-settings").click();
+
+	const properties = () =>
+		payloads.flat().map((event) => event.data.baseData.properties);
+	await expect
+		.poll(
+			() =>
+				properties().filter(
+					(event) => event.name === "app-bar.set-active-app-26.click",
+				).length,
+			{ timeout: 20_000 },
+		)
+		.toBe(2);
+	const received = properties();
+	expect(new Set(received.map((event) => event.installation_id)).size).toBe(1);
+	expect(new Set(received.map((event) => event.event_id)).size).toBe(
+		received.length,
+	);
+	expect(new Set(received.map((event) => event.sequence)).size).toBe(
+		received.length,
+	);
+	expect(
+		received.filter((event) => event.name === "shell.start.observed"),
+	).toHaveLength(1);
+
+	const requestCount = payloads.length;
+	await page.evaluate(() => {
+		const key = "naia-usage-consent-v1";
+		const value = JSON.stringify({
+			enabled: false,
+			epoch: crypto.randomUUID(),
+		});
+		localStorage.setItem(key, value);
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key,
+				newValue: value,
+				storageArea: localStorage,
+			}),
+		);
+		const channel = new BroadcastChannel("naia-usage-consent-v1");
+		channel.postMessage("off");
+		channel.close();
+	});
+	await page.getByRole("button", { name: "Desktop", exact: true }).click();
+	await second.getByRole("button", { name: "Desktop", exact: true }).click();
+	await page.waitForTimeout(5500);
+	expect(payloads).toHaveLength(requestCount);
 	await second.close();
 });
 
