@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T19:51:48Z",
+  "last_updated": "2026-11-19T20:49:44Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_main_model_auth_r45_20261120": {
+      "requirement_id": "R45",
+      "title": "웹판 Naia 모델 적용 시 계정 인증 유지",
+      "branch": "alpha/webgpu-r45-creds-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-MAIN-MODEL-AUTH",
+      "requirements": "docs/requirements.md FR-WEB-MAIN-MODEL-AUTH.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "셸 표적 Vitest 58건, 에이전트 표적 Vitest 61건 및 Playwright 1280×720·390×844 2건 통과. 새로고침 없이 Terra와 Luna의 인증 요청과 응답을 확인. 캡처 bundle-runs/r45-shots/R45-1280.png·R45-390.png.",
+      "evidence": "packages/shell/e2e/web-main-model-r45.spec.ts",
+      "last_updated": "2026-11-19T20:49:44Z"
+    },
     "web_vrm_lip_sync_r43_20261120": {
       "requirement_id": "R43",
       "title": "웹판 VRM 립싱크",

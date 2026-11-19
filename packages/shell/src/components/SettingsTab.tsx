@@ -4393,14 +4393,14 @@ export function SettingsTab() {
 			},
 			applyAdkPath,
 		);
-		// Push all per-session credentials (#260 follow-up). Empty strings
-		// clear the corresponding cached entry on the agent — keeps the cache
-		// in sync with what the user just saved.
+		// Naia account credentials are synced separately via sendAuthUpdate.
+		// Empty provider API keys clear the corresponding agent cache entry.
 		void sendCredsUpdate(
 			{
-				keys: newConfig.provider
-					? { [newConfig.provider]: newConfig.apiKey ?? "" }
-					: {},
+				keys:
+					newConfig.provider && !isNextainProvider
+						? { [newConfig.provider]: newConfig.apiKey ?? "" }
+						: {},
 				ttsKeys: {},
 				gatewayToken: newConfig.gatewayToken ?? "",
 			},

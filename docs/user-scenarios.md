@@ -3613,3 +3613,17 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 진행·성공 | 대화 음원의 재생 위치와 음량으로 VRM 입 모양을 구동하며, 브라우저 음성의 발화 경계도 반영. NVA의 음성 장면을 대조함 | `lip-sync.test.ts`, `e2e/web-vrm-lip-sync-r43.spec.ts` R43 |
 | 오류·정지 | 재생이 끝나거나 정지·실패하면 발화용 표정이 해제됨 | `lip-sync.test.ts`, `e2e/web-vrm-lip-sync-r43.spec.ts` R43 |
 | 좁은 폭 | 1280×720과 390×844에서 VRM 입이 열린 프레임이 아바타 영역에 보임 | `e2e/web-vrm-lip-sync-r43.spec.ts`, `shots/r40-card/R43-1280.png`·`R43-390.png` |
+
+## UC-WEB-MAIN-MODEL-AUTH. 웹판에서 Naia 모델을 적용하고 대화를 이어간다 (R45)
+
+로그인한 브라우저 사용자가 설정의 두뇌 탭에서 Naia Terra를 고르고 `적용`을 누릅니다. 설정을 닫고 첫 메시지를 보내면 새로고침 없이 Terra의 답을 받습니다. 같은 화면에서 Naia Luna로 바꿔 적용한 뒤 새 대화 턴의 답도 확인합니다.
+
+### Test Coverage Map — UC-WEB-MAIN-MODEL-AUTH
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 대화 | 브라우저에 로그인 상태가 있고 대화가 비어 있어도 두뇌 설정에서 모델을 고를 수 있음 | `e2e/web-main-model-r45.spec.ts` R45 |
+| 진행 | 적용 완료가 표시되고 첫 답을 기다리는 동안 대화에 중단 버튼이 보임 | `e2e/web-main-model-r45.spec.ts` R45 |
+| 성공 | Terra·Luna에 적용할 때 계정 열쇠가 유지되고 새로고침 없이 두 모델의 응답이 대화에 표시됨. 각 요청의 `X-AnyLLM-Key`와 모델 ID를 가짜 게이트웨이에서 확인함 | `SettingsTab.test.tsx`, `e2e/web-main-model-r45.spec.ts` R45 |
+| 오류 | 로그인하지 않은 상태에서 Naia 모델 적용을 시도하면 로그인 안내가 표시됨. 다른 공급자의 빈 API 키는 명시 해제로 전달됨 | `SettingsTab.test.tsx` R45 |
+| 좁은 폭·키보드 | 1280×720과 390×844에서 적용과 입력을 찾을 수 있고 키보드로 메시지를 보낼 수 있음 | `e2e/web-main-model-r45.spec.ts` R45 |

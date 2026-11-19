@@ -229,7 +229,9 @@ describe("web provider switch persistence", () => {
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
 		startWebModelSpy.mockClear();
 		agentBridgeStart.mockClear();
+		chatServiceMocks.sendCredsUpdate.mockClear();
 		mockInvoke.mockReset().mockResolvedValue([]);
+		vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
 	});
 
 	afterEach(() => {
@@ -238,6 +240,7 @@ describe("web provider switch persistence", () => {
 		setWebAssetsModeForTests(null);
 		resetWebModelStatusForTests();
 		mockInvoke.mockReset();
+		vi.unstubAllGlobals();
 	});
 
 	it("R33 starts the saved local model after the workspace write", async () => {
@@ -293,6 +296,31 @@ describe("web provider switch persistence", () => {
 		});
 		expect(startWebModelSpy).not.toHaveBeenCalled();
 		expect(agentBridgeStart).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ provider: "nextain", model: "gpt-6.1-terra", keys: {} },
+		{ provider: "webllm", model: WEB_LLM_FALLBACK_F32, keys: { webllm: "" } },
+	])("R45 sends only provider API keys on web Apply ($provider)", async ({ provider, model, keys }) => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider, model }));
+		localStorage.setItem("naia-remote-key", "test-r45-fixture");
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		fireEvent.click(screen.getByRole("button", { name: t("settings.save") }));
+		await screen.findByRole("button", { name: t("settings.saved") });
+		expect(chatServiceMocks.sendCredsUpdate).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ keys }),
+			"opfs://naia-adk",
+		);
+	});
+
+	it("R45 asks for login when applying a Naia model while signed out", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		fireEvent.click(screen.getByRole("button", { name: t("settings.save") }));
+		expect(await screen.findByText(t("settings.naiaLoginRequiredBeforeSave"))).toBeVisible();
+		expect(chatServiceMocks.sendCredsUpdate).not.toHaveBeenCalled();
 	});
 });
 

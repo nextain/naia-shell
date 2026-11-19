@@ -1,3 +1,10 @@
+<!-- src-sha: 20f73d9390f3a095 -->
+
+## 웹판 Naia 모델 적용 시 계정 인증 유지 (R45) — 2026-11-20
+
+- 셸 표적 Vitest 58건, 에이전트 표적 Vitest 61건 및 Playwright 1280×720·390×844 2건 통과. 새로고침 없이 Terra와 Luna의 인증 요청과 응답을 확인. 캡처 bundle-runs/r45-shots/R45-1280.png·R45-390.png.
+- `UC-WEB-MAIN-MODEL-AUTH` · `FR-WEB-MAIN-MODEL-AUTH.1~2` · `packages/shell/e2e/web-main-model-r45.spec.ts`
+
 <!-- src-sha: 529875b7df8ebcbe -->
 
 ## 웹판 VRM 립싱크 (R43) — 2026-11-20
