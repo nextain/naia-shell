@@ -97,6 +97,12 @@ export interface WebHttpAppStoreAdapterDeps {
 	getAuthKey?: () => string | undefined;
 	getSandboxOrigin?: () => string;
 	getShellOrigin?: () => string | undefined;
+	/**
+	 * Path the shell is served under (vite `base`, e.g. `/app/` on
+	 * dev.naia.land/app). Stage-1 hosted apps live at
+	 * `${shellOrigin}${shellBasePath}hosted-apps/<slug>/index.html`.
+	 */
+	getShellBasePath?: () => string;
 	onUnauthorized?: () => void;
 	/**
 	 * When true (enabled by default in Official Web Stage 1 runtime), merges the
@@ -449,6 +455,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	private readonly hasCustomSandboxOrigin: boolean;
 	private readonly getSandboxOrigin: () => string;
 	private readonly getShellOrigin: () => string | undefined;
+	private readonly getShellBasePath: () => string;
 	private readonly onUnauthorized: () => void;
 	private readonly stage1HostedCatalog: boolean;
 	private readonly packageIconCache = new Map<string, Promise<string | undefined>>();
@@ -473,6 +480,8 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			deps.getShellOrigin ??
 			(() =>
 				typeof window !== "undefined" ? window.location.origin : undefined);
+		this.getShellBasePath =
+			deps.getShellBasePath ?? (() => import.meta.env.BASE_URL ?? "/");
 		this.onUnauthorized = deps.onUnauthorized ?? markNaiaKeyUnauthorized;
 		this.stage1HostedCatalog = deps.stage1HostedCatalog === true;
 		this.getPortalBaseUrl = deps.getPortalBaseUrl ?? (() => "");
@@ -501,6 +510,12 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		return canonical;
 	}
 
+	/** `/hosted-apps/`, or `/app/hosted-apps/` when the shell is served under `/app/`. */
+	private hostedAppsPrefix(): string {
+		const trimmed = (this.getShellBasePath() || "/").replace(/^\/+|\/+$/g, "");
+		return trimmed ? `/${trimmed}/hosted-apps/` : "/hosted-apps/";
+	}
+
 	private resolveDefaultHostedEntryUrl(appId: string, version: string): string {
 		const stage1Spec = STAGE1_HOSTED_BY_ID.get(appId);
 		const shellOrigin = this.getShellOrigin()?.replace(/\/+$/, "");
@@ -510,7 +525,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			shellOrigin
 		) {
 			const slug = stage1Spec?.hostedSlug ?? appId;
-			return `${shellOrigin}/hosted-apps/${encodeURIComponent(slug)}/index.html`;
+			return `${shellOrigin}${this.hostedAppsPrefix()}${encodeURIComponent(slug)}/index.html`;
 		}
 		const sandboxOrigin = this.getSandboxOrigin().replace(/\/+$/, "");
 		if (sandboxOrigin.endsWith("/hosted-apps")) {
@@ -989,7 +1004,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			isAllowedProtocol &&
 			shellOrigin &&
 			parsed.origin === shellOrigin &&
-			parsed.pathname.startsWith("/hosted-apps/") &&
+			parsed.pathname.startsWith(this.hostedAppsPrefix()) &&
 			!parsed.pathname.includes("..")
 		) {
 			return parsed.toString();

@@ -427,4 +427,34 @@ describe("PlatformAppStoreAdapter & WebHttpAppStoreAdapter", () => {
 			adapter.resolveFrameSrc("https://dev.naia.land/app/index.html"),
 		).toThrow(AppStoreHttpError);
 	});
+
+	it("prefixes Stage-1 hosted app URLs with the shell base path (dev.naia.land/app)", async () => {
+		const adapter = new WebHttpAppStoreAdapter({
+			stage1HostedCatalog: true,
+			fetchImpl: vi.fn(async () =>
+				jsonResponse(200, { data: [] }),
+			) as unknown as typeof fetch,
+			getGatewayUrl: () => "https://api-dev.naia.land",
+			getShellOrigin: () => "https://dev.naia.land",
+			getShellBasePath: () => "/app/",
+		});
+
+		const catalog = await adapter.listCatalog();
+		const slides = catalog.find((c) => c.appId === "land.naia.slides")!;
+		expect(slides.hostedEntryUrl).toBe(
+			"https://dev.naia.land/app/hosted-apps/naia-slides/index.html",
+		);
+		for (const m of await adapter.listInstalledManifests()) {
+			expect(
+				adapter
+					.resolveFrameSrc(m.htmlEntry!)
+					.startsWith("https://dev.naia.land/app/hosted-apps/"),
+			).toBe(true);
+		}
+		expect(() =>
+			adapter.resolveFrameSrc(
+				"https://dev.naia.land/hosted-apps/naia-slides/index.html",
+			),
+		).toThrow();
+	});
 });
