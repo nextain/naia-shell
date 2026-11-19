@@ -1,6 +1,20 @@
 // 웹 모드 전용 영어 문구.
 // 데스크톱 운영 빌드에는 싣지 않는다.
 export default {
+	"webVisualAgent.slugLabel": "Visual agent slug",
+	"webVisualAgent.hint": "Use 3–32 lowercase letters, numbers or hyphens (-).",
+	"webVisualAgent.publicAddress": "Public address",
+	"webVisualAgent.invalid": "Enter 3–32 lowercase letters, numbers or hyphens (-).",
+	"webVisualAgent.taken": "This address is already in use. Try another slug.",
+	"webVisualAgent.readError": "Could not load the address. Try again.",
+	"webVisualAgent.saveError": "Could not save the address. Try again.",
+	"webVisualAgent.copyError": "Could not copy the address. Select the address to copy it manually.",
+	"webVisualAgent.saved": "Address saved.",
+	"webVisualAgent.loginToEdit": "Sign in to change the address",
+	"webVisualAgent.loading": "Loading address…",
+	"webVisualAgent.copy": "Copy address",
+	"webVisualAgent.copied": "Address copied.",
+	"webVisualAgent.save": "Save address",
 	"webModel.checking": "Checking local model…",
 	"webModel.loading": "Downloading {model} ({percent}%). Sending blocked until ready.",
 	"webModel.ready": "Local model ready: {model}",

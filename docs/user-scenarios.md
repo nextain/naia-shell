@@ -3536,3 +3536,27 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | WebLLM 모델 교체 | 실행 중인 Worker가 교체된 모델로 다음 요청을 처리함 | `src/components/__tests__/SettingsTab.test.tsx` R33 |
 | 좁은 폭 | 390×844에서 메뉴, 두뇌 설정, 대화와 오류 복구를 사용할 수 있음 | `e2e/web-main-model-r33.spec.ts` R33 390 |
 | 게이트웨이 | 이미지 라우팅 설정이 있는 환경에서 Terra 본문과 종료 신호를 스트리밍하고 Terra 사용량을 기록함 | naia-anyllm `tests/gateway/test_chat_model_fallback.py` R33, Azure 응답 견본 |
+
+## UC-WEB-VISUAL-AGENT-SLUG. 웹판 비주얼 에이전트 공개 주소 (R39)
+
+웹 브라우저에서 셸 설정의 프로필 탭을 열면 비주얼 에이전트 슬러그와 공개 주소가 보입니다. 등록된 이름이 없으면 `naia`를 씁니다. 로그인 사용자는 새 이름을 입력해 주소를 미리 확인하고, 저장을 마치면 공개 주소를 복사할 수 있습니다. 포털 대시보드에도 같은 계정 설정이 표시됩니다.
+
+받은 주소를 열면 포털이 해당 이름의 웹 셸로 연결합니다. 주소에서 개인 대화나 작업공간을 공유하지 않습니다. 찾을 수 없는 주소에는 기본 나이아를 열 수 있는 안내가 표시됩니다.
+
+주소 조사(기준 `40cb52b6`). `packages/shell/src/lib/web-runtime/web-slug-guard.ts:45,67,73`과 `packages/shell/src/App.tsx:285,294`는 이전 호스트를 읽어 소유자 확인에 씁니다. `packages/shell/src/lib/web-runtime/web-auth.ts:110–131`는 로그인 콜백에 현재 브라우저 호스트를 사용합니다. 안내 화면에 표시된 주소는 `packages/shell/src/components/WebSlugOwnerGuard.tsx:100`의 개인 공간 경로입니다. 셸 제품 코드에서 `cafelua.naia.land` 문자열과 `cafelua` 기본값은 발견되지 않았습니다.
+
+### Test Coverage Map — UC-WEB-VISUAL-AGENT-SLUG
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 설정 | 저장된 이름이 없는 계정과 비로그인 브라우저는 `https://naia.land/visual-agent/naia`를 봅니다. | `e2e/web-visual-agent-slug-r39.spec.ts` R39 |
+| 진행 | 계정 설정을 읽는 동안 상태가 표시됩니다. 저장 중 입력과 중복 저장을 막습니다. | 같은 e2e |
+| 성공 | 새 이름 미리 보기, 저장, 복사와 새로고침 후 복원을 확인합니다. 공개 링크로 열린 셸은 URL에서 선택한 이름을 읽습니다. 루트 범위의 서비스 워커가 공개 링크를 가로채지 않습니다. | 같은 e2e, `visual-agent-slug.test.ts`, `web-sw-version.test.ts` R39 |
+| 오류·복구 | 빈 값, 잘못된 문자·길이, 저장 충돌과 읽기 실패를 표시합니다. 수정 또는 재시도로 빠져나옵니다. | 같은 e2e, `visual-agent-slug.test.ts` R39 |
+| 좁은 폭·접근성 | 1280×720·390×844에서 입력 라벨, 오류 연결, 키보드 저장과 복사, 주소 줄바꿈을 확인합니다. | 같은 e2e와 `shots/r39-slug/R39-1280.png`·`R39-390.png` |
+
+### P04 검증 (R39)
+
+관련 Vitest 25건이 통과했습니다. Chromium의 1280×720과 390×844 두 시험에서 기본 주소, 읽기 재시도, 형식 오류, 등록 충돌, 저장 중 비활성화, 복사 결과와 새로 열었을 때의 복원을 확인했습니다. 입력과 오류는 접근성 속성으로 연결됩니다. 두 화면에서 키보드로 저장하고 복사할 수 있고, 390px에서도 긴 주소와 단추가 잘리지 않았습니다.
+
+증거는 `shots/r39-slug/R39-1280.png` 및 `shots/r39-slug/R39-390.png`에 있습니다. 웹 셸 브라우저 시험은 로컬 설정 API 응답 견본과 가짜 WebLLM을 사용했습니다. 코어 빌드, 셸·BGM 타입 검사와 assembly·로깅 검사가 통과했습니다. 전체 셸 Vitest는 3,671 통과, 14 실패, 34 제외입니다. 실패는 키오스크 앱스토어와 아바타 시험에 있었으며 R39 대상 시험은 모두 통과했습니다. 기준판과의 전체 실패 수 비교는 미확인입니다.

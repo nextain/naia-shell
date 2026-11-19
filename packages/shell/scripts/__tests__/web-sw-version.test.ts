@@ -187,6 +187,16 @@ function makeBasicResponse(
 }
 
 describe("web-sw-version & sw.js", () => {
+	it("R39 leaves public visual-agent links to the portal even under a root worker scope", async () => {
+		const template = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
+		const env = createFakeSwEnv(template, async (url) => makeBasicResponse(url, "<html>shell</html>"));
+		for (const path of ["/visual-agent", "/visual-agent/naia", "/visual-agent/unregistered"]) {
+			expect(await env.dispatchFetch({
+				url: `https://demo.example.test${path}`,
+				mode: "navigate",
+			})).toBeUndefined();
+		}
+	});
 	it("R35: leaves /app/hosted-apps/* navigations to the network under the /app/ base", async () => {
 		const swTemplate = fs.readFileSync(SW_TEMPLATE_PATH, "utf8");
 		const stamped = injectServiceWorkerVersion(swTemplate, "r35-test0001");

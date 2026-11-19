@@ -8,6 +8,20 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"webVisualAgent.slugLabel": "ভিজ্যুয়াল এজেন্টের স্লাগ",
+	"webVisualAgent.hint": "ইংরেজি ছোট হাতের অক্ষর, সংখ্যা বা হাইফেন (-) দিয়ে ৩–৩২টি অক্ষর লিখুন।",
+	"webVisualAgent.publicAddress": "সর্বজনীন ঠিকানা",
+	"webVisualAgent.invalid": "ইংরেজি ছোট হাতের অক্ষর, সংখ্যা বা হাইফেন (-) দিয়ে ৩–৩২টি অক্ষর লিখুন।",
+	"webVisualAgent.taken": "এই ঠিকানাটি ইতিমধ্যে ব্যবহৃত হচ্ছে। অন্য স্লাগ ব্যবহার করুন।",
+	"webVisualAgent.readError": "ঠিকানা লোড করা যায়নি। আবার চেষ্টা করুন।",
+	"webVisualAgent.saveError": "ঠিকানা সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।",
+	"webVisualAgent.copyError": "ঠিকানা কপি করা যায়নি। ঠিকানাটি নির্বাচন করে কপি করুন।",
+	"webVisualAgent.saved": "ঠিকানা সংরক্ষিত হয়েছে।",
+	"webVisualAgent.loginToEdit": "ঠিকানা বদলাতে সাইন ইন করুন",
+	"webVisualAgent.loading": "ঠিকানা লোড হচ্ছে…",
+	"webVisualAgent.copy": "ঠিকানা কপি করুন",
+	"webVisualAgent.copied": "ঠিকানা কপি হয়েছে।",
+	"webVisualAgent.save": "ঠিকানা সংরক্ষণ করুন",
 	"settings.embeddingRevision": "Model revision (change when replacing the model)",
 	"settings.embeddingDimensions": "Vector dimensions (match the served model)",
 	"settings.embeddingIdentityMissing": "A model revision is required for vector search. Recall uses matching words until it is set. Local e5-large uses 1024 dimensions. Enter the revision you actually deployed.",

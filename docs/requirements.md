@@ -2139,3 +2139,11 @@ Web startup must select the web runtime using the build mode, even after the web
 로컬 검증. Shell Vitest 188건 통과, 에이전트 계약 시험 29건 통과. 게이트웨이 `97f20de3`의 시험 37건 통과. Azure 응답 견본으로 Terra 본문, `stop`과 `[DONE]`, Terra 사용량 기록을 확인했습니다. 개발 게이트웨이에서 수정 후 실제 Terra 응답을 받는지는 미확인입니다.
 
 Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-run`이 요구한 디스크 여유 25GiB에 미달해 브라우저 실행 전에 대기가 종료됐습니다.
+
+## 웹판 비주얼 에이전트 공개 주소 (R39, 2026-11-20)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-VISUAL-AGENT-SLUG.1 | 웹판(브라우저) 프로필 설정은 기본 슬러그 `naia`와 `https://naia.land/visual-agent/{slug}` 형태의 공개 주소를 보여 줍니다. 기존 개인 공간 경로 `/u/{slug}` 및 오래된 링크의 소유자 확인은 유지합니다. (UC-WEB-VISUAL-AGENT-SLUG) | Done |
+| FR-WEB-VISUAL-AGENT-SLUG.2 | 영문 소문자·숫자·하이픈 3~32자를 검증합니다. 유효한 주소를 미리 보고 로그인한 계정의 포털 설정에 이름을 저장합니다. 저장한 주소를 복사하고, 입력이나 저장 오류를 수정하거나 재시도할 수 있습니다. | Done |
+| FR-WEB-VISUAL-AGENT-SLUG.3 | 웹 셸은 포털에서 넘긴 `/app/?visualAgent={slug}`의 슬러그를 확인해 브라우저 제목에 표시합니다. 공개 주소를 열면 방문자의 브라우저 설정으로 기존 비주얼 에이전트 화면을 엽니다. | Done |

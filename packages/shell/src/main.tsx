@@ -14,10 +14,19 @@ import {
 	isWebMode,
 	syncWebModeRootAttribute,
 } from "./lib/web-runtime/web-assets";
+import { readVisualAgentSlugFromSearch } from "./lib/web-runtime/visual-agent-slug";
 import "./styles/global.css";
 import "./styles/web-mode.css";
 
 syncWebModeRootAttribute();
+
+if (import.meta.env.MODE === "web") {
+	const slug = readVisualAgentSlugFromSearch(window.location.search);
+	if (slug) {
+		document.title = `${document.title} · ${slug}`;
+		Logger.debug("Main", "opened a visual agent address");
+	}
+}
 
 if (import.meta.env.MODE === "web" && "serviceWorker" in navigator) {
 	const swBasePath = getWebBasePath();

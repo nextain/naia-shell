@@ -8,6 +8,20 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"webVisualAgent.slugLabel": "विज़ुअल एजेंट का स्लग",
+	"webVisualAgent.hint": "अंग्रेज़ी के छोटे अक्षर, अंक या हाइफ़न (-) के 3–32 वर्ण इस्तेमाल करें।",
+	"webVisualAgent.publicAddress": "सार्वजनिक पता",
+	"webVisualAgent.invalid": "अंग्रेज़ी के छोटे अक्षर, अंक या हाइफ़न (-) के 3–32 वर्ण डालें।",
+	"webVisualAgent.taken": "यह पता पहले से इस्तेमाल में है। कोई दूसरा स्लग आज़माएँ।",
+	"webVisualAgent.readError": "पता लोड नहीं हो सका। फिर से कोशिश करें।",
+	"webVisualAgent.saveError": "पता सेव नहीं हो सका। फिर से कोशिश करें।",
+	"webVisualAgent.copyError": "पता कॉपी नहीं हो सका। पते को चुनकर खुद कॉपी करें।",
+	"webVisualAgent.saved": "पता सेव हो गया।",
+	"webVisualAgent.loginToEdit": "पता बदलने के लिए साइन इन करें",
+	"webVisualAgent.loading": "पता लोड हो रहा है…",
+	"webVisualAgent.copy": "पता कॉपी करें",
+	"webVisualAgent.copied": "पता कॉपी हो गया।",
+	"webVisualAgent.save": "पता सेव करें",
 	"settings.embeddingRevision": "Model revision (change when replacing the model)",
 	"settings.embeddingDimensions": "Vector dimensions (match the served model)",
 	"settings.embeddingIdentityMissing": "A model revision is required for vector search. Recall uses matching words until it is set. Local e5-large uses 1024 dimensions. Enter the revision you actually deployed.",

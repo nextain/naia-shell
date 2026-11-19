@@ -8,6 +8,20 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"webVisualAgent.slugLabel": "비주얼 에이전트 슬러그",
+	"webVisualAgent.hint": "영문 소문자, 숫자, 하이픈(-) 3~32자를 입력하세요.",
+	"webVisualAgent.publicAddress": "공개 주소",
+	"webVisualAgent.invalid": "영문 소문자, 숫자, 하이픈(-) 3~32자를 입력해 주세요.",
+	"webVisualAgent.taken": "이미 사용 중인 주소예요. 다른 슬러그를 입력해 주세요.",
+	"webVisualAgent.readError": "주소를 불러오지 못했어요. 다시 시도해 주세요.",
+	"webVisualAgent.saveError": "주소를 저장하지 못했어요. 다시 시도해 주세요.",
+	"webVisualAgent.copyError": "주소를 복사하지 못했어요. 주소를 선택해 직접 복사할 수 있어요.",
+	"webVisualAgent.saved": "주소를 저장했어요.",
+	"webVisualAgent.loginToEdit": "로그인하여 주소 변경",
+	"webVisualAgent.loading": "주소를 불러오는 중…",
+	"webVisualAgent.copy": "주소 복사",
+	"webVisualAgent.copied": "주소를 복사했어요.",
+	"webVisualAgent.save": "주소 저장",
 	"settings.embeddingRevision": "모델 버전 (모델을 바꾸면 새 이름 입력)",
 	"settings.embeddingDimensions": "벡터 크기 (서버 모델과 같은 숫자)",
 	"settings.embeddingIdentityMissing": "모델 버전을 아직 입력하지 않아 낱말 검색으로 기억을 찾아요. 로컬 e5-large의 벡터 크기는 1024예요. 버전은 실제 배포한 모델 버전 이름을 입력해 주세요.",

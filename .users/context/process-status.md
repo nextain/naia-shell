@@ -1,4 +1,10 @@
-<!-- src-sha: 7d4dedb15f471806 -->
+<!-- src-sha: f3411609f963302b -->
+
+## 웹판 비주얼 에이전트 공개 주소 (R39) — 2026-11-20
+
+- P01–P05 완료. 셸 설정의 프로필에서 기본 `naia` 주소를 읽고, 로그인 후 공개 슬러그를 저장해 복사합니다. 포털에서 넘긴 공개 슬러그를 웹 셸의 탭 제목에 표시합니다.
+- 관련 Vitest 25통과, Playwright 1280×720·390×844 2통과. 두 폭의 캡처와 키보드, 오류 복구, 주소 줄바꿈을 확인했습니다. 전체 셸 Vitest는 3,671통과·14실패·34제외입니다.
+- `UC-WEB-VISUAL-AGENT-SLUG`, `FR-WEB-VISUAL-AGENT-SLUG.1–3`, `packages/shell/e2e/web-visual-agent-slug-r39.spec.ts`, `shots/r39-slug/`.
 
 ## 웹판 설정 창의 재생 중 카드 겹침 해소 (R36) — 2026-11-20
 

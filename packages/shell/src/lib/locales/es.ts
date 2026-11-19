@@ -8,6 +8,20 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"webVisualAgent.slugLabel": "Identificador del agente visual",
+	"webVisualAgent.hint": "Usa entre 3 y 32 letras minúsculas, números o guiones (-).",
+	"webVisualAgent.publicAddress": "Dirección pública",
+	"webVisualAgent.invalid": "Escribe entre 3 y 32 letras minúsculas, números o guiones (-).",
+	"webVisualAgent.taken": "Esta dirección ya está en uso. Prueba con otro identificador.",
+	"webVisualAgent.readError": "No se pudo cargar la dirección. Inténtalo de nuevo.",
+	"webVisualAgent.saveError": "No se pudo guardar la dirección. Inténtalo de nuevo.",
+	"webVisualAgent.copyError": "No se pudo copiar la dirección. Selecciónala para copiarla manualmente.",
+	"webVisualAgent.saved": "Dirección guardada.",
+	"webVisualAgent.loginToEdit": "Inicia sesión para cambiar la dirección",
+	"webVisualAgent.loading": "Cargando la dirección…",
+	"webVisualAgent.copy": "Copiar dirección",
+	"webVisualAgent.copied": "Dirección copiada.",
+	"webVisualAgent.save": "Guardar dirección",
 	"settings.embeddingRevision": "Model revision (change when replacing the model)",
 	"settings.embeddingDimensions": "Vector dimensions (match the served model)",
 	"settings.embeddingIdentityMissing": "A model revision is required for vector search. Recall uses matching words until it is set. Local e5-large uses 1024 dimensions. Enter the revision you actually deployed.",

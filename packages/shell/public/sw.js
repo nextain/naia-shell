@@ -31,6 +31,7 @@ async function savePublic(url, cache, cacheMode = "default") {
 }
 function isShellNavigation(request, url) {
   if (request.mode !== "navigate") return false;
+  if (url.pathname === "/visual-agent" || url.pathname.startsWith("/visual-agent/")) return false;
   if (url.pathname.startsWith("/e2e/") || url.pathname.startsWith("/hosted-apps/")) return false;
   // Mini-app bundles shipped under the shell base (`/app/hosted-apps/...`) are their own pages (R35).
   if (url.pathname.startsWith(`${normalizedBase}hosted-apps/`)) return false;

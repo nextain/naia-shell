@@ -16,6 +16,7 @@ describe("i18n web strings", () => {
 		await setLocale("en");
 		expect(t("webWorkspace.startDefault")).toBe("Start with default workspace");
 		expect(t("webModel.retry")).toBe("Retry");
+		expect(t("webVisualAgent.slugLabel")).toBe("Visual agent slug");
 
 		const enMod = await import("../locales/en");
 		const koMod = await import("../locales/ko");
@@ -33,11 +34,12 @@ describe("i18n web strings", () => {
 		const { t } = await import("../i18n");
 
 		expect("webWorkspace.startDefault" in enMod.default).toBe(false);
+		expect("webVisualAgent.slugLabel" in enMod.default).toBe(false);
 		expect(t("webWorkspace.startDefault")).toBe("webWorkspace.startDefault");
 		expect(t("chat.outputStage.thinking")).toBe("Thinking…");
 	});
 
-	it("(다) en-web.ts has 94 keys matching en test mode values", async () => {
+	it("(다) R39 web-only strings match en test mode values", async () => {
 		vi.unstubAllEnvs();
 		vi.resetModules();
 
@@ -45,7 +47,8 @@ describe("i18n web strings", () => {
 		const enMod = await import("../locales/en");
 
 		const webKeys = Object.keys(enWebMod.default);
-		expect(webKeys.length).toBe(94);
+		expect(webKeys.length).toBe(111);
+		expect(webKeys.filter((key) => key.startsWith("webVisualAgent."))).toHaveLength(14);
 
 		for (const [key, value] of Object.entries(enWebMod.default)) {
 			expect(key in enMod.default).toBe(true);

@@ -286,6 +286,8 @@ import {
 import { RefAudioSection } from "./RefAudioSection";
 import { useWebModelStatus } from "./WebModelStatusBar";
 
+const WebVisualAgentSlugSettings = lazy(() => import("./WebVisualAgentSlugSettings"));
+
 const SkillsTab = lazy(() =>
 	import("./SkillsTab").then(({ SkillsTab }) => ({ default: SkillsTab })),
 );
@@ -5473,6 +5475,11 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "profile" && (
 				<>
+					{isWebMode() && !isKioskDemo() && isSettingsActive && (
+						<Suspense fallback={null}>
+							<WebVisualAgentSlugSettings />
+						</Suspense>
+					)}
 					{isWebMode() && !isKioskDemo() && (
 						<div className="settings-field">
 							<button

@@ -888,6 +888,11 @@
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-model-status.md"
     },
+    "packages/shell/src/lib/web-runtime/visual-agent-slug.ts": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-VISUAL-AGENT-SLUG"],
+      "contract": "docs/requirements.md#웹판-비주얼-에이전트-공개-주소-r39-2026-11-20"
+    },
     "packages/shell/src/lib/web-runtime/web-settings-catalog.ts": {
       "layer": "adapters",
       "uc": ["UC-WEB-SETTINGS-FILES"],

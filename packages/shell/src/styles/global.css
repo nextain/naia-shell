@@ -3440,6 +3440,69 @@ body.resizing-row {
 	margin-top: 4px;
 }
 
+.visual-agent-slug-settings {
+	padding: 12px;
+	border: 1px solid var(--espresso-light);
+	border-radius: 8px;
+	min-width: 0;
+}
+
+.settings-field.visual-agent-slug-settings > label {
+	color: var(--cream);
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.visual-agent-slug-settings p {
+	margin: 6px 0 0;
+}
+
+.visual-agent-slug-settings .settings-hint {
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.visual-agent-slug-settings input[aria-invalid="true"]:not([type="checkbox"]) {
+	border-color: var(--error);
+}
+
+.visual-agent-slug-preview {
+	margin: 10px 0;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: var(--espresso-dark);
+	overflow-wrap: anywhere;
+}
+
+.visual-agent-slug-preview > p {
+	color: var(--cream);
+	font-size: 13px;
+	user-select: text;
+}
+
+.visual-agent-slug-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.visual-agent-slug-actions > button {
+	min-height: 40px;
+	max-width: 100%;
+	white-space: normal;
+}
+
+.visual-agent-slug-actions > button:focus-visible {
+	outline: 2px solid var(--cream);
+	outline-offset: 2px;
+}
+
+.visual-agent-slug-actions > button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
 .settings-actions {
 	position: sticky;
 	bottom: 0;
