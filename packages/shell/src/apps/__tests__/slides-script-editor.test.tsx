@@ -109,7 +109,7 @@ class EditorBridge implements NaiaContextBridge {
 }
 
 function openPdf(name = "deck.pdf") {
-	fireEvent.change(screen.getByLabelText("Open PDF"), {
+	fireEvent.change(screen.getByLabelText("Open PDF or PPTX"), {
 		target: { files: [new File(["pdf"], name, { type: "application/pdf" })] },
 	});
 }

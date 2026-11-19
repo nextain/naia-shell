@@ -2009,3 +2009,14 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-APP-CATALOG.4 | 포털 상점 화면 `/{locale}/apps` 도 같은 `/api/apps` 목록으로 그립니다. | 포털 작업(이 저장소 밖), 미착수 |
 
 로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`, Playwright `e2e/web-app-store-catalog.spec.ts`(NAIA_E2E_WEB=1, `vite --mode web`, 1280×720·390×844). 실제 포털 서버 응답은 미확인.
+
+## 웹판 슬라이드 PPTX 열기 (R27, 2026-11-19)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-SLIDES-PPTX.1 | 웹판 슬라이드의 파일 입력은 PDF와 PPTX를 받습니다. PPTX는 브라우저 안에서만 읽습니다(`slides-pptx-parse.ts`, 업로드 없음, 128MB·500장 상한). 글상자(레이아웃·마스터 자리표시자 위치 상속, 그룹 좌표)·그림·단색/그림 배경을 캔버스에 그려 그림 PDF(`slides-pptx-browser.ts`)로 만듭니다. (UC-WEB-SLIDES-PPTX) | Done (local) |
+| FR-WEB-SLIDES-PPTX.2 | 발표자 노트는 데스크톱 `script_markdown` 과 같은 `## NN.` 대본으로 붙이고, 노트가 없으면 대본을 붙이지 않습니다. 그림 PDF에는 글자 층이 없으므로, 장 글자는 PPTX 에서 읽은 것으로 대신 씁니다. | Done (local) |
+| FR-WEB-SLIDES-PPTX.3 | 읽을 수 없는 PPTX는 `slides_invalid_pptx` 로 기존 안내를 보이고 기존 문서와 입력을 유지합니다. | Done (local) |
+| FR-WEB-SLIDES-PPTX.4 | 웹판 슬라이드 창(opaque-origin 샌드박스)에서 `sessionStorage` 접근이 앱을 멈추지 않습니다. | Done (local) |
+
+로컬 검증: vitest `slides-pptx.test.ts` 와 기존 슬라이드 시험. Playwright `e2e/web-slides-pptx.spec.ts` 는 NAIA_E2E_WEB=1 로, `vite --mode web --cors` 와 Chrome `--disable-features=LocalNetworkAccessChecks` 를 켜고 돌립니다(샌드박스 창이 루프백 dev 서버에서 모듈을 받기 때문). 배포된 `hosted-apps/naia-slides` 빌드와 실제 업무용 PPTX의 그림 품질은 미확인.

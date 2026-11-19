@@ -119,8 +119,9 @@ interface ChatState {
 export const CHAT_LOCAL_SESSION_KEY = "naia-chat-session-id";
 
 export function getStoredLocalSessionId(): string | null {
-	if (typeof sessionStorage === "undefined") return null;
+	// Reading `sessionStorage` itself throws in opaque-origin (sandboxed) frames.
 	try {
+		if (typeof sessionStorage === "undefined") return null;
 		const val = sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY);
 		return val && val.trim() ? val.trim() : null;
 	} catch {
@@ -129,15 +130,15 @@ export function getStoredLocalSessionId(): string | null {
 }
 
 export function setStoredLocalSessionId(id: string): void {
-	if (typeof sessionStorage === "undefined") return;
 	try {
+		if (typeof sessionStorage === "undefined") return;
 		sessionStorage.setItem(CHAT_LOCAL_SESSION_KEY, id);
 	} catch {}
 }
 
 export function clearStoredLocalSessionId(): void {
-	if (typeof sessionStorage === "undefined") return;
 	try {
+		if (typeof sessionStorage === "undefined") return;
 		sessionStorage.removeItem(CHAT_LOCAL_SESSION_KEY);
 	} catch {}
 }
@@ -343,8 +344,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			streamingToolCalls: [],
 		}),
 
-	setStreamingEvidenceFiles: (files) =>
-		set({ streamingEvidenceFiles: files }),
+	setStreamingEvidenceFiles: (files) => set({ streamingEvidenceFiles: files }),
 
 	appendStreamChunk: (text) => {
 		if (!text) return;

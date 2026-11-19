@@ -3257,3 +3257,20 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 진행·성공 | 어드민 앱 [실행] → 구매 요청 없이 설치 → 앱 iframe 이 열림 | `app-catalog.test.ts` "launch without login"; e2e 두 폭 |
 | 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts` 계약 시험; e2e 가짜 슬라이드 미표시 |
 | 좁은 폭 | 390px 에서 카드·[실행] 단추가 화면 안 | e2e 390×844 상자 검사, `shots/D/R3-390.png` |
+
+## UC-WEB-SLIDES-PPTX. 웹판 슬라이드에서 PPTX 열기 (R27, 2026-11-19)
+
+정식 웹판 사용자가 앱스토어에서 [슬라이드]를 열고 [PDF 또는 PPTX 열기]로 PPTX를 고릅니다. 브라우저가 파일을 서버로 보내지 않고 직접 읽습니다. 각 장의 글상자·그림·단색 배경을 그려 그림 PDF로 만들고, 발표자 노트는 데스크톱과 같은 `## NN.` 대본으로 붙입니다. 상태 줄에는 `<이름>.pdf`·`<이름>.md`가 보이고, 그 뒤 발표·대본 편집·녹화는 PDF와 똑같이 동작합니다. 읽을 수 없는 PPTX면 "이 PPTX를 읽을 수 없거나…" 안내가 뜨고 입력은 다시 쓸 수 있습니다.
+
+배경: 데스크톱은 3cc7237a 부터 LibreOffice 로 PPTX를 바꿨지만(`slides_import.rs`) 웹판은 처음부터 PDF만 받았습니다. 그래서 "예전에 pptx까지 되게 했는데 사라진 듯"으로 보였습니다. 웹판 슬라이드 창은 opaque-origin 샌드박스라서 `stores/chat.ts` 가 `sessionStorage` 를 읽다 멈추는 문제도 함께 고쳤습니다. 브라우저 변환은 근사치입니다. 차트·SmartArt·그라데이션·테마 글꼴·애니메이션은 그리지 않습니다. 원본 그대로 보려면 데스크톱 앱이나 PDF를 쓰십시오.
+
+### Test Coverage Map — UC-WEB-SLIDES-PPTX
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본 | 스토어 슬라이드 설명에 PPTX, 입력 `accept` 에 `.pptx` | `e2e/web-slides-pptx.spec.ts` 두 폭 |
+| 진행·성공 | PPTX → 쪽 수 2, 첫 장 배경색이 그림으로 그려지고 노트가 현재 발표문에 보임 | e2e 1280×720·390×844, `shots/D/R27-1280.png`·`R27-390.png` |
+| 파싱 | 장 순서·크기, 레이아웃에서 물려받은 제목 위치, 그룹 좌표, 그림, 마스터 배경, 노트(`sldNum` 제외) | `slides-pptx.test.ts` |
+| 오류 | ZIP 아님·발표 아님·장 없음 → `slides_invalid_pptx`, 패키지 밖 경로 거부; e2e 깨진 PPTX 안내 | `slides-pptx.test.ts`; e2e "unreadable PPTX" |
+| PDF 작성 | 장마다 JPEG 한 쪽, xref 위치 정확 | `slides-pptx.test.ts` "image PDF writer" |
+| 좁은 폭 | 390px 에서 열기 단추·슬라이드·발표문이 화면 안 | e2e 390×844 |

@@ -19,6 +19,8 @@ export interface SlidesOpenedPdf {
 	scriptReadFailed: boolean;
 	videos: Array<{ name: string; file: File }>;
 	videoReadFailures: string[];
+	/** Slide text when the PDF has no text layer (browser PPTX import, R27). */
+	pageTexts?: string[];
 }
 export interface SlidesImportProgress {
 	requestId: string;
@@ -28,7 +30,8 @@ export interface SlidesImportProgress {
 let parentCapability: string | null = null;
 let parentPort: MessagePort | null = null;
 const nativeWindow = () =>
-	window.parent === window && ("__TAURI_INTERNALS__" in window || isKioskDemo());
+	window.parent === window &&
+	("__TAURI_INTERNALS__" in window || isKioskDemo());
 const requestId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function isValidCapability(value: unknown): value is string {

@@ -172,8 +172,8 @@ export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
 			icon: "▣",
 			description: "나이아 아바타와 함께하는 슬라이드 발표 미니앱",
 			descriptions: {
-				ko: "PDF·발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
-				en: "Present slide decks together with your Naia avatar.",
+				ko: "PDF·PPTX 발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
+				en: "Open a PDF or PPTX deck and present it with your Naia avatar.",
 			},
 			version: "0.1.2",
 			manifest_version: 2,
