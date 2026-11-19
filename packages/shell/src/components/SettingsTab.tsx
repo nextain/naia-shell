@@ -255,9 +255,12 @@ import {
 import { listSttProviders } from "../lib/stt/registry";
 import {
 	getTtsProviderMeta,
+	browserVoicesToTtsVoiceMetas,
+	groupTtsVoicesForLocale,
 	listTtsProviderMetas,
 } from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
+import type { TtsVoiceMeta } from "../lib/tts/types";
 import type { ModelCapability, ProviderId } from "../lib/types";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
 import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
@@ -4603,10 +4606,15 @@ export function SettingsTab() {
 	// selected (VoxCPM2 GPU voice cloning). Gemini Live is omni too but has no
 	// voice-clone surface, so mounting RefAudioSection there just 404s on
 	// GET /v1/ref-audio. Gate the section on this.
+	// R13: 정식 웹판은 Naia 계정에 목소리를 올릴 수 있다(게이트웨이 /v1/ref-audio).
+	// 게이트웨이는 올린 목소리를 Naia Omni 실시간 대화(/v1/realtime)에서만 쓰고
+	// 문장 읽기(/v1/audio/speech)는 쓰지 않으므로, 웹판은 그 사실을 함께 알린다.
+	const webRefAudio = isWebMode() && !isKioskDemo();
 	const supportsRefAudio =
 		(isSelectedOmni &&
 			(modelIdLower.startsWith("naia-") || provider === "vllm")) ||
-		ttsProvider === "naia-local-voice";
+		ttsProvider === "naia-local-voice" ||
+		(webRefAudio && !!naiaKey);
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
 	const proactiveSpeechSettings: ProactiveSpeechSettings = {
@@ -7750,16 +7758,11 @@ export function SettingsTab() {
 						if (isWebMode() && ttsProvider === "browser") {
 							const synthSupported =
 								typeof window !== "undefined" && "speechSynthesis" in window;
-							const langPrefix = locale.slice(0, 2).toLowerCase();
-							const sortedVoices = [...browserSpeechVoices].sort((a, b) => {
-								const aMatch = a.lang?.toLowerCase().startsWith(langPrefix)
-									? 0
-									: 1;
-								const bMatch = b.lang?.toLowerCase().startsWith(langPrefix)
-									? 0
-									: 1;
-								return aMatch - bMatch;
-							});
+							// R25-v: 현재 언어 목소리를 맨 앞 묶음에, 나머지는 언어별 묶음에 둔다.
+							const browserVoiceGroups = groupTtsVoicesForLocale(
+								browserVoicesToTtsVoiceMetas(browserSpeechVoices),
+								locale,
+							);
 							return (
 								<div className="settings-field">
 									<label htmlFor="tts-voice-select">
@@ -7774,13 +7777,19 @@ export function SettingsTab() {
 											onChange={(e) => persistTtsVoice(e.target.value)}
 										>
 											<option value="">{t("webSpeech.defaultVoice")}</option>
-											{sortedVoices.map((v) => (
-												<option
-													key={v.voiceURI || v.name}
-													value={v.voiceURI || v.name}
+											{browserVoiceGroups.map((group) => (
+												<optgroup
+													key={group.language || "other"}
+													label={group.label}
+													data-voice-language={group.language}
+													data-voice-current={group.current ? "true" : undefined}
 												>
-													{v.name} ({v.lang})
-												</option>
+													{group.voices.map((v) => (
+														<option key={v.id} value={v.id}>
+															{v.label}
+														</option>
+													))}
+												</optgroup>
 											))}
 										</select>
 										<button
@@ -7844,6 +7853,10 @@ export function SettingsTab() {
 								? dynamicTtsVoices
 								: (providerMeta?.voices ?? []);
 						if (voiceList.length > 0) {
+							// R25-v: 언어 정보가 있으면 현재 언어 목소리를 맨 앞에 두고 언어별로 묶는다.
+							const voiceGroups = voiceList.some((v) => "language" in v && v.language)
+								? groupTtsVoicesForLocale(voiceList as readonly TtsVoiceMeta[], locale)
+								: null;
 							return (
 								<div className="settings-field">
 									<label htmlFor="tts-voice-select">
@@ -7859,11 +7872,26 @@ export function SettingsTab() {
 												persistTtsVoice(e.target.value);
 											}}
 										>
-											{voiceList.map((v) => (
-												<option key={v.id} value={v.id}>
-													{v.label}
-												</option>
-											))}
+											{voiceGroups
+												? voiceGroups.map((group) => (
+														<optgroup
+															key={group.language || "other"}
+															label={group.label}
+															data-voice-language={group.language}
+															data-voice-current={group.current ? "true" : undefined}
+														>
+															{group.voices.map((v) => (
+																<option key={v.id} value={v.id}>
+																	{v.label}
+																</option>
+															))}
+														</optgroup>
+													))
+												: voiceList.map((v) => (
+														<option key={v.id} value={v.id}>
+															{v.label}
+														</option>
+													))}
 										</select>
 										<button
 											type="button"
@@ -7883,6 +7911,16 @@ export function SettingsTab() {
 					})()}
 
 					{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
+					{webRefAudio && !supportsRefAudio && (
+						<p className="settings-hint" style={{ gridColumn: "1 / -1" }} data-testid="web-ref-audio-login">
+							{t("settings.webRefAudioLogin")}
+						</p>
+					)}
+					{supportsRefAudio && webRefAudio && !isSelectedOmni && (
+						<p className="settings-hint" style={{ gridColumn: "1 / -1" }} data-testid="web-ref-audio-notice">
+							{t("settings.webRefAudioNotice")}
+						</p>
+					)}
 					{supportsRefAudio && (
 						<RefAudioSection
 							ensureLocalVoiceReady={ensureLocalVoiceReady}

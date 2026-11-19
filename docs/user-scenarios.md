@@ -3332,3 +3332,88 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 |---|---|---|
 | 성공 | 대화창 보임, 첫 메시지 = 카드 첫 인사, 메시지 1개, 입력란 초점 | `charcard-chat-start.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R12 (1280·390) |
 | 다른 앱·데스크톱 | 다른 앱이 보낸 문맥과 데스크톱 빌드에서는 대화를 열지 않음 | `charcard-chat-start.test.ts` |
+## UC-WEB-BGM-CATALOG-TRUTH. 웹판 음악 앱 목록 곡이 실제로 재생되는 곡과 같다 (R7)
+
+경로: 웹(브라우저) 빌드(`vite --mode web`). 웹판 사용자가 음악 앱(♫)을 열고 장르(예: 지브리)를 고른 뒤 목록의 한 곡을 누릅니다. 목록에 보인 제목·채널의 영상이 배경 재생기에 실리고, 재생 중 카드와 AI 가 말하는 곡명도 같은 제목입니다. 웹판에는 검색 서버(사이드카)가 없으므로 정적 목록만 쓰며, 목록에 없는 장르(제이팝·시티팝·클래식 등)를 다른 영상에 억지로 붙이지 않습니다. 실시간 방송은 길이 대신 `LIVE` 로 보입니다.
+
+### Test Coverage Map — UC-WEB-BGM-CATALOG-TRUTH
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·성공 | 지브리 장르 첫 줄 제목 = 재생 영상 id(3jWRrafhO7M)·재생 카드 제목 | `e2e/web-bgm-r7.spec.ts` R7 (1280×720, 390×844) |
+| 오류(지어낸 제목) | 예전 지어낸 곡명이 웹 목록에 없음, 주제어 검색이 실제 영상만 고름 | `e2e/web-bgm-r7.spec.ts` R7, `src/lib/__tests__/bgm-skill.test.ts` |
+| 좁은 폭 | 390×844 에서 재생기 안 목록·재생이 동작(세로 모바일 진입점은 앱 바 몫) | `e2e/web-bgm-r7.spec.ts` R7 390 |
+
+## UC-WEB-BGM-LOCAL-IMPORT. 웹판 음악 앱에 내 음악 파일 올리기 (R10)
+
+경로: 웹(브라우저) 빌드. 웹판 사용자가 음악 앱(♫)의 [로컬] 탭을 엽니다. 처음에는 "아직 음악이 없습니다. 올린 파일은 이 브라우저에만 저장됩니다." 안내와 [음악 올리기] 단추가 보입니다. 단추를 눌러 이 기기의 음악 파일(mp3·m4a·aac·ogg·opus·wav·flac·weba, 여러 개 가능)을 고르면 파일이 이 브라우저 저장소(OPFS `naia-adk/naia-settings/bgm-musics/`)에 복사되고 목록에 이름이 생깁니다. 줄을 누르면 재생되고, ✕ 로 지웁니다. 새로고침해도 목록이 남습니다. 파일은 서버로 가지 않습니다.
+
+음악이 아닌 파일, 200MB 넘는 파일, 저장 공간 부족, 쓰기 실패는 각각 이유를 알림(role=alert)으로 보이고, 받을 수 있는 파일은 그대로 올립니다. 같은 이름은 `이름 (2).확장자` 로 구별합니다. 키오스크 체험판과 OPFS 를 못 쓰는 브라우저에서는 올리기 단추를 숨깁니다. 데스크톱은 기존처럼 `naia-settings/bgm-musics/` 폴더를 읽습니다.
+
+### Test Coverage Map — UC-WEB-BGM-LOCAL-IMPORT
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 목록 | 빈 안내 문구와 [음악 올리기] 단추 표시 | `e2e/web-bgm-r10.spec.ts` R10 (1280×720, 390×844) |
+| 진행·성공 | 올린 wav 가 목록에 생기고 `data-bgm-local-count=1`, 눌러 재생 시 audio 오류 없음, 새로고침 뒤 유지, ✕ 로 삭제 | `e2e/web-bgm-r10.spec.ts` R10 |
+| 오류 | 음악 아닌 파일 거절 안내(role=alert), 200MB 초과·용량 부족·경로 탈출 거부, 실패 시 반쪽 파일 없음 | `e2e/web-bgm-r10.spec.ts`, `src/lib/web-runtime/__tests__/web-bgm-music.test.ts` |
+| 좁은 폭 | 390×844 에서 단추·목록·삭제 단추 표시 | `e2e/web-bgm-r10.spec.ts` R10 390 |
+
+## UC-WEB-STUDIO-VOICE-APPLY. 스튜디오에서 셸로 적용하면 캐릭터와 목소리가 함께 바뀐다 (R16)
+
+경로: 웹(브라우저) 빌드의 받는 쪽(`web-studio-handoff.ts`). 사용자가 스튜디오에서 캐릭터를 만들고 [셸에 적용]을 누르면 카드(`extensions.naia_studio`의 `avatar_id`·`voice_id`)가 `?character=` 또는 브라우저 저장소로 넘어옵니다. 셸은 아바타와 함께 목소리도 바꿉니다. 스튜디오가 보내는 맨 목록 이름(예: `cc0-ko-female-01`)은 게이트웨이가 나이아 목소리로 처리하도록 `naia-voice:` 를 붙여 저장합니다. 이미 `naia-voice:`·Dragon/Google 이름이면 그대로 씁니다.
+
+카드에 목소리가 없거나 셸 음성 합성이 쓰지 못하는 목소리(`user-voice:` — 스튜디오 작업에서만 쓰임)면 앞 캐릭터 목소리를 남기지 않고 기본 목소리(언어·캐릭터 기준)로 돌아갑니다. 못 쓰는 목소리는 기록(Logger.warn)에 남깁니다.
+
+### Test Coverage Map — UC-WEB-STUDIO-VOICE-APPLY
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·성공 | `avatar_id`+맨 `voice_id` 카드 적용 → 아바타 `naia-video-avatar`, `ttsVoice=naia-voice:<이름>` | `src/lib/web-runtime/__tests__/web-studio-voice.test.ts` R16 |
+| 형식 | 맨 이름·`naia-voice:`·Dragon·Google 이름 정규화, `user-voice:`·빈 값 거절 | `web-studio-voice.test.ts` R16 |
+| 빈 값·오류 | 목소리 없는 새 캐릭터·`user-voice:` 카드 → 앞 캐릭터 목소리 제거 | `web-studio-voice.test.ts` R16 |
+| 화면 | 받는 쪽은 화면 변화가 설정값뿐이라 단위 시험으로 확인(화면 캡처 없음) | — |
+
+## UC-WEB-VOICE-LANG-GROUP. 음성 목록이 현재 언어 기준으로 묶여 보인다 (R25-v)
+
+경로: 웹(브라우저) 빌드 설정 > 음성 탭의 목소리 고르기(`#tts-voice-select`). 웹 기본인 브라우저 내장 목소리(speechSynthesis, Chrome 은 여러 언어 목소리를 줌)와 Naia Cloud TTS 목록 모두 해당합니다. 한국어 화면의 사용자가 목소리 목록을 열면 맨 앞에 "한국어" 묶음(한국어 목소리 + 한국어를 말하는 다국어 목소리)이 있고, 나머지 목소리는 14개 언어 순서(ko·en·ja·zh·fr·de·ru·es·ar·hi·bn·pt·id·vi)로 언어별 묶음에 들어갑니다. 그 밖의 언어(it·th 등)는 뒤에 둡니다. 포르투갈어 목소리가 한국어 목소리 사이에 섞여 보이지 않습니다. 다른 언어 목소리도 숨기지 않고 고를 수 있습니다. 언어 표시(lang)가 없는 목소리는 맨 뒤 묶음에 둡니다. 묶음 정보가 없는 목록(Edge 등 다른 공급자)은 예전처럼 한 줄 목록입니다.
+
+### Test Coverage Map — UC-WEB-VOICE-LANG-GROUP
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·성공 | 한국어 화면에서 브라우저 목소리 묶음 순서 ko·en·ja·pt·it, Naia Cloud TTS 첫 묶음 = ko(current), pt-BR-Thalita 는 첫 묶음에 없고 pt 묶음에 있음 | `e2e/web-voice-r25v.spec.ts` R25-v (1280×720, 390×844) |
+| 14개 언어 | 각 언어에서 첫 묶음이 그 언어, 모든 목소리가 정확히 한 번 나옴, 묶음 순서 | `src/lib/tts/__tests__/registry.test.ts` R25-v |
+| 빈 목록·언어 없음 | 빈 목록은 묶음 없음, lang 없는 브라우저 목소리는 맨 뒤 묶음 | `registry.test.ts` R25-v |
+| 좁은 폭 | 390×844 에서 ☰ 메뉴 > 설정 > 음성 탭의 목록이 보임 | `e2e/web-voice-r25v.spec.ts` R25-v 390 |
+
+## UC-WEB-REF-AUDIO-UPLOAD. 웹판에서 내 목소리 올리기 (R13)
+
+경로: 웹(브라우저) 빌드 설정 > 음성 탭. 로그인하지 않은 사용자는 "로그인하면 내 목소리를 올릴 수 있습니다." 안내를 봅니다. Naia 계정으로 로그인한 사용자는 웹 기본 목소리(Naia Cloud TTS·브라우저 내장)에서도 [목소리 녹음]·[파일 올리기]를 봅니다(예전에는 naia-omni·naia-local-voice 일 때만 보였음). 파일을 고르면 셸이 16kHz 모노 PCM16 WAV 로 바꿔 base64 로 게이트웨이 `POST /v1/ref-audio`(multipart `file`, `Authorization: Bearer <naiaKey>`, `Idempotency-Key`)에 올립니다. 1회 $0.01 이 차감됩니다.
+
+올린 목소리는 게이트웨이가 Naia Omni 실시간 대화(`/v1/realtime`)에서만 씁니다. 답을 읽어 주는 Naia Cloud TTS(`/v1/audio/speech`)는 올린 목소리를 받지 않습니다(나이아 목소리는 번들 견본 `tpl-*` 만 참조 음성으로 씀). 그래서 웹판은 올리기 위에 "올린 목소리는 Naia Omni 실시간 음성 대화에서 쓰입니다. 답을 읽어 주는 Naia Cloud TTS 에는 아직 쓰이지 않습니다." 를 함께 보입니다. 키오스크 체험판에는 보이지 않습니다.
+
+### Test Coverage Map — UC-WEB-REF-AUDIO-UPLOAD
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본(로그아웃) | 로그인 안내 보임, 올리기 단추 없음 | `e2e/web-ref-audio-r13.spec.ts` R13 (1280×720, 390×844) |
+| 성공(로그인) | 안내 문구(Naia Omni)와 올리기 단추 보임, 파일을 고르면 `POST /v1/ref-audio` 에 `Bearer` 키와 `ref-audio.b64` base64 RIFF 가 감 | `e2e/web-ref-audio-r13.spec.ts` R13 (게이트웨이는 흉내, 실제 차감 없음) |
+| 진행→성공 표시 | 올리기 뒤 "알 수 없는 오류" 없음, 현재 음색 카드가 "내 업로드"로 바뀜 | `e2e/web-ref-audio-r13.spec.ts` R13 |
+| 웹 로컬 사본 | 웹판에서 올리기·불러오기·지우기가 Tauri invoke 를 부르지 않음 | `src/lib/voice/__tests__/ref-audio-api-web-r13.test.ts` R13 |
+| 오류 | 형식·용량·인증·크레딧 부족 오류 문구 | 기존 `src/components/__tests__/RefAudioSection.test.tsx` |
+| 좁은 폭 | 390×844 에서 ☰ 메뉴 > 설정 > 음성 탭의 안내·단추 표시 | `e2e/web-ref-audio-r13.spec.ts` R13 390 |
+
+## UC-WEB-VOICE-MIC-ERROR. 웹판 음성 대화와 마이크 오류 안내 (R26)
+
+경로: 웹(브라우저) 빌드 채팅의 음성 대화 단추(`.chat-voice-btn`). 누르면 브라우저 SpeechRecognition(무료, 게이트웨이를 거치지 않음)으로 듣고, 말이 끝나면 답을 받아 읽어 준 뒤 다시 듣습니다. 마이크 권한이 막혔거나(`not-allowed`), 마이크가 없거나 다른 앱이 쓰거나(`audio-capture`, 세 번 다시 시도한 뒤), 브라우저 음성 서버에 닿지 못하거나(`network`), 현재 언어를 못 알아듣거나, 음성 인식이 없는 브라우저면 음성 대화가 꺼지고 "음성 대화 연결 실패: 마이크 권한이 막혀 있습니다. 주소창의 자물쇠 아이콘에서 마이크를 허용한 뒤 음성 대화 단추를 다시 눌러 주세요." 처럼 고치는 방법을 봅니다. 예전에는 "음성 대화 연결 실패: not-allowed" 처럼 코드만 보였고, 끌 때 데스크톱 전용 STT 정지를 불러 경고가 남았습니다.
+
+### Test Coverage Map — UC-WEB-VOICE-MIC-ERROR
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·진행·성공 | 단추를 누르면 듣기(active) → "안녕하세요" 사용자 말 → 답을 읽어 줌(speechSynthesis) → 다시 듣기 → 단추로 끔 | `e2e/web-voice-r26.spec.ts` R26 (1280×720, 390×844, 브라우저 음성은 흉내) |
+| 오류 | 권한 거부 → 음성 대화 꺼짐, "마이크 권한이 막혀 있습니다" 안내, `not-allowed` 코드 안 보임, `plugin:stt|stop_listening` 호출 없음 | `e2e/web-voice-r26.spec.ts` R26 |
+| 오류 코드 표 | 6가지 코드 → 안내 문구 키, 모르는 코드는 null | `src/lib/stt/__tests__/web-speech-stt.test.ts` R26 |
+| 데스크톱 회귀 | 데스크톱 Web Speech 권한 오류 문구는 그대로 | `src/components/__tests__/ChatArea.test.tsx` |
+| 좁은 폭 | 390×844 에서 채팅 위 안내 문구가 잘리지 않음 | `e2e/web-voice-r26.spec.ts` R26 390 |

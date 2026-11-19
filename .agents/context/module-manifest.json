@@ -962,6 +962,20 @@
         "UC-WEB-KIOSK-S3"
       ],
       "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+    },
+    "packages/shell/src/lib/web-runtime/web-bgm-music.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-BGM-LOCAL-IMPORT"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-bgm-music.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-studio-handoff.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-STUDIO-VOICE-APPLY"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-studio-handoff.md"
     }
   },
   "scan_dirs": [

@@ -20,6 +20,11 @@ import {
 	resolveWebPublicAssetUrl,
 } from "./web-runtime/web-assets";
 import {
+	listWebBgmMusicPaths,
+	readWebBgmMusicBlob,
+	webBgmFileName,
+} from "./web-runtime/web-bgm-music";
+import {
 	type SlotsManifest,
 	buildSlotsManifest,
 	serializeSlotsManifest,
@@ -176,6 +181,8 @@ export async function listNaiaAssets(
 		if (subdir === "background")
 			return WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
 		if (subdir === "nva-files") return [...WEB_NVA_ASSETS];
+		// R10: 사용자가 이 브라우저에 올린 음악(OPFS).
+		if (subdir === "bgm-musics") return listWebBgmMusicPaths().catch(() => []);
 		return [];
 	}
 	const adkPath = getAdkPath();
@@ -257,6 +264,10 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 		)
 	) {
 		return resolveWebPublicAssetUrl(filePath);
+	}
+	// R10: 웹판에 올린 음악은 OPFS 에서 읽어 blob: URL 로 재생한다.
+	if (isWebMode() && webBgmFileName(filePath)) {
+		return createLocalMediaUrl(await readWebBgmMusicBlob(filePath));
 	}
 	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
 	if (!BLOB_URL_EXTS.has(ext)) {

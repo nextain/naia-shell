@@ -7,6 +7,7 @@ vi.mock("../../logger", () => ({
 
 import {
 	createWebSpeechSttSession,
+	webSpeechErrorMessageKey,
 	webSpeechSttOptions,
 } from "../web-speech-stt";
 
@@ -440,5 +441,23 @@ describe("createWebSpeechSttSession — continuous voice recovery (Stage 1)", ()
 		expect(first.onresult).toBeNull();
 		expect(second.start).toHaveBeenCalledTimes(1);
 		await session.stop();
+	});
+});
+
+describe("R26 web voice chat microphone error guidance", () => {
+	it.each([
+		["not-allowed", "chat.webSpeechErrorNotAllowed"],
+		["service-not-allowed", "chat.webSpeechErrorNotAllowed"],
+		["audio-capture", "chat.webSpeechErrorAudioCapture"],
+		["network", "chat.webSpeechErrorNetwork"],
+		["language-not-supported", "chat.webSpeechErrorLanguage"],
+		["NOT_AVAILABLE", "chat.webSpeechErrorUnsupported"],
+	])("R26 maps %s to an actionable message", (code, key) => {
+		expect(webSpeechErrorMessageKey(code)).toBe(key);
+	});
+
+	it("R26 keeps unknown codes for the raw fallback", () => {
+		expect(webSpeechErrorMessageKey("restart-failed")).toBeNull();
+		expect(webSpeechErrorMessageKey("")).toBeNull();
 	});
 });

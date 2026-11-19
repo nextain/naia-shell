@@ -355,6 +355,100 @@ export function getRecommendedDragonVoicesForLocale(
 	return recommended;
 }
 
+/** UI 14개 언어 순서. 목소리 묶음 순서도 이것을 따른다. */
+const VOICE_LANGUAGE_ORDER: readonly string[] = [
+	"ko", "en", "ja", "zh", "fr", "de", "ru", "es", "ar", "hi", "bn", "pt", "id", "vi",
+];
+
+const VOICE_LANGUAGE_LABELS: Readonly<Record<string, string>> = {
+	ko: "한국어",
+	en: "English",
+	ja: "日本語",
+	zh: "中文",
+	fr: "Français",
+	de: "Deutsch",
+	ru: "Русский",
+	es: "Español",
+	ar: "العربية",
+	hi: "हिन्दी",
+	bn: "বাংলা",
+	pt: "Português",
+	id: "Bahasa Indonesia",
+	vi: "Tiếng Việt",
+	it: "Italiano",
+	th: "ไทย",
+};
+
+/** 브라우저 speechSynthesis 목소리(SpeechSynthesisVoice 모양)를 묶을 수 있는 형태로 바꾼다. */
+export function browserVoicesToTtsVoiceMetas(
+	voices: readonly { name: string; lang?: string; voiceURI?: string }[],
+): TtsVoiceMeta[] {
+	return voices.map((voice) => {
+		const language = (voice.lang ?? "").trim().toLowerCase().split(/[-_]/)[0];
+		return {
+			id: voice.voiceURI || voice.name,
+			label: voice.lang ? `${voice.name} (${voice.lang})` : voice.name,
+			...(language ? { language } : {}),
+		};
+	});
+}
+
+export interface TtsVoiceGroup {
+	/** 언어 코드. 언어 정보가 없는 목소리는 "". */
+	readonly language: string;
+	readonly label: string;
+	/** 현재 UI 언어로 말할 수 있는 목소리 묶음(맨 앞). */
+	readonly current: boolean;
+	readonly voices: readonly TtsVoiceMeta[];
+}
+
+/**
+ * R25-v: 목소리 목록을 언어별로 묶는다. 현재 UI 언어로 말할 수 있는 목소리
+ * (그 언어 목소리 + 그 언어를 지원하는 다국어 목소리)를 맨 앞 묶음에 두고,
+ * 나머지는 14개 언어 순서, 그 밖의 언어는 뒤에 둔다. 한국어 화면에
+ * 포르투갈어 목소리가 섞여 보이던 문제를 막는다.
+ */
+export function groupTtsVoicesForLocale(
+	voices: readonly TtsVoiceMeta[],
+	rawLocale?: string,
+): TtsVoiceGroup[] {
+	const locale = normalizeLocaleCode(rawLocale);
+	const speaksLocale = (voice: TtsVoiceMeta) =>
+		voice.language === locale ||
+		(voice.secondaryLocales?.includes(locale) ?? false);
+	const current = voices.filter(speaksLocale);
+	const rest = new Map<string, TtsVoiceMeta[]>();
+	for (const voice of voices) {
+		if (speaksLocale(voice)) continue;
+		const lang = voice.language ?? "";
+		const list = rest.get(lang) ?? [];
+		list.push(voice);
+		rest.set(lang, list);
+	}
+	const rank = (lang: string) => {
+		const i = VOICE_LANGUAGE_ORDER.indexOf(lang);
+		return i >= 0 ? i : lang ? VOICE_LANGUAGE_ORDER.length : VOICE_LANGUAGE_ORDER.length + 1;
+	};
+	const groups: TtsVoiceGroup[] = [];
+	if (current.length > 0) {
+		groups.push({
+			language: locale,
+			label: VOICE_LANGUAGE_LABELS[locale] ?? locale,
+			current: true,
+			voices: current,
+		});
+	}
+	for (const lang of [...rest.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))) {
+		groups.push({
+			language: lang,
+			label: VOICE_LANGUAGE_LABELS[lang] ?? (lang || "—"),
+			current: false,
+			voices: rest.get(lang) ?? [],
+		});
+	}
+	return groups;
+}
+
 registerTtsProviderMeta({
 	id: "nextain",
 	name: "Naia Cloud TTS (Dragon)",

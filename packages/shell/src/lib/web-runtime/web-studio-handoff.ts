@@ -105,7 +105,26 @@ function safeCardIdFromName(name: string): string {
 export interface StudioCardAvatarHint {
 	nvaModel?: string;
 	ttsVoice?: string;
+	/** 스튜디오가 보냈지만 셸 음성 합성이 못 쓰는 목소리(예: user-voice:). */
+	unsupportedVoice?: string;
 	backgroundVideo?: string;
+}
+
+/**
+ * 스튜디오 목소리 이름을 게이트웨이 /v1/audio/speech 가 받는 형태로 맞춘다.
+ * - Dragon/Azure·Google 이름(ko-KR-…)과 naia-voice:… 는 그대로.
+ * - 맨 카탈로그 이름(cc0-ko-female-01 등)은 naia-voice: 를 붙인다 — 게이트웨이는
+ *   이 머리말이 있어야 나이아 목소리로 보내고, 없으면 Google 목소리로 처리한다.
+ * - user-voice:… 는 스튜디오 작업에서만 쓰여 동기 합성 경로가 받지 않으므로 undefined.
+ */
+export function normalizeStudioVoiceId(raw: string): string | undefined {
+	const voice = raw.trim();
+	if (!voice) return undefined;
+	if (/^user-voice:/i.test(voice)) return undefined;
+	if (/^naia-voice:[^\s]+$/.test(voice)) return voice;
+	if (/^[a-z]{2,3}-[A-Z]{2,4}-/.test(voice)) return voice;
+	if (/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(voice)) return `naia-voice:${voice}`;
+	return undefined;
 }
 
 export function extractStudioCardExtensions(
@@ -171,10 +190,11 @@ export function extractStudioCardExtensions(
 		extensions.ttsVoice,
 	];
 	for (const v of voiceCandidates) {
-		if (typeof v === "string" && v.trim().length > 0) {
-			hint.ttsVoice = v.trim();
-			break;
-		}
+		if (typeof v !== "string" || v.trim().length === 0) continue;
+		const voice = normalizeStudioVoiceId(v);
+		if (voice) hint.ttsVoice = voice;
+		else hint.unsupportedVoice = v.trim();
+		break;
 	}
 
 	const bgCandidates = [
@@ -233,7 +253,9 @@ export async function applyNormalizedCharacterCardToWebShell(
 					nvaModel: studioHint.nvaModel,
 				}
 			: {}),
-		...(studioHint.ttsVoice ? { ttsVoice: studioHint.ttsVoice } : {}),
+		...(studioHint.ttsVoice
+			? { ttsVoice: studioHint.ttsVoice }
+			: {}),
 		...(studioHint.backgroundVideo
 			? { backgroundVideo: studioHint.backgroundVideo }
 			: {}),
@@ -243,6 +265,17 @@ export async function applyNormalizedCharacterCardToWebShell(
 			b2cActiveCardId: merged.card.id,
 		},
 	};
+
+	// 캐릭터는 바뀌는데 카드에 쓸 수 있는 목소리가 없으면 앞 캐릭터 목소리를 남기지
+	// 않는다 — 기본 목소리(언어·캐릭터 기준)로 돌아간다.
+	if (!studioHint.ttsVoice && (studioHint.nvaModel || studioHint.unsupportedVoice)) {
+		delete nextConfig.ttsVoice;
+	}
+	if (studioHint.unsupportedVoice) {
+		Logger.warn("StudioHandoff", "studio voice not usable for shell TTS", {
+			voice: studioHint.unsupportedVoice,
+		});
+	}
 
 	saveConfig(nextConfig);
 	try {

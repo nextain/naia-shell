@@ -2011,3 +2011,58 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-A-R2 | 설정 적용 단추는 그림자 없는 8px 모서리 기본 단추로, 높이 36px 이상, 글자 대비 4.5:1 이상, 한 줄 글자, 초점 테두리를 가진다. 검증: `UC-WEB-A-R2`. | Done (local) |
 | FR-WEB-A-R5 | 내장이 아닌 설치 앱은 앱 이름과 닫기 단추를 가진 셸 제목 막대 아래에 표시되어, 앱 자체 머리 영역의 단추가 셸 닫기 단추에 가려지지 않는다. 앱 묶음 내부 디자인(저장소 밖)은 해당 앱 저장소에서 맞춘다. 검증: `UC-WEB-A-R5`. | Done (local, 셸 쪽) |
 | FR-WEB-A-R12 | 웹판에서 캐릭터 카드 앱이 `charcard` 대화 문맥을 보내면 셸은 새 대화를 만들고 카드 첫 인사를 첫 메시지로 넣은 뒤 대화창을 열고 입력란에 초점을 준다. 검증: `UC-WEB-A-R12`. | Done (local) |
+## 웹판 음악 목록의 정직성 (R7)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-BGM-CATALOG.1 | 웹(브라우저) 빌드의 정적 YouTube 목록(`WEB_YOUTUBE_CATALOG`)의 제목·채널은 그 영상 id 의 실제 YouTube 정보(oEmbed)와 같습니다. 길이는 확인된 값만, 실시간 방송은 `LIVE` 로 적습니다. | Done (local) |
+| FR-WEB-BGM-CATALOG.2 | 주제어는 영상의 실제 내용만 적습니다. 목록에 없는 장르를 다른 영상에 붙이지 않습니다. | Done (local) |
+
+검증: `UC-WEB-BGM-CATALOG-TRUTH`. 샌드박스 Chromium 에서는 YouTube 가 봇 확인 화면을 띄워 실제 소리 재생은 확인하지 못했습니다(시험은 embed 를 빈 페이지로 대체하고 영상 id 일치만 확인).
+
+## 웹판 로컬 음악 올리기 (R10)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-BGM-LOCAL.1 | 웹(브라우저) 빌드의 음악 앱 로컬 탭은 사용자가 고른 음악 파일을 같은 출처 브라우저 저장소(OPFS `naia-adk/naia-settings/bgm-musics/`)에 원래 바이트로 복사하고 목록에 보입니다. 파일은 서버로 보내지 않습니다. | Done (local) |
+| FR-WEB-BGM-LOCAL.2 | 올린 파일은 올바른 audio MIME 의 blob 으로 재생되고 새로고침 뒤에도 남으며, 사용자가 지울 수 있습니다. | Done (local) |
+| FR-WEB-BGM-LOCAL.3 | 음악이 아닌 파일·200MB 초과·용량 부족·쓰기 실패를 구분해 알리고 반쪽 파일을 남기지 않습니다. 키오스크와 OPFS 미지원 브라우저에서는 올리기를 숨깁니다. | Done (local) |
+
+검증: `UC-WEB-BGM-LOCAL-IMPORT`.
+
+## 스튜디오 적용 시 캐릭터·목소리 함께 바뀜 (R16)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-STUDIO-VOICE.1 | 웹(브라우저) 빌드가 스튜디오 카드를 적용하면 `naia_studio.voice_id`(또는 `tts_voice`)를 아바타와 같이 `ttsVoice` 로 저장합니다. 맨 목록 이름은 `naia-voice:<이름>` 으로 바꿔 게이트웨이 `/v1/audio/speech` 가 나이아 목소리 경로로 보내게 합니다. | Done (local) |
+| FR-WEB-STUDIO-VOICE.2 | 카드에 쓸 수 있는 목소리가 없으면(없음·`user-voice:`) 앞 캐릭터 목소리를 지워 기본 목소리로 돌아갑니다. | Done (local) |
+
+검증: `UC-WEB-STUDIO-VOICE-APPLY`. 게이트웨이 규칙(`naia-voice:` 머리말만 나이아 목소리)은 참고 사본 코드로 확인했고 운영 게이트웨이와 같은지는 미확인입니다. 스튜디오 `user-voice:`(내 목소리)를 셸 실시간 합성에서 쓰는 경로는 없습니다.
+
+## 음성 목록 언어 묶음 (R25-v)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-VOICE-LANG.1 | 웹(브라우저) 빌드 설정의 목소리 목록(브라우저 내장·Naia Cloud TTS)은 현재 UI 언어로 말할 수 있는 목소리를 맨 앞 묶음(`optgroup`)에 두고, 나머지를 14개 언어 순서의 언어별 묶음으로 보입니다. 다른 언어 목소리가 현재 언어 묶음에 섞이지 않습니다. | Done (local) |
+
+검증: `UC-WEB-VOICE-LANG-GROUP`.
+
+## 웹판 내 목소리 올리기 (R13)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-REF-AUDIO.1 | 웹(브라우저) 빌드에서 Naia 계정으로 로그인하면 TTS 공급자와 상관없이 설정 음성 탭에 목소리 녹음·파일 올리기(RefAudioSection)가 보입니다. 로그아웃이면 로그인 안내를 보입니다. 키오스크는 제외합니다. | Done (local) |
+| FR-WEB-REF-AUDIO.2 | 올리기는 게이트웨이 `POST /v1/ref-audio` 형식(multipart `file` = base64 RIFF/WAVE PCM16 16kHz 모노, `Authorization: Bearer`)을 지킵니다. | Done (local) |
+| FR-WEB-REF-AUDIO.4 | 웹판은 게이트웨이가 올린 목소리를 보관하므로, 올리기·지우기·불러오기 뒤 Tauri 전용 로컬 사본(`write/read/delete_naia_ref_audio`)을 부르지 않습니다. 예전에는 올리기(차감)는 성공했는데 이 호출이 브라우저에서 던져 "알 수 없는 오류"가 뜨고 현재 음색이 바뀌지 않았습니다(`lib/voice/ref-audio-api.ts`). | Done (local) |
+| FR-WEB-REF-AUDIO.3 | 올린 목소리가 쓰이는 곳(Naia Omni 실시간 대화)과 쓰이지 않는 곳(Naia Cloud TTS 문장 읽기)을 올리기 옆에 알립니다. | Done (local) |
+
+검증: `UC-WEB-REF-AUDIO-UPLOAD`. 남은 문제: 게이트웨이 `/v1/audio/speech` 가 사용자 참조 음성을 받지 않아 웹 기본 목소리(Naia Cloud TTS)로 내 목소리를 들을 수 없습니다 — 게이트웨이 변경이 필요합니다(참고 사본 `routes/tts.py`·`routes/naia_voice.py` 기준, 운영 게이트웨이와 같은지는 미확인). 웹판에서 Naia Omni 실시간 대화를 고를 수 있는지는 두뇌 공급자 묶음 몫이라 확인하지 않았습니다. 브라우저에서 게이트웨이 `/v1/ref-audio` 로의 CORS 허용 여부는 미확인입니다.
+
+## 웹판 음성 대화 마이크 오류 (R26)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-VOICE-MIC.1 | 웹(브라우저) 빌드 음성 대화에서 브라우저 SpeechRecognition 이 `not-allowed`·`service-not-allowed`·`audio-capture`·`network`·`language-not-supported` 를 내거나 음성 인식이 없으면, 음성 대화를 끄고 원래 오류 코드 대신 사용자가 고칠 수 있는 방법(마이크 허용·장치 확인·연결 확인·Chrome 사용)을 대화에 알립니다. 모르는 코드는 예전처럼 코드를 보입니다. 데스크톱 문구는 바꾸지 않습니다. | Done (local) |
+| FR-WEB-VOICE-MIC.2 | 웹판 음성 대화를 끌 때 데스크톱 전용 Tauri STT 플러그인 정지(`plugin:stt|stop_listening`)를 부르지 않습니다. | Done (local) |
+
+검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
