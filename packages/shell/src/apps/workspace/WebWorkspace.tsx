@@ -1,5 +1,6 @@
 import {
 	type CSSProperties,
+	type ChangeEvent,
 	type MouseEvent as ReactMouseEvent,
 	Suspense,
 	lazy,
@@ -27,7 +28,13 @@ import {
 	revertKioskAdkFile,
 } from "../../lib/web-runtime/web-adk-edit";
 import { getWebFs } from "../../lib/web-runtime/web-fs";
-import { getWebWorkspaceFile } from "../../lib/web-runtime/web-workspace-files";
+import {
+	getWebWorkspaceFile,
+	importWebWorkspaceFile,
+	isWebWorkspaceImportDirectory,
+	openWebWorkspaceImportRoot,
+	type WebWorkspaceImportTarget,
+} from "../../lib/web-runtime/web-workspace-files";
 import {
 	getWebAdkStatus,
 	subscribeWebAdkStatus,
@@ -105,17 +112,25 @@ export function sortWebWorkspaceEntries(
 	);
 }
 
+type ImportDirectoryProps = {
+	importTargetPath?: string;
+	onSelectImportTarget?: (target: WebWorkspaceImportTarget) => void;
+	treeRevision: number;
+};
+
 function Directory({
 	dir,
 	path,
 	onOpen,
 	activeFile,
+	...importProps
 }: {
 	dir: FileSystemDirectoryHandle;
 	path: string;
 	onOpen: (path: string) => void;
 	activeFile?: string;
-}) {
+} & ImportDirectoryProps) {
+	const { treeRevision } = importProps;
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [error, setError] = useState(false);
 	useEffect(() => {
@@ -136,7 +151,7 @@ function Directory({
 		return () => {
 			active = false;
 		};
-	}, [dir, path]);
+	}, [dir, path, treeRevision]);
 	if (error) return <p role="alert">Unable to read directory</p>;
 	return (
 		<ul className="web-workspace-list">
@@ -149,6 +164,7 @@ function Directory({
 						path={`${path}/${entry.name}`}
 						onOpen={onOpen}
 						activeFile={activeFile}
+						{...importProps}
 					/>
 				) : (
 					<li key={entry.name}>
@@ -172,17 +188,21 @@ function Folder({
 	path,
 	onOpen,
 	activeFile,
+	...importProps
 }: {
 	parent: FileSystemDirectoryHandle;
 	name: string;
 	path: string;
 	onOpen: (path: string) => void;
 	activeFile?: string;
-}) {
+} & ImportDirectoryProps) {
 	const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
 	const [error, setError] = useState(false);
+	const { importTargetPath, onSelectImportTarget } = importProps;
 	const shouldAutoOpen = Boolean(
-		activeFile && activeFile.startsWith(`${path}/`),
+		activeFile?.startsWith(`${path}/`) ||
+		importTargetPath === path ||
+		importTargetPath?.startsWith(`${path}/`),
 	);
 	useEffect(() => {
 		if (shouldAutoOpen && !dir) {
@@ -207,12 +227,24 @@ function Folder({
 				<summary>📁 {name}</summary>
 				{error && <p role="alert">Unable to open folder</p>}
 				{dir && (
-					<Directory
-						dir={dir}
-						path={path}
-						onOpen={onOpen}
-						activeFile={activeFile}
-					/>
+					<>
+						{onSelectImportTarget && isWebWorkspaceImportDirectory(path) && (
+							<button
+								type="button"
+								aria-pressed={importTargetPath === path}
+								onClick={() => onSelectImportTarget({ path, directory: dir })}
+							>
+								{t("webExplorer.importPickFolder", { folder: name })}
+							</button>
+						)}
+						<Directory
+							dir={dir}
+							path={path}
+							onOpen={onOpen}
+							activeFile={activeFile}
+							{...importProps}
+						/>
+					</>
 				)}
 			</details>
 		</li>
@@ -240,6 +272,17 @@ export function isMobileWorkspaceViewport(): boolean {
 	);
 }
 
+function workspaceImportError(error: unknown) {
+	if (error instanceof DOMException) {
+		if (error.name === "QuotaExceededError") return "webExplorer.importFull";
+		if (error.name === "NotFoundError" || error.name === "TypeMismatchError")
+			return "webExplorer.importFolderChanged";
+		if (error.name === "NotSupportedError" || error.name === "SecurityError")
+			return "webExplorer.importUnavailable";
+	}
+	return "webExplorer.importFailed";
+}
+
 export default function WebWorkspace() {
 	const status = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
 	const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
@@ -261,6 +304,17 @@ export default function WebWorkspace() {
 	const editable = Boolean(file) && isKioskEditableWebAdkPath(file);
 	const [treeWidth, setTreeWidth] = useState(() => (isKioskDemo() ? 236 : 180));
 	const workspaceRef = useRef<HTMLDivElement>(null);
+	const importInput = useRef<HTMLInputElement>(null);
+	const pickedTarget = useRef<WebWorkspaceImportTarget | null>(null);
+	const [importTarget, setImportTarget] = useState<WebWorkspaceImportTarget | null>(null);
+	const [importStatus, setImportStatus] = useState<"idle" | "saving" | "done">("idle");
+	const [importError, setImportError] = useState<ReturnType<typeof workspaceImportError> | null>(null);
+	const [importedPath, setImportedPath] = useState("");
+	const [treeRevision, setTreeRevision] = useState(0);
+	const showImport = !isKioskDemo();
+	const importAvailable = Boolean(
+		status.phase === "ready" && root && navigator.locks?.request,
+	);
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		const onOpenFile = (event: Event) => {
@@ -356,6 +410,44 @@ export default function WebWorkspace() {
 			setError(true);
 		}
 	}
+
+	function selectImportTarget(next: WebWorkspaceImportTarget) {
+		setImportTarget(next);
+		setImportError(null);
+		setImportStatus("idle");
+	}
+
+	async function selectDefaultImportTarget() {
+		try {
+			selectImportTarget(await openWebWorkspaceImportRoot());
+			setTreeRevision((previous) => previous + 1);
+		} catch (cause) {
+			setImportError(workspaceImportError(cause));
+		}
+	}
+
+	async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+		const selected = event.currentTarget.files?.[0];
+		const target = pickedTarget.current;
+		event.currentTarget.value = "";
+		pickedTarget.current = null;
+		if (!selected || !target) return;
+		setImportStatus("saving");
+		setImportError(null);
+		try {
+			const savedPath = await importWebWorkspaceFile(target, selected);
+			setImportedPath(savedPath.slice(WEB_ADK_PATH.length + 1));
+			setTreeRevision((previous) => previous + 1);
+			setImportStatus("done");
+		} catch (cause) {
+			const message = workspaceImportError(cause);
+			setImportStatus("idle");
+			setImportError(message);
+			if (message === "webExplorer.importFolderChanged") {
+				setImportTarget((current) => current === target ? null : current);
+			}
+		}
+	}
 	const showExplorer = explorerOpen || !file;
 	return (
 		<div
@@ -398,6 +490,47 @@ export default function WebWorkspace() {
 							{t("webExplorer.offline")}
 						</button>
 					</div>
+					{showImport && (
+						<div className="web-workspace-import">
+							{importTarget ? (
+								<code data-testid="web-workspace-import-destination">
+									{t("webExplorer.importDestination", {
+										folder: importTarget.path.slice(WEB_ADK_PATH.length + 1),
+									})}
+								</code>
+							) : (
+								<p>
+									{t(importAvailable ? "webExplorer.importChoose" : "webExplorer.importUnavailable")}
+								</p>
+							)}
+							<button
+								type="button"
+								disabled={!importAvailable || importStatus === "saving"}
+								onClick={() => void selectDefaultImportTarget()}
+							>
+								{t("webExplorer.importChooseRoot")}
+							</button>
+							<button
+								type="button"
+								disabled={!importAvailable || !importTarget || importStatus === "saving"}
+								onClick={() => {
+									pickedTarget.current = importTarget;
+									importInput.current?.click();
+								}}
+							>
+								{t("webExplorer.importFile")}
+							</button>
+							<input ref={importInput} type="file" hidden onChange={handleImportFile} />
+							{importStatus !== "idle" && (
+								<p role="status">
+									{importStatus === "saving"
+										? t("webExplorer.importSaving")
+										: t("webExplorer.importDone", { path: importedPath })}
+								</p>
+							)}
+							{importError && <p role="alert">{t(importError)}</p>}
+						</div>
+					)}
 					{showPath && (
 						<code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>
 					)}
@@ -412,6 +545,13 @@ export default function WebWorkspace() {
 								setFile(next);
 							}}
 							activeFile={file}
+							treeRevision={treeRevision}
+							importTargetPath={importTarget?.path}
+							onSelectImportTarget={
+								showImport && importAvailable && importStatus !== "saving"
+									? selectImportTarget
+									: undefined
+							}
 						/>
 					)}
 				</aside>

@@ -1988,3 +1988,13 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 ## FR-WEB-BOOT-RUNTIME-SEPARATION
 
 Web startup must select the web runtime using the build mode, even after the web Tauri-compatibility shim has installed `__TAURI_INTERNALS__`. It must neither invoke native workspace bootstrap nor install the native coding-worker adapter. Native Tauri builds retain both native paths and fail visibly when native workspace restoration fails. Verification: `UC-WEB-BOOT-RUNTIME-SEPARATION`.
+
+## 작업 파일을 브라우저 탐색기로 가져오기
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-WORKSPACE-IMPORT.1 | 정식 웹의 탐색기는 사용자가 고른 `work/` 또는 그 아래 작업 폴더를 표시합니다. 파일 선택을 시작하면 해당 폴더의 경로와 동일성이 작업에 연결됩니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.2 | 파일 한 개를 동일 출처의 브라우저 저장소에 원래 바이트대로 보관합니다. 동명 항목과 동시에 선택한 파일은 구별된 이름으로 남습니다. 완료된 항목은 기존 탐색기, 열기, 내려받기에서 사용합니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존됩니다. 저장소 미지원과 용량 부족은 사용자에게 알려 줍니다. | Done (local) |
+
+로컬 후보 검증은 2026-11-19 03:53 UTC Chromium 탐색기 실동작과 탐색기 회귀 시험 7건입니다. 시스템 기본 작업 공간 준비는 별도 진입 시험에서 확인합니다.

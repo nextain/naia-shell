@@ -99,7 +99,24 @@
 	border-bottom: 1px solid var(--border-color, #333);
 	background: var(--surface, #242424);
 }
+.web-workspace-import {
+	display: grid;
+	gap: 6px;
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--border-color, #333);
+}
+.web-workspace-import p,
+.web-workspace-import code {
+	margin: 0;
+	color: var(--text-primary, #eee);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+.web-workspace-import p[role="alert"] {
+	color: var(--error, #ff9f9f);
+}
 .web-workspace-tabs button,
+.web-workspace-import button,
 .web-workspace-viewer-bar button {
 	padding: 5px 9px;
 	border: 1px solid var(--border-color, #444);
@@ -112,7 +129,16 @@
 	cursor: pointer;
 	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
+.web-workspace-import button {
+	color: var(--text-primary, #eee);
+	white-space: normal;
+}
+.web-workspace-import button:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
 .web-workspace-tabs button:hover,
+.web-workspace-import button:not(:disabled):hover,
 .web-workspace-viewer-bar button:hover {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 	color: var(--text-primary, #eee);

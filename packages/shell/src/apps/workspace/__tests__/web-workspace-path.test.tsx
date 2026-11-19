@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppCenterProps } from "../../../lib/app-registry";
 import { setLocale } from "../../../lib/i18n";
+import {
+	resetWebAdkStatusForTests,
+	setWebAdkStatus,
+} from "../../../lib/web-runtime/web-adk-status";
 import { setWebAssetsModeForTests } from "../../../lib/web-runtime/web-assets";
-import { getWebWorkspaceFile } from "../../../lib/web-runtime/web-workspace-files";
+import {
+	getWebWorkspaceFile,
+	importWebWorkspaceFile,
+	openWebWorkspaceImportRoot,
+} from "../../../lib/web-runtime/web-workspace-files";
 import WebWorkspace, {
 	isVisibleWebWorkspaceEntry,
 	sortWebWorkspaceEntries,
@@ -18,6 +26,122 @@ describe("web workspace path", () => {
 		localStorage.removeItem("naia-adk-path");
 		setWebAssetsModeForTests(null);
 		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+		resetWebAdkStatusForTests();
+	});
+
+	function installImportStorage(
+		files: Map<string, File>,
+		temporary = new Map<string, File>(),
+	) {
+		let failWrite = false;
+		function mockDirectory(directoryName: string, contents: Map<string, File>) {
+			const directory = {
+				kind: "directory",
+				name: directoryName,
+				async *values() {
+					for (const name of contents.keys()) yield { kind: "file", name };
+				},
+				isSameEntry: async (candidate: unknown) => candidate === directory,
+				async getFileHandle(name: string, options?: { create?: boolean }) {
+					if (!contents.has(name) && !options?.create)
+						throw new DOMException("Missing file", "NotFoundError");
+					return {
+						getFile: async () => contents.get(name),
+						createWritable: async () => ({
+							write: async (file: File) => {
+								contents.set(name, file);
+								if (failWrite)
+									throw new DOMException("Storage full", "QuotaExceededError");
+							},
+							close: async () => {},
+							abort: async () => {},
+						}),
+						move: async (destination: unknown, nextName: string) => {
+							expect(destination).toBe(work);
+							files.set(nextName, contents.get(name)!);
+							contents.delete(name);
+						},
+					};
+				},
+				removeEntry: async (name: string) => {
+					contents.delete(name);
+				},
+			};
+			return directory;
+		}
+		const work = mockDirectory("work", files);
+		const staging = mockDirectory("naia-workspace-import-staging", temporary);
+		const workspace = {
+			getDirectoryHandle: async () => work,
+			async *values() {
+				yield work;
+			},
+		};
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => ({
+					getDirectoryHandle: async (name: string) =>
+						name === staging.name ? staging : workspace,
+				}),
+			},
+			locks: { request: async (_name: string, task: () => unknown) => task() },
+		});
+		setWebAdkStatus({ phase: "ready" });
+		return { failWrite: () => { failWrite = true; } };
+	}
+
+	it("stores the imported file under the displayed work folder and preserves a same-name file", async () => {
+		await setLocale("ko");
+		const original = new File(["original"], "회의.txt");
+		const incoming = new File(["new"], "회의.txt");
+		const files = new Map([["회의.txt", original]]);
+		installImportStorage(files);
+		const { container } = render(<WebWorkspace />);
+
+		const choose = screen.getByRole("button", { name: "작업 폴더 선택" });
+		const upload = screen.getByRole("button", { name: "파일 가져오기" });
+		expect(upload).toBeDisabled();
+		await waitFor(() => expect(choose).toBeEnabled());
+		fireEvent.click(choose);
+		expect(await screen.findByTestId("web-workspace-import-destination")).toHaveTextContent("저장 위치 work");
+		fireEvent.click(upload);
+		fireEvent.change(container.querySelector('input[type="file"]')!, {
+			target: { files: [incoming] },
+		});
+		expect(await screen.findByRole("button", { name: /회의 \(2\)\.txt/ })).toBeVisible();
+		expect(await getWebWorkspaceFile("opfs://naia-adk/work/회의.txt")).toBe(original);
+		expect(await getWebWorkspaceFile("opfs://naia-adk/work/회의 (2).txt")).toBe(incoming);
+	});
+
+	it("keeps existing data after a failed work-folder write and blocks other destinations", async () => {
+		const original = new File(["original"], "memo.txt");
+		const leftover = "12a34b56-2080-4000-8000-123456789000";
+		const userFile = new File(["old"], `.naia-workspace-import-${leftover}`);
+		const files = new Map([
+			["memo.txt", original],
+			[userFile.name, userFile],
+			[leftover, new File(["also a user file"], leftover)],
+		]);
+		const before = [...files.entries()];
+		const stagedFiles = new Map([[leftover, new File(["partial"], leftover)]]);
+		const storage = installImportStorage(files, stagedFiles);
+		const target = await openWebWorkspaceImportRoot();
+		const incoming = new File(["new"], "memo.txt");
+		expect(isVisibleWebWorkspaceEntry(userFile.name, "opfs://naia-adk/work")).toBe(true);
+		expect(await getWebWorkspaceFile(`opfs://naia-adk/work/${userFile.name}`)).toBe(userFile);
+		await expect(
+			importWebWorkspaceFile({ ...target, path: "opfs://naia-adk/naia-settings" }, incoming),
+		).rejects.toMatchObject({ name: "InvalidCharacterError" });
+		await expect(
+			importWebWorkspaceFile({ ...target, directory: { ...target.directory } }, incoming),
+		).rejects.toMatchObject({ name: "NotFoundError" });
+		storage.failWrite();
+		await expect(importWebWorkspaceFile(target, incoming)).rejects.toMatchObject({
+			name: "QuotaExceededError",
+		});
+		expect([...files.entries()]).toEqual(before);
+		expect(stagedFiles.size).toBe(0);
 	});
 
 	it("shows the configured browser workspace path", () => {
@@ -97,6 +221,7 @@ describe("web workspace path", () => {
 		).rejects.toThrow("web_workspace_invalid_path");
 
 		render(<WebWorkspace />);
+		expect(screen.queryByRole("button", { name: "파일 가져오기" })).toBeNull();
 		expect(
 			screen.getByTestId("web-workspace-tab-offline"),
 		).toHaveTextContent("브라우저 안 오프라인 공간");

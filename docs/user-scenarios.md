@@ -3227,3 +3227,17 @@ P02 검증: 기본·빈 대화·진행·성공·오류 복구·좁은 폭 상태
 In a fresh web browser, the web runtime may provide a Tauri-compatible shim, but startup must not call desktop-only workspace commands. The web app reaches its normal entry screen. A native Tauri startup continues to restore its workspace and reports a real native read failure.
 
 Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean web boot with `NAIA_E2E_WEB=1` and `PLAYWRIGHT_SERVER_COMMAND='pnpm exec vite --mode web'`; `packages/shell/e2e/adk-home-isolation.spec.ts` exercises mocked native workspace restoration and failure. It does not replace a real Tauri test.
+
+## UC-WEB-WORKSPACE-IMPORT. 탐색기에서 작업 파일 가져오기
+
+정식 웹판의 사용자가 파일 탐색기의 작업 폴더를 엽니다. 처음에는 [작업 폴더 선택]으로 `work`를 만들거나 엽니다. 그 아래 폴더에서는 해당 폴더를 가져오기 대상으로 선택합니다. 파일을 고르기 전에 목적지를 확인합니다. 선택한 파일을 브라우저에 저장하면 목록에 이름이 나타나며 기존 열기·내려받기로 다시 사용합니다. 같은 이름은 접미 번호로 구별합니다.
+
+브라우저가 저장소를 열 수 없거나 안전한 가져오기를 지원하지 않으면 이유가 보입니다. 쓰기 실패와 용량 부족을 구분하고 재시도할 수 있습니다. 강제로 창이 닫힌 뒤 다음 가져오기에서 앱 전용 임시 저장소를 정리합니다. 파일을 고르는 동안 탐색 위치를 바꿔도 이미 표시된 목적지가 유효하면 그 위치에 저장됩니다. 폴더가 사라지거나 교체됐으면 다시 선택합니다.
+
+### Test Coverage Map — UC-WEB-WORKSPACE-IMPORT
+
+| 상태 | 판정 | 시험 |
+|---|---|---|
+| 기본·빈 폴더·읽기 전용 | 목적지가 없을 때 안내를 보이고 작업 폴더를 고르면 해당 위치가 보임 | `web-workspace-path.test.tsx` |
+| 진행·성공·좁은 화면 | 진행 상태, 새 항목 열기·내려받기, 키보드·400px 폭에서 목적지와 단추 표시 | `web-workspace-path.test.tsx`와 좁은 화면 브라우저 확인 |
+| 오류·충돌 | 기존 파일 보존, 새 파일 바이트 확인, 작업 폴더 교체·용량 부족 때 재선택 또는 재시도 | `web-workspace-path.test.tsx` |
