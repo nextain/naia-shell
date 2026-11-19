@@ -1,3 +1,10 @@
+<!-- src-sha: 4f83c9966f571f68 -->
+
+## 웹판 캐릭터 카드 추가·적용 (R40) — 2026-11-20
+
+- 표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.
+- `UC-WEB-CHARCARD` · `FR-WEB-CHARCARD.1~3` · `packages/shell/e2e/web-charcard-r40.spec.ts`
+
 <!-- src-sha: 7d4dedb15f471806 -->
 
 ## 웹판 설정 창의 재생 중 카드 겹침 해소 (R36) — 2026-11-20

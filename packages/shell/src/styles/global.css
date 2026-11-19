@@ -3490,6 +3490,56 @@ body.resizing-row {
 	font-size: 14px;
 }
 
+.character-card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.character-card-actions button {
+	margin: 0;
+	white-space: nowrap;
+}
+
+.character-card-actions output,
+.character-card-actions [role="alert"] {
+	flex-basis: 100%;
+}
+
+.character-card-library {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 6px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.character-card-library li {
+	max-width: 100%;
+}
+
+.character-theme-settings .character-card-library button {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+}
+
+.character-theme-settings .character-card-library button[aria-pressed="true"] {
+	background: var(--espresso-light);
+}
+
+.character-card-library img {
+	width: 32px;
+	height: 32px;
+	flex: none;
+	border-radius: 4px;
+	object-fit: cover;
+}
+
 /* R2: the apply button sits inside the sticky action bar, so it is a plain
    primary button (no floating shadow). Light accent themes get dark text to
    keep 4.5:1 contrast; the deep-blue default theme keeps white text. */

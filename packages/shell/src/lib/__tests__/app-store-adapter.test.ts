@@ -457,4 +457,22 @@ describe("PlatformAppStoreAdapter & WebHttpAppStoreAdapter", () => {
 			),
 		).toThrow();
 	});
+
+	it("R40 uses the bundled character-card detail even when a catalog URL omits /app", async () => {
+		const adapter = new WebHttpAppStoreAdapter({
+			stage1HostedCatalog: true,
+			fetchImpl: vi.fn(async () => jsonResponse(200, { data: [{
+				app_id: "land.naia.charcard",
+				version: "1.0.0",
+				price_credits: 0,
+				hosted_entry_url: "https://shell.example/hosted-apps/naia-charcard/index.html",
+				manifest: { name: "Character Card" },
+			}] })) as unknown as typeof fetch,
+			getGatewayUrl: () => "https://gate.example",
+			getShellOrigin: () => "https://shell.example",
+			getShellBasePath: () => "/app/",
+		});
+		const card = (await adapter.listInstalledManifests()).find((app) => app.id === "land.naia.charcard");
+		expect(card?.htmlEntry).toBe("https://shell.example/app/hosted-apps/naia-charcard/index.html");
+	});
 });

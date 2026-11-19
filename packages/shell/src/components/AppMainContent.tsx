@@ -39,6 +39,7 @@ import { DeferredOnboardingWizard } from "./DeferredOnboardingWizard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { KioskVoiceNotice } from "./KioskVoiceNotice";
 import { TitleBar } from "./TitleBar";
+import { toggleWebCharacterCard } from "./WebRuntimeHarnessBar";
 
 const AiControlBar = lazy(() =>
 	import("./AiControlBar").then((module) => ({
@@ -482,6 +483,18 @@ export function AppMainContent(props: AppMainContentProps) {
 									>
 										📁 {t("appbar.workspace")}
 									</button>
+									{webMode && !kioskDemo && (
+											<button
+											type="button"
+											data-testid="web-character-card-mobile-btn"
+											onClick={() => {
+												setMobileMenu(false);
+												void toggleWebCharacterCard();
+											}}
+										>
+											🃏 {t("characterTheme.cardsTitle")}
+										</button>
+									)}
 									{(!paymentLinksHidden || kioskDemo) && (
 										<button
 											type="button"

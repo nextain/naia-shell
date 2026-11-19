@@ -2139,3 +2139,15 @@ Web startup must select the web runtime using the build mode, even after the web
 로컬 검증. Shell Vitest 188건 통과, 에이전트 계약 시험 29건 통과. 게이트웨이 `97f20de3`의 시험 37건 통과. Azure 응답 견본으로 Terra 본문, `stop`과 `[DONE]`, Terra 사용량 기록을 확인했습니다. 개발 게이트웨이에서 수정 후 실제 Terra 응답을 받는지는 미확인입니다.
 
 Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-run`이 요구한 디스크 여유 25GiB에 미달해 브라우저 실행 전에 대기가 종료됐습니다.
+
+## 웹판 캐릭터 카드 만들기·파일 추가·적용 (R40)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-CHARCARD.1 | 웹판 상단과 모바일 메뉴의 캐릭터 카드는 같은 셸 앱의 목록과 상세를 엽니다. 카드 선택은 그 상세를 앱 안에서 갱신합니다. (UC-WEB-CHARCARD) | Done (local) |
+| FR-WEB-CHARCARD.2 | 같은 줄에서 캐릭터 카드를 만들거나 실리태번 V2/V3 PNG·JSON을 추가할 수 있습니다. 목록과 상세에 원본 카드 그림 또는 아바타 그림을 표시합니다. (UC-WEB-CHARCARD) | Done (local) |
+| FR-WEB-CHARCARD.3 | 선택된 카드를 적용하는 버튼을 파일 추가 바로 옆에 두고 390×844 첫 화면에서도 접근할 수 있게 합니다. 적용하면 해당 카드로 대화를 시작합니다. (UC-WEB-CHARCARD) | Done (local) |
+
+기준 재현. 상단 버튼 `WebRuntimeHarnessBar.tsx:191`에서 `land.naia.charcard`를 열면 iframe이 `/hosted-apps/naia-charcard/index.html`을 요청했습니다. `git log -S`로 추적한 최초 URL은 `e0033299`의 `app-store-adapter.ts:449`에 있습니다. `96ba5bf7`은 기본 URL에 `/app/`을 붙였습니다. 로컬 Vite에서는 기본 경로로도 카드 HTML이 제공되지 않아 셸 HTML이 HTTP 200으로 반환됐습니다. 새 웹판은 같은 카드 소스로 개발·빌드 경로를 제공하며 기존 카탈로그 URL보다 셸에 포함된 카드 경로를 사용합니다.
+
+검증. 표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.

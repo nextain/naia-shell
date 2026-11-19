@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T18:02:26Z",
+  "last_updated": "2026-11-19T19:19:46Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_charcard_r40_20261120": {
+      "requirement_id": "R40",
+      "title": "웹판 캐릭터 카드 추가·적용",
+      "branch": "alpha/webgpu-r40-card-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CHARCARD",
+      "requirements": "docs/requirements.md FR-WEB-CHARCARD.1~3",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.",
+      "evidence": "packages/shell/e2e/web-charcard-r40.spec.ts",
+      "last_updated": "2026-11-19T19:19:46Z"
+    },
     "web_bgm_nowplaying_r36_20261120": {
       "requirement_id": "R36",
       "title": "웹판 설정 창의 재생 중 카드 겹침 해소",

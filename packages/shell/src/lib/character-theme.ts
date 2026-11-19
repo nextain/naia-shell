@@ -1,6 +1,8 @@
 import {
 	decodeBase64Utf8,
+	isImageWithinLimits,
 	parseCharacterCardJsonText,
+	readImageDimensions,
 	type NormalizedCharacterBook,
 	type NormalizedCharacterCard,
 	type NormalizedLorebookEntry,
@@ -157,6 +159,18 @@ export function extractCardAvatarImageUrl(
 				? data.avatar.trim()
 				: "";
 	return url || null;
+}
+
+export function characterCardPngPreview(sourceBase64: string): string | null {
+	if (!sourceBase64.startsWith("iVBORw0KGgo")) return null;
+	try {
+		const header = Uint8Array.from(atob(sourceBase64.slice(0, 44)), (byte) => byte.charCodeAt(0));
+		return isImageWithinLimits(readImageDimensions(header, "image/png"))
+			? `data:image/png;base64,${sourceBase64}`
+			: null;
+	} catch {
+		return null;
+	}
 }
 
 export function restoreOriginalCard(

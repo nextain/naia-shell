@@ -3,9 +3,11 @@ import { openWebWorkspaceFile } from "../apps/workspace/WebWorkspace";
 import { loadInstalledApps } from "../lib/app-loader";
 import { appRegistry } from "../lib/app-registry";
 import { getPlatformAppStoreAdapter } from "../lib/app-store-adapter";
+import { CHARCARD_APP_ID } from "../lib/charcard-chat-start";
 import { loadConfig } from "../lib/config";
 import { getLocale } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { Logger } from "../lib/logger";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 import { isWebAuthenticated } from "../lib/web-runtime/web-auth";
 import { openWebLoginPrompt } from "../lib/web-runtime/web-login-prompt";
@@ -39,6 +41,24 @@ const pillStyle = (active = false, accent = false): React.CSSProperties => ({
 	cursor: "pointer",
 	lineHeight: 1,
 });
+
+export async function toggleWebCharacterCard(): Promise<void> {
+	const { activeApp, setActiveApp } = useAppStore.getState();
+	if (activeApp === CHARCARD_APP_ID) {
+		setActiveApp(null);
+		return;
+	}
+	try {
+		if (!appRegistry.get(CHARCARD_APP_ID)) {
+			await getPlatformAppStoreAdapter().installApp(CHARCARD_APP_ID);
+			await loadInstalledApps();
+		}
+		setActiveApp(CHARCARD_APP_ID);
+	} catch {
+		Logger.warn("WebRuntimeHarnessBar", "could not open character cards");
+		setActiveApp("settings");
+	}
+}
 
 /**
  * Official Web Mode (`VITE_NAIA_KIOSK_DEMO="0"`) runtime status & Open Harness bar:
@@ -127,23 +147,6 @@ export function WebRuntimeHarnessBar() {
 		setActiveApp("workspace");
 	};
 
-	const handleOpenCharacterCard = async () => {
-		const charAppId = "land.naia.charcard";
-		if (activeApp === charAppId) {
-			setActiveApp(null);
-			return;
-		}
-		try {
-			if (!appRegistry.get(charAppId)) {
-				await getPlatformAppStoreAdapter().installApp(charAppId);
-				await loadInstalledApps();
-			}
-			setActiveApp(charAppId);
-		} catch {
-			setActiveApp("settings");
-		}
-	};
-
 	return (
 		<div
 			className="web-runtime-harness-bar"
@@ -189,13 +192,13 @@ export function WebRuntimeHarnessBar() {
 			<button
 				type="button"
 				data-testid="web-character-card-quick-btn"
-				style={pillStyle(activeApp === "land.naia.charcard")}
+				style={pillStyle(activeApp === CHARCARD_APP_ID)}
 				title={
 					isKo
 						? "실리태번 호환 캐릭터 카드 (.png / .json) 불러오기·적용"
 						: "Import SillyTavern Character Card (.png / .json)"
 				}
-				onClick={() => void handleOpenCharacterCard()}
+				onClick={() => void toggleWebCharacterCard()}
 			>
 				{isKo ? "🃏 캐릭터 카드" : "🃏 Character Card"}
 			</button>

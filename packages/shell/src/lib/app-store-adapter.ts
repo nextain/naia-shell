@@ -570,8 +570,10 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 					? existing.manifest.tools
 					: spec.manifest.tools,
 			} as StoreProductSummary["manifest"];
+			const bundledCharacterCard =
+				spec.appId === "land.naia.charcard" && !this.hasCustomSandboxOrigin;
 			const hostedEntryUrl =
-				existing?.hostedEntryUrl ||
+				(!bundledCharacterCard && existing?.hostedEntryUrl) ||
 				this.resolveDefaultHostedEntryUrl(spec.appId, version);
 			byId.set(spec.appId, {
 				appId: spec.appId,
