@@ -215,6 +215,7 @@ export function WebModelStatusBar(props: {
 	scrollDuringSetup?: boolean;
 	offerCloudRecovery?: boolean;
 	localModelUnavailable?: boolean;
+	cloudRecoveryOnly?: boolean;
 	onSwitchModel?: (model: WebLlmModelId) => void;
 	onRetry?: () => void;
 }) {
@@ -281,6 +282,19 @@ export function WebModelStatusBar(props: {
 	};
 
 	const adapterLine = formatAdapterLine();
+	if (props.cloudRecoveryOnly) {
+		return (
+			<div
+				id="web-model-status"
+				data-testid="web-model-status"
+				data-phase="cloud-recovery"
+				className="chat-compaction-notice"
+				role="status"
+			>
+				<WebCloudChatRecovery provider="nextain" />
+			</div>
+		);
+	}
 
 	if (status.phase === "error") {
 		const fallbackModel = fallbackModelFor(status);

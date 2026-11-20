@@ -645,10 +645,12 @@ export function ChatArea({
 	const webLocalModelError =
 		import.meta.env.MODE === "web" &&
 		!isKioskDemo() &&
-		(webCloudRecovery || (webProvider === "webllm" && webModelStatus.phase === "error"));
+		webProvider === "webllm" &&
+		webModelStatus.phase === "error";
+	const webChatBlocked = webLocalModelError || webCloudRecovery;
 	const webSendBlocked =
 		import.meta.env.MODE === "web" &&
-		(webLocalModelError || isWebSendBlocked(webModelStatus, webAdkStatus, webProvider));
+		(webChatBlocked || isWebSendBlocked(webModelStatus, webAdkStatus, webProvider));
 	const [input, setInput] = useState("");
 	const localRetryRevision = useRef(0);
 	useEffect(() => {
@@ -6226,7 +6228,8 @@ export function ChatArea({
 						<WebModelStatusBar
 							scrollDuringSetup={webWorkspacePending}
 							offerCloudRecovery={!isKioskDemo()}
-							localModelUnavailable={webCloudRecovery}
+							cloudRecoveryOnly={webCloudRecovery}
+							localModelUnavailable={webLocalModelError}
 							onRetry={canStartLocalModel ? startLocalModel : undefined}
 							onSwitchModel={canStartLocalModel ? startLocalModel : undefined}
 						/>
@@ -6385,8 +6388,8 @@ export function ChatArea({
 						// Allow typing during an active Live voice session too — a
 						// typed line is routed to the Live session (see sendChat above)
 						// and answered in voice, same as spoken input.
-						disabled={voiceMode === "connecting" || webLocalModelError}
-						aria-describedby={webLocalModelError ? "web-model-status" : undefined}
+						disabled={voiceMode === "connecting" || webChatBlocked}
+						aria-describedby={webChatBlocked ? "web-model-status" : undefined}
 						className="chat-input"
 					/>
 					{messageQueue.length > 0 && (

@@ -4211,7 +4211,10 @@ describe("ChatArea", () => {
 		}));
 
 		render(<ChatArea />);
-		expect(screen.getByRole("alert")).toHaveTextContent("On-device chat couldn't start.");
+		expect(screen.getByTestId("web-model-status")).toHaveAttribute("data-phase", "cloud-recovery");
+		expect(screen.getByTestId("web-model-status")).toHaveAttribute("role", "status");
+		expect(screen.getByTestId("web-model-status")).not.toHaveTextContent("On-device chat couldn't start.");
+		expect(screen.queryByRole("alert")).toBeNull();
 		expect(screen.getByRole("button", { name: "Sign in for cloud chat (free 200 Cr)" })).toBeEnabled();
 		expect(screen.getByRole("textbox")).toBeDisabled();
 	});

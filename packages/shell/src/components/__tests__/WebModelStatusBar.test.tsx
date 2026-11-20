@@ -185,6 +185,23 @@ describe("WebModelStatusBar", () => {
 		expect(login).toHaveBeenCalledWith({ keepLocalModel: true });
 	});
 
+	it("shows cloud login recovery without reporting an on-device model failure", async () => {
+		await setLocale("en");
+		const login = vi.spyOn(webAuth, "startWebLoginRedirect").mockImplementation(() => ({
+			url: "", state: "", redirectUri: "",
+		}));
+		render(<WebModelStatusBar cloudRecoveryOnly />);
+
+		const status = screen.getByTestId("web-model-status");
+		expect(status).toHaveAttribute("data-phase", "cloud-recovery");
+		expect(status).toHaveAttribute("role", "status");
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(screen.queryByText("On-device chat couldn't start.")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Sign in for cloud chat (free 200 Cr)" }));
+		expect(login).toHaveBeenCalledOnce();
+		expect(login).toHaveBeenCalledWith({ keepLocalModel: true });
+	});
+
 	it("allows a new balance check after the account service is unavailable", async () => {
 		localStorage.setItem(webAuth.WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
 		const fetchBalance = vi.spyOn(labBalance, "fetchLabBalancePayload")
