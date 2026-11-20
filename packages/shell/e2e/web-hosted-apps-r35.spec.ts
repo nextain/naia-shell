@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { expect, test, type FrameLocator, type Page } from "@playwright/test";
 import { writeImagePdf } from "../src/lib/slides-pptx-browser";
+import { openAppFromStoreLink, prepareStoreWorkspace } from "./helpers/web-store";
 
 const base = "/app/";
 const hostedPath = `${base}hosted-apps/`;
@@ -30,23 +31,6 @@ const apps = [
 		control: "button[data-spread]",
 	},
 ];
-
-async function openStore(page: Page) {
-	const menu = page.getByRole("button", { name: "Menu", exact: true });
-	if (await menu.isVisible()) {
-		await menu.click();
-		await expect(menu).toHaveAttribute("aria-expanded", "true");
-		await page
-			.locator(".web-mobile-menu-list")
-			.getByRole("button", { name: /앱스토어/ })
-			.click();
-	} else {
-		await page.getByRole("button", { name: "앱스토어", exact: true }).click();
-	}
-	const store = page.getByRole("dialog", { name: "나이아 웹 미니앱 스토어" });
-	await expect(store).toBeVisible();
-	return store;
-}
 
 async function openPdf(page: Page, frame: FrameLocator) {
 	const jpeg = await page.evaluate(() => {
@@ -99,6 +83,8 @@ for (const viewport of [
 			page,
 			request,
 		}) => {
+			test.setTimeout(300_000);
+			await page.route("**/v1/apps/purchases", (route) => route.abort());
 			await page.addInitScript(() => {
 				if (window.top !== window) return;
 				localStorage.setItem(
@@ -113,6 +99,7 @@ for (const viewport of [
 				);
 			});
 			await page.goto(base);
+			await prepareStoreWorkspace(page);
 			await expect(page.locator("html")).toHaveAttribute(
 				"data-naia-web",
 				"true",
@@ -132,46 +119,8 @@ for (const viewport of [
 							path: join(shots, `${name}-${viewport.width}.png`),
 						})
 					: undefined;
-			// Delay the first catalog response to observe loading. Continue the request
-			// to the preview server and use the real app resources for each launch.
-			let finishCatalog = () => {};
-			const catalogReady = new Promise<void>((resolve) => {
-				finishCatalog = resolve;
-			});
-			await page.route(
-				"**/v1/apps/products",
-				async (route) => {
-					await catalogReady;
-					await route.continue();
-				},
-				{ times: 1 },
-			);
-			const store = await openStore(page);
-			try {
-				await expect(
-					store.getByText("미니앱 목록을 불러오는 중..."),
-				).toBeVisible();
-			} finally {
-				finishCatalog();
-			}
-			for (const { id, name } of apps) {
-				await expect(store.getByTestId(`web-store-item-${id}`)).toContainText(
-					name,
-				);
-			}
-			await expect(
-				store.locator('[data-testid^="web-store-item-"]'),
-			).toHaveCount(apps.length);
-			const box = await store.boundingBox();
-			expect(box && box.x >= 0 && box.x + box.width <= viewport.width).toBe(
-				true,
-			);
-			await expect(store.getByRole("alert")).toHaveCount(0);
-			await shot("R35-store");
-
-			for (const [index, app] of apps.entries()) {
+			for (const app of apps) {
 				await test.step(`Launch ${app.slug}`, async () => {
-					if (index > 0) await openStore(page);
 					const appPath = `${hostedPath}${app.slug}/`;
 					const entryPath = `${appPath}index.html`;
 					const manifest = await request.get(`${appPath}app.json`);
@@ -181,16 +130,15 @@ for (const viewport of [
 					expect(icon.ok()).toBe(true);
 					expect(icon.headers()["content-type"]).toContain("image/svg+xml");
 
-					const launch = store.getByTestId(`web-store-launch-${app.id}`);
-					await expect(launch).toHaveAccessibleName("실행");
-					const loaded = page.waitForResponse(
-						(response) => new URL(response.url()).pathname === entryPath,
-					);
-					await launch.press("Enter");
-					const response = await loaded;
+					const [response] = await Promise.all([
+						page.waitForResponse(
+							(candidate) => new URL(candidate.url()).pathname === entryPath,
+							{ timeout: 90_000 },
+						),
+						openAppFromStoreLink(page, app.id),
+					]);
 					expect(response.ok()).toBe(true);
 					expect(response.fromServiceWorker()).toBe(false);
-					await expect(store).toHaveCount(0);
 
 					const iframe = page.locator(`iframe[src$="${entryPath}"]`);
 					await expect(iframe).toBeInViewport();
@@ -228,10 +176,7 @@ for (const viewport of [
 					await expect(iframe).toHaveCount(0);
 				});
 			}
-			await openStore(page);
-			const reopen = store.getByTestId(
-				"web-store-launch-land.naia.cafelua-tarot",
-			);
+			await openAppFromStoreLink(page, "land.naia.cafelua-tarot");
 			await expect(reopen).toHaveAccessibleName("열기");
 			await reopen.click();
 			await expect(

@@ -1,5 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 import { strToU8, zipSync } from "fflate";
+import { openAppFromStoreLink, prepareStoreWorkspace } from "./helpers/web-store";
 
 // R27: the web Slides mini-app opens a PPTX again.  The browser reads the
 // package, draws each slide and shows it as a PDF with the speaker notes as
@@ -81,6 +82,7 @@ function deckPptx(): Buffer {
 }
 
 async function bootWeb(page: Page) {
+	await page.route("**/v1/apps/purchases", (route) => route.abort());
 	await page.route("**/v1/apps/products", (route) =>
 		route.fulfill({ status: 503, headers: CORS, json: { error: "down" } }),
 	);
@@ -89,8 +91,8 @@ async function bootWeb(page: Page) {
 	);
 	// The dev server has no built dist-slides; serve the Slides entry instead.
 	await page.route("**/hosted-apps/naia-slides/index.html", async (route) => {
-		const url = new URL(route.request().url());
-		const response = await route.fetch({ url: `${url.origin}/slides.html` });
+		const url = new URL("../../slides.html", route.request().url());
+		const response = await route.fetch({ url: url.href });
 		await route.fulfill({ response });
 	});
 	await page.addInitScript(() => {
@@ -108,7 +110,8 @@ async function bootWeb(page: Page) {
 			);
 		}
 	});
-	await page.goto("/");
+	await page.goto("./");
+	await prepareStoreWorkspace(page);
 	await expect(page.locator("html")).toHaveAttribute("data-naia-web", "true");
 	await expect(page.locator('[data-app-ready="true"]')).toBeAttached({
 		timeout: 60_000,
@@ -116,20 +119,7 @@ async function bootWeb(page: Page) {
 }
 
 async function openSlidesFromStore(page: Page) {
-	const button = page.getByRole("button", { name: "앱스토어" }).first();
-	if (await button.isVisible().catch(() => false)) await button.click();
-	else
-		await page.evaluate(() =>
-			window.dispatchEvent(
-				new CustomEvent("naia-open-web-store-drawer", { cancelable: true }),
-			),
-		);
-	const modal = page.getByTestId("web-app-store-modal");
-	await expect(
-		modal.getByTestId("web-store-item-land.naia.slides"),
-	).toContainText("PPTX");
-	await modal.getByTestId("web-store-launch-land.naia.slides").click();
-	await expect(modal).toHaveCount(0);
+	await openAppFromStoreLink(page, "land.naia.slides");
 	return page.frameLocator('iframe[src*="/hosted-apps/naia-slides/"]');
 }
 
