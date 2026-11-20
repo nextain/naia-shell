@@ -3487,6 +3487,7 @@ R21-4에서 마이크 권한이 거부되면 채팅 입력란 위에 사이트�
 | 기본(서버 정상·단일 모듈) | 내장 4개 뒤에 게이트웨이·포털 어드민 앱이 순서대로 중복 없이 보이며, 카드마다 다국어 이름·설명·버전·가격(`무료` / `Cr`)이 표시됨 | `app-catalog.test.ts`, `WebAppStoreModal.test.tsx`, `e2e/web-app-store-catalog.spec.ts` (1280×720·390×844) |
 | 빈 목록·실패·복구 | 포털·게이트웨이 실패 시 내장 목록만 표시. 카탈로그 조회 실패 시 재시도 단추로 복구 가능, 빈 목록 안내 및 `Escape` 닫기 동작 | `app-catalog.test.ts`, `WebAppStoreModal.test.tsx` |
 | 진행·성공·`/app/` 경로 | `/app/` 기준 경로에서도 포털 `/hosted-apps/…` 상대·절대 주소 어드민 앱이 `/app/hosted-apps/…`로 열리고, 유료 스토어 항목은 가격·권한 검사를 유지함 | `app-catalog.test.ts`, `app-store-adapter.test.ts` |
+| 첫 설치·재설치·제거 | 무료 등록 앱을 처음 설치해도 이미 설치된 앱이 남고 같은 앱을 다시 설치해도 한 번만 보임. 기본 앱의 첫 제거는 선택한 앱에만 적용되며, 제거할 앱이 없거나 명시적으로 비운 목록은 그대로 유지함 | `app-catalog.test.ts` |
 | 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts`, `app-store-adapter.test.ts` |
 | 좁은 폭·다국어 | 1280×720·390×844 및 14개 언어에서 모달·카드·가격·[실행] 단추가 넘치지 않고 비한국어 로케일은 영어/해당 언어로 폴백됨 | `WebAppStoreModal.test.tsx`, `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts` |
 

@@ -123,6 +123,37 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		});
 		await openWebShellWithBgm(page, { openBgm: false });
 
+		// A fresh workspace uses the cloud model. Pick a device model to exercise GPU errors.
+		await page.evaluate(async () => {
+			const configPath = "/src/lib/config.ts";
+			const storePath = "/src/lib/adk-store.ts";
+			const bridgePath = "/src/lib/web-runtime/agent-bridge.ts";
+			const startPath = "/src/lib/web-runtime/model-start.ts";
+			const [config, store, agent, runtime] = await Promise.all([
+				import(configPath), import(storePath), import(bridgePath), import(startPath),
+			]);
+			const current = config.loadConfig();
+			if (!current) throw new Error("expected a workspace model configuration");
+			const model = "Qwen3-4B-q4f32_1-MLC";
+			const role = { ...current.llmRoles?.main, provider: "webllm", model };
+			const next = {
+				...current,
+				...role,
+				llmRoles: { ...current.llmRoles, main: role },
+				webAutoDefaultModel: false,
+			};
+			config.saveConfig(next);
+			await store.writeNaiaConfig(next);
+			localStorage.setItem("naia-web-llm-model", model);
+			void runtime.startWebModel({
+				gpu: navigator.gpu,
+				storage: localStorage,
+				engineKind: "webllm",
+				preferredModel: model,
+				bridge: agent.getStartableAgentBridge(),
+			});
+		});
+
 		const input = page.locator(".naia-chat-area .chat-input");
 		const status = page.getByTestId("web-model-status");
 		await expect(page.locator(".chat-messages .chat-message")).toHaveCount(0);

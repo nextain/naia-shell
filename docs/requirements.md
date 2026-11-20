@@ -2104,6 +2104,7 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-APP-CATALOG.3 | 어드민 앱은 `docs/app-store-protocol.md` 계약을 따르고 공개(`visibility`)·제공 언어(`locales`)·허용 출처(`url`) 검사를 통과한 것만 보입니다. `/app/` 아래에 마운트된 웹 셸은 포털의 `/hosted-apps/…` 상대·절대 주소를 `${shellOrigin}${shellBasePath}hosted-apps/…`로 정규화하며, 포털 상점 상세 주소(`/apps/<slug>`)는 기본 호스팅 번들 주소로 대체합니다. 포털 목록의 유료 스토어 항목(`source: "store"` 또는 `creditPrice > 0`)은 가격과 구매·권한 검사를 유지하고, 무료 어드민 앱만 로그인·구매 없이 설치·실행합니다. | Done (local) |
 | FR-WEB-APP-CATALOG.5 | `WebAppStoreModal`은 14개 로케일 번역과 포털 상점과 같은 다국어 이름·설명 폴백(`names[locale]` → 한국어는 `ko`, 그 외는 `en` → 기본 이름) 및 가격 표기(`무료` 또는 `formatWebCredits` `1,234 Cr`)를 사용하며, 1280×720과 390×844에서 가로 넘침 없이 동작합니다. | Done (local) |
 | FR-WEB-APP-CATALOG.4 | 포털 상점 화면 `/{locale}/apps` 도 같은 `/api/apps` 목록으로 그립니다. | 포털 작업(이 저장소 밖), 미착수 |
+| FR-WEB-APP-CATALOG.6 | 웹 앱을 설치할 때 기존 설치 목록을 보존하고 같은 앱의 중복 추가를 막습니다. 설치 목록이 아직 없으면 표시 중인 기본 내장 앱을 유지합니다. 첫 제거에서도 선택한 앱만 목록에서 빼며, 이미 제거한 내장 앱과 명시적으로 비운 설치 목록을 존중합니다. (UC-WEB-APP-CATALOG) | Done (local) |
 
 로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`·`WebAppStoreModal.test.tsx`·`i18n-web-strings.test.ts`·`i18n-user-facing.test.ts`, 기존 Playwright `e2e/web-app-store-catalog.spec.ts`(1280×720·390×844). 실제 포털 서버 응답은 미확인.
 

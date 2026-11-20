@@ -14,7 +14,12 @@ import {
 } from "./app-catalog";
 import type { InstalledAppManifest } from "./app-loader";
 import { getStoreGatewayUrl } from "./app-store-client";
-import { NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "./config";
+import {
+	type AppConfig,
+	NAIA_WEB_BASE_URL,
+	loadConfig,
+	saveConfig,
+} from "./config";
 import { getLocale } from "./i18n";
 import { markNaiaKeyUnauthorized } from "./lab-balance";
 import { isWebMode } from "./web-runtime/web-assets";
@@ -32,6 +37,11 @@ export {
 };
 
 export const DEFAULT_WEB_APPS_SANDBOX_ORIGIN = "https://apps-sandbox.naia.land";
+const WEB_APP_STORE_CONFIG_FALLBACK: AppConfig = {
+	provider: "nextain",
+	model: "gpt-6.1-terra",
+	apiKey: "",
+};
 
 export type AppStoreErrorCode =
 	| "invalid_app_id"
@@ -580,13 +590,9 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 				await this.purchaseApp(validId);
 			}
 		}
-		const cfg = loadConfig() ?? {
-			provider: "nextain" as const,
-			model: "gpt-6.1-terra",
-			apiKey: "",
-		};
+		const cfg = loadConfig() ?? WEB_APP_STORE_CONFIG_FALLBACK;
 		const next = Array.from(
-			new Set([...(cfg.installedWebApps ?? []), validId]),
+			new Set([...(this.configuredInstalledAppIds(cfg) ?? []), validId]),
 		);
 		const cleanedDeleted = Array.isArray(cfg.deletedApps)
 			? cfg.deletedApps.filter((id) => id !== validId)
@@ -601,30 +607,45 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	async uninstallApp(appId: string): Promise<void> {
 		const validId = this.assertAppId(appId);
 		const cfg = loadConfig();
-		if (cfg && Array.isArray(cfg.installedWebApps)) {
-			saveConfig({
-				...cfg,
-				installedWebApps: cfg.installedWebApps.filter((id) => id !== validId),
-			});
-		}
+		const installed = this.stage1HostedCatalog
+			? this.configuredInstalledAppIds(cfg)
+			: cfg?.installedWebApps;
+		if (!Array.isArray(installed)) return;
+
+		const next = installed.filter(
+			(id) =>
+				(this.stage1HostedCatalog ? normalizeCanonicalWebAppId(id) : id) !== validId,
+		);
+		if (this.stage1HostedCatalog && next.length === installed.length) return;
+
+		saveConfig({
+			...(cfg ?? WEB_APP_STORE_CONFIG_FALLBACK),
+			installedWebApps: next,
+		});
+	}
+
+	private configuredInstalledAppIds(
+		cfg: Pick<AppConfig, "installedWebApps" | "deletedApps"> | null,
+	): string[] | undefined {
+		if (Array.isArray(cfg?.installedWebApps)) return cfg.installedWebApps;
+		if (!this.stage1HostedCatalog) return undefined;
+
+		// An unset list pins the default apps that the user has not removed.
+		const deleted = new Set(cfg?.deletedApps ?? []);
+		return STAGE1_HOSTED_MINI_APPS.map(({ appId }) => appId).filter(
+			(id) => !deleted.has(id),
+		);
 	}
 
 	async listInstalledManifests(): Promise<InstalledAppManifest[]> {
-		const cfg = loadConfig();
+		const installedAppIds = this.configuredInstalledAppIds(loadConfig());
 		let candidateIds: string[];
 		let grantedById = new Map<string, number | undefined>();
 
-		if (Array.isArray(cfg?.installedWebApps)) {
-			candidateIds = cfg.installedWebApps
+		if (installedAppIds !== undefined) {
+			candidateIds = installedAppIds
 				.map(normalizeCanonicalWebAppId)
 				.filter(isValidStoreAppId);
-		} else if (this.stage1HostedCatalog) {
-			// Default Stage-1 web shell pins all 4 official hosted mini-apps out of the box
-			// (excluding any explicitly removed via deletedApps).
-			const deleted = new Set(cfg?.deletedApps ?? []);
-			candidateIds = STAGE1_HOSTED_MINI_APPS.map((s) => s.appId).filter(
-				(id) => !deleted.has(id),
-			);
 		} else {
 			const entitlements = await this.listEntitlements();
 			const active = entitlements.filter((e) => e.entitled);

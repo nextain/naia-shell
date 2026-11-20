@@ -10,6 +10,7 @@ import {
 	resolvePortalHostedEntryUrl,
 } from "../app-catalog";
 import { WebHttpAppStoreAdapter } from "../app-store-adapter";
+import { loadConfig, saveConfig } from "../config";
 
 function jsonResponse(status: number, body: unknown): Response {
 	return new Response(JSON.stringify(body), {
@@ -250,6 +251,139 @@ describe("R3 unified web catalog (built-in + gateway + admin)", () => {
 			/login is required/,
 		);
 		localStorage.clear();
+	});
+
+	it.each([
+		{ name: "an unset installation list", config: {}, expected: BUILTIN_IDS },
+		{
+			name: "a previously removed default app",
+			config: { deletedApps: ["land.naia.slides"] },
+			expected: BUILTIN_IDS.filter((id) => id !== "land.naia.slides"),
+		},
+		{ name: "an explicitly empty installation list", config: { installedWebApps: [] }, expected: [] },
+		{
+			name: "an explicit installation list",
+			config: { installedWebApps: ["land.naia.charcard"] },
+			expected: ["land.naia.charcard"],
+		},
+	])("R4 preserves $name on initial and repeated installation", async ({ config, expected }) => {
+		localStorage.clear();
+		try {
+			saveConfig({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", ...config });
+			const { adapter } = adapterWith({
+				[`${SHELL}/api/apps`]: () => jsonResponse(200, { apps: [{ id: "quiz", name: "Quiz" }] }),
+			});
+			const installedIds = async () => (await adapter.listInstalledManifests()).map(({ id }) => id);
+			expect(await installedIds()).toEqual(expected);
+
+			await adapter.listCatalog();
+			await adapter.installApp("land.naia.quiz");
+			expect(await installedIds()).toEqual([...expected, "land.naia.quiz"]);
+
+			await adapter.installApp("land.naia.quiz");
+			expect(await installedIds()).toEqual([...expected, "land.naia.quiz"]);
+		} finally {
+			localStorage.clear();
+		}
+	});
+
+	it("R4 explicitly reinstalling a removed default app clears only its own removal marker", async () => {
+		localStorage.clear();
+		try {
+			saveConfig({
+				provider: "nextain", model: "gpt-6.1-terra", apiKey: "",
+				deletedApps: ["land.naia.slides", "land.naia.ieumoffice"],
+			});
+			const { adapter } = adapterWith({});
+
+			await adapter.installApp("land.naia.slides");
+			expect((await adapter.listInstalledManifests()).map(({ id }) => id)).toEqual([
+				"land.naia.charcard", "land.naia.cafelua-tarot", "land.naia.slides",
+			]);
+			expect(loadConfig()?.deletedApps).toEqual(["land.naia.ieumoffice"]);
+		} finally {
+			localStorage.clear();
+		}
+	});
+
+	it.each([false, true])("R4 persists first default removal with an existing config: %s", async (withConfig) => {
+		localStorage.clear();
+		try {
+			const previousRemoval = "land.naia.ieumoffice";
+			const removed = "land.naia.slides";
+			if (withConfig) {
+				saveConfig({
+					provider: "nextain",
+					model: "gpt-6.1-terra",
+					apiKey: "",
+					deletedApps: [previousRemoval],
+				});
+			}
+			const { adapter } = adapterWith({});
+			const before = BUILTIN_IDS.filter((id) => !withConfig || id !== previousRemoval);
+			const installedIds = async () => (await adapter.listInstalledManifests()).map(({ id }) => id);
+			expect(await installedIds()).toEqual(before);
+
+			await adapter.uninstallApp(removed);
+			const after = before.filter((id) => id !== removed);
+			expect(await installedIds()).toEqual(after);
+			expect(loadConfig()?.installedWebApps).toEqual(after);
+			expect(loadConfig()?.deletedApps).toEqual(withConfig ? [previousRemoval] : undefined);
+
+			const changed = vi.fn();
+			window.addEventListener("naia-config-changed", changed);
+			try {
+				await adapter.uninstallApp(removed);
+				expect(changed).not.toHaveBeenCalled();
+			} finally {
+				window.removeEventListener("naia-config-changed", changed);
+			}
+		} finally {
+			localStorage.clear();
+		}
+	});
+
+	it("R4 uninstall leaves an unset or explicitly empty list intact if the app is absent", async () => {
+		localStorage.clear();
+		const changed = vi.fn();
+		window.addEventListener("naia-config-changed", changed);
+		try {
+			const { adapter } = adapterWith({});
+			await adapter.uninstallApp("land.naia.quiz");
+			expect(loadConfig()).toBeNull();
+			expect(changed).not.toHaveBeenCalled();
+
+			saveConfig({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", installedWebApps: [] });
+			changed.mockClear();
+			await adapter.uninstallApp("land.naia.slides");
+			expect(loadConfig()?.installedWebApps).toEqual([]);
+			expect(changed).not.toHaveBeenCalled();
+		} finally {
+			window.removeEventListener("naia-config-changed", changed);
+			localStorage.clear();
+		}
+	});
+
+	it("R4 uninstall removes a Stage-1 alias but preserves the prior non-Stage-1 behavior", async () => {
+		localStorage.clear();
+		try {
+			const config = { provider: "nextain" as const, model: "gpt-6.1-terra", apiKey: "" };
+			const adapter = new WebHttpAppStoreAdapter({ stage1HostedCatalog: false });
+			await adapter.uninstallApp("land.naia.slides");
+			expect(loadConfig()).toBeNull();
+
+			saveConfig({ ...config, installedWebApps: ["naia-slides", "land.naia.charcard"] });
+			await adapter.uninstallApp("land.naia.slides");
+			expect(loadConfig()?.installedWebApps).toEqual(["naia-slides", "land.naia.charcard"]);
+			await adapter.uninstallApp("land.naia.charcard");
+			expect(loadConfig()?.installedWebApps).toEqual(["naia-slides"]);
+
+			const { adapter: stage1 } = adapterWith({});
+			await stage1.uninstallApp("land.naia.slides");
+			expect(loadConfig()?.installedWebApps).toEqual([]);
+		} finally {
+			localStorage.clear();
+		}
 	});
 
 	it("R3 normalizes portal /hosted-apps/ URLs under /app/ base path and preserves paid store records", async () => {
