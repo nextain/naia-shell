@@ -1,5 +1,5 @@
 import { getLocale } from "../i18n";
-import { isKioskDemo } from "../kiosk-demo/flag";
+import { getDefaultLlmModel } from "../llm/registry";
 import { Logger } from "../logger";
 import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
 import {
@@ -9,13 +9,9 @@ import {
 } from "./web-assets";
 import {
 	getWebAuthenticatedUserId,
-	isWebAuthenticated,
 	isWebLoginGateDisabled,
 } from "./web-auth";
 import { type WebFs, getWebFs } from "./web-fs";
-import { readNavigatorGpu } from "./webgpu-check";
-import { WEB_LLM_MODEL_ID } from "./webllm-model";
-import { getDefaultLlmModel } from "../llm/registry";
 
 export const INITIAL_WEB_WORKSPACE_CONFIG = {
 	provider: "nextain",
@@ -31,24 +27,6 @@ export const INITIAL_WEB_WORKSPACE_CONFIG = {
 	nvaModel: WEB_DEFAULT_NVA,
 	backgroundVideo: WEB_DEFAULT_BACKGROUND,
 };
-
-export function resolveInitialWebWorkspaceConfig() {
-	if (
-		!isKioskDemo() &&
-		!isWebAuthenticated() &&
-		Boolean(readNavigatorGpu())
-	) {
-		return {
-			...INITIAL_WEB_WORKSPACE_CONFIG,
-			provider: "webllm",
-			model: WEB_LLM_MODEL_ID,
-			ttsEnabled: true,
-			ttsProvider: "browser",
-			sttProvider: "web-speech",
-		};
-	}
-	return INITIAL_WEB_WORKSPACE_CONFIG;
-}
 
 /**
  * 데스크톱 Rust `safe_session_base` 와 동일한 파일명 정규화 (traversal·경로 인젝션 차단).
@@ -216,7 +194,7 @@ export async function handleWebWorkspaceCommand(
 			return migrated.text;
 		}
 		const initialText = JSON.stringify(
-			{ ...resolveInitialWebWorkspaceConfig(), NAIA_LOCALE: getLocale() },
+			{ ...INITIAL_WEB_WORKSPACE_CONFIG, NAIA_LOCALE: getLocale() },
 			null,
 			2,
 		);

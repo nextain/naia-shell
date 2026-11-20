@@ -12,10 +12,7 @@ import {
 	normalizeRetiredWebBackgroundInRecord,
 	syncWebModeRootAttribute,
 } from "./web-assets";
-import { isWebAuthenticated } from "./web-auth";
 import { requestWebPersistentStorage } from "./web-storage-persist";
-import { readNavigatorGpu } from "./webgpu-check";
-import { WEB_LLM_MODEL_ID } from "./webllm-model";
 
 export const WEB_RUNTIME_MARKER = "naia-web-runtime";
 
@@ -86,27 +83,12 @@ export function installWebRuntime(): void {
 	if (typeof localStorage !== "undefined") {
 		const rawConfig = localStorage.getItem("naia-config");
 		if (!rawConfig) {
-			const useUnauthenticatedWebGpuStarter =
-				!isKioskDemo() &&
-				!isWebAuthenticated() &&
-				Boolean(readNavigatorGpu());
 			localStorage.setItem(
 				"naia-config",
-				JSON.stringify(
-					useUnauthenticatedWebGpuStarter
-						? {
-								provider: "webllm",
-								model: WEB_LLM_MODEL_ID,
-								webAutoDefaultModel: true,
-								ttsEnabled: true,
-								ttsProvider: "browser",
-								sttProvider: "web-speech",
-							}
-						: {
-								provider: "nextain",
-								model: getDefaultLlmModel("nextain"),
-							},
-				),
+				JSON.stringify({
+					provider: "nextain",
+					model: getDefaultLlmModel("nextain"),
+				}),
 			);
 		} else {
 			try {
