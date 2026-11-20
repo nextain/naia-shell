@@ -119,20 +119,25 @@ for (const viewport of [
 				const q = (s: string) => document.querySelector(s);
 				const pos = (a: Element | null, b: Element | null) =>
 					a && b ? Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) : null;
-				const credit = q(".app-bar .web-credit") ?? q("#web-login-free-credits-btn");
+				const credit = q(".app-bar .web-credit") ?? q("[data-testid='web-login-free-credits-btn']");
 				return {
 					harnessBeforeBgm: pos(q("[data-testid='web-runtime-harness-bar']"), q(".app-bar .bgm-player")),
-					creditBeforeBgm: credit ? pos(credit, q(".app-bar .bgm-player")) : true,
-					bgmBeforeSettings: pos(q(".app-bar .bgm-player"), q(".app-bar-settings")),
+					creditBeforeBgm: pos(credit, q(".app-bar .bgm-player")),
+					settingsBeforeBgm: pos(q(".app-bar-settings"), q(".app-bar .bgm-player")),
 				};
 			});
-			expect(order).toEqual({ harnessBeforeBgm: true, creditBeforeBgm: true, bgmBeforeSettings: true });
-			const h = await harness.boundingBox();
-			const b = await bgm.boundingBox();
-			const s = await settings.boundingBox();
-			if (h && b && s && (await bgm.isVisible()) && Math.abs(h.y - b.y) < 8) {
-				expect(b.x).toBeGreaterThanOrEqual(h.x + h.width - 1);
-				expect(s.x).toBeGreaterThanOrEqual(b.x + b.width - 1);
+			expect(order).toEqual({ harnessBeforeBgm: true, creditBeforeBgm: true, settingsBeforeBgm: true });
+			if (isPortrait(page)) {
+				await expect(bgm).toBeHidden();
+				await expect(page.locator(".web-mobile-menu-trigger")).toBeVisible();
+			} else {
+				const h = await harness.boundingBox();
+				const b = await bgm.boundingBox();
+				const s = await settings.boundingBox();
+				if (!h || !b || !s) throw new Error("missing app bar geometry");
+				expect(s.x).toBeGreaterThanOrEqual(h.x + h.width - 1);
+				expect(b.x).toBeGreaterThanOrEqual(s.x + s.width - 1);
+				expect(b.x + b.width).toBeLessThanOrEqual(viewport.width);
 			}
 			await shot(page, "R8", viewport.width);
 		});
