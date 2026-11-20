@@ -3256,13 +3256,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 
 ## UC-WEB-A-R1. 웹판 두뇌 공급자 목록에 브라우저에서 되는 것만 보이기
 
-웹판 사용자가 설정의 두뇌 탭에서 공급자를 고릅니다. 목록에는 브라우저에서 동작하는 나이아 서버(nextain)와 내 기기 WebGPU(webllm)만 보입니다. Ollama·vLLM·Codex·Claude Code·Grok처럼 로컬 프로세스나 CLI가 필요한 공급자는 보이지 않습니다. 데스크톱 앱 목록은 그대로입니다.
+웹판 사용자가 설정의 두뇌 탭에서 공급자를 고릅니다. 목록에는 브라우저에서 동작하는 나이아 서버(nextain)와 내 기기 WebGPU(webllm)만 보입니다. 작은 모델에 데스크톱 공급자가 저장돼 있으면 웹 선택기는 [메인 모델 사용]을 표시하고 지원하는 선택지만 제공합니다. 저장돼 있던 값은 웹에서 새로 선택할 때까지 보존합니다. 데스크톱 앱 목록은 그대로입니다.
 
 ### Test Coverage Map — UC-WEB-A-R1
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
 | 기본(웹) | 목록이 `nextain`, `webllm` 두 개 | `registry-web-providers.test.ts`, `e2e/web-gpu-a-ui.spec.ts` R1 (1280·390) |
+| 기존 설정·복구 | 데스크톱 작은 모델이 저장된 경우 메인 모델 사용을 표시하고 지원하는 모델을 선택할 수 있음. 바꾸기 전에는 저장된 설정을 보존 | `SettingsTab.test.tsx` R1 |
+| 빈 목록·진행·오류 | 작은 모델 카탈로그를 읽는 중이거나 제공 목록이 없어도 메인 모델 사용 항목 유지 | `SettingsTab.test.tsx` R1 |
 | 데스크톱 | 전체 공급자 목록 유지 | `registry-web-providers.test.ts` |
 
 ## UC-WEB-A-R6. 웹판 앱 아이콘을 데스크톱 앱과 같은 자산으로 보이기

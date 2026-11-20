@@ -2004,7 +2004,7 @@ Web startup must select the web runtime using the build mode, even after the web
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
 | FR-WEB-A-R8 | 웹판 상단 막대는 WebGPU 상태·공개 하네스·캐릭터 카드 바로가기·크레딧 다음에 음악 플레이어를 두고, 설정 단추를 맨 끝에 둔다. 데스크톱 앱 배치는 바꾸지 않는다. 검증: `UC-WEB-A-R8`. | Done (local) |
-| FR-WEB-A-R1 | 웹판 설정의 두뇌 공급자 목록은 웹 작업자가 받아들이는 `nextain`·`webllm`만 보여 준다. 판정은 `isWebMode()`를 쓰고 데스크톱 목록은 바꾸지 않는다. 검증: `UC-WEB-A-R1`. | Done (local) |
+| FR-WEB-A-R1 | 웹판 설정의 두뇌 공급자 목록은 웹 작업자가 받아들이는 `nextain`·`webllm`만 보여 준다. 작은 모델 선택기도 저장된 미지원 공급자를 노출하지 않고 메인 모델 사용으로 표시한다. 웹에서 모델을 새로 선택할 때까지 저장된 값은 보존한다. 데스크톱의 공급자 목록과 선택 복원은 유지한다. 검증: `UC-WEB-A-R1`. | Done (local Vitest) |
 | FR-WEB-A-R6 | 웹판 설치 앱 목록은 묶음 `app.json`의 `iconUrl`이 가리키는 앱 폴더 안 같은 출처 SVG를 데스크톱과 같이 `iconSvg`로 쓴다. 실패하면 그림 문자 아이콘을 쓴다. 검증: `UC-WEB-A-R6`. | Done (local) |
 | FR-WEB-A-R11 | 브라우저 웹판의 캐릭터 카드는 자체 IndexedDB를 열 수 없을 때 격리된 실행 환경에서 `storage` 권한으로 셸의 앱별 보관함을 사용한다. 파일로 추가한 카드와 그림은 새로 고침 후 남는다. 보관함 실패 시 임시 보관을 안내하고 저장 한도를 넘으면 더 작은 파일을 안내한다. 자체 보관함을 열 수 있는 환경에서는 기존 IndexedDB를 사용한다. `UC-WEB-A-R11`에서 검증한다. | Done (local) |
 | FR-WEB-A-R28 | 웹판 대화창의 메시지·입력란·모델 조작은 800×450·1280×720·1920×1080에서 상태줄에 가려지지 않고 Tab으로 닿는다. 접힌 음악 플레이어 내부는 Tab 순서와 접근성 트리에서 빠진다. 검증: `UC-WEB-A-R28`. | Done (local) |

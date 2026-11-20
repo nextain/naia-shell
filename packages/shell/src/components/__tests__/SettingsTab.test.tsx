@@ -243,6 +243,39 @@ describe("web provider switch persistence", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it.each(["ollama", "vllm", "codex", "claude-code-cli", "grok"])(
+		"R1 hides a saved desktop small-model provider on the web (%s)",
+		async (provider) => {
+			const smallRole = { provider, model: "saved-desktop-model" };
+			localStorage.setItem("naia-config", JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				llmRoles: { sub: smallRole },
+			}));
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+
+			const main = document.getElementById("provider-select") as HTMLSelectElement;
+			const small = screen.getByTestId<HTMLSelectElement>("small-model-select");
+			expect([...main.options].map((option) => option.value).sort()).toEqual(["nextain", "webllm"]);
+			expect(small).toHaveValue("__inherit__");
+			expect(screen.getByTestId("small-model-selected-label")).toHaveTextContent(t("settings.smallModelInherit"));
+			expect([...small.options].map((option) => option.value)).not.toContain(JSON.stringify([provider, smallRole.model]));
+			expect(small).not.toHaveTextContent(t("settings.smallModelDesktopSelected"));
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles.sub).toEqual(smallRole);
+
+			await waitFor(() => {
+				expect([...small.options].some((option) => option.value.startsWith('["nextain",'))).toBe(true);
+			});
+			const next = [...small.options].find((option) => option.value.startsWith('["nextain",'))!;
+			fireEvent.change(small, { target: { value: next.value } });
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles.sub).toMatchObject({
+				provider: "nextain",
+				model: JSON.parse(next.value)[1],
+			});
+		},
+	);
+
 	it("R33 starts the saved local model after the workspace write", async () => {
 		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
 		localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, WEB_LLM_FALLBACK_F32);
