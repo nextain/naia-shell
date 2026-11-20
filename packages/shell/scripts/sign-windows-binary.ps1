@@ -47,6 +47,21 @@ if ($fileName -match '^(node\.exe|vcruntime.*\.dll|msvcp.*\.dll)$') {
   exit 0
 }
 
+# build.rs writes this text placeholder when CI supplies no ffmpeg sidecar; it is not a PE file
+# and broadcast.rs ignores it at run time, so signing it would only fail the bundle.
+$ffmpegPlaceholderPrefix = "#!naia-ffmpeg-dev-placeholder"
+$headBytes = [byte[]]::new($ffmpegPlaceholderPrefix.Length)
+$stream = [System.IO.File]::OpenRead($fullPath)
+try {
+  $headLength = $stream.Read($headBytes, 0, $headBytes.Length)
+} finally {
+  $stream.Dispose()
+}
+if ([System.Text.Encoding]::ASCII.GetString($headBytes, 0, $headLength) -ceq $ffmpegPlaceholderPrefix) {
+  Write-Host "Skipping ffmpeg dev placeholder (not a PE file): $fileName"
+  exit 0
+}
+
 # If the binary is already validly signed, keep the existing signature
 $sig = Get-AuthenticodeSignature -LiteralPath $fullPath
 if ($sig.Status -eq "Valid") {
