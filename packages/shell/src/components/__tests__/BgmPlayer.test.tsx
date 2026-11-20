@@ -2207,7 +2207,7 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 
 		act(() => vi.advanceTimersByTime(12_000));
 		expect(bgmPlayback.current()?.status).toBe("timeout");
-		fireEvent.click(screen.getByRole("button", { name: "Play", exact: true }));
+		fireEvent.click(screen.getByRole("button", { name: "Play" }));
 
 		expect(bgmPlayback.current()?.selected).toEqual(first?.selected);
 		expect(bgmPlayback.current()?.playbackId).not.toBe(first?.playbackId);

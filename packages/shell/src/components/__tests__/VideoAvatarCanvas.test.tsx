@@ -549,7 +549,7 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 			vi.stubGlobal("createImageBitmap", vi.fn());
 			vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
 				clearRect: vi.fn(),
-			} as unknown as CanvasRenderingContext2D);
+			} as unknown as ReturnType<HTMLCanvasElement["getContext"]>);
 			setWebAssetsModeForTests(true);
 		});
 
