@@ -2251,3 +2251,10 @@ Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-ru
 |---|---|---|
 | FR-WEB-SETTINGS-TABS-THINKING.1 | 모바일 및 좁은 세로 화면(390×844 포함)의 `.settings-tab-bar`는 우측 닫기 단추 영역(`margin-right: 44px`)을 침범하지 않으면서 탭 여백·글자 크기를 줄이고 `flex-wrap: wrap`을 허용하여 마지막 탭(`일반`/`General`) 이름이 잘리지 않게 표시합니다. (UC-WEB-SETTINGS-TABS-THINKING) | Done (local) |
 | FR-WEB-SETTINGS-TABS-THINKING.2 | 두뇌 설정의 생각 세기 선택기에서 `"xhigh"` 단계는 개발 식별자 원문 대신 `settings.thinkingLevelXhigh`(한국어 `매우 높음`, 영어 `Very High` 등 14개 로케일)로 표시하며 저장·전송 값은 기존 `"xhigh"`를 유지합니다. (UC-WEB-SETTINGS-TABS-THINKING) | Done (local) |
+
+## 웹판 캐릭터 카드 저장·임시 보관 쉬운 안내 문구 (R21-6)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-CHARCARD-STORAGE-COPY.1 | 캐릭터 카드 앱(`CharCardApp`)과 패키지 설명은 `IndexedDB` 등 개발 용어를 노출하지 않고, 정상 보관(`indexeddb`·`host`) 상태에서는 브라우저에 저장되며 브라우저 기록을 지우면 사라진다는 문구를 한국어·영어로 안내합니다. (UC-WEB-CHARCARD-STORAGE-COPY) | Done (local) |
+| FR-WEB-CHARCARD-STORAGE-COPY.2 | 캐릭터 카드 보관함을 쓸 수 없는 임시 보관(`memory`) 상태에서는 상단의 브라우저 영구 저장 문구를 표시하지 않고, 작업 단추 아래 상태 배너(`role="status"`)에서 새로 고침하거나 창을 닫으면 사라진다는 점을 분명히 알립니다. (UC-WEB-CHARCARD-STORAGE-COPY) | Done (local) |

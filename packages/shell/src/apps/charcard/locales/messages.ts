@@ -6,7 +6,9 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.imageOmitted": "Image not shown because it is too large.",
 	"charcard.title": "Character Card Roleplay",
 	"charcard.subtitle":
-		"Import PNG, JSON, or CHARX character cards (V2/V3) and roleplay with Naia. Cards stay on this device, and starting roleplay sends the card content to your Naia chat model.",
+		"Import PNG, JSON, or CHARX character cards (V2/V3) to roleplay with Naia. Saved in this browser; clearing browsing data removes them.",
+	"charcard.subtitleMemoryOnly":
+		"Import PNG, JSON, or CHARX character cards (V2/V3) to roleplay with Naia. Starting roleplay sends the card content to your chat model.",
 	"charcard.createButton": "Create",
 	"charcard.importButton": "Add File",
 	"charcard.apply": "Apply",
@@ -119,7 +121,9 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.imageOmitted": "그림이 너무 커서 표시하지 않음",
 	"charcard.title": "캐릭터 카드 설정놀이",
 	"charcard.subtitle":
-		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화합니다. 카드는 기기 안에만 보관되며, 연기를 시작하면 카드 내용이 나이아 대화 모델에 함께 보내집니다.",
+		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)로 나이아와 대화해요. 이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요.",
+	"charcard.subtitleMemoryOnly":
+		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)로 나이아와 대화해요. 연기를 시작하면 카드 내용이 대화 모델에 함께 보내져요.",
 	"charcard.createButton": "만들기",
 	"charcard.importButton": "파일 추가",
 	"charcard.apply": "적용",

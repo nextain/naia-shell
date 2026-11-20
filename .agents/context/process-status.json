@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T02:19:00Z",
+  "last_updated": "2026-11-20T02:24:00Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_charcard_storage_copy_r21_6_20261120": {
+      "requirement_id": "R21-6",
+      "title": "웹판 캐릭터 카드 저장·임시 보관 쉬운 안내 문구",
+      "branch": "alpha/webgpu-p8-credit-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CHARCARD-STORAGE-COPY",
+      "requirements": "docs/requirements.md FR-WEB-CHARCARD-STORAGE-COPY.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "vitest_only",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx",
+      "last_updated": "2026-11-20T02:24:00Z",
+      "verification": "표적 Vitest(CharCardApp, card-store) 통과 및 tsc 타입 검사 새 오류 0건 확인. 정상 보관 시 이 브라우저 저장·브라우저 기록 삭제 시 소멸 안내, 임시 보관 시 창을 닫으면 사라짐 안내 및 IndexedDB 미노출을 한·영에서 검증. 실 브라우저 화면은 미확인."
+    },
     "web_settings_tabs_thinking_r21_8_20261120": {
       "requirement_id": "R21-8",
       "title": "웹판 좁은 설정 탭 잘림 방지와 생각 세기 쉬운 이름 표기",

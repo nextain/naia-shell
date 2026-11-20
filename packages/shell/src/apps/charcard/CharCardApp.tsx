@@ -596,7 +596,13 @@ export function CharCardApp({
 			<header className="charcard-app__header">
 				<div>
 					<h1>{msg("charcard.title")}</h1>
-					<p>{msg("charcard.subtitle")}</p>
+					<p data-testid="charcard-storage-hint">
+						{msg(
+							storageMode === "memory"
+								? "charcard.subtitleMemoryOnly"
+								: "charcard.subtitle",
+						)}
+					</p>
 				</div>
 				<div
 					className="charcard-app__header-actions"

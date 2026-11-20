@@ -3727,3 +3727,16 @@ P04 표적 Vitest에서 R48 10건을 확인했습니다. 1280×720·390×844 모
 | 진행·성공 | 생각 세기 단추 선택과 좌우 화살표 이동 시 설정 저장소에는 기존 프로토콜 값(`"xhigh"` 등)이 그대로 저장되며 UI 라벨만 다국어로 표시됨 | `SettingsTab.test.tsx`, `i18n-user-facing.test.ts` R21-8 |
 | 오류·키오스크 | 키오스크 읽기 전용 잠금 및 다른 모델 전환 시 기존 생각 세기 격리 동작 유지 | `SettingsTab.test.tsx` UT-SM-04 |
 | 좁은 폭·키보드 | 390×844 세로·모바일 폭에서 설정 탭 막대가 우측 닫기 단추 여백(`margin-right: 44px`)을 지키면서 간격을 줄이고 줄바꿈(`flex-wrap: wrap`)을 허용해 마지막 `일반`/`General` 탭이 잘리지 않음 | `SettingsTab.test.tsx` R21-8 |
+
+## UC-WEB-CHARCARD-STORAGE-COPY. 캐릭터 카드 화면에서 브라우저 저장 및 임시 보관 조건을 쉬운 말로 확인한다 (R21-6)
+
+웹판에서 캐릭터 카드 화면을 연 사용자는 `IndexedDB` 같은 개발 용어 없이, 정상 보관 상태일 때 카드가 이 브라우저에 저장되며 브라우저 기록을 지우면 사라진다는 쉬운 안내를 상단에서 읽습니다. 저장소를 쓸 수 없는 임시 보관 상태에서는 상단에서 영구 저장 문구를 숨기고 만들기·파일 추가 단추 바로 아래에 새로 고침하거나 창을 닫으면 사라진다는 안내를 표시합니다.
+
+### Test Coverage Map — UC-WEB-CHARCARD-STORAGE-COPY
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·정상 저장 | `indexeddb` 및 `host` 보관함 모드에서 `이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요.`(`Saved in this browser; clearing browsing data removes them.`) 표시, 임시 보관 경고 및 `IndexedDB` 미노출 | `CharCardApp.test.tsx` R21-6 |
+| 진행·성공 | 파일 추가·직접 만들기 저장 중 안내와 완료 후 카드 목록·적용 동작 유지 | `CharCardApp.test.tsx` |
+| 오류·임시 보관 | `memory` 모드에서 상단 브라우저 저장 문구가 빠지고 주황 상태 배너(`role="status"`)에 새로 고침하거나 창을 닫으면 사라진다는 안내만 표시하며 `IndexedDB` 미노출 | `CharCardApp.test.tsx` R11·R21-6 |
+| 좁은 폭 | 1280×720 및 390×844에서 추가 세로 블록 없이 상단 설명 줄 수를 줄여 카드 그림과 조작 단추가 화면 안에 유지됨 | `CharCardApp.test.tsx` R21-6 |
