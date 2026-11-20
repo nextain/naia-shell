@@ -428,6 +428,7 @@ export function makeOpenAICompatProvider(deps: {
 			let buffer = "";
 			let inTok = 0,
 				outTok = 0;
+			let usageCost: number | undefined;
 			let finishReason: string | undefined;
 			let sawData = false;
 			const thinkingFilter = new ThinkingTagFilter();
@@ -465,7 +466,11 @@ export function makeOpenAICompatProvider(deps: {
 							}>;
 						};
 					}[];
-					usage?: { prompt_tokens?: number; completion_tokens?: number };
+					usage?: {
+						prompt_tokens?: number;
+						completion_tokens?: number;
+						cost?: unknown;
+					};
 					error?: unknown;
 				};
 				if (o.error)
@@ -532,6 +537,11 @@ export function makeOpenAICompatProvider(deps: {
 				if (o.usage) {
 					inTok = o.usage.prompt_tokens ?? inTok;
 					outTok = o.usage.completion_tokens ?? outTok;
+					const cost = o.usage.cost;
+					usageCost =
+						typeof cost === "number" && Number.isFinite(cost) && cost >= 0
+							? cost
+							: undefined;
 				} // 호출 누계 스냅샷
 				return out;
 			};
@@ -608,8 +618,14 @@ export function makeOpenAICompatProvider(deps: {
 				}
 				for (const b of built)
 					yield { kind: "toolUse", id: b.id, name: b.name, args: b.args };
-				if (inTok > 0 || outTok > 0)
-					yield { kind: "usage", inputTokens: inTok, outputTokens: outTok };
+				if (inTok > 0 || outTok > 0 || usageCost !== undefined) {
+					yield {
+						kind: "usage",
+						inputTokens: inTok,
+						outputTokens: outTok,
+						...(usageCost !== undefined ? { cost: usageCost } : {}),
+					};
+				}
 				yield { kind: "finish" };
 			};
 

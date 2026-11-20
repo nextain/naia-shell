@@ -3655,3 +3655,15 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 기본·열기·닫기 | 앱 스토어를 누르면 이름이 있는 모달에 이용 안내가 표시되고, 닫기를 누르면 모달이 사라짐 | `AppMainContent.kiosk-store.test.tsx` R46 |
 | 좁은 폭·키보드 | 1280×720의 앱 막대와 390×844의 메뉴에서 같은 안내를 열 수 있고, 화면 안의 닫기 단추를 Enter로 작동할 수 있음 | 로컬 Playwright R46, `bundle-runs/r46-shots/R46-1280.png`·`R46-390.png` |
 | 정식 웹판 대조 | 같은 웹판 표지에서 키오스크 플래그를 끄면 통합 상점이 열림 | 로컬 Playwright R46 |
+
+## UC-WEB-USAGE-COST. 브라우저에서 Naia 대화 비용을 확인한다 (R47)
+
+브라우저에서 Naia Terra로 대화한 사용자가 답 아래에서 차감된 크레딧을 확인합니다. 게이트웨이가 사용량에 $0.0069043을 보고하면 이 턴의 비용은 6.9043 Cr이며, 배지에는 기존 반올림 규칙이 적용됩니다. 도구 실행 뒤에 모델을 다시 호출한 턴에는 각 호출의 비용이 포함됩니다.
+
+### Test Coverage Map — UC-WEB-USAGE-COST
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 성공 | 모의 SSE의 마지막 사용량에서 받은 $0.0069043과 토큰 수를 워커가 내보냄. 0 USD도 유효한 값으로 전달 | `web-worker/__tests__/agent-worker-usage.test.ts` R47 |
+| 비용 누락·오류 | 비용이 없거나 문자열·음수·비유한 값이면 해당 호출의 기존 토큰 단가를 사용 | `web-worker/__tests__/openai-compat-provider.test.ts`, `web-worker/__tests__/agent-worker-usage.test.ts` R47 |
+| 다중 호출 | 도구 라운드와 후속 호출의 비용을 합하고, 게이트웨이 비용이 없는 호출만 단가로 계산 | `web-worker/__tests__/agent-worker-usage.test.ts` R47 |

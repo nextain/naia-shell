@@ -1,3 +1,10 @@
+<!-- src-sha: 18181c937a98e5fe -->
+
+## 웹판 워커의 게이트웨이 대화 비용 전달 (R47) — 2026-11-20
+
+- 에이전트 c5d6d7b를 사용하는 웹 모드 표적 Vitest 9파일 72통과·0실패. 수정 전 모의 Terra 응답은 2,041토큰과 0 USD를 내보냈고, 수정 후 워커 MessagePort가 0.0069043 USD를 내보냄. 실제 0·누락·문자열·음수·NaN·비유한 값과 도구 라운드의 비용 합산·단가 대체를 확인. 실서버·브라우저 화면 미확인. 파일 앵커 검사는 기준 커밋의 웹 런타임 미계약 파일 3건을 검출함.
+- `UC-WEB-USAGE-COST` · `FR-WEB-USAGE-COST.1` · `packages/shell/web-worker/__tests__/agent-worker-usage.test.ts`
+
 <!-- src-sha: 0d69f97c7d06dda3 -->
 
 ## 웹판 캐릭터 카드 파일 보관 (R11) — 2026-11-20

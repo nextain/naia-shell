@@ -92,6 +92,28 @@ describe("browser gateway provider", () => {
 			echoReasoningContent: true,
 			fetch: vi.fn().mockResolvedValue({ ok: true, status: 200, body }),
 		});
+	it("R47 ignores a decoded NaN cost and retains token usage", async () => {
+		// JSON has no NaN literal. Inject it only for this decoded usage event.
+		const payload = '{"usage":{"prompt_tokens":4,"completion_tokens":2,"cost":null}}';
+		const decode = JSON.parse;
+		const parse = vi.spyOn(JSON, "parse").mockImplementation((raw, reviver) => {
+			const event = decode(raw, reviver);
+			if (raw === payload) event.usage.cost = Number.NaN;
+			return event;
+		});
+		try {
+			const chunks = [];
+			for await (const chunk of terraProvider(bodyOf(`data: ${payload}\n\ndata: [DONE]\n\n`)).chat(
+				{ provider: "nextain", model: "gpt-6.1-terra" }, [], {},
+			)) chunks.push(chunk);
+			expect(chunks).toStrictEqual([
+				{ kind: "usage", inputTokens: 4, outputTokens: 2 },
+				{ kind: "finish" },
+			]);
+		} finally {
+			parse.mockRestore();
+		}
+	});
 	it.each([
 		["a 0-byte body", ""],
 		["only blank lines", "\n\n\n"],
