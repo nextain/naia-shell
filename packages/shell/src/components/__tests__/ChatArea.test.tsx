@@ -48,6 +48,12 @@ import {
 	registerKioskSlidesController,
 } from "../../lib/kiosk-demo/slides";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import { loadConfig } from "../../lib/config";
+import * as labBalance from "../../lib/lab-balance";
+import { getDefaultLlmModel } from "../../lib/llm/registry";
+import { getStartableAgentBridge } from "../../lib/web-runtime/agent-bridge";
+import { WEB_REMOTE_KEY_STORAGE_KEY } from "../../lib/web-runtime/web-auth";
+import { WEB_LLM_FALLBACK_F32 } from "../../lib/web-runtime/webllm-model";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -3884,31 +3890,140 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
-	it("R44 keeps an editable composer beside the web model alert and preserves its draft on recovery", () => {
+	it("R44 keeps the paused composer beside the model alert and preserves its draft on recovery", () => {
 		vi.stubEnv("MODE", "web");
 		setWebAssetsModeForTests(true);
 		setWebAdkStatus({ phase: "ready" });
-		const model = "Qwen3-4B-q4f32_1-MLC";
+		const model = WEB_LLM_FALLBACK_F32;
 		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model }));
-		setWebModelStatus({ phase: "error", model, errorKind: "no-webgpu", errorMessage: "어댑터 없음" });
+		setWebModelStatus({ phase: "checking", model });
 
 		const { container } = render(<ChatArea />);
 		const chat = container.querySelector(".chat-app");
 		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "준비 중 작성한 메시지" } });
+		act(() => setWebModelStatus({ phase: "error", model, errorKind: "no-webgpu", errorMessage: "어댑터 없음" }));
 		const alert = screen.getByTestId("web-model-status");
 		expect(alert).toHaveAttribute("role", "alert");
 		expect(alert).toHaveAttribute("data-phase", "error");
 		expect(alert).toHaveAttribute("tabindex", "0");
 		expect(alert.parentElement).toBe(chat);
 		expect(input.closest(".chat-input-bar")?.parentElement).toBe(chat);
-		fireEvent.change(input, { target: { value: "준비 중 작성한 메시지" } });
+		expect(input).toBeDisabled();
+		expect(input).toHaveAttribute("aria-describedby", alert.id);
+		expect(screen.getByRole("button", { name: "↑" })).toBeDisabled();
 		expect(input).toHaveValue("준비 중 작성한 메시지");
+		fireEvent.keyDown(input, { key: "Enter" });
+		expect(sendChatMessage).not.toHaveBeenCalled();
 
 		act(() => setWebModelStatus({ phase: "ready", model, progress: 1 }));
 		expect(screen.getByTestId("web-model-status")).toHaveAttribute("role", "status");
 		expect(screen.getByTestId("web-model-status")).toHaveAttribute("data-phase", "ready");
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBe(input);
+		expect(input).toBeEnabled();
 		expect(input).toHaveValue("준비 중 작성한 메시지");
+	});
+
+	it("R21-2 signs in from the composer when the browser has no local model API", () => {
+		vi.stubEnv("MODE", "web");
+		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: getDefaultLlmModel("nextain"),
+			webAutoDefaultModel: true,
+		}));
+
+		render(<ChatArea />);
+		expect(screen.getByRole("alert")).toHaveTextContent("On-device chat couldn't start.");
+		expect(screen.getByRole("button", { name: "Sign in for cloud chat (free 200 Cr)" })).toBeEnabled();
+		expect(screen.getByRole("textbox")).toBeDisabled();
+	});
+
+	it.each(["webllm", "nextain"] as const)(
+		"R21-2 keeps %s chat blocked when the signed-in account has no credits",
+		async (provider) => {
+			vi.stubEnv("MODE", "web");
+			setWebAssetsModeForTests(true);
+			setWebAdkStatus({ phase: "ready" });
+			setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+			localStorage.setItem("naia-config", JSON.stringify({
+				provider,
+				model: provider === "webllm" ? WEB_LLM_FALLBACK_F32 : getDefaultLlmModel("nextain"),
+				webAutoDefaultModel: true,
+			}));
+			localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+			vi.spyOn(labBalance, "fetchLabBalancePayload").mockResolvedValue({ credits: 0 });
+			try {
+				render(<ChatArea />);
+				expect(await screen.findByText("You need credits to start cloud chat.")).toBeVisible();
+				expect(screen.getByRole("textbox")).toBeDisabled();
+				expect(screen.queryByRole("button", { name: "Switch to cloud chat" })).toBeNull();
+				expect(sendChatMessage).not.toHaveBeenCalled();
+			} finally {
+				localStorage.removeItem(WEB_REMOTE_KEY_STORAGE_KEY);
+			}
+		},
+	);
+
+	it("R21-2 keeps the draft blocked through a failed save and sends it after retrying the cloud switch", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
+		const model = getDefaultLlmModel("nextain");
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "webllm",
+			model: WEB_LLM_FALLBACK_F32,
+			llmRoles: { main: { provider: "webllm", model: WEB_LLM_FALLBACK_F32 } },
+		}));
+		localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+		vi.spyOn(labBalance, "fetchLabBalancePayload").mockResolvedValue({ credits: 12 });
+		const saved = deferred<void>();
+		let writes = 0;
+		mockInvoke.mockImplementation((command) => {
+			if (command !== "write_naia_config") return Promise.resolve();
+			writes += 1;
+			return writes === 1 ? Promise.reject(new Error("fixture write failure")) : saved.promise;
+		});
+		const start = vi.spyOn(getStartableAgentBridge(), "start").mockImplementation(() => {});
+
+		try {
+			render(<ChatArea />);
+			const input = screen.getByRole("textbox");
+			fireEvent.change(input, { target: { value: "Hello from my device" } });
+			act(() => setWebModelStatus({ phase: "error", errorKind: "no-webgpu" }));
+			fireEvent.click(await screen.findByRole("button", { name: "Switch to cloud chat" }));
+			expect(await screen.findByText("Couldn't switch to cloud chat. Try again.")).toBeVisible();
+			expect(input).toBeDisabled();
+			expect(start).not.toHaveBeenCalled();
+			fireEvent.click(screen.getByRole("button", { name: "Switch to cloud chat" }));
+			const switching = screen.getByRole("button", { name: "Switching to cloud chat…" });
+			expect(switching).toBeDisabled();
+			fireEvent.click(switching);
+			expect(input).toBeDisabled();
+			expect(loadConfig()?.provider).toBe("webllm");
+			expect(sendChatMessage).not.toHaveBeenCalled();
+			await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("write_naia_config", expect.objectContaining({
+				json: expect.stringContaining(`"model": "${model}"`),
+			})));
+			expect(writes).toBe(2);
+
+			await act(async () => saved.resolve());
+			expect(writes).toBe(2);
+			expect(start).toHaveBeenCalledWith({ model: null });
+			expect(loadConfig()).toMatchObject({ provider: "nextain", llmRoles: { main: { provider: "nextain", model } } });
+			expect(input).toBeEnabled();
+			expect(input).toHaveValue("Hello from my device");
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(sendChatMessage).toHaveBeenCalledWith(expect.objectContaining({
+				message: "Hello from my device",
+				provider: expect.objectContaining({ provider: "nextain", model }),
+			})));
+		} finally {
+			saved.resolve();
+			localStorage.removeItem(WEB_REMOTE_KEY_STORAGE_KEY);
+		}
 	});
 
 	it("sends request when pre-ready event subscription callback is invoked after ready in web mode", async () => {

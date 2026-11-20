@@ -1,5 +1,33 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
+import {
+	getAdkPath,
+	isNaiaConfigHydrationPending,
+	writeNaiaConfig,
+} from "../lib/adk-store";
+import { LAB_GATEWAY_URL, getNaiaKey, loadConfig, saveConfig } from "../lib/config";
 import { t } from "../lib/i18n";
+import {
+	fetchLabBalancePayload,
+	isLabBalanceUnauthorized,
+	onWebCreditRefresh,
+	parseLabCredits,
+} from "../lib/lab-balance";
+import { getDefaultLlmModel } from "../lib/llm/registry";
+import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import { Logger } from "../lib/logger";
+import { effectiveMainRole } from "../lib/slots/model";
+import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
+import {
+	isValidWebAuthKey,
+	isWebAuthenticated,
+	startWebLoginRedirect,
+} from "../lib/web-runtime/web-auth";
 import {
 	fallbackModelFor,
 	getWebModelStatus,
@@ -22,13 +50,176 @@ export const useWebModelStatus: () => WebModelStatus =
 		: () => DESKTOP_MODEL_STATUS;
 
 const READY_NOTICE_MS = 4000;
+const NO_LOCAL_MODEL_STATUS: WebModelStatus = {
+	phase: "error",
+	model: WEB_LLM_MODEL_ID,
+	progress: 0,
+	errorKind: "no-webgpu",
+};
+
+type CloudCreditsStatus = "login" | "checking" | "available" | "empty" | "unavailable" | "expired";
+
+function WebCloudChatRecovery({ provider }: { provider: "webllm" | "nextain" }) {
+	const [credits, setCredits] = useState<CloudCreditsStatus>(
+		() => isWebAuthenticated() ? "checking" : "login",
+	);
+	const [revision, setRevision] = useState(0);
+	const [switching, setSwitching] = useState(false);
+	const [switchFailed, setSwitchFailed] = useState(false);
+	const [loginFailed, setLoginFailed] = useState(false);
+	const confirmedKey = useRef<string | undefined>(undefined);
+	const switchingRef = useRef(false);
+	const recheckCredits = useCallback(() => {
+		confirmedKey.current = undefined;
+		setRevision((value) => value + 1);
+	}, []);
+
+	useEffect(() => {
+		window.addEventListener("naia-web-auth-changed", recheckCredits);
+		window.addEventListener("focus", recheckCredits);
+		const offRefresh = onWebCreditRefresh(recheckCredits);
+		return () => {
+			window.removeEventListener("naia-web-auth-changed", recheckCredits);
+			window.removeEventListener("focus", recheckCredits);
+			offRefresh();
+		};
+	}, [recheckCredits]);
+
+	useEffect(() => {
+		const key = getNaiaKey();
+		if (!key || !isValidWebAuthKey(key)) {
+			setCredits("login");
+			return;
+		}
+		setCredits("checking");
+		const controller = new AbortController();
+		const timeout = window.setTimeout(() => controller.abort(), 8_000);
+		let ignore = false;
+		Logger.debug("WebModelStatusBar", "checking credits for cloud chat recovery");
+		void fetchLabBalancePayload(LAB_GATEWAY_URL, key, controller.signal)
+			.then((payload) => {
+				if (ignore) return;
+				const value = parseLabCredits(payload);
+				if (value !== null && value > 0) confirmedKey.current = key;
+				setCredits(value === null ? "unavailable" : value > 0 ? "available" : "empty");
+			})
+			.catch((error: unknown) => {
+				if (ignore) return;
+				const expired = isLabBalanceUnauthorized(error);
+				Logger.debug("WebModelStatusBar", "cloud chat credit check failed", { expired });
+				setCredits(expired ? "expired" : "unavailable");
+			})
+			.finally(() => window.clearTimeout(timeout));
+		return () => {
+			ignore = true;
+			window.clearTimeout(timeout);
+			controller.abort();
+		};
+	}, [revision]);
+
+	function handleLogin() {
+		setLoginFailed(false);
+		try {
+			startWebLoginRedirect({ keepLocalModel: true });
+		} catch {
+			Logger.warn("WebModelStatusBar", "could not start sign-in for cloud chat recovery");
+			setLoginFailed(true);
+		}
+	}
+
+	async function handleCloudSwitch() {
+		if (switchingRef.current) return;
+		const key = confirmedKey.current;
+		if (!key || getNaiaKey() !== key) {
+			recheckCredits();
+			return;
+		}
+		switchingRef.current = true;
+		setSwitching(true);
+		setSwitchFailed(false);
+		const model = getDefaultLlmModel("nextain");
+		Logger.debug("WebModelStatusBar", "switching to cloud chat", { model });
+		try {
+			const current = loadConfig();
+			const path = getAdkPath();
+			if (
+				!current || !path || !model ||
+				isNaiaConfigHydrationPending() ||
+				effectiveMainRole(current).provider !== provider
+			) {
+				throw new Error("Cloud chat selection is unavailable");
+			}
+			const selection = { provider: "nextain", model };
+			const next = {
+				...writeConfiguredLlmRole(current, "main", selection),
+				webAutoDefaultModel: false,
+			};
+			await writeNaiaConfig(next);
+			const latest = loadConfig();
+			if (getAdkPath() === path && latest && effectiveMainRole(latest).provider === provider) {
+				getStartableAgentBridge().start({ model: null });
+				saveConfig({
+					...writeConfiguredLlmRole(latest, "main", selection),
+					webAutoDefaultModel: false,
+				});
+			}
+		} catch {
+			Logger.warn("WebModelStatusBar", "could not switch to cloud chat");
+			setSwitchFailed(true);
+		} finally {
+			switchingRef.current = false;
+			setSwitching(false);
+		}
+	}
+
+	return (
+		<div className="web-model-recovery">
+			{(credits === "login" || credits === "expired") && (
+				<button
+					type="button"
+					className="web-model-recovery__button"
+					onClick={handleLogin}
+				>
+					{t(credits === "login" ? "webModel.loginForCloud" : "webModel.loginAgainForCloud")}
+				</button>
+			)}
+			{(credits === "available" || switching) && (
+				<button
+					type="button"
+					className="web-model-recovery__button"
+					onClick={handleCloudSwitch}
+					disabled={switching}
+				>
+					{t(switching ? "webModel.switchingToCloud" : "webModel.useCloud")}
+				</button>
+			)}
+			{!switching && credits === "checking" && (
+				<p role="status">{t("webModel.checkingCredits")}</p>
+			)}
+			{!switching && credits === "empty" && <p>{t("webModel.noCloudCredits")}</p>}
+			{!switching && credits === "unavailable" && (
+				<>
+					<p>{t("webModel.cloudCreditsUnavailable")}</p>
+					<button type="button" className="chat-error-notice__retry" onClick={recheckCredits}>
+						{t("webModel.retryCredits")}
+					</button>
+				</>
+			)}
+			{switchFailed && <p>{t("webModel.cloudSwitchFailed")}</p>}
+			{loginFailed && <p>{t("webAuth.startFailed")}</p>}
+		</div>
+	);
+}
 
 export function WebModelStatusBar(props: {
 	scrollDuringSetup?: boolean;
+	offerCloudRecovery?: boolean;
+	localModelUnavailable?: boolean;
 	onSwitchModel?: (model: WebLlmModelId) => void;
 	onRetry?: () => void;
 }) {
-	const status = useWebModelStatus();
+	const runtimeStatus = useWebModelStatus();
+	const status = props.localModelUnavailable ? NO_LOCAL_MODEL_STATUS : runtimeStatus;
 	const [readyDetailsOpen, setReadyDetailsOpen] = useState(false);
 	useEffect(() => {
 		setReadyDetailsOpen(false);
@@ -90,16 +281,6 @@ export function WebModelStatusBar(props: {
 
 	if (status.phase === "error") {
 		const fallbackModel = fallbackModelFor(status);
-		let leadMessage = "";
-		if (status.errorKind === "no-webgpu") {
-			leadMessage = t("webModel.errorNoWebgpu");
-		} else if (status.errorKind === "no-shader-f16") {
-			leadMessage = t("webModel.errorNoShaderF16", { model: modelLabel });
-		} else if (status.errorKind === "device-lost") {
-			leadMessage = t("webModel.errorDeviceLost", { model: modelLabel });
-		} else {
-			leadMessage = t("webModel.errorLoadFailed", { model: modelLabel });
-		}
 
 		return (
 			<div
@@ -109,11 +290,18 @@ export function WebModelStatusBar(props: {
 				data-phase={status.phase}
 				data-model={status.model}
 				data-error-kind={status.errorKind}
+				data-cloud-recovery={props.offerCloudRecovery || undefined}
 				className="chat-error-notice"
 				role="alert"
 			>
-				<p className="chat-error-notice__lead">{leadMessage}</p>
-				{adapterLine && <p className="chat-error-notice__adapter">{adapterLine}</p>}
+				<p className="chat-error-notice__lead">{t("webModel.localChatUnavailable")}</p>
+				{props.offerCloudRecovery && !props.scrollDuringSetup ? (
+					<WebCloudChatRecovery provider={props.localModelUnavailable ? "nextain" : "webllm"} />
+				) : (
+					<p className="web-model-recovery">{t(props.scrollDuringSetup
+						? "webModel.workspacePreparing"
+						: "webModel.localChatRetryHint")}</p>
+				)}
 				<div className="update-banner-actions">
 					{fallbackModel && (
 						<button
@@ -122,9 +310,7 @@ export function WebModelStatusBar(props: {
 							data-testid="web-model-fallback"
 							onClick={() => handleSwitchModel(fallbackModel)}
 						>
-							{t("webModel.useFallback", {
-								model: formatWebLlmModelLabel(fallbackModel),
-							})}
+							{t("webModel.tryCompatibleModel")}
 						</button>
 					)}
 					<button
@@ -136,12 +322,13 @@ export function WebModelStatusBar(props: {
 						{t("webModel.retry")}
 					</button>
 				</div>
-				{status.errorMessage && (
+				{(adapterLine || status.errorMessage) && (
 					<details className="chat-error-notice__details">
 						<summary>{t("webModel.details")}</summary>
-						<pre className="chat-error-notice__detail-text">
-							{status.errorMessage}
-						</pre>
+						{adapterLine && <div>{adapterLine}</div>}
+						{status.errorMessage && (
+							<pre className="chat-error-notice__detail-text">{status.errorMessage}</pre>
+						)}
 					</details>
 				)}
 			</div>

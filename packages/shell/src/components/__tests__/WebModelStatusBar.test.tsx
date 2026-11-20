@@ -2,7 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebModelStatusBar } from "../WebModelStatusBar";
-import { t } from "../../lib/i18n";
+import { setLocale, t } from "../../lib/i18n";
+import * as labBalance from "../../lib/lab-balance";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import * as webAuth from "../../lib/web-runtime/web-auth";
 import {
 	resetWebModelStatusForTests,
 	setWebModelStatus,
@@ -15,11 +18,17 @@ import {
 describe("WebModelStatusBar", () => {
 	beforeEach(() => {
 		resetWebModelStatusForTests();
+		localStorage.clear();
+		setWebAssetsModeForTests(true);
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		cleanup();
 		resetWebModelStatusForTests();
+		setWebAssetsModeForTests(null);
+		localStorage.clear();
+		vi.restoreAllMocks();
+		await setLocale("en");
 	});
 
 	it("renders checking phase as role status", () => {
@@ -115,7 +124,7 @@ describe("WebModelStatusBar", () => {
 		expect(onRetry).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders no-shader-f16 error with 4B f32 fallback button", () => {
+	it("renders a plain-language compatibility action for the fallback model", () => {
 		const onSwitchModel = vi.fn();
 		setWebModelStatus({
 			phase: "error",
@@ -130,9 +139,49 @@ describe("WebModelStatusBar", () => {
 		expect(el.getAttribute("data-error-kind")).toBe("no-shader-f16");
 
 		const fallbackBtn = screen.getByTestId("web-model-fallback");
-		expect(fallbackBtn.textContent).toContain("Qwen3 4B (4bit f32)");
+		expect(fallbackBtn).toHaveTextContent("Try a compatible model");
 		fireEvent.click(fallbackBtn);
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_FALLBACK_F32);
+	});
+
+	it.each([
+		["ko", "이 기기에서는 내 기기 대화를 시작할 수 없어요.", "로그인하고 클라우드로 대화하기 (무료 200 Cr)"],
+		["en", "On-device chat couldn't start.", "Sign in for cloud chat (free 200 Cr)"],
+	] as const)("offers an actionable sign-in in %s after local startup fails", async (locale, heading, label) => {
+		await setLocale(locale);
+		const login = vi.spyOn(webAuth, "startWebLoginRedirect").mockImplementation(() => ({
+			url: "", state: "", redirectUri: "",
+		}));
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		expect(screen.getByRole("alert")).toHaveTextContent(heading);
+		fireEvent.click(screen.getByRole("button", { name: label }));
+		expect(login).toHaveBeenCalledOnce();
+		expect(login).toHaveBeenCalledWith({ keepLocalModel: true });
+	});
+
+	it("allows a new balance check after the account service is unavailable", async () => {
+		localStorage.setItem(webAuth.WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+		const fetchBalance = vi.spyOn(labBalance, "fetchLabBalancePayload")
+			.mockRejectedValueOnce(new Error("HTTP 503"))
+			.mockResolvedValueOnce({ credits: 6 });
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		expect(screen.getByText("Checking credits for cloud chat…")).toBeVisible();
+		expect(await screen.findByText("Couldn't check your cloud chat credits.")).toBeVisible();
+		expect(screen.queryByRole("button", { name: "Switch to cloud chat" })).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Check credits again" }));
+		expect(await screen.findByRole("button", { name: "Switch to cloud chat" })).toBeEnabled();
+		expect(fetchBalance).toHaveBeenCalledTimes(2);
+	});
+
+	it("offers sign-in again when the account service rejects the saved sign-in", async () => {
+		localStorage.setItem(webAuth.WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+		vi.spyOn(labBalance, "fetchLabBalancePayload").mockRejectedValue(new Error("HTTP 401"));
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		expect(await screen.findByRole("button", { name: "Sign in again for cloud chat" })).toBeEnabled();
+		expect(screen.queryByRole("button", { name: "Switch to cloud chat" })).toBeNull();
 	});
 
 	it("renders device-lost error with shaderF16 true proposing retry button only and no fallback button", () => {

@@ -23,7 +23,7 @@ import {
 	setKioskLocalAnswerEnabled,
 } from "../lib/config-seed";
 import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
-import { verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
+import { isWebAuthenticated, verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import { startWebModel } from "../lib/web-runtime/model-start";
 import { WEB_LLM_MODEL_ID } from "../lib/web-runtime/webllm-model";
@@ -41,6 +41,7 @@ import {
 	useEffect,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
 import {
@@ -584,17 +585,52 @@ function getWebVrmLipSyncSink() {
 	return useAvatarStore.getState().setLipSyncSource;
 }
 
+function subscribeWebChatConfig(onChange: () => void) {
+	if (import.meta.env.MODE !== "web") return () => {};
+	window.addEventListener("naia-config-changed", onChange);
+	window.addEventListener("naia-web-auth-changed", onChange);
+	return () => {
+		window.removeEventListener("naia-config-changed", onChange);
+		window.removeEventListener("naia-web-auth-changed", onChange);
+	};
+}
+
+function getWebChatProvider() {
+	if (import.meta.env.MODE !== "web") return undefined;
+	const config = loadConfig();
+	return config ? effectiveMainRole(config).provider : undefined;
+}
+
+function needsWebCloudRecovery(provider = getWebChatProvider()) {
+	// Browsers without the GPU API start with the cloud provider already selected.
+	return provider === "nextain" && !isKioskDemo() && !readNavigatorGpu() &&
+		(!isWebAuthenticated() || loadConfig()?.webAutoDefaultModel === true);
+}
+
+function isWebChatSendBlocked() {
+	if (import.meta.env.MODE !== "web") return false;
+	const provider = getWebChatProvider();
+	return needsWebCloudRecovery(provider) ||
+		isWebSendBlocked(getWebModelStatus(), getWebAdkStatus(), provider);
+}
+
 export function ChatArea({
 	variant = "floating",
 	headerControls,
 }: { variant?: ChatVariant; headerControls?: ReactNode } = {}) {
 	const webModelStatus = useWebModelStatus();
 	const webAdkStatus = useWebAdkStatus();
+	const webProvider = useSyncExternalStore(subscribeWebChatConfig, getWebChatProvider);
+	const webCloudRecovery = useSyncExternalStore(subscribeWebChatConfig, needsWebCloudRecovery);
 	const webWorkspacePending =
 		import.meta.env.MODE === "web" && webAdkStatus.phase !== "ready";
+	const webLocalModelError =
+		import.meta.env.MODE === "web" &&
+		!isKioskDemo() &&
+		(webCloudRecovery || (webProvider === "webllm" && webModelStatus.phase === "error"));
 	const webSendBlocked =
 		import.meta.env.MODE === "web" &&
-		isWebSendBlocked(webModelStatus, webAdkStatus, loadConfig()?.provider);
+		(webLocalModelError || isWebSendBlocked(webModelStatus, webAdkStatus, webProvider));
 	const [input, setInput] = useState("");
 	const [greetingPreparing, setGreetingPreparing] = useState(false);
 	type OutputStage = "thinking" | "tts" | "render" | null;
@@ -2574,6 +2610,7 @@ export function ChatArea({
 			await runSendTurn(text, installedAppTurn, true);
 			return;
 		}
+		if (isWebChatSendBlocked()) return;
 		const fromInput = overrideText === undefined;
 		if (!fromQueue && isDuplicateSend(text)) {
 			Logger.debug("ChatArea", "drop duplicate send", { len: text.length });
@@ -2591,15 +2628,6 @@ export function ChatArea({
 			if (fromInput) setInput("");
 			return;
 		}
-		if (
-			import.meta.env.MODE === "web" &&
-			isWebSendBlocked(
-				getWebModelStatus(),
-				getWebAdkStatus(),
-				loadConfig()?.provider,
-			)
-		)
-			return;
 		if (useChatStore.getState().characterTransitionPending) {
 			Logger.debug("ChatArea", "retain input while card commit is pending");
 			if (installedAppTurn) {
@@ -4584,10 +4612,7 @@ export function ChatArea({
 										);
 										return;
 									}
-									if (
-										import.meta.env.MODE === "web" &&
-										isWebSendBlocked(getWebModelStatus(), getWebAdkStatus(), loadConfig()?.provider)
-									) {
+									if (isWebChatSendBlocked()) {
 										setInput(text);
 										return;
 									}
@@ -5975,8 +6000,12 @@ export function ChatArea({
 
 				{(import.meta.env.MODE === "web" || isKioskDemo()) &&
 					activeTab === "chat" &&
-					(kioskLocalAnswer || loadConfig()?.provider === "webllm") && (
-						<WebModelStatusBar scrollDuringSetup={webWorkspacePending} />
+					(kioskLocalAnswer || webProvider === "webllm" || webCloudRecovery) && (
+						<WebModelStatusBar
+							scrollDuringSetup={webWorkspacePending}
+							offerCloudRecovery={!isKioskDemo()}
+							localModelUnavailable={webCloudRecovery}
+						/>
 					)}
 
 				{(characterTransitionPending || greetingPreparing) && (
@@ -5993,6 +6022,7 @@ export function ChatArea({
 						onClick={handleVoiceToggle}
 						disabled={
 							voiceMode === "connecting" ||
+							(webLocalModelError && voiceMode === "off") ||
 							(isWebMode() && !isWebSpeechAvailable())
 						}
 						aria-label={
@@ -6036,7 +6066,9 @@ export function ChatArea({
 						onChange={handleInputChange}
 						onKeyDown={handleKeyDown}
 						placeholder={
-							pipelineActiveRef.current
+							webLocalModelError
+								? t("webModel.inputPaused")
+								: pipelineActiveRef.current
 								? ttsPlaying
 									? "나이아가 말하는 중... (버튼을 눌러 끊기)"
 									: sttState === "initializing"
@@ -6049,9 +6081,9 @@ export function ChatArea({
 						rows={3}
 						// Allow typing during an active Live voice session too — a
 						// typed line is routed to the Live session (see sendChat above)
-						// and answered in voice, same as spoken input. Only block
-						// while the session is still connecting.
-						disabled={voiceMode === "connecting"}
+						// and answered in voice, same as spoken input.
+						disabled={voiceMode === "connecting" || webLocalModelError}
+						aria-describedby={webLocalModelError ? "web-model-status" : undefined}
 						className="chat-input"
 					/>
 					{messageQueue.length > 0 && (

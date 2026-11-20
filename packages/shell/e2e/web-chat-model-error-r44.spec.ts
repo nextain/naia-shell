@@ -125,9 +125,13 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		await expect(status).toHaveAttribute("role", "status");
 		await expect(status).toHaveAttribute("data-phase", "checking");
 		const checking = await checkComposerPlacement(input, initialViewport);
+		await input.fill("A");
 		await page.evaluate(() => window.dispatchEvent(new Event("r44-no-gpu-adapter")));
 		await expect(status).toHaveAttribute("role", "alert");
 		await expect(status).toHaveAttribute("data-error-kind", "no-webgpu");
+		await expect(input).toBeDisabled();
+		await expect(input).toHaveValue("A");
+		await expect(status.getByRole("button", { name: /로그인하고 클라우드로 대화하기/ })).toBeInViewport({ ratio: 1 });
 		const firstError = await checkComposerPlacement(input, initialViewport);
 		const shots = process.env.NAIA_E2E_SHOTS_DIR;
 		if (shots) {
@@ -163,9 +167,7 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		});
 		const resizedBack = await checkComposerPlacement(input, initialViewport);
 
-		await input.focus();
-		await expect(input).toBeFocused();
-		await input.press("A");
+		await expect(input).toBeDisabled();
 		await expect(input).toHaveValue("A");
 		await page.evaluate(async () => {
 			const source = "/src/lib/web-runtime/web-model-status.ts";
@@ -174,6 +176,7 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		});
 		await expect(status).toHaveAttribute("role", "status");
 		await expect(status).toHaveAttribute("data-phase", "ready");
+		await expect(input).toBeEnabled();
 		await expect(input).toHaveValue("A");
 		const ready = await checkComposerPlacement(input, initialViewport);
 		expect(ready.inputTop).toBeCloseTo(checking.inputTop, 0);

@@ -16,6 +16,7 @@ describe("i18n web strings", () => {
 		await setLocale("en");
 		expect(t("webWorkspace.startDefault")).toBe("Start with default workspace");
 		expect(t("webModel.retry")).toBe("Retry");
+		expect(t("webModel.useCloud")).toBe("Switch to cloud chat");
 		expect(t("webVisualAgent.slugLabel")).toBe("Visual agent slug");
 
 		const enMod = await import("../locales/en");
@@ -47,7 +48,7 @@ describe("i18n web strings", () => {
 		const enMod = await import("../locales/en");
 
 		const webKeys = Object.keys(enWebMod.default);
-		expect(webKeys.length).toBe(120);
+		expect(webKeys.length).toBe(134);
 		expect(webKeys.filter((key) => key.startsWith("webVisualAgent."))).toHaveLength(14);
 		expect(webKeys.filter((key) => key.startsWith("webAppStore."))).toHaveLength(9);
 
