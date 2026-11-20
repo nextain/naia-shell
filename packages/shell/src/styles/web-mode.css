@@ -1563,12 +1563,32 @@
 	overflow-wrap: anywhere;
 	flex-shrink: 0;
 }
+
+[data-naia-web="true"] #web-model-status .web-model-details {
+	padding-inline: 8px;
+}
+
+[data-naia-web="true"] #web-model-status .web-model-details__summary {
+	font: 12px/20px system-ui, sans-serif;
+	cursor: pointer;
+}
+
+[data-naia-web="true"] #web-model-status[data-phase="ready"] .web-model-details__summary {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+[data-naia-web="true"] #web-model-status .web-model-details__summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app:not(.chat-app--workspace-pending) {
 	overflow-y: auto;
 }
 
-/* On model errors the two scrollable blocks share the space above the composer. */
-[data-naia-web="true"] .chat-app:has(> #web-model-status[data-phase="error"]) > .chat-messages,
+/* Let the message viewport shrink when model information needs more room. */
+[data-naia-web="true"] .chat-app:has(> #web-model-status[data-phase="error"], > #web-model-status > .web-model-details[open]) > .chat-messages,
 [data-naia-web="true"] .chat-app > #web-model-status[data-phase="error"] {
 	min-height: 0;
 	flex-shrink: 1;
@@ -1630,6 +1650,20 @@
 
 [data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] #web-model-status[data-cloud-recovery] {
 	margin-top: auto;
+}
+
+/* Reserve the collapsed sheet's extra row only while model information is visible. */
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app:not(.chat-app--workspace-pending) > #web-model-status:not([hidden]) > .web-model-details) {
+	min-height: 104px !important;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app:not(.chat-app--workspace-pending) > #web-model-status:not([hidden]) > .web-model-details[open]) {
+	min-height: 136px !important;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .chat-app:not(.chat-app--workspace-pending) > #web-model-status:has(> .web-model-details) {
+	margin-top: auto;
+	flex-shrink: 1;
 }
 
 /* On short landscape windows the default 40%-height chat cannot fit the

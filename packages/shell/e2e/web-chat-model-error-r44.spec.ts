@@ -181,6 +181,15 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		const ready = await checkComposerPlacement(input, initialViewport);
 		expect(ready.inputTop).toBeCloseTo(checking.inputTop, 0);
 		expect(ready.inputBottom).toBeCloseTo(checking.inputBottom, 0);
+		const readyDetails = status.getByTestId("web-model-ready-details");
+		const readySummary = readyDetails.locator("summary");
+		await expect(readySummary).toHaveText("내 기기 모델 · 호환 모드");
+		await expect(readySummary).toHaveCSS("white-space", "nowrap");
+		const detailedModelName = readyDetails.getByText(/Qwen3 4B \(4bit f32\)/);
+		await expect(detailedModelName).toBeHidden();
+		await readySummary.press("Enter");
+		await expect(detailedModelName).toBeVisible();
+		await checkComposerPlacement(input, initialViewport);
 		await testInfo.attach("R44 viewport geometry", {
 			body: JSON.stringify({ checking, firstError, expandedError, resized, resizedBack, ready }, null, 2),
 			contentType: "application/json",

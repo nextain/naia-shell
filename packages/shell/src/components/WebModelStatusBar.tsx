@@ -220,9 +220,9 @@ export function WebModelStatusBar(props: {
 }) {
 	const runtimeStatus = useWebModelStatus();
 	const status = props.localModelUnavailable ? NO_LOCAL_MODEL_STATUS : runtimeStatus;
-	const [readyDetailsOpen, setReadyDetailsOpen] = useState(false);
+	const [detailsOpen, setDetailsOpen] = useState(false);
 	useEffect(() => {
-		setReadyDetailsOpen(false);
+		setDetailsOpen(false);
 	}, [status.phase]);
 	// The default model's "ready" line sits right above the composer and eats
 	// scarce chat height; show it briefly, then get out of the way. Fallback
@@ -261,6 +261,7 @@ export function WebModelStatusBar(props: {
 	};
 
 	const modelLabel = formatWebLlmModelLabel(status.model);
+	const usingCompatibleModel = status.model !== WEB_LLM_MODEL_ID;
 
 	const formatAdapterLine = () => {
 		if (!status.adapter) return null;
@@ -339,40 +340,31 @@ export function WebModelStatusBar(props: {
 		<div
 			id="web-model-status"
 			data-testid="web-model-status"
-			tabIndex={props.scrollDuringSetup || (status.phase === "ready" && readyDetailsOpen) ? 0 : undefined}
+			tabIndex={props.scrollDuringSetup || detailsOpen ? 0 : undefined}
 			data-phase={status.phase}
 			data-model={status.model}
 			className="chat-compaction-notice"
 			role="status"
-			hidden={quietReady && readyHidden && !readyDetailsOpen}
+			hidden={quietReady && readyHidden && !detailsOpen}
 		>
 			{status.phase === "checking" && (
 				<div>{t("webModel.checking")}</div>
 			)}
-			{status.phase === "loading" && (
-				<>
-					<div>
-						{t("webModel.loading", {
-							model: modelLabel,
-							percent: Math.floor(status.progress * 100),
-						})}
-					</div>
-					{adapterLine && <div>{adapterLine}</div>}
-				</>
-			)}
-			{status.phase === "ready" && (
+			{(status.phase === "loading" || status.phase === "ready") && (
 				<details
-					data-testid="web-model-ready-details"
-					onToggle={(event) => setReadyDetailsOpen(event.currentTarget.open)}
+					key={status.phase}
+					className="web-model-details"
+					data-testid={status.phase === "ready" ? "web-model-ready-details" : "web-model-loading-details"}
+					onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
 				>
-					<summary>
-						{t("webModel.ready", { model: modelLabel })}
-						{status.model !== WEB_LLM_MODEL_ID && (
-							<> · {t("webModel.fallbackActive")}</>
-						)}
+					<summary className="web-model-details__summary" title={modelLabel}>
+						{status.phase === "loading"
+							? t("webModel.loading", { percent: Math.floor(status.progress * 100) })
+							: t(usingCompatibleModel ? "webModel.fallbackActive" : "webModel.onDeviceReady")}
 					</summary>
+					<div>{status.phase === "ready" ? t("webModel.ready", { model: modelLabel }) : modelLabel}</div>
 					{adapterLine && <div>{adapterLine}</div>}
-					{status.model !== WEB_LLM_MODEL_ID && (
+					{status.phase === "ready" && usingCompatibleModel && (
 						<button
 							type="button"
 							className="chat-error-notice__retry"

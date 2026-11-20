@@ -42,7 +42,7 @@ describe("WebModelStatusBar", () => {
 		expect(el.textContent).toContain(t("webModel.checking"));
 	});
 
-	it("renders loading phase with 42% progress and role status", () => {
+	it("shows plain-language progress with the exact model hidden until expanded", () => {
 		setWebModelStatus({
 			phase: "loading",
 			progress: 0.42,
@@ -53,10 +53,15 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.getAttribute("data-phase")).toBe("loading");
-		expect(el.textContent).toContain("42%");
+		const summary = el.querySelector("summary")!;
+		expect(summary).toHaveTextContent("Preparing on-device model (42%)");
+		const name = screen.getByText("Qwen3 4B (4bit f16)");
+		expect(name).not.toBeVisible();
+		fireEvent.click(summary);
+		expect(name).toBeVisible();
 	});
 
-	it("renders ready phase as role status", () => {
+	it("shows one ready label with the default model and adapter in the details", () => {
 		setWebModelStatus({
 			phase: "ready",
 			progress: 1,
@@ -69,11 +74,20 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.getAttribute("data-phase")).toBe("ready");
-		expect(el.textContent).toContain("Qwen3 4B (4bit f16)");
-		expect(el.textContent).toContain("NVIDIA · Ada · RTX 4060");
+		const summary = el.querySelector("summary")!;
+		expect(summary).toHaveTextContent(/^On-device model ready$/);
+		expect(summary).toHaveAttribute("title", "Qwen3 4B (4bit f16)");
+		const name = screen.getByText(/Qwen3 4B \(4bit f16\)/);
+		const adapter = screen.getByText(/NVIDIA · Ada · RTX 4060/);
+		expect(name).not.toBeVisible();
+		expect(adapter).not.toBeVisible();
+		fireEvent.click(summary);
+		expect(name).toBeVisible();
+		expect(adapter).toBeVisible();
 	});
 
-	it("renders ready phase with fallback model and invokes onSwitchModel on return to default", async () => {
+	it("uses a one-line Korean compatibility label and keeps the default-model action in the details", async () => {
+		await setLocale("ko");
 		const onSwitchModel = vi.fn();
 		setWebModelStatus({
 			phase: "ready",
@@ -84,16 +98,18 @@ describe("WebModelStatusBar", () => {
 
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
-		expect(el.textContent).toContain(t("webModel.fallbackActive"));
 		const details = screen.getByTestId("web-model-ready-details") as HTMLDetailsElement;
 		const summary = details.querySelector("summary");
 		expect(details.open).toBe(false);
 		expect(el.hasAttribute("tabindex")).toBe(false);
-		expect(summary?.textContent).toContain(t("webModel.fallbackActive"));
-		expect(summary?.textContent).toContain("Qwen3 4B (4bit f32)");
 		if (!summary) throw new Error("model details summary missing");
+		expect(summary).toHaveTextContent(/^내 기기 모델 · 호환 모드$/);
+		expect(summary).toHaveAttribute("title", "Qwen3 4B (4bit f32)");
+		const model = screen.getByText(/Qwen3 4B \(4bit f32\)/);
+		expect(model).not.toBeVisible();
 		fireEvent.click(summary);
 		expect(details.open).toBe(true);
+		expect(model).toBeVisible();
 		await waitFor(() => expect(el.getAttribute("tabindex")).toBe("0"));
 
 		const backBtn = screen.getByTestId("web-model-back-to-default");
@@ -101,6 +117,7 @@ describe("WebModelStatusBar", () => {
 		fireEvent.click(backBtn);
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_MODEL_ID);
 		fireEvent.click(summary);
+		expect(model).not.toBeVisible();
 		await waitFor(() => expect(el.hasAttribute("tabindex")).toBe(false));
 	});
 

@@ -5939,8 +5939,14 @@ describe("web mode brain tab (r4)", () => {
 
 		const statusBar = screen.getByTestId("web-model-status");
 		expect(statusBar.getAttribute("data-model")).toBe(activeSourceModel);
-		expect(statusBar.textContent).toContain(expectedF32Label);
-		expect(statusBar.textContent).not.toContain("Qwen3 4B (4bit f16)");
+		const loadingSummary = statusBar.querySelector("summary")!;
+		expect(loadingSummary).toHaveTextContent("5%");
+		expect(loadingSummary.textContent).not.toContain(expectedF32Label);
+		const loadingModel = screen.getByTestId("web-model-loading-details").querySelector("div");
+		expect(loadingModel).toHaveTextContent(expectedF32Label);
+		expect(loadingModel).not.toBeVisible();
+		fireEvent.click(loadingSummary);
+		expect(loadingModel).toBeVisible();
 
 		// When the single runtime source changes to f16, both UI places update together.
 		act(() => {
@@ -5960,7 +5966,14 @@ describe("web mode brain tab (r4)", () => {
 		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF16Label);
 		expect(modelHint?.textContent).toBe(expectedF16Label);
 		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
-		expect(statusBar.textContent).toContain(expectedF16Label);
+		const readySummary = statusBar.querySelector("summary")!;
+		expect(readySummary).toHaveAttribute("title", expectedF16Label);
+		expect(readySummary.textContent).not.toContain(expectedF16Label);
+		const readyModel = screen.getByTestId("web-model-ready-details").querySelector("div");
+		expect(readyModel).not.toBeVisible();
+		fireEvent.click(readySummary);
+		expect(readyModel).toHaveTextContent(expectedF16Label);
+		expect(readyModel).toBeVisible();
 	});
 
 	it("R33 switches the running engine on web model select without a page reload", async () => {

@@ -3661,6 +3661,20 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 오류·복구 | 모델을 준비하지 못한 이유와 로그인, 클라우드 전환 또는 이용할 수 없는 이유가 표시됨. 다시 시도와 오류 상세를 키보드로 조작하고, 상세를 열어도 입력칸 하단은 화면 안에 있음 | `WebModelStatusBar.test.tsx`, `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` |
 | 좁은 폭 | 1280×720·390×844에서 처음 열었을 때와 두 크기를 오갈 때 입력칸의 상단과 하단을 측정함 | `e2e/web-chat-model-error-r44.spec.ts` R44 |
 
+## UC-WEB-CHAT-MODEL-SUMMARY. 웹판 채팅에서 기기 모델 상태를 짧게 본다 (R21-5)
+
+사용자는 빈 대화에서도 입력칸 위에서 기기 모델을 준비하는지, 준비됐는지, 호환 모드인지 확인합니다. 준비된 모델은 쉬운 이름 한 줄로 보이고, 그 줄을 누르거나 키보드로 열면 자세한 모델 이름을 확인할 수 있습니다.
+
+### Test Coverage Map — UC-WEB-CHAT-MODEL-SUMMARY
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 대화 | 상태가 모델 준비 여부를 나타내고 채팅 입력과 구분됨 | `WebModelStatusBar.test.tsx` |
+| 진행 | 기기 모델 준비 단계와 진행률이 쉬운 말로 보임 | `WebModelStatusBar.test.tsx`, `SettingsTab.test.tsx` |
+| 성공 | 기본 또는 호환 모드 한 줄에서 모델 상세를 열고 닫을 수 있음 | `WebModelStatusBar.test.tsx` |
+| 오류 | 준비 실패 시 상태 줄에서 오류와 복구 안내로 바뀜 | `WebModelStatusBar.test.tsx`, `ChatArea.test.tsx` |
+| 좁은 폭·키보드 | 390×844와 1280×720에서 상태 줄과 입력이 겹치지 않고, Enter로 모델 상세를 열 수 있음 | `WebModelStatusBar.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` |
+
 ## UC-WEB-KIOSK-APP-STORE. 브라우저 시연판에서 앱스토어 안내를 열고 닫는다 (R46)
 
 키오스크 시연을 시작한 방문자가 앱 막대 또는 좁은 화면의 메뉴에서 [앱 스토어]를 누릅니다. 문서 본문 중앙에 앱스토어 이용 안내가 열리고, [닫기]를 누르면 시연 화면으로 돌아갑니다. 시연판 16판 R7에서 안내를 도입한 커밋은 `fd48500c`이며, 본문 중앙 배치는 `f0e53745`에 있습니다. 정식 웹판의 통합 상점 계약은 `FR-WEB-APP-CATALOG.1`에 있습니다.
