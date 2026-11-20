@@ -306,26 +306,55 @@ describe("PlatformAppStoreAdapter & WebHttpAppStoreAdapter", () => {
 		);
 	});
 
-	it("dispatches cancelable naia-open-web-store-drawer event and falls back to window.open when unhandled", async () => {
+	it("opens the official store in a new tab with the web target", async () => {
 		const adapter = new WebHttpAppStoreAdapter();
 		const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
-		// 1) In-app drawer listener handles & cancels default -> no new tab opened
-		const drawerHandler = (e: Event) => {
-			e.preventDefault();
-		};
-		window.addEventListener("naia-open-web-store-drawer", drawerHandler);
 		await adapter.openStoreSurface("https://naia.land/ko/apps");
-		expect(openSpy).not.toHaveBeenCalled();
-		window.removeEventListener("naia-open-web-store-drawer", drawerHandler);
-
-		// 2) No drawer listener -> opens new tab with target=web
-		await adapter.openStoreSurface("https://naia.land/ko/apps");
-		expect(openSpy).toHaveBeenCalledWith(
+		expect(openSpy).toHaveBeenCalledExactlyOnceWith(
 			"https://naia.land/ko/apps?target=web",
 			"_blank",
 			"noopener,noreferrer",
 		);
+	});
+
+	it.each(["land.naia.paid", "land.naia.slides"])(
+		"fails closed and never purchases %s from a link with an unexpected entitlement response",
+		async (appId) => {
+			const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+				jsonResponse(200, { status: "unexpected" }),
+			);
+			const adapter = new WebHttpAppStoreAdapter({
+				stage1HostedCatalog: true,
+				fetchImpl,
+				getGatewayUrl: () => "https://gateway.example",
+				getAuthKey: () => "gw-test-entitlement-key",
+			});
+			await expect(adapter.checkEntitlement(appId)).resolves.toBe(true);
+			fetchImpl.mockClear();
+			await expect(adapter.installApp(appId, { purchaseIfNeeded: false })).rejects.toMatchObject({
+				code: "not_entitled",
+			});
+			expect(fetchImpl).toHaveBeenCalledOnce();
+			expect(String(fetchImpl.mock.calls[0][0])).toContain("/v1/apps/entitlements/");
+			expect(loadConfig()).toBeNull();
+		},
+	);
+
+	it("installs an explicitly owned app from a link without purchasing", async () => {
+		const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+			jsonResponse(200, { data: { entitled: true } }),
+		);
+		const adapter = new WebHttpAppStoreAdapter({
+			stage1HostedCatalog: true,
+			fetchImpl,
+			getGatewayUrl: () => "https://gateway.example",
+			getAuthKey: () => "gw-test-entitlement-key",
+		});
+		await adapter.installApp("land.naia.paid", { purchaseIfNeeded: false });
+		expect(loadConfig()?.installedWebApps).toContain("land.naia.paid");
+		expect(fetchImpl).toHaveBeenCalledOnce();
+		expect(String(fetchImpl.mock.calls[0][0])).toContain("/v1/apps/entitlements/");
 	});
 
 	it("merges live api-dev Stage-1 4-app catalog (/hosted-apps/*), overrides ieumoffice coming_soon -> v0.2.0, excludes Stage-2 apps, and enforces opaque sandbox", async () => {

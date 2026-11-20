@@ -8217,6 +8217,22 @@ body.resizing-row {
 	justify-content: flex-end;
 }
 
+.web-app-install-link {
+	box-sizing: border-box;
+	max-height: 90vh;
+	overflow: auto;
+	overflow-wrap: anywhere;
+}
+
+.web-app-install-link .sync-dialog-actions {
+	align-items: center;
+	flex-wrap: wrap;
+}
+
+.web-app-install-link .sync-dialog-actions a {
+	color: var(--cream);
+}
+
 /* ── Update Banner ── */
 
 .update-banner {

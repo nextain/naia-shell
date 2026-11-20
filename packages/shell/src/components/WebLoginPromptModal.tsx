@@ -10,6 +10,7 @@ import {
 	startWebLoginRedirect,
 } from "../lib/web-runtime/web-auth";
 import {
+	type WebLoginPromptDetail,
 	type WebLoginPromptReason,
 	markWebLoginPromptDismissedToday,
 	onWebLoginPrompt,
@@ -63,17 +64,17 @@ function getPromptCopy(locale: string): PromptCopy {
 }
 
 export function WebLoginPromptModal() {
-	const [reason, setReason] = useState<WebLoginPromptReason | null>(null);
+	const [prompt, setPrompt] = useState<WebLoginPromptDetail | null>(null);
 	const enabled = isWebMode() && !isKioskDemo();
 
 	useEffect(() => {
 		if (!enabled) return;
 		const offPrompt = onWebLoginPrompt((detail) => {
-			if (isWebAuthenticated()) return;
-			setReason(detail.reason);
+			if (isWebAuthenticated() && !detail.reauthenticate) return;
+			setPrompt(detail);
 		});
 		const onAuthChanged = () => {
-			if (isWebAuthenticated()) setReason(null);
+			if (isWebAuthenticated()) setPrompt(null);
 		};
 		window.addEventListener("naia-web-auth-changed", onAuthChanged);
 		return () => {
@@ -82,8 +83,9 @@ export function WebLoginPromptModal() {
 		};
 	}, [enabled]);
 
-	if (!enabled || !reason || isWebAuthenticated()) return null;
+	if (!enabled || !prompt || (isWebAuthenticated() && !prompt.reauthenticate)) return null;
 
+	const { reason } = prompt;
 	const locale = getLocale();
 	const copy = getPromptCopy(locale);
 	const gpuAvailable = Boolean(readNavigatorGpu());
@@ -116,7 +118,7 @@ export function WebLoginPromptModal() {
 				bridge: getStartableAgentBridge(),
 			}).catch(() => {});
 		}
-		setReason(null);
+		setPrompt(null);
 	};
 
 	return (

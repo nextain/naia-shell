@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
-import { WebAppStoreModal } from "./components/WebAppStoreModal";
+import { WebAppInstallLink } from "./components/WebAppInstallLink";
 import { WebLoginPromptModal } from "./components/WebLoginPromptModal";
 import { WebLoginScreen } from "./components/WebLoginScreen";
 import { WebSlugOwnerGuard } from "./components/WebSlugOwnerGuard";
@@ -57,6 +57,10 @@ import {
 	isWebMode,
 } from "./lib/web-runtime/web-assets";
 import {
+	readWebAppInstallId,
+	WEB_APP_INSTALL_PARAM,
+} from "./lib/web-runtime/web-app-install-link";
+import {
 	consumeWebAuthCallbackFromLocation,
 	isWebAuthenticated,
 	isWebLoginRequired,
@@ -75,6 +79,7 @@ import {
 	addAllowedTool,
 	type AppConfig,
 	isOnboardingComplete,
+	CONFIG_STORAGE_KEY,
 	loadConfig,
 	loadConfigWithSecrets,
 	mergeBootConfig,
@@ -302,9 +307,13 @@ export function App() {
 				decision.redirectToSlug &&
 				typeof window !== "undefined"
 			) {
-				window.location.replace(
+				const target = new URL(
 					`/u/${encodeURIComponent(decision.redirectToSlug)}`,
+					window.location.origin,
 				);
+				const appId = readWebAppInstallId(new URLSearchParams(window.location.search));
+				if (appId) target.searchParams.set(WEB_APP_INSTALL_PARAM, appId);
+				window.location.replace(target.pathname + target.search);
 				return;
 			}
 			setSlugGuardDecision(decision);
@@ -923,6 +932,29 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		if (!isWebMode() || isKioskDemo()) return;
+		const installList = (value: string | null): string => {
+			try {
+				const config = value ? JSON.parse(value) : null;
+				return JSON.stringify([config?.installedWebApps, config?.deletedApps]);
+			} catch {
+				return "";
+			}
+		};
+		const onStoreStorage = (event: StorageEvent) => {
+			if (
+				event.key === CONFIG_STORAGE_KEY &&
+				event.storageArea === window.localStorage &&
+				installList(event.oldValue) !== installList(event.newValue)
+			) {
+				void loadInstalledApps();
+			}
+		};
+		window.addEventListener("storage", onStoreStorage);
+		return () => window.removeEventListener("storage", onStoreStorage);
+	}, []);
+
+	useEffect(() => {
 		let disposed = false;
 		let refreshTimer: number | undefined;
 		let unlistenStoreChanged: (() => void) | undefined;
@@ -1450,7 +1482,7 @@ export function App() {
 				}}
 			/>
 			<WebLoginPromptModal />
-			<WebAppStoreModal />
+			<WebAppInstallLink />
 			{globalToast && (
 				<div
 					className="workspace-app__idle-toast"

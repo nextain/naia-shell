@@ -13,9 +13,11 @@ import { makeOnboardingSession } from "../onboarding-core";
 import { getDefaultDragonVoiceForLocale } from "../tts/registry";
 import { emitWebEvent } from "./event-bus";
 import { WEB_ADK_PATH } from "./web-adk-path";
+import { readWebAppInstallId, WEB_APP_INSTALL_PARAM } from "./web-app-install-link";
 import { getWebBasePath, isWebMode } from "./web-assets";
 
 export const WEB_OAUTH_STATE_STORAGE_KEY = "naia-web-oauth-state";
+const WEB_OAUTH_INSTALL_STORAGE_KEY = "naia-web-oauth-install-app";
 export const WEB_REMOTE_KEY_STORAGE_KEY = "naia-remote-key";
 export const WEB_REMOTE_USER_ID_STORAGE_KEY = "naia-remote-user-id";
 export const DEFAULT_WEB_LOGIN_BASE_URL = "https://naia.land";
@@ -148,6 +150,7 @@ export function startWebLoginRedirect(opts?: {
 	lang?: string;
 	origin?: string;
 	pathname?: string;
+	search?: string;
 	basePath?: string;
 	state?: string;
 	baseUrl?: string;
@@ -161,6 +164,16 @@ export function startWebLoginRedirect(opts?: {
 	try {
 		if (typeof sessionStorage !== "undefined") {
 			sessionStorage.setItem(WEB_OAUTH_STATE_STORAGE_KEY, storedState);
+			const search = opts?.search ?? (typeof window !== "undefined" ? window.location.search : "");
+			const appId = readWebAppInstallId(new URLSearchParams(search));
+			if (appId) {
+				sessionStorage.setItem(WEB_OAUTH_INSTALL_STORAGE_KEY, new URLSearchParams({
+					state: built.state,
+					[WEB_APP_INSTALL_PARAM]: appId,
+				}).toString());
+			} else {
+				sessionStorage.removeItem(WEB_OAUTH_INSTALL_STORAGE_KEY);
+			}
 		}
 	} catch {
 		// ignore sessionStorage failure
@@ -412,11 +425,19 @@ export async function consumeWebAuthCallbackFromLocation(
 	const returnedState = getCallbackParam("state");
 
 	let expectedState = "";
+	let pendingInstallApp: string | null = null;
 	try {
 		if (typeof sessionStorage !== "undefined") {
 			expectedState =
 				sessionStorage.getItem(WEB_OAUTH_STATE_STORAGE_KEY)?.trim() ?? "";
 			sessionStorage.removeItem(WEB_OAUTH_STATE_STORAGE_KEY);
+			const pending = new URLSearchParams(
+				sessionStorage.getItem(WEB_OAUTH_INSTALL_STORAGE_KEY) ?? "",
+			);
+			sessionStorage.removeItem(WEB_OAUTH_INSTALL_STORAGE_KEY);
+			if (pending.get("state") === returnedState) {
+				pendingInstallApp = readWebAppInstallId(pending);
+			}
 		}
 	} catch {
 		// ignore
@@ -458,10 +479,10 @@ export async function consumeWebAuthCallbackFromLocation(
 	for (const authKey of callbackParamNames) {
 		preservedQuery.delete(authKey);
 	}
-	const preservedSearch = preservedQuery.toString();
-	cleanAddress(
-		preservedSearch ? `${cleanTargetPath}?${preservedSearch}` : cleanTargetPath,
-	);
+	const cleanCallbackAddress = () => {
+		const preservedSearch = preservedQuery.toString();
+		cleanAddress(preservedSearch ? `${cleanTargetPath}?${preservedSearch}` : cleanTargetPath);
+	};
 
 	const keepLocalModel = expectedState.startsWith(KEEP_LOCAL_MODEL_STATE_PREFIX);
 	if (keepLocalModel) {
@@ -473,6 +494,7 @@ export async function consumeWebAuthCallbackFromLocation(
 		requireStateValidation &&
 		(!expectedState || returnedState !== expectedState)
 	) {
+		cleanCallbackAddress();
 		Logger.warn("WebAuth", "OAuth callback state mismatch");
 		return { handled: true, ok: false, error: "state_mismatch" };
 	}
@@ -482,9 +504,14 @@ export async function consumeWebAuthCallbackFromLocation(
 		getCallbackParam("key") || (codeParam.startsWith("gw-") ? codeParam : "")
 	).trim();
 	if (!isValidWebAuthKey(rawKey)) {
+		cleanCallbackAddress();
 		Logger.warn("WebAuth", "OAuth callback invalid key format");
 		return { handled: true, ok: false, error: "invalid_key" };
 	}
+	if (isAuthCallbackPath && pendingInstallApp) {
+		preservedQuery.set(WEB_APP_INSTALL_PARAM, pendingInstallApp);
+	}
+	cleanCallbackAddress();
 
 	const userId = getCallbackParam("user_id") || undefined;
 	const explicitOnboardingFlag = parseCallbackBooleanFlag(
@@ -541,6 +568,7 @@ export function logoutWebSession(): void {
 	try {
 		if (typeof sessionStorage !== "undefined") {
 			sessionStorage.removeItem(WEB_OAUTH_STATE_STORAGE_KEY);
+			sessionStorage.removeItem(WEB_OAUTH_INSTALL_STORAGE_KEY);
 		}
 	} catch {
 		// ignore

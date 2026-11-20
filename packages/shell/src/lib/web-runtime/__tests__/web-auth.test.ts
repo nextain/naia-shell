@@ -149,6 +149,27 @@ describe("web-auth (item 5)", () => {
 		expect(replaceUrl).toHaveBeenCalledWith("/");
 	});
 
+	it.each([true, false])("only restores a validated pending app through a matching sign-in: %s", async (matches) => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			pathname: "/app/",
+			search: "?installApp=naia-slides",
+			state: "state-for-install",
+			navigate: () => {},
+		});
+		const replaceUrl = vi.fn();
+		const result = await consumeWebAuthCallbackFromLocation({
+			pathname: "/u/example/auth/callback",
+			search: "",
+			hash: `#key=gw-test-install-auth&state=${matches ? "state-for-install" : "wrong-state"}`,
+		}, replaceUrl);
+		expect(result.ok).toBe(matches);
+		expect(replaceUrl).toHaveBeenCalledExactlyOnceWith(
+			matches ? "/u/example?installApp=land.naia.slides" : "/u/example",
+		);
+	});
+
 	it("rejects /auth/callback when state does not match pending state", async () => {
 		startWebLoginRedirect({
 			origin: "https://web.naia.land",

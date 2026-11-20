@@ -33,7 +33,7 @@ import {
 } from "./config-seed";
 import { isKioskDemo } from "./kiosk-demo/flag";
 
-const STORAGE_KEY = "naia-config";
+export const CONFIG_STORAGE_KEY = "naia-config";
 
 const RETIRED_VOICE_CONFIG_KEYS = [
 	"googleApiKey",
@@ -730,7 +730,7 @@ export function normalizeCascadeUrl(raw: string): {
 
 export function loadConfig(): AppConfig | null {
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
+		const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
 		if (!raw) return null;
 		const runtimeConfig = reconcileExplicitLocalProfile(
 			normalizeLocalRuntimeConfig(JSON.parse(raw) as AppConfig),
@@ -738,7 +738,7 @@ export function loadConfig(): AppConfig | null {
 		const normalized = normalizeRetiredVoiceConfig(runtimeConfig);
 		const config = normalized.config;
 		if (normalized.changed) {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+			localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
 		}
 		// Default STT/TTS provider:
 		// - In web mode: browser built-in SpeechRecognition ("web-speech") and speechSynthesis ("browser").
@@ -780,7 +780,7 @@ export function saveConfig(config: AppConfig): void {
 	const normalized = applyKioskDemoMainModel(
 		normalizeRetiredVoiceConfig(normalizeLocalRuntimeConfig(config)).config,
 	);
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+	localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(normalized));
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
 	}
@@ -1230,7 +1230,7 @@ export function migrateLiveProviderToUnifiedModel(): void {
 	if (!config) return;
 	const normalized = normalizeRetiredVoiceConfig(config);
 	if (normalized.changed) {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized.config));
+		localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(normalized.config));
 	}
 }
 

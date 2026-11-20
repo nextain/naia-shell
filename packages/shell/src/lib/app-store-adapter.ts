@@ -47,6 +47,7 @@ export type AppStoreErrorCode =
 	| "invalid_app_id"
 	| "auth_required"
 	| "unauthorized"
+	| "not_entitled"
 	| "insufficient_credits"
 	| "untrusted_origin"
 	| "http_error";
@@ -79,15 +80,18 @@ export interface StoreEntitlementSummary {
 	grantedAtMs?: number;
 }
 
+export type AppInstallOptions = { purchaseIfNeeded?: boolean };
+export type AppEntitlementOptions = { requireExplicit?: boolean };
+
 export interface PlatformAppStoreAdapter {
 	readonly kind: "desktop-tauri" | "web-http";
 	listCatalog(): Promise<StoreProductSummary[]>;
 	listEntitlements(): Promise<StoreEntitlementSummary[]>;
 	listInstalledManifests(): Promise<InstalledAppManifest[]>;
-	checkEntitlement(appId: string): Promise<boolean>;
+	checkEntitlement(appId: string, options?: AppEntitlementOptions): Promise<boolean>;
 	verifyAppTrust(appId: string): Promise<boolean>;
 	purchaseApp(appId: string): Promise<void>;
-	installApp(appId: string): Promise<void>;
+	installApp(appId: string, options?: AppInstallOptions): Promise<void>;
 	uninstallApp(appId: string): Promise<void>;
 	openStoreSurface(storeUrl: string): Promise<void>;
 	resolveFrameSrc(htmlEntry: string): string;
@@ -122,6 +126,12 @@ export interface WebHttpAppStoreAdapterDeps {
 	getPortalBaseUrl?: () => string;
 	/** Locale used to drop admin apps not offered in this language. */
 	getLocale?: () => string;
+}
+
+export function buildWebStoreUrl(storeUrl: string): string {
+	const url = new URL(storeUrl);
+	url.searchParams.set("target", "web");
+	return url.toString();
 }
 
 const PACKAGE_ICON_MAX_CHARS = 512 * 1024;
@@ -462,7 +472,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		return summaries;
 	}
 
-	async checkEntitlement(appId: string): Promise<boolean> {
+	async checkEntitlement(appId: string, options?: AppEntitlementOptions): Promise<boolean> {
 		const validId = this.assertAppId(appId);
 		// Admin-registered apps are free hosted apps with no gateway receipt;
 		// paid apps must be gateway products.
@@ -514,7 +524,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		if (typeof record.active === "boolean") {
 			return record.active || Boolean(stage1Spec?.freeWithoutLogin);
 		}
-		return true;
+		return options?.requireExplicit !== true;
 	}
 
 	async verifyAppTrust(appId: string): Promise<boolean> {
@@ -561,7 +571,7 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		}
 	}
 
-	async installApp(appId: string): Promise<void> {
+	async installApp(appId: string, options?: AppInstallOptions): Promise<void> {
 		const validId = this.assertAppId(appId);
 		if (this.stage1HostedCatalog && STAGE1_EXCLUDED_WEB_APP_IDS.has(validId)) {
 			throw new AppStoreHttpError(
@@ -571,7 +581,11 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		}
 		const isStage1BundledApp =
 			this.stage1HostedCatalog && STAGE1_HOSTED_BY_ID.has(validId);
-		if (isStage1BundledApp) {
+		if (options?.purchaseIfNeeded === false) {
+			if (!(await this.checkEntitlement(validId, { requireExplicit: true }))) {
+				throw new AppStoreHttpError("not_entitled", `App ${validId} is not owned`);
+			}
+		} else if (isStage1BundledApp) {
 			// Best-effort entitlement sync when logged in; never fail Stage-1 hosted launch
 			// when api-dev omits charcard or marks ieumoffice coming_soon.
 			if (this.getAuthKey().trim()) {
@@ -699,16 +713,8 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 	}
 
 	async openStoreSurface(storeUrl: string): Promise<void> {
-		if (typeof window === "undefined") return;
-		const event = new CustomEvent("naia-open-web-store-drawer", {
-			cancelable: true,
-			detail: { storeUrl },
-		});
-		const notCancelled = window.dispatchEvent(event);
-		if (notCancelled && typeof window.open === "function") {
-			const target = new URL(storeUrl);
-			target.searchParams.set("target", "web");
-			window.open(target.toString(), "_blank", "noopener,noreferrer");
+		if (typeof window !== "undefined" && typeof window.open === "function") {
+			window.open(buildWebStoreUrl(storeUrl), "_blank", "noopener,noreferrer");
 		}
 	}
 

@@ -6,8 +6,7 @@
  *   2. gateway products (`GET /v1/apps/products`);
  *   3. portal public catalog (`GET {portal}/api/apps` — admin-registered apps
  *      and portal store records);
- *   4. localized product titles, descriptions, and credit price badges shared
- *      across adapters and `WebAppStoreModal`.
+ *   4. localized product details used by the web app install confirmation.
  *
  * The portal endpoint contract is documented in `docs/app-store-protocol.md`
  * ("Unified web app catalog").

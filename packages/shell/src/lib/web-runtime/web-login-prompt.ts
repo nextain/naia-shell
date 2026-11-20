@@ -7,6 +7,7 @@ export type WebLoginPromptReason =
 
 export interface WebLoginPromptDetail {
 	reason: WebLoginPromptReason;
+	reauthenticate?: boolean;
 }
 
 export const WEB_LOGIN_PROMPT_EVENT = "naia-open-web-login-prompt";
@@ -44,7 +45,7 @@ export function wasWebLoginPromptDismissedToday(): boolean {
  */
 export function openWebLoginPrompt(
 	reason: WebLoginPromptReason = "account",
-	opts?: { respectDailyDismiss?: boolean },
+	opts?: { respectDailyDismiss?: boolean; reauthenticate?: boolean },
 ): void {
 	if (typeof window === "undefined") return;
 	if (opts?.respectDailyDismiss && wasWebLoginPromptDismissedToday()) {
@@ -52,7 +53,7 @@ export function openWebLoginPrompt(
 	}
 	window.dispatchEvent(
 		new CustomEvent<WebLoginPromptDetail>(WEB_LOGIN_PROMPT_EVENT, {
-			detail: { reason },
+			detail: { reason, ...(opts?.reauthenticate ? { reauthenticate: true } : {}) },
 		}),
 	);
 }
