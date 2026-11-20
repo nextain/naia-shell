@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openWebShellWithBgm } from "./helpers/web-bgm";
+import { openWebShellWithBgm, WEB_BGM_VIEWPORTS } from "./helpers/web-bgm";
 
 test.skip(process.env.NAIA_E2E_WEB !== "1" || process.env.VITE_NAIA_WEB_LLM !== "fake", "requires the fake browser engine");
 
@@ -65,3 +65,42 @@ test('compatible model preserves and sends the draft through a fresh worker', as
   expect(navigations).toBe(0);
   console.log(JSON.stringify({draft,model:f32,fakeRequests:1,exactUserMessages:1,mainNavigations:navigations,blockedExternalRequests:blocked}));
 });
+
+for (const viewport of WEB_BGM_VIEWPORTS) {
+	test(`returns to the default device model in the current conversation (${viewport.width}px)`, async ({ page }) => {
+		await page.setViewportSize(viewport);
+		await page.context().route(/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::\d+)?\/)/, (route) => route.abort());
+		await openWebShellWithBgm(page, { openBgm: false });
+		const status = page.getByTestId("web-model-status");
+		const input = page.locator(".naia-chat-area .chat-input");
+		await expect(status).toHaveAttribute("data-phase", "ready");
+		await expect(status).toHaveAttribute("data-model", f32);
+		const startedAt = await page.evaluate(() => performance.timeOrigin);
+		const worker = page.workers().find((worker) => worker.url().includes("agent-worker"));
+		expect(worker).toBeDefined();
+
+		const first = "A reply before changing the device model.";
+		await input.fill(first);
+		await input.press("Enter");
+		const replies = page.locator(".chat-messages").getByText(/웹 가짜 엔진 응답입니다/);
+		await expect(replies).toHaveCount(1);
+		await expect(page.locator(".chat-cancel-btn")).toBeHidden();
+
+		const draft = "A draft to send after returning to the default model.";
+		await input.fill(draft);
+		await status.getByTestId("web-model-ready-details").locator("summary").click();
+		await status.getByTestId("web-model-back-to-default").click();
+		await expect(status).toHaveAttribute("data-model", f16);
+		await expect(status).toHaveAttribute("data-phase", "ready");
+		await expect(replies).toHaveCount(1);
+		await expect(input).toHaveValue(draft);
+		expect(await page.evaluate(() => performance.timeOrigin)).toBe(startedAt);
+		expect(page.workers()).toContain(worker);
+
+		await input.press("Enter");
+		await expect(replies).toHaveCount(2);
+		await expect.poll(() => worker!.evaluate(
+			() => globalThis.__naiaFakeEngineRequests?.map((turn) => turn.at(-1)?.content),
+		)).toEqual([first, draft]);
+	});
+}

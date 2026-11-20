@@ -121,6 +121,14 @@ describe("WebModelStatusBar", () => {
 		await waitFor(() => expect(el.hasAttribute("tabindex")).toBe(false));
 	});
 
+	it("withholds the switch back to the default model while the workspace is preparing", () => {
+		setWebModelStatus({ phase: "ready", model: WEB_LLM_FALLBACK_F32, progress: 1 });
+		render(<WebModelStatusBar scrollDuringSetup />);
+
+		expect(screen.getByTestId("web-model-ready-details")).toBeInTheDocument();
+		expect(screen.queryByTestId("web-model-back-to-default")).not.toBeInTheDocument();
+	});
+
 	it("renders no-webgpu error as role alert with no fallback button and functional retry", () => {
 		const onRetry = vi.fn();
 		setWebModelStatus({

@@ -640,6 +640,8 @@ export function ChatArea({
 	const webCloudRecovery = useSyncExternalStore(subscribeWebChatConfig, needsWebCloudRecovery);
 	const webWorkspacePending =
 		import.meta.env.MODE === "web" && webAdkStatus.phase !== "ready";
+	const canStartLocalModel =
+		!isKioskDemo() && webProvider === "webllm" && !webWorkspacePending;
 	const webLocalModelError =
 		import.meta.env.MODE === "web" &&
 		!isKioskDemo() &&
@@ -660,12 +662,14 @@ export function ChatArea({
 		};
 	}, []);
 
-	function retryLocalModel(selectedModel?: WebLlmModelId) {
+	function startLocalModel(selectedModel?: WebLlmModelId) {
 		const revision = ++localRetryRevision.current;
 		const path = getAdkPath();
 		const session = useChatStore.getState().localSessionId;
 		const previousStatus = getWebModelStatus();
 		const model = selectedModel ?? previousStatus.model;
+		const switchingReadyModel =
+			selectedModel !== undefined && previousStatus.phase === "ready";
 		const bridge = getStartableAgentBridge();
 		if (selectedModel) {
 			try {
@@ -685,10 +689,12 @@ export function ChatArea({
 			buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
 			preferredModel: model,
 			isCurrent,
-			bridge: { start: ({ model: next }) => {
-				if (next) bridge.restart({ model: next });
-				else bridge.start({ model: null });
-			} },
+			bridge: {
+				start: ({ model: next }) => {
+					if (next && !switchingReadyModel) bridge.restart({ model: next });
+					else bridge.start({ model: next });
+				},
+			},
 		});
 		const checkingStatus = getWebModelStatus();
 		void pending.then(() => {
@@ -3082,8 +3088,12 @@ export function ChatArea({
 		// Guard against provider/model mismatch (e.g. provider=gemini, model=claude-sonnet-4-6).
 		// When the saved model is not valid for the active provider, fall back to the default.
 		// Skip validation for providers with dynamic models (e.g. Ollama — empty static model list).
+		// The active local engine can differ from the workspace preference.
+		const runningWebModel = getWebModelStatus();
 		const savedModel =
-			configuredModel ||
+			(isWebMode() && activeProvider === "webllm" && runningWebModel.phase === "ready"
+				? runningWebModel.model
+				: configuredModel) ||
 			getDefaultLlmModel(activeProvider) ||
 			"gemini-2.5-flash";
 		const providerMeta = getLlmProvider(activeProvider);
@@ -6217,8 +6227,8 @@ export function ChatArea({
 							scrollDuringSetup={webWorkspacePending}
 							offerCloudRecovery={!isKioskDemo()}
 							localModelUnavailable={webCloudRecovery}
-							onRetry={!isKioskDemo() && webProvider === "webllm" && !webWorkspacePending ? () => retryLocalModel() : undefined}
-							onSwitchModel={!isKioskDemo() && webProvider === "webllm" && !webWorkspacePending && webModelStatus.phase === "error" ? retryLocalModel : undefined}
+							onRetry={canStartLocalModel ? startLocalModel : undefined}
+							onSwitchModel={canStartLocalModel ? startLocalModel : undefined}
 						/>
 					)}
 

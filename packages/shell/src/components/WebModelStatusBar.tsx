@@ -262,6 +262,8 @@ export function WebModelStatusBar(props: {
 
 	const modelLabel = formatWebLlmModelLabel(status.model);
 	const usingCompatibleModel = status.model !== WEB_LLM_MODEL_ID;
+	const showBackToDefault =
+		status.phase === "ready" && usingCompatibleModel && !props.scrollDuringSetup;
 
 	const formatAdapterLine = () => {
 		if (!status.adapter) return null;
@@ -364,7 +366,7 @@ export function WebModelStatusBar(props: {
 					</summary>
 					<div>{status.phase === "ready" ? t("webModel.ready", { model: modelLabel }) : modelLabel}</div>
 					{adapterLine && <div>{adapterLine}</div>}
-					{status.phase === "ready" && usingCompatibleModel && (
+					{showBackToDefault && (
 						<button
 							type="button"
 							className="chat-error-notice__retry"

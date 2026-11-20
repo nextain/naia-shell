@@ -52,8 +52,9 @@ import {
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { loadConfig } from "../../lib/config";
 import * as labBalance from "../../lib/lab-balance";
-import { getDefaultLlmModel } from "../../lib/llm/registry";
+import { getDefaultLlmModel, unregisterLlmProvider } from "../../lib/llm/registry";
 import { getStartableAgentBridge } from "../../lib/web-runtime/agent-bridge";
+import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
 import { WEB_REMOTE_KEY_STORAGE_KEY } from "../../lib/web-runtime/web-auth";
 import { WEB_LLM_FALLBACK_F32, WEB_LLM_MODEL_ID, WEB_LLM_MODEL_PREF_KEY } from "../../lib/web-runtime/webllm-model";
 
@@ -4133,6 +4134,68 @@ describe("ChatArea", () => {
 			expect(input).toHaveValue("draft through switch");
 		} finally {
 			restart.mockRestore();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("returns from a ready compatible model without reloading the current chat", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_WEB_LLM", "webllm");
+		setWebAssetsModeForTests(true);
+		registerWebLlmProvider();
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "webllm",
+			model: WEB_LLM_FALLBACK_F32,
+		}));
+		setWebModelStatus({ phase: "ready", model: WEB_LLM_FALLBACK_F32, progress: 1 });
+		const session = "ready-compatible-chat";
+		useChatStore.getState().setLocalSessionId(session);
+		useChatStore.getState().addMessage({ role: "assistant", content: "An existing reply" });
+		const probe = deferred<{ features: { has: () => boolean } }>();
+		vi.stubGlobal("navigator", { ...navigator, gpu: { requestAdapter: () => probe.promise } });
+		const bridge = getStartableAgentBridge();
+		const start = vi.spyOn(bridge, "start").mockImplementation(() => {});
+		const restart = vi.spyOn(bridge, "restart").mockImplementation(() => {});
+		try {
+			render(<ChatArea />);
+			const input = screen.getByRole("textbox");
+			const draft = "Draft for the default model";
+			fireEvent.change(input, { target: { value: draft } });
+			const details = screen.getByTestId("web-model-ready-details");
+			fireEvent.click(within(details).getByText("On-device model · Compatibility mode"));
+			fireEvent.click(within(details).getByTestId("web-model-back-to-default"));
+
+			const status = screen.getByTestId("web-model-status");
+			const send = screen.getByRole("button", { name: "↑" });
+			expect(status).toHaveAttribute("data-phase", "checking");
+			expect(send).toBeDisabled();
+			expect(input).toHaveValue(draft);
+			fireEvent.keyDown(input, { key: "Enter" });
+			expect(sendChatMessage).not.toHaveBeenCalled();
+			await act(async () => probe.resolve({ features: { has: () => true } }));
+
+			expect(start).toHaveBeenCalledExactlyOnceWith({ model: WEB_LLM_MODEL_ID });
+			expect(restart).not.toHaveBeenCalled();
+			expect(status).toHaveAttribute("data-phase", "loading");
+			expect(send).toBeDisabled();
+			act(() => setWebModelStatus({ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 }));
+
+			expect(status).toHaveAttribute("data-model", WEB_LLM_MODEL_ID);
+			expect(send).toBeEnabled();
+			expect(input).toHaveValue(draft);
+			expect(screen.getByText("An existing reply")).toBeInTheDocument();
+			expect(useChatStore.getState().localSessionId).toBe(session);
+			expect(sendChatMessage).not.toHaveBeenCalled();
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(sendChatMessage).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					message: draft,
+					provider: expect.objectContaining({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+				}),
+			));
+		} finally {
+			unregisterLlmProvider("webllm");
 			vi.unstubAllGlobals();
 		}
 	});
