@@ -209,6 +209,7 @@ const WIRE_ERROR_CODES = new Set<WireErrorCode>([
   "PROVIDER_SESSION_EXPIRED", "PROVIDER_SESSION_CLOSED",
   "PROCESSING_PROFILE_REQUIRED", "PROCESSING_DESTINATION_UNKNOWN",
   "EXTERNAL_PROCESSING_FORBIDDEN", "EXTERNAL_PROCESSING_CONFIRMATION_REQUIRED",
+  "CONTEXT_WINDOW_EXCEEDED",
 ]);
 type ChatChunkGroundingStatus = Extract<ChatChunk, { kind: "grounding" }>["status"];
 type ProviderSessionState = Extract<ChatChunk, { kind: "providerSession" }>["state"];
