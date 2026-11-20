@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T00:34:27Z",
+  "last_updated": "2026-11-20T00:46:58Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_avatar_clip_r48_20261120": {
+      "requirement_id": "R48",
+      "title": "웹판 아바타 영상 다운로드와 재시도",
+      "branch": "alpha/webgpu-r45-creds-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-AVATAR-CLIP",
+      "requirements": "docs/requirements.md FR-WEB-AVATAR-CLIP.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts, packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx",
+      "last_updated": "2026-11-20T00:46:58Z",
+      "verification": "표적 Vitest 22파일 248통과·12실패·1제외. 실패 12건은 기준 커밋 40e65fd0과 동일(nva-alpha-bake 9건, canonical-speech 3건). 변경 시험 파일 61통과·0실패, R48 10건 통과. 1280×720·390×844 DOM 오류 안내 및 클립 URL 확인. 실서버·실 브라우저·첫 프레임 시간 미확인. 파일 앵커 검사는 기준 웹 런타임 미계약 파일 3건을 검출함."
+    },
     "web_worker_usage_cost_r47_20261120": {
       "requirement_id": "R47",
       "title": "웹판 워커의 게이트웨이 대화 비용 전달",

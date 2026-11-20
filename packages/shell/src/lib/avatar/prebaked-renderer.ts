@@ -25,7 +25,9 @@ import type {
 import { takePrewarmedSpeechAsset } from "./nva-speech/speech-asset-prewarm";
 import { isStackedAlphaClipUrl } from "./nva-stacked-alpha";
 import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
-import { isNarrowPortraitScreen } from "../web-runtime/web-assets";
+import { isNarrowPortraitScreen, isWebMode } from "../web-runtime/web-assets";
+
+const WEB_CLIP_RETRY_DELAY_MS = 300;
 
 export interface StackedAlphaCompositorLike {
 	readonly canvas: HTMLCanvasElement;
@@ -47,6 +49,16 @@ interface Config {
 	onPlaybackFailure?: (reason: string) => void;
 	/** Optional interval (ms) to periodically play non-greeting gesture clips while idle. */
 	idleGestureIntervalMs?: number;
+}
+
+interface ClipPlayback {
+	path: string;
+	loop: boolean;
+	muted: boolean;
+	options?: AvatarPlaybackOptions;
+	expectedGeneration?: number;
+	resumePosition: boolean;
+	started: boolean;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -121,6 +133,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private spareSpeechHost: HTMLVideoElement | null = null;
 	private speechKeyColor: string | undefined;
 	private assetBlobCache = new Map<string, Promise<Blob>>();
+	private readonly useWebClipBlobs = isWebMode();
+	private clipBlobUrls = new Map<string, string>();
+	private webClipRequest: object | null = null;
+	private removeWebLoopErrorListener: (() => void) | null = null;
 	private idleGestureTimer: ReturnType<typeof setInterval> | null = null;
 	private idleGestureCursor = 0;
 	private zoom = 1;
@@ -595,32 +611,37 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			return new CanonicalSpeechStage({
 				manifest: this.config.manifest,
 				host,
-				loadAsset: (path) => {
-					const cached = this.assetBlobCache.get(path);
-					if (cached) return cached;
-					const loader = this.config.loadAssetBlob
-						? this.config.loadAssetBlob(path)
-						: (async () => {
-								const url = await this.config.resolveAssetUrl(path);
-								// Bytes the entry screen already fetched (kiosk gate).
-								const prewarmed = await takePrewarmedSpeechAsset(url);
-								if (prewarmed) return prewarmed;
-								const response = await fetch(url);
-								if (!response.ok)
-									throw new Error(`NVA asset ${path} unavailable`);
-								return response.blob();
-							})();
-					const tracked = loader.catch((err) => {
-						this.assetBlobCache.delete(path);
-						throw err;
-					});
-					this.assetBlobCache.set(path, tracked);
-					return tracked;
-				},
+				loadAsset: (path) => this.loadAssetBlob(path),
 			});
 		} catch {
 			return null;
 		}
+	}
+
+	private async loadAssetBlob(path: string, webUrl?: string): Promise<Blob> {
+		if (this.useWebClipBlobs && webUrl === undefined)
+			webUrl = await this.config.resolveAssetUrl(path);
+		// Playback and speech share the request even when paths resolve to the same web asset.
+		const key = webUrl ?? path;
+		const cached = this.assetBlobCache.get(key);
+		if (cached) return cached;
+		const loader = this.config.loadAssetBlob
+			? this.config.loadAssetBlob(path)
+			: (async () => {
+					const url = webUrl ?? (await this.config.resolveAssetUrl(path));
+					const prewarmed = await takePrewarmedSpeechAsset(url);
+					if (prewarmed) return prewarmed;
+					const response = await fetch(url);
+					if (!response.ok)
+						throw new Error(`NVA asset ${path} unavailable (${response.status})`);
+					return response.blob();
+				})();
+		const tracked = loader.catch((error) => {
+			this.assetBlobCache.delete(key);
+			throw error;
+		});
+		this.assetBlobCache.set(key, tracked);
+		return tracked;
 	}
 
 	private keyColorFor(path: string): string | undefined {
@@ -642,7 +663,83 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			throw new Error("NVA video is not mounted");
 		// Cancel the previous startup wait before resolving the next asset URL.
 		this.clearPlaybackTimers();
-		const url = await this.config.resolveAssetUrl(path);
+		const playback = {
+			path,
+			loop,
+			muted,
+			options,
+			expectedGeneration,
+			resumePosition,
+			started: false,
+		};
+		if (!this.useWebClipBlobs) {
+			const url = await this.config.resolveAssetUrl(path);
+			await this.playResolvedClip(url, url, playback);
+			return;
+		}
+
+		this.removeWebLoopErrorListener?.();
+		const request = {};
+		this.webClipRequest = request;
+		const isCurrent = () =>
+			!this.disposed &&
+			this.webClipRequest === request &&
+			(expectedGeneration === undefined ||
+				expectedGeneration === this.generation);
+		let retried = false;
+		const retry = async (error: unknown) => {
+			if (!isCurrent()) return;
+			if (retried) throw error;
+			retried = true;
+			Logger.debug("PrebakedAvatarRenderer", "retrying web clip", { loop });
+			await new Promise<void>((resolve) => {
+				const finish = () => {
+					clearTimeout(timer);
+					this.playbackTimers.delete(timer);
+					resolve();
+				};
+				const timer = setTimeout(finish, WEB_CLIP_RETRY_DELAY_MS);
+				this.playbackTimers.set(timer, finish);
+			});
+			if (isCurrent()) await play();
+		};
+		const onLoopError = (error: Error) => {
+			void retry(error).catch(() => {
+				if (isCurrent()) this.failMedia("NVA decoder error");
+			});
+		};
+		const play = async () => {
+			try {
+				const url = await this.config.resolveAssetUrl(path);
+				if (!isCurrent()) return;
+				Logger.debug("PrebakedAvatarRenderer", "opening web clip", {
+					loop,
+					retried,
+				});
+				const blob = await this.loadAssetBlob(path, url);
+				if (!isCurrent()) return;
+				let source = this.clipBlobUrls.get(url);
+				if (!source) {
+					source = URL.createObjectURL(blob);
+					this.clipBlobUrls.set(url, source);
+				}
+				await this.playResolvedClip(url, source, playback, onLoopError, retried);
+			} catch (error) {
+				await retry(error);
+			}
+		};
+		await play();
+	}
+
+	private playResolvedClip(
+		url: string,
+		source: string,
+		playback: ClipPlayback,
+		onLoopError?: (error: Error) => void,
+		reload = false,
+	): Promise<void> | undefined {
+		const { path, loop, muted, options, expectedGeneration, resumePosition } =
+			playback;
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
 		if (
@@ -654,18 +751,36 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.currentKeyColor = isStackedAlphaClipUrl(url)
 			? undefined
 			: this.keyColorFor(path);
-		const video = this.videoForClip(url);
+		const existing = this.clipVideos.get(url);
+		const video = this.videoForClip(url, source);
 		this.cancelOneShot?.();
-		if (this.video !== video) {
+		if (this.video && this.video !== video) {
 			this.video.pause();
 			this.video = video;
 		}
 		video.loop = loop;
 		video.muted = muted;
+		if (this.useWebClipBlobs && existing && (reload || video.error))
+			video.load();
 		if (!resumePosition) video.currentTime = 0;
 		if (loop) {
-			await new Promise<void>((resolve, reject) => {
+			return new Promise<void>((resolve, reject) => {
 				let settled = false;
+				const failed = () => {
+					Logger.warn(
+						"PrebakedAvatarRenderer",
+						"decoder error",
+						this.mediaDiagnostics(video),
+					);
+					removeErrorListener();
+					if (settled) onLoopError?.(new Error("NVA decoder error"));
+					else finish("NVA decoder error");
+				};
+				const removeErrorListener = () => {
+					video.removeEventListener("error", failed);
+					if (this.removeWebLoopErrorListener === removeErrorListener)
+						this.removeWebLoopErrorListener = null;
+				};
 				const cleanup = () => {
 					clearTimeout(timer);
 					this.playbackTimers.delete(timer);
@@ -674,6 +789,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					if (settled) return;
 					settled = true;
 					cleanup();
+					if (onLoopError) removeErrorListener();
 					resolve();
 				};
 				const finish = (reason?: string) => {
@@ -681,7 +797,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					settled = true;
 					cleanup();
 					if (reason) {
-						this.failMedia(reason);
+						if (onLoopError) removeErrorListener();
+						else this.failMedia(reason);
 						reject(new Error(reason));
 					} else resolve();
 				};
@@ -697,6 +814,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				// The loop start is cancelled through playbackTimers, not
 				// cancelOneShot: a pending loop must not defer an idle switch.
 				this.playbackTimers.set(timer, cancel);
+				if (onLoopError) {
+					this.removeWebLoopErrorListener = removeErrorListener;
+					video.addEventListener("error", failed, { once: true });
+				}
 				video.play().then(
 					() => finish(),
 					(err: unknown) => {
@@ -711,10 +832,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					},
 				);
 			});
-			return;
 		}
-		await new Promise<void>((resolve, reject) => {
+		return new Promise<void>((resolve, reject) => {
+			let settled = false;
 			const cleanup = () => {
+				if (settled) return;
+				settled = true;
 				video.removeEventListener("playing", ready);
 				video.removeEventListener("ended", ended);
 				video.removeEventListener("error", failed);
@@ -736,10 +859,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				cleanup();
 				resolve();
 			};
-			let playbackStarted = false;
 			const ready = () => {
-				if (playbackStarted) return;
-				playbackStarted = true;
+				if (settled || playback.started) return;
+				playback.started = true;
 				options?.onPlaybackReady?.();
 			};
 			const ended = () => {
@@ -763,7 +885,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	 * The first clip re-uses the React-mounted element; each additional clip
 	 * gets a hidden sibling so switching clips is pause/play, never `src =`.
 	 */
-	private videoForClip(url: string): HTMLVideoElement {
+	private videoForClip(url: string, source: string): HTMLVideoElement {
 		const existing = this.clipVideos.get(url);
 		if (existing) return existing;
 		const mounted = this.mountedVideo!;
@@ -773,21 +895,24 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				: (mounted.cloneNode(false) as HTMLVideoElement);
 		if (element !== mounted) {
 			element.playsInline = true;
+			if (this.useWebClipBlobs) element.removeAttribute("src");
 			mounted.parentElement?.insertBefore(element, mounted.nextSibling);
 		}
-		element.addEventListener(
-			"error",
-			() => {
-				Logger.warn(
-					"PrebakedAvatarRenderer",
-					"decoder error",
-					this.mediaDiagnostics(element),
-				);
-				if (element.loop) this.failMedia("NVA decoder error");
-			},
-			{ once: true },
-		);
-		element.src = url;
+		if (!this.useWebClipBlobs) {
+			element.addEventListener(
+				"error",
+				() => {
+					Logger.warn(
+						"PrebakedAvatarRenderer",
+						"decoder error",
+						this.mediaDiagnostics(element),
+					);
+					if (element.loop) this.failMedia("NVA decoder error");
+				},
+				{ once: true },
+			);
+		}
+		element.src = source;
 		element.dataset.naiaClipUrl = url;
 		this.clipVideos.set(url, element);
 		return element;
@@ -1066,6 +1191,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	stop(preserveMedia = false): void {
 		this.disposed = true;
 		this.clearPlaybackTimers();
+		this.removeWebLoopErrorListener?.();
 		this.running = false;
 		this.stopIdleGestureLoop();
 		if (this.raf) cancelAnimationFrame(this.raf);
@@ -1083,11 +1209,14 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.speechStage = null;
 		for (const v of this.clipVideos.values()) {
 			v.pause();
+			if (this.useWebClipBlobs) v.removeAttribute("src");
 			if (!preserveMedia && v !== this.mountedVideo) v.remove();
 		}
+		for (const url of this.clipBlobUrls.values()) URL.revokeObjectURL(url);
+		this.clipBlobUrls.clear();
+		if (this.useWebClipBlobs || !preserveMedia) this.assetBlobCache.clear();
 		if (!preserveMedia) {
 			this.clipVideos.clear();
-			this.assetBlobCache.clear();
 		}
 		this.video?.pause();
 		this.video = null;

@@ -2,7 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../logger";
 import type { NvaManifest } from "../../nva";
+import { setWebAssetsModeForTests } from "../../web-runtime/web-assets";
 import { canonicalSpeechAssetPaths } from "../nva-speech/canonical-speech-stage";
+import {
+	prewarmWebSpeechAssets,
+	resetSpeechAssetPrewarmForTests,
+} from "../nva-speech/speech-asset-prewarm";
 import type { SpeechPlan } from "../nva-speech/speech-timing";
 import { SpeechPlayer } from "../nva-speech/vendor/speech-player.js";
 import {
@@ -72,6 +77,135 @@ function videoForUrl(url: string): HTMLVideoElement {
 	if (!found) throw new Error(`no <video> holds ${url}`);
 	return found as HTMLVideoElement;
 }
+
+describe("R48 web clip playback", () => {
+	const idleUrl = "/app/nva/naia/clips/idle.webm";
+	let renderer: PrebakedAvatarRenderer;
+	let video: HTMLVideoElement;
+	let onPlaybackFailure: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		setWebAssetsModeForTests(true);
+		vi.useFakeTimers();
+		vi.stubGlobal("URL", class extends URL {
+			static createObjectURL = vi.fn(() => "blob:r48-idle");
+			static revokeObjectURL = vi.fn();
+		});
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+		video = makeVideo();
+		vi.spyOn(video, "pause").mockImplementation(() => {});
+		vi.spyOn(video, "load").mockImplementation(() => {});
+		onPlaybackFailure = vi.fn();
+		renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `/app/nva/naia/${path}`,
+			onPlaybackFailure,
+		});
+	});
+
+	afterEach(() => {
+		renderer.stop();
+		resetSpeechAssetPrewarmForTests();
+		setWebAssetsModeForTests(null);
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
+	});
+
+	it("plays the kiosk's in-flight idle Blob without a second download", async () => {
+		vi.stubEnv("BASE_URL", "/app/");
+		let finishIdle!: (response: Response) => void;
+		const idle = new Promise<Response>((resolve) => { finishIdle = resolve; });
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+			if (url === idleUrl) return idle;
+			if (String(url).endsWith("/manifest.json")) {
+				return new Response(JSON.stringify({ ...baseManifest(), speech_motion: {} }));
+			}
+			return new Response("other clip");
+		});
+		await prewarmWebSpeechAssets("naia");
+		renderer.start(video, document.createElement("canvas"));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(video.play).not.toHaveBeenCalled();
+		finishIdle(new Response("idle clip"));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(fetchSpy.mock.calls.filter(([url]) => url === idleUrl)).toHaveLength(1);
+		expect(video.getAttribute("src")).toBe("blob:r48-idle");
+		expect(video.play).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([true, false])("handles a decoder error and rejected play promise once (recovery=%s)", async (recovers) => {
+		const fetchClip = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+			new Response("idle clip", { headers: { "Content-Type": "video/webm" } }),
+		);
+		const fail = async () => {
+			video.dispatchEvent(new Event("error"));
+			throw new Error("decoder failed");
+		};
+		vi.mocked(video.play).mockImplementationOnce(fail);
+		if (!recovers) vi.mocked(video.play).mockImplementationOnce(fail);
+		renderer.start(video, document.createElement("canvas"));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(video.play).toHaveBeenCalledTimes(1);
+		expect(onPlaybackFailure).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(video.play).toHaveBeenCalledTimes(2);
+		expect(video.load).toHaveBeenCalledTimes(1);
+		expect(fetchClip.mock.calls).toEqual([[idleUrl]]);
+		expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+		if (recovers) {
+			expect(video.getAttribute("src")).toBe("blob:r48-idle");
+			expect(onPlaybackFailure).not.toHaveBeenCalled();
+		} else {
+			expect(onPlaybackFailure).toHaveBeenCalledExactlyOnceWith("NVA idle playback failed");
+			expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:r48-idle");
+		}
+	});
+
+	it("retries a failed download once and plays the successful Blob", async () => {
+		const fetchClip = vi.spyOn(globalThis, "fetch")
+			.mockResolvedValueOnce(new Response(null, { status: 403 }))
+			.mockResolvedValueOnce(new Response("idle clip"));
+		renderer.start(video, document.createElement("canvas"));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(fetchClip.mock.calls).toEqual([[idleUrl]]);
+		expect(video.play).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(fetchClip.mock.calls).toEqual([[idleUrl], [idleUrl]]);
+		expect(video.getAttribute("src")).toBe("blob:r48-idle");
+		expect(video.play).toHaveBeenCalledTimes(1);
+		expect(onPlaybackFailure).not.toHaveBeenCalled();
+	});
+
+	it("uses the same retry budget for errors reported after the loop starts", async () => {
+		const fetchClip = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("idle clip"));
+		renderer.start(video, document.createElement("canvas"));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(video.play).toHaveBeenCalledTimes(1);
+		video.dispatchEvent(new Event("error"));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(video.play).toHaveBeenCalledTimes(2);
+		expect(onPlaybackFailure).not.toHaveBeenCalled();
+		video.dispatchEvent(new Event("error"));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(video.play).toHaveBeenCalledTimes(2);
+		expect(fetchClip.mock.calls).toEqual([[idleUrl]]);
+		expect(onPlaybackFailure).toHaveBeenCalledExactlyOnceWith("NVA decoder error");
+	});
+
+	it("cancels a pending retry when the renderer stops", async () => {
+		const fetchClip = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 403 }));
+		renderer.start(video, document.createElement("canvas"));
+		await vi.advanceTimersByTimeAsync(0);
+		renderer.stop();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(fetchClip.mock.calls).toEqual([[idleUrl]]);
+		expect(video.play).not.toHaveBeenCalled();
+		expect(onPlaybackFailure).not.toHaveBeenCalled();
+	});
+});
 
 describe("PrebakedAvatarRenderer", () => {
 	it.each(["interrupt", "switch"])(

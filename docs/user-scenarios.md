@@ -3667,3 +3667,19 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 성공 | 모의 SSE의 마지막 사용량에서 받은 $0.0069043과 토큰 수를 워커가 내보냄. 0 USD도 유효한 값으로 전달 | `web-worker/__tests__/agent-worker-usage.test.ts` R47 |
 | 비용 누락·오류 | 비용이 없거나 문자열·음수·비유한 값이면 해당 호출의 기존 토큰 단가를 사용 | `web-worker/__tests__/openai-compat-provider.test.ts`, `web-worker/__tests__/agent-worker-usage.test.ts` R47 |
 | 다중 호출 | 도구 라운드와 후속 호출의 비용을 합하고, 게이트웨이 비용이 없는 호출만 단가로 계산 | `web-worker/__tests__/agent-worker-usage.test.ts` R47 |
+
+## UC-WEB-AVATAR-CLIP. 브라우저 첫 화면에서 대기 아바타를 본다 (R48)
+
+브라우저에서 `/app/`을 연 사용자가 대기 아바타를 봅니다. 기존 일반 요청은 `ChatArea.tsx:1709~1727`에서 발화 자료를 준비할 때 `canonical-speech-stage.ts:84~90,368~375`의 `animation.clip` 목록을 따라 `prebaked-renderer.ts:598~618`에서 `idle.webm`을 `fetch`로 읽습니다. 기존 재생 요청은 `prebaked-renderer.ts:644,658,767~794`의 `videoForClip`에서 같은 URL을 `<video>`의 `src`에 대입합니다. 두 경로에 `VideoAvatarCanvas.tsx:352~364`가 같은 URL을 줍니다. 키오스크에서 먼저 입장 화면을 거치면 `KioskDemoGate.tsx:85`와 `speech-asset-prewarm.ts:81~97`에서 시작한 다운로드를 이어받을 수 있습니다. 줄 번호는 기준 커밋 `40e65fd0`입니다.
+
+### Test Coverage Map — UC-WEB-AVATAR-CLIP
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·진행 | 첫 대기 클립을 바로 요청합니다. 키오스크 미리 받기 또는 발화 자료 준비와 같은 URL을 공유하며, 나머지 자료가 끝나기 전에 재생합니다. | `lib/avatar/__tests__/prebaked-renderer.test.ts`, `components/__tests__/VideoAvatarCanvas.test.tsx` R48 |
+| 성공 | 첫 다운로드가 성공하면 받은 바이트로 재생합니다. 디코더 열기 실패 후 같은 Blob으로 다시 열어 성공하면 오류를 표시하지 않습니다. | `lib/avatar/__tests__/prebaked-renderer.test.ts` R48 |
+| 오류 | 다운로드 403 또는 디코더 오류가 나면 잠시 기다렸다가 한 번 재시도합니다. 두 번 실패하면 기존 초기화 실패 문구와 배경을 표시합니다. | `lib/avatar/__tests__/prebaked-renderer.test.ts`, `components/__tests__/VideoAvatarCanvas.test.tsx` R48 |
+| 빈 목록 | 대기 클립 없는 매니페스트는 기존 형식 검사에서 거부합니다. | `components/__tests__/VideoAvatarCanvas.test.tsx` |
+| 좁은 폭 | 390×844에서도 한 번 받은 영상으로 재생합니다. 두 번 실패하면 배경에서 대화를 계속할 수 있다는 기존 문구를 표시합니다. | `components/__tests__/VideoAvatarCanvas.test.tsx` R48. 이번 회차 실 브라우저 미확인 |
+
+P04 표적 Vitest에서 R48 10건을 확인했습니다. 1280×720·390×844 모의 뷰포트에서 첫 재생과 두 번 실패한 뒤의 `aria-live="polite"` 오류 문구 및 캔버스 숨김을 검증했습니다. 실제 첫 프레임 시간과 화면 배치는 미확인입니다.

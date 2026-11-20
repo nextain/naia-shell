@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import { getLocale, setLocale, t } from "../../lib/i18n";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import {
 	clearCameraActions,
@@ -18,7 +19,8 @@ const mockInvoke = vi.hoisted(() => vi.fn());
 const mockGetAdkPath = vi.hoisted(() => vi.fn(() => "D:\\alpha-adk"));
 const mockToLocalBlobUrl = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: (...args: unknown[]) => mockInvoke(...args),
+	invoke: (command: string, ...args: unknown[]) =>
+		command === "frontend_log" ? Promise.resolve() : mockInvoke(command, ...args),
 }));
 vi.mock("../../lib/adk-store", () => ({
 	getAdkPath: () => mockGetAdkPath(),
@@ -83,6 +85,14 @@ const webManifestJson = JSON.stringify({
 	},
 });
 
+function mockWebAvatarAssets(manifestJson = webManifestJson) {
+	return vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+		String(url).endsWith("/manifest.json")
+			? new Response(manifestJson)
+			: new Response("clip bytes"),
+	);
+}
+
 describe("VideoAvatarCanvas pre-baked contract", () => {
 	beforeEach(() => {
 		activeManifest = manifest;
@@ -97,18 +107,20 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		mockToLocalBlobUrl.mockResolvedValue("blob:nva-asset");
 		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
 		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
-		Object.defineProperty(URL, "revokeObjectURL", {
-			configurable: true,
-			value: vi.fn(),
+		vi.stubGlobal("URL", class extends URL {
+			static createObjectURL = vi.fn(() => "blob:web-nva-asset");
+			static revokeObjectURL = vi.fn();
 		});
 	});
 	afterEach(() => {
-		setWebAssetsModeForTests(null);
 		cleanup();
+		setWebAssetsModeForTests(null);
 		clearCameraActions();
 		resetUiPreferencesForTests();
 		vi.useRealTimers();
 		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
 		useCascadeAvatarStore.getState().setRenderer(null);
 	});
 
@@ -248,9 +260,7 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 			configurable: true,
 			value: 2,
 		});
-		vi.spyOn(globalThis, "fetch").mockResolvedValue(
-			new Response(webManifestJson, { status: 200 }),
-		);
+		mockWebAvatarAssets();
 		const rectSpy = vi
 			.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect")
 			.mockReturnValue({
@@ -344,9 +354,7 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
 			"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 		);
-		const fetchSpy = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(webManifestJson, { status: 200 }));
+		const fetchSpy = mockWebAvatarAssets();
 
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
@@ -372,17 +380,9 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
 			"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 		);
-		const fetchSpy = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(
-				new Response(
-					JSON.stringify({
-						...JSON.parse(webManifestJson),
-						stacked_alpha: undefined,
-					}),
-					{ status: 200 },
-				),
-			);
+		const fetchSpy = mockWebAvatarAssets(
+			JSON.stringify({ ...JSON.parse(webManifestJson), stacked_alpha: undefined }),
+		);
 
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
@@ -406,9 +406,7 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
 		);
-		const fetchSpy = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(webManifestJson, { status: 200 }));
+		const fetchSpy = mockWebAvatarAssets();
 
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
@@ -425,6 +423,91 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		});
 		expect(fetchSpy).toHaveBeenCalledWith("/nva/naia/manifest.json");
 		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	describe.each([[1280, 720], [390, 844]])("R48 web viewport %i×%i", (width, height) => {
+		const idleUrl = "/app/nva/naia/clips/idle.webm";
+		const manifestUrl = "/app/nva/naia/manifest.json";
+		const atlasUrl = "/app/nva/naia/speech/atlas.bin";
+		const speechManifest = JSON.stringify({
+			...JSON.parse(webManifestJson),
+			stacked_alpha: undefined,
+			speech_motion: { atlas: "speech/atlas.bin" },
+		});
+		let viewport: [number, number];
+		let locale: ReturnType<typeof getLocale>;
+
+		beforeEach(async () => {
+			locale = getLocale();
+			await setLocale("ko");
+			viewport = [window.innerWidth, window.innerHeight];
+			[window.innerWidth, window.innerHeight] = [width, height];
+			vi.stubEnv("BASE_URL", "/app/");
+			vi.stubGlobal("createImageBitmap", vi.fn());
+			vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+				clearRect: vi.fn(),
+			} as unknown as CanvasRenderingContext2D);
+			setWebAssetsModeForTests(true);
+		});
+
+		afterEach(async () => {
+			[window.innerWidth, window.innerHeight] = viewport;
+			await setLocale(locale);
+		});
+
+		it("loads the first idle clip once and plays it before the speech atlas completes", async () => {
+			let finishAtlas!: (response: Response) => void;
+			const atlas = new Promise<Response>((resolve) => { finishAtlas = resolve; });
+			const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+				if (url === manifestUrl) return new Response(speechManifest);
+				if (url === atlasUrl) return atlas;
+				return new Response("clip bytes");
+			});
+			let warmAssets: Promise<void> | undefined;
+			const unsubscribe = useCascadeAvatarStore.subscribe(({ renderer }) => {
+				if (width > 600) warmAssets ??= renderer?.warmSpeechAssets?.();
+			});
+			try {
+				const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+				await vi.waitFor(() => {
+					const video = container.querySelector(`video[data-naia-clip-url="${idleUrl}"]`);
+					expect(video).toHaveAttribute("src", "blob:web-nva-asset");
+					expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+				});
+				expect(fetchSpy.mock.calls[1]?.[0]).toBe(idleUrl);
+				if (width > 600) expect(fetchSpy).toHaveBeenCalledWith(atlasUrl);
+				else expect(fetchSpy).not.toHaveBeenCalledWith(atlasUrl);
+				expect(container.querySelector("[data-video-avatar]")).toHaveAttribute("data-video-avatar-mode", "prebaked");
+				finishAtlas(new Response("atlas bytes"));
+				await warmAssets;
+				expect(fetchSpy.mock.calls.filter(([url]) => url === idleUrl)).toHaveLength(1);
+				expect(mockInvoke).not.toHaveBeenCalled();
+			} finally {
+				unsubscribe();
+				finishAtlas(new Response("atlas bytes"));
+			}
+		});
+
+		it("shows the existing failure notice after two 403 responses", async () => {
+			vi.useFakeTimers();
+			const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+				url === manifestUrl ? new Response(speechManifest) : new Response(null, { status: 403 }),
+			);
+			const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+			await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+			expect(fetchSpy.mock.calls.filter(([url]) => url === idleUrl)).toHaveLength(1);
+			expect(container.querySelector("output[data-video-avatar-status='error']")).toBeNull();
+			await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+			const status = container.querySelector("output[data-video-avatar-status='error']");
+			expect(status).toHaveAttribute("aria-live", "polite");
+			expect(status).toHaveTextContent(width === 390
+				? "아바타 영상을 불러오지 못했습니다. 배경 화면으로 대화를 계속할 수 있습니다."
+				: t("avatar.videoFailed"));
+			expect(container.querySelector("canvas[data-video-avatar-prebaked]")).toHaveStyle({ visibility: "hidden" });
+			expect(useCascadeAvatarStore.getState().renderer).toBeNull();
+			expect(fetchSpy.mock.calls.filter(([url]) => url === idleUrl)).toHaveLength(2);
+			expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+		});
 	});
 
 	it("rejects invalid bundle names in web mode without calling fetch or invoke", async () => {
@@ -492,6 +575,7 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		const invalidPayloads = [
 			"{not-valid-json",
 			JSON.stringify({ nva_version: "0.2" }),
+			JSON.stringify({ ...JSON.parse(webManifestJson), animations: {} }),
 		];
 
 		for (const payload of invalidPayloads) {
