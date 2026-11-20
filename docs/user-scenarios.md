@@ -3672,7 +3672,7 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 
 ## UC-WEB-CHAT-MODEL-ERROR. 웹판에서 기기 대화가 막히면 대화를 이어갈 방법을 찾는다 (R44, R21-2)
 
-기기 대화를 시작할 수 없으면 대화창은 쉬운 말로 오류를 알리고 입력을 잠급니다. 입력칸 전체는 첫 화면과 창 크기를 바꾼 화면에서 대화창 아래에 보이며, 이미 작성한 초안은 남습니다. 방문자는 같은 자리에서 로그인할 수 있습니다. 로그인한 사용자는 이용 가능한 크레딧이 확인되면 클라우드 대화로 바꿀 수 있습니다. 잔액이 없거나 확인에 실패하면 입력칸 위에서 이유와 가능한 다음 행동을 확인합니다. 기기 모델의 다시 시도와 오류 상세도 키보드로 조작할 수 있습니다.
+기기 대화를 시작할 수 없으면 대화창은 쉬운 말로 오류를 알리고 입력을 잠급니다. 입력칸 전체는 첫 화면과 창 크기를 바꾼 화면에서 대화창 아래에 보이며, 이미 작성한 초안은 남습니다. 방문자는 같은 자리에서 로그인할 수 있습니다. 로그인한 사용자는 이용 가능한 크레딧이 확인되면 클라우드 대화로 바꿀 수 있습니다. 잔액이 없거나 확인에 실패하면 입력칸 위에서 이유와 가능한 다음 행동을 확인합니다. 기기 모델을 다시 시도하거나 오류에서 호환 모델을 선택해도 같은 대화의 초안이 남고, 준비 중에는 전송이 잠기며 준비가 실패하면 오류가 나타납니다. 모델을 명시 선택하면 그 기기 선호가 저장됩니다. 기기 모델의 다시 시도와 오류 상세도 키보드로 조작할 수 있습니다.
 
 ### Test Coverage Map — UC-WEB-CHAT-MODEL-ERROR
 
@@ -3681,7 +3681,7 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 | 기본·빈 대화 | 빈 대화에서도 대화창 바닥에 입력 영역 표시 | `e2e/web-chat-model-error-r44.spec.ts` R44 |
 | 진행 | 모델 준비 또는 크레딧 확인 상태가 보임. 클라우드 적용 중 입력과 중복 적용이 막힘 | `WebModelStatusBar.test.tsx`, `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` |
 | 성공 | 클라우드 전환을 완료한 뒤에만 초안을 보낼 수 있고, 전송은 선택한 클라우드 모델로 전달됨. 기기 모델이 준비되면 입력 위치가 유지됨 | `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` |
-| 오류·복구 | 모델을 준비하지 못한 이유와 로그인, 클라우드 전환 또는 이용할 수 없는 이유가 표시됨. 다시 시도와 오류 상세를 키보드로 조작하고, 상세를 열어도 입력칸 하단은 화면 안에 있음 | `WebModelStatusBar.test.tsx`, `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts` |
+| 오류·복구 | 모델을 준비하지 못한 이유와 로그인, 클라우드 전환 또는 이용할 수 없는 이유가 표시됨. 기기 모델 재시도와 오류에서 호환 모델 전환 시 초안과 대화를 보존하고 실제 준비를 다시 시작하며, 재실패를 표시함. Worker 시작 전 오래된 GPU 확인 결과는 다른 계정·대화·모델에 반영되지 않음. 다시 시도와 오류 상세를 키보드로 조작하고, 상세를 열어도 입력칸 하단은 화면 안에 있음 | `agent-bridge.test.ts`, `WebModelStatusBar.test.tsx`, `ChatArea.test.tsx`, `e2e/web-chat-model-error-r44.spec.ts`, `e2e/web-chat-model-retry.spec.ts` |
 | 좁은 폭 | 1280×720·390×844에서 처음 열었을 때와 두 크기를 오갈 때 입력칸의 상단과 하단을 측정함 | `e2e/web-chat-model-error-r44.spec.ts` R44 |
 
 ## UC-WEB-CHAT-MODEL-SUMMARY. 웹판 채팅에서 기기 모델 상태를 짧게 본다 (R21-5)
@@ -3777,3 +3777,34 @@ P04 표적 Vitest에서 R48 10건을 확인했습니다. 1280×720·390×844 모
 | 진행·성공 | 파일 추가·직접 만들기 저장 중 안내와 완료 후 카드 목록·적용 동작 유지 | `CharCardApp.test.tsx` |
 | 오류·임시 보관 | `memory` 모드에서 상단 브라우저 저장 문구가 빠지고 주황 상태 배너(`role="status"`)에 새로 고침하거나 창을 닫으면 사라진다는 안내만 표시하며 `IndexedDB` 미노출 | `CharCardApp.test.tsx` R11·R21-6 |
 | 좁은 폭 | 1280×720 및 390×844에서 추가 세로 블록 없이 상단 설명 줄 수를 줄여 카드 그림과 조작 단추가 화면 안에 유지됨 | `CharCardApp.test.tsx` R21-6 |
+
+## UC-WEB-MAC-SAFARI-CHROME. Mac Safari 방문자에게 Chrome 안내
+
+정식 웹판의 비로그인 Mac Safari 방문자는 첫 화면에서 Chrome 사용 안내와 공식 다운로드 링크, 이미 설치한 경우 현재 주소를 Chrome에서 여는 설명을 로그인 전에 읽습니다. 로그인 필수 빌드에서도 로그인 화면에 한 번 표시됩니다. 강제 이동이나 로그인·클라우드·로컬 사용 차단은 없습니다. 대표의 공개판 `3837bff9` 실기 관찰은 Chrome 정상·Safari 문제이며 실패 화면과 원인은 미확인입니다. YouTube Music은 대표의 기존 관찰입니다. Safari GPU 호환성 수정은 범위 밖입니다.
+
+### Test Coverage Map — UC-WEB-MAC-SAFARI-CHROME
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 세션 | `/app` Mac Safari 모의 정보에서 안내·공식 HTTPS 링크가 로그인보다 먼저 한 번 보임 | `e2e/web-mac-safari-chrome.spec.ts` |
+| 진행·성공 | 로그인 필수 화면 및 일반 로그인 모달의 기존 동작, 로그인 완료 후 안내 제거 | 같은 Playwright 시험 및 `web-auth.test.ts` |
+| 오류·제외 | 로그인 오류 유지; Chrome·Edge·Firefox·iPhone·iPad·기타 플랫폼·데스크톱·키오스크 제외 | `mac-safari-notice.test.tsx`, `mac-safari-notice-render.test.tsx`, Playwright 모의 정보 |
+| 좁은 폭·키보드 | 390×844에서 안내 링크와 로그인 단추가 보이고 키보드 접근 가능 | 같은 Playwright 시험 |
+
+검증은 Chromium의 navigator 모의 정보를 사용합니다. 실제 Safari와 GPU 동작은 확인하지 않습니다.
+
+#### 표적 Playwright 재현
+
+`packages/shell`에서 다음처럼 별도 터미널 두 개로 웹 모드 Vite를 실행한다. 기존 의존성과 Chromium을 준비한 후 각 터미널에서 NAIA_WEB_AGENT_DIR와 NAIA_WEB_ADK_REPO를 검증에 사용할 로컬 에이전트와 ADK 저장소 경로로 내보낸다. Git 신뢰 설정은 각 시험 서버 프로세스에 적용된다.
+
+```sh
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$NAIA_WEB_ADK_REPO" PLAYWRIGHT_PORT=26151 PLAYWRIGHT_HOST=127.0.0.1 VITE_NAIA_WEB_LLM=fake VITE_NAIA_WEB_LOGIN_REQUIRED=0 node_modules/.bin/vite --mode web --base /app/ --host 127.0.0.1 --strictPort
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$NAIA_WEB_ADK_REPO" PLAYWRIGHT_PORT=26153 PLAYWRIGHT_HOST=127.0.0.1 VITE_NAIA_WEB_LLM=fake VITE_NAIA_WEB_LOGIN_REQUIRED=1 node_modules/.bin/vite --mode web --base /app/ --host 127.0.0.1 --strictPort
+```
+
+서버가 준비되면 같은 디렉터리에서 실행한다. 기본 Playwright 실행에서는 web 전용 시험을 건너뛰며, 표적 실행은 baseURL의 HTTP 루프백 origin만 허용한다.
+
+```sh
+SAFARI_WEB_TEST=1 SAFARI_LOGIN_REQUIRED=0 PLAYWRIGHT_PORT=26151 PLAYWRIGHT_BASE_URL=http://localhost:26151 PLAYWRIGHT_REUSE_EXISTING_SERVER=1 node_modules/.bin/playwright test e2e/web-mac-safari-chrome.spec.ts
+SAFARI_WEB_TEST=1 SAFARI_LOGIN_REQUIRED=1 PLAYWRIGHT_PORT=26153 PLAYWRIGHT_BASE_URL=http://127.0.0.1:26153 PLAYWRIGHT_REUSE_EXISTING_SERVER=1 node_modules/.bin/playwright test e2e/web-mac-safari-chrome.spec.ts
+```

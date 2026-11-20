@@ -13,7 +13,10 @@ async function checkComposerPlacement(input: Locator, viewport: { width: number;
 	const layout = await input.evaluate(async (textarea) => {
 		const wrapper = textarea.closest(".naia-chat-wrapper")!;
 		await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-		await Promise.allSettled(wrapper.getAnimations().map((animation) => animation.finished));
+		await Promise.race([
+			Promise.allSettled(wrapper.getAnimations().map((animation) => animation.finished)),
+			new Promise((resolve) => setTimeout(resolve, 1000)),
+		]);
 		const rect = textarea.getBoundingClientRect();
 		const composer = textarea.closest(".chat-input-bar")!.getBoundingClientRect();
 		const chat = textarea.closest(".chat-app")!.getBoundingClientRect();
@@ -109,12 +112,13 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		await page.addInitScript(() => {
 			// The browser has a WebGPU API, but it cannot obtain an adapter.
 			// Hold the check so the checking and error layouts are both exercised.
-			const adapter = new Promise<null>((resolve) => {
-				window.addEventListener("r44-no-gpu-adapter", () => resolve(null), { once: true });
-			});
+			let attempts = 0;
 			Object.defineProperty(navigator, "gpu", {
 				configurable: true,
-				value: { requestAdapter: () => adapter },
+				value: { requestAdapter: () => new Promise<null>((resolve) => {
+					attempts += 1;
+					window.addEventListener(`r44-no-gpu-adapter-${attempts}`, () => resolve(null), { once: true });
+				}) },
 			});
 		});
 		await openWebShellWithBgm(page, { openBgm: false });
@@ -126,7 +130,7 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		await expect(status).toHaveAttribute("data-phase", "checking");
 		const checking = await checkComposerPlacement(input, initialViewport);
 		await input.fill("A");
-		await page.evaluate(() => window.dispatchEvent(new Event("r44-no-gpu-adapter")));
+		await page.evaluate(() => window.dispatchEvent(new Event("r44-no-gpu-adapter-1")));
 		await expect(status).toHaveAttribute("role", "alert");
 		await expect(status).toHaveAttribute("data-error-kind", "no-webgpu");
 		await expect(input).toBeDisabled();
@@ -169,6 +173,13 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 
 		await expect(input).toBeDisabled();
 		await expect(input).toHaveValue("A");
+		await retry.click();
+		await expect(status).toHaveAttribute("data-phase", "checking");
+		await expect(input).toHaveValue("A");
+		await page.evaluate(() => window.dispatchEvent(new Event("r44-no-gpu-adapter-2")));
+		await expect(status).toHaveAttribute("data-error-kind", "no-webgpu");
+		await expect(input).toHaveValue("A");
+		await expect(input).toBeDisabled();
 		await page.evaluate(async () => {
 			const source = "/src/lib/web-runtime/web-model-status.ts";
 			const model = await import(/* @vite-ignore */ source);

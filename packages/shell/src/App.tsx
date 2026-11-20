@@ -1392,6 +1392,7 @@ export function App() {
 	return (
 		<>
 			<AppShellFrame
+				showMacSafariNotice={!webAuthenticated}
 				appReady={appReady}
 				bootComplete={appReady && installedAppsReady}
 				backgroundFallback={backgroundFallback}

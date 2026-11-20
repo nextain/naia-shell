@@ -23,6 +23,8 @@ import { WEB_LLM_FALLBACK_F32, WEB_LLM_MODEL_ID } from "../webllm-model";
 class FakeWorker implements WorkerLike {
 	posted: { message: unknown; transfer?: Transferable[] }[] = [];
 	listeners: Record<string, ((ev: unknown) => void)[]> = {};
+	terminated = false;
+	terminate(): void { this.terminated = true; }
 
 	postMessage(message: unknown, transfer?: Transferable[]): void {
 		this.posted.push({ message, transfer });
@@ -58,6 +60,31 @@ describe("agent-bridge", () => {
 		setWebLoginRequiredForTests(null);
 		localStorage.clear();
 		sessionStorage.clear();
+	});
+
+	it("restarts a failed local model in a fresh worker and ignores stale worker events", () => {
+		const workers: FakeWorker[] = [];
+		const bridge = createAgentBridge({
+			createWorker: () => { const worker = new FakeWorker(); workers.push(worker); return worker; },
+			emit: () => {},
+		});
+		bridge.start({ model: WEB_LLM_FALLBACK_F32 });
+		workers[0].dispatchMessage({ kind: "engine-error", name: "DeviceLostError", message: "lost" });
+		expect(getWebModelStatus().phase).toBe("error");
+		setWebModelStatus({ phase: "loading", model: WEB_LLM_FALLBACK_F32, progress: 0 });
+		bridge.restart({ model: WEB_LLM_FALLBACK_F32 });
+		expect(workers[0].terminated).toBe(true);
+		expect(workers[1].posted[0].message).toEqual({ kind: "naia-agent-connect", model: WEB_LLM_FALLBACK_F32 });
+		workers[0].dispatchMessage({ kind: "engine-error", name: "DeviceLostError", message: "stale" });
+		expect(getWebModelStatus().phase).toBe("loading");
+		workers[1].dispatchMessage({ kind: "engine-error", name: "DeviceLostError", message: "again" });
+		expect(getWebModelStatus()).toMatchObject({ phase: "error", errorKind: "device-lost", errorMessage: "again" });
+		bridge.restart({ model: WEB_LLM_FALLBACK_F32 });
+		const previousSession = useChatStore.getState().localSessionId;
+		useChatStore.getState().setLocalSessionId("another-conversation-after-restart");
+		workers[2].dispatchMessage({ kind: "engine-ready", model: WEB_LLM_FALLBACK_F32 });
+		useChatStore.getState().setLocalSessionId(previousSession);
+		expect(getWebModelStatus()).toMatchObject({ phase: "ready", model: WEB_LLM_FALLBACK_F32 });
 	});
 
 	it("creates worker only on start and buffers lines sent before start", async () => {

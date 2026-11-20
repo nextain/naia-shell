@@ -26,6 +26,7 @@ import { isKioskDemo } from "../kiosk-demo/flag";
 
 export interface WorkerLike {
 	postMessage(message: unknown, transfer?: Transferable[]): void;
+	terminate?(): void;
 	addEventListener(
 		type: string,
 		listener: (ev: MessageEvent | ErrorEvent | unknown) => void,
@@ -38,6 +39,7 @@ export interface AgentBridge {
 
 export interface StartableAgentBridge extends AgentBridge {
 	start(opts: { model: string | null }): void;
+	restart(opts: { model: WebLlmModelId }): void;
 }
 
 export function createAgentBridge(deps: {
@@ -313,7 +315,9 @@ export function createAgentBridge(deps: {
 		};
 		channel.port1.start?.();
 
+		const currentWorker = worker;
 		worker.addEventListener("message", (event: unknown) => {
+			if (worker !== currentWorker) return;
 			const data = (event as MessageEvent)?.data;
 			if (!data || typeof data !== "object") return;
 
@@ -369,6 +373,7 @@ export function createAgentBridge(deps: {
 		});
 
 		worker.addEventListener("error", (event: unknown) => {
+			if (worker !== currentWorker) return;
 			readyModel = null;
 			const err = event as ErrorEvent;
 			const message = err?.message || String(err);
@@ -396,6 +401,17 @@ export function createAgentBridge(deps: {
 
 	return {
 		start,
+		restart(opts): void {
+			Logger.debug("WebAgent", "restarting local model", { model: opts.model });
+			worker?.terminate?.();
+			worker = null;
+			channelPort?.close();
+			channelPort = null;
+			started = false;
+			startedModel = null;
+			readyModel = null;
+			start(opts);
+		},
 		sendLine(line: string): void {
 			if (ackSpeechProfileLine(line)) return;
 			if (radioDj?.running && line.includes("control_speech_activity")) {

@@ -55,7 +55,7 @@ import * as labBalance from "../../lib/lab-balance";
 import { getDefaultLlmModel } from "../../lib/llm/registry";
 import { getStartableAgentBridge } from "../../lib/web-runtime/agent-bridge";
 import { WEB_REMOTE_KEY_STORAGE_KEY } from "../../lib/web-runtime/web-auth";
-import { WEB_LLM_FALLBACK_F32 } from "../../lib/web-runtime/webllm-model";
+import { WEB_LLM_FALLBACK_F32, WEB_LLM_MODEL_ID, WEB_LLM_MODEL_PREF_KEY } from "../../lib/web-runtime/webllm-model";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -4065,6 +4065,76 @@ describe("ChatArea", () => {
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBe(input);
 		expect(input).toBeEnabled();
 		expect(input).toHaveValue("준비 중 작성한 메시지");
+	});
+
+	it("retries the current device model without losing the draft and discards a stale probe after an account change", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_WEB_LLM", "webllm");
+		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model: WEB_LLM_FALLBACK_F32 }));
+		const probe = deferred<{ features: { has: () => boolean } } | null>();
+		vi.stubGlobal("navigator", { ...navigator, gpu: { requestAdapter: () => probe.promise } });
+		const restart = vi.spyOn(getStartableAgentBridge(), "restart").mockImplementation(() => {});
+		try {
+			setWebModelStatus({ phase: "checking", model: WEB_LLM_FALLBACK_F32 });
+			render(<ChatArea />);
+			const input = screen.getByRole("textbox");
+			fireEvent.change(input, { target: { value: "unsent draft" } });
+			act(() => setWebModelStatus({ phase: "error", errorKind: "device-lost" }));
+			fireEvent.click(screen.getByTestId("web-model-retry"));
+			expect(input).toHaveValue("unsent draft");
+			expect(screen.getByRole("button", { name: "↑" })).toBeDisabled();
+			await act(async () => probe.resolve({ features: { has: () => true } }));
+			expect(restart).toHaveBeenCalledWith({ model: WEB_LLM_FALLBACK_F32 });
+			act(() => setWebModelStatus({ phase: "error", errorKind: "device-lost" }));
+			const nextProbe = deferred<{ features: { has: () => boolean } } | null>();
+			vi.stubGlobal("navigator", { ...navigator, gpu: { requestAdapter: () => nextProbe.promise } });
+			fireEvent.click(screen.getByTestId("web-model-retry"));
+			act(() => window.dispatchEvent(new Event("naia-web-auth-changed")));
+			await act(async () => nextProbe.resolve({ features: { has: () => true } }));
+			expect(restart).toHaveBeenCalledTimes(1);
+			expect(screen.getByTestId("web-model-status")).toHaveAttribute("data-phase", "error");
+			expect(input).toHaveValue("unsent draft");
+		} finally {
+			restart.mockRestore();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("switches the selected local model in place, preserving the draft and rejecting stale probes", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_WEB_LLM", "webllm");
+		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }));
+		const probe = deferred<{ features: { has: () => boolean } } | null>();
+		vi.stubGlobal("navigator", { ...navigator, gpu: { requestAdapter: () => probe.promise } });
+		const restart = vi.spyOn(getStartableAgentBridge(), "restart").mockImplementation(() => {});
+		try {
+			setWebModelStatus({ phase: "ready", model: WEB_LLM_MODEL_ID });
+			render(<ChatArea />);
+			const input = screen.getByRole("textbox");
+			fireEvent.change(input, { target: { value: "draft through switch" } });
+			act(() => setWebModelStatus({ phase: "error", errorKind: "no-shader-f16", shaderF16: false }));
+			fireEvent.click(screen.getByTestId("web-model-fallback"));
+			expect(localStorage.getItem(WEB_LLM_MODEL_PREF_KEY)).toBe(WEB_LLM_FALLBACK_F32);
+			expect(screen.getByRole("button", { name: "↑" })).toBeDisabled();
+			expect(input).toHaveValue("draft through switch");
+			await act(async () => probe.resolve({ features: { has: () => true } }));
+			expect(restart).toHaveBeenCalledWith({ model: WEB_LLM_FALLBACK_F32 });
+			act(() => setWebModelStatus({ phase: "error", model: WEB_LLM_MODEL_ID, errorKind: "no-shader-f16", shaderF16: false }));
+			const nextProbe = deferred<{ features: { has: () => boolean } } | null>();
+			vi.stubGlobal("navigator", { ...navigator, gpu: { requestAdapter: () => nextProbe.promise } });
+			fireEvent.click(screen.getByTestId("web-model-fallback"));
+			act(() => useChatStore.getState().setLocalSessionId("other-conversation"));
+			await act(async () => nextProbe.resolve({ features: { has: () => true } }));
+			expect(restart).toHaveBeenCalledTimes(1);
+			expect(input).toHaveValue("draft through switch");
+		} finally {
+			restart.mockRestore();
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("R21-2 signs in from the composer when the browser has no local model API", () => {

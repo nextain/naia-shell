@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MacSafariNotice } from "./MacSafariNotice";
 import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
@@ -71,6 +72,7 @@ export function WebLoginScreen({
 					gap: "16px",
 				}}
 			>
+				<MacSafariNotice />
 				<h1
 					style={{
 						margin: 0,

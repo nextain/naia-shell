@@ -11,6 +11,7 @@ import {
 	useEffectiveLayoutOrientation,
 } from "../lib/ui-preferences";
 import { AppMainContent, type AppMainContentProps } from "./AppMainContent";
+import { MacSafariNotice } from "./MacSafariNotice";
 import { SplashScreen } from "./SplashScreen";
 
 const NAIA_WIDTH_MIN = 120;
@@ -24,6 +25,7 @@ type MainContentProps = Omit<
 >;
 
 interface AppShellFrameProps {
+	showMacSafariNotice?: boolean;
 	appReady: boolean;
 	/**
 	 * 부팅의 마지막까지 끝났는가. `appReady` 는 스플래시를 걷는 시점이고,
@@ -49,6 +51,7 @@ const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
 
 export function AppShellFrame({
+	showMacSafariNotice = false,
 	appReady,
 	bootComplete,
 	backgroundFallback,
@@ -210,6 +213,7 @@ export function AppShellFrame({
 				{ "--naia-width": `${mainContent.naiaWidth}px` } as React.CSSProperties
 			}
 		>
+			{showMacSafariNotice && <MacSafariNotice reserveMenuSpace />}
 			{/* A MediaSource URL (Linux webm) attaches to one element only; when the
 			    foreground already shows it, the layer under it would fail. */}
 			{(!foreground || backgroundMediaType === "iframe") &&

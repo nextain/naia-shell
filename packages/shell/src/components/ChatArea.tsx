@@ -1,4 +1,5 @@
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { getAdkPath } from "../lib/adk-store";
 import {
 	KIOSK_IR_SLIDES_EVIDENCE_FILE,
 	buildKioskSlideQuestionPrompt,
@@ -26,7 +27,7 @@ import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
 import { isWebAuthenticated, verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import { startWebModel } from "../lib/web-runtime/model-start";
-import { WEB_LLM_MODEL_ID } from "../lib/web-runtime/webllm-model";
+import { WEB_LLM_MODEL_ID, WEB_LLM_MODEL_PREF_KEY, type WebLlmModelId } from "../lib/web-runtime/webllm-model";
 import {
 	checkWebGpu,
 	readNavigatorGpu,
@@ -66,6 +67,7 @@ import { WebWorkspaceSetup, useWebAdkStatus } from "./WebWorkspaceSetup";
 import {
 	getWebModelStatus,
 	isWebSendBlocked,
+	setWebModelStatus,
 } from "../lib/web-runtime/web-model-status";
 import { getWebAdkStatus } from "../lib/web-runtime/web-adk-status";
 
@@ -646,6 +648,55 @@ export function ChatArea({
 		import.meta.env.MODE === "web" &&
 		(webLocalModelError || isWebSendBlocked(webModelStatus, webAdkStatus, webProvider));
 	const [input, setInput] = useState("");
+	const localRetryRevision = useRef(0);
+	useEffect(() => {
+		const invalidate = () => { localRetryRevision.current += 1; };
+		window.addEventListener("naia-config-changed", invalidate);
+		window.addEventListener("naia-web-auth-changed", invalidate);
+		return () => {
+			invalidate();
+			window.removeEventListener("naia-config-changed", invalidate);
+			window.removeEventListener("naia-web-auth-changed", invalidate);
+		};
+	}, []);
+
+	function retryLocalModel(selectedModel?: WebLlmModelId) {
+		const revision = ++localRetryRevision.current;
+		const path = getAdkPath();
+		const session = useChatStore.getState().localSessionId;
+		const previousStatus = getWebModelStatus();
+		const model = selectedModel ?? previousStatus.model;
+		const bridge = getStartableAgentBridge();
+		if (selectedModel) {
+			try {
+				localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, selectedModel);
+			} catch {
+				// The current selection still works when storage is unavailable.
+			}
+		}
+		const isCurrent = () => revision === localRetryRevision.current &&
+			getWebChatProvider() === "webllm" && getAdkPath() === path &&
+			useChatStore.getState().localSessionId === session &&
+			(!selectedModel || getWebModelStatus().model === model);
+		const pending = startWebModel({
+			gpu: readNavigatorGpu(),
+			storage: null,
+			engineKind: import.meta.env.VITE_NAIA_WEB_LLM,
+			buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
+			preferredModel: model,
+			isCurrent,
+			bridge: { start: ({ model: next }) => {
+				if (next) bridge.restart({ model: next });
+				else bridge.start({ model: null });
+			} },
+		});
+		const checkingStatus = getWebModelStatus();
+		void pending.then(() => {
+			if (!isCurrent() && checkingStatus.phase === "checking" && getWebModelStatus() === checkingStatus) {
+				setWebModelStatus(previousStatus);
+			}
+		});
+	}
 	const [greetingPreparing, setGreetingPreparing] = useState(false);
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
@@ -6166,6 +6217,8 @@ export function ChatArea({
 							scrollDuringSetup={webWorkspacePending}
 							offerCloudRecovery={!isKioskDemo()}
 							localModelUnavailable={webCloudRecovery}
+							onRetry={!isKioskDemo() && webProvider === "webllm" && !webWorkspacePending ? () => retryLocalModel() : undefined}
+							onSwitchModel={!isKioskDemo() && webProvider === "webllm" && !webWorkspacePending && webModelStatus.phase === "error" ? retryLocalModel : undefined}
 						/>
 					)}
 
