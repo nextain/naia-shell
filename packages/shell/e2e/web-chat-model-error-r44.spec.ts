@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { expect, type Locator, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { openWebShellWithBgm, WEB_BGM_VIEWPORTS } from "./helpers/web-bgm";
 
 test.skip(
@@ -31,6 +31,75 @@ async function checkComposerPlacement(input: Locator, viewport: { width: number;
 	expect(layout.inputBottom).toBeLessThanOrEqual(layout.height);
 	expect(layout.composerBottom).toBeCloseTo(layout.chatBottom, 0);
 	return layout;
+}
+
+const RESIZE_TRACE_MS = 1_200;
+
+async function traceComposerResize(page: Page, viewport: { width: number; height: number }) {
+	const handle = await page.evaluateHandle(({ viewport, duration }) => {
+		const rect = (node: Element | null | undefined) => {
+			const box = node?.getBoundingClientRect();
+			return box ? { top: box.top, bottom: box.bottom, width: box.width, height: box.height } : null;
+		};
+		const takeSample = (elapsed: number) => {
+			const input = document.querySelector(".naia-chat-area .chat-input");
+			const chat = input?.closest(".chat-app");
+			const wrapper = input?.closest(".naia-chat-wrapper");
+			return {
+				elapsed,
+				height: window.innerHeight,
+				orientation: document.documentElement.dataset.layoutOrientation,
+				visualHeight: window.visualViewport?.height,
+				input: rect(input),
+				chat: rect(chat),
+				wrapper: rect(wrapper),
+				overlay: rect(input?.closest(".naia-overlay")),
+				chatScrollTop: chat?.scrollTop,
+				heightTransition: wrapper?.getAnimations().some((animation) =>
+					"transitionProperty" in animation && animation.transitionProperty === "height"),
+			};
+		};
+		const frames: ReturnType<typeof takeSample>[] = [];
+		let frameRequest = 0;
+		let finish!: (samples: typeof frames) => void;
+		const result = new Promise<typeof frames>((resolve) => { finish = resolve; });
+		const stop = () => {
+			window.removeEventListener("resize", onResize);
+			window.cancelAnimationFrame(frameRequest);
+			window.clearTimeout(deadline);
+			finish(frames);
+		};
+		const onResize = () => {
+			if (window.innerWidth !== viewport.width || window.innerHeight !== viewport.height) return;
+			window.removeEventListener("resize", onResize);
+			const started = performance.now();
+			const sampleFrame = () => {
+				const elapsed = performance.now() - started;
+				frames.push(takeSample(elapsed));
+				if (elapsed >= duration) stop();
+				else frameRequest = window.requestAnimationFrame(sampleFrame);
+			};
+			frameRequest = window.requestAnimationFrame(sampleFrame);
+		};
+		const deadline = window.setTimeout(stop, 4_000);
+		window.addEventListener("resize", onResize);
+		return { result, stop };
+	}, { viewport, duration: RESIZE_TRACE_MS });
+	try {
+		await page.setViewportSize(viewport);
+		const frames = await handle.evaluate(({ result }) => result);
+		const inputFrames = frames.flatMap(({ input, height }) => input && input.width > 0 && input.height > 0 ? [{ input, height }] : []);
+		return {
+			viewport,
+			frames,
+			missingInputFrames: frames.length - inputFrames.length,
+			maxInputBottom: inputFrames.length ? Math.max(...inputFrames.map(({ input }) => input.bottom)) : null,
+			overflowFrames: inputFrames.filter(({ input, height }) => input.top < 0 || input.bottom > height).length,
+		};
+	} finally {
+		await handle.evaluate(({ stop }) => stop()).catch(() => undefined);
+		await handle.dispose().catch(() => undefined);
+	}
 }
 
 for (const initialViewport of WEB_BGM_VIEWPORTS) {
@@ -77,13 +146,21 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		const expandedError = await checkComposerPlacement(input, initialViewport);
 
 		const otherViewport = WEB_BGM_VIEWPORTS.find(({ width }) => width !== initialViewport.width)!;
-		await page.setViewportSize(otherViewport);
+		const resizeTrace = await traceComposerResize(page, otherViewport);
+		await testInfo.attach(`R44 resize trace ${otherViewport.width}×${otherViewport.height}`, {
+			body: JSON.stringify(resizeTrace, null, 2),
+			contentType: "application/json",
+		});
 		await expect(status).toHaveAttribute("role", "alert");
 		if (otherViewport.width === 390) {
 			await expect(page.locator(".naia-chat-area")).toHaveAttribute("data-mobile-sheet", "collapsed");
 		}
 		const resized = await checkComposerPlacement(input, otherViewport);
-		await page.setViewportSize(initialViewport);
+		const resizeBackTrace = await traceComposerResize(page, initialViewport);
+		await testInfo.attach(`R44 resize trace ${initialViewport.width}×${initialViewport.height}`, {
+			body: JSON.stringify(resizeBackTrace, null, 2),
+			contentType: "application/json",
+		});
 		const resizedBack = await checkComposerPlacement(input, initialViewport);
 
 		await input.focus();
@@ -105,5 +182,11 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 			body: JSON.stringify({ checking, firstError, expandedError, resized, resizedBack, ready }, null, 2),
 			contentType: "application/json",
 		});
+		for (const trace of [resizeTrace, resizeBackTrace]) {
+			const label = `${trace.viewport.width}×${trace.viewport.height} resize trace`;
+			expect(trace.frames.at(-1)?.elapsed ?? 0, label).toBeGreaterThanOrEqual(RESIZE_TRACE_MS);
+			expect(trace.missingInputFrames, label).toBe(0);
+			expect(trace.overflowFrames, `${label}; maximum input bottom: ${trace.maxInputBottom}`).toBe(0);
+		}
 	});
 }

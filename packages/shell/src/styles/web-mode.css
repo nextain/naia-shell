@@ -1574,6 +1574,11 @@
 	flex-shrink: 1;
 }
 
+/* Keep the composer inside the chat while the viewport changes during an error. */
+[data-naia-web="true"] .naia-chat-wrapper:has(> .chat-app > #web-model-status[data-phase="error"]) {
+	transition: opacity 0.2s ease;
+}
+
 /* The compact portrait sheet also needs room for the error above its composer. */
 [data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app > #web-model-status[data-phase="error"]) {
 	min-height: 148px !important;
