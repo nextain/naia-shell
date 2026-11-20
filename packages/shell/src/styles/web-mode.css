@@ -1484,6 +1484,7 @@
 [data-naia-mobile="true"] .settings-tab,
 [data-naia-mobile="true"] .settings-model-roles { grid-template-columns: minmax(0, 1fr); }
 [data-naia-web="true"] .web-chat-starters,
+[data-naia-web="true"] .web-chat-mic-notice,
 [data-naia-web="true"] .nva-gesture-actions__caption,
 [data-naia-web="true"] .nva-gesture-actions__button,
 [data-naia-web="true"] .chat-output-stage,
@@ -1522,6 +1523,10 @@
 	overflow-wrap: anywhere;
 	cursor: pointer;
 }
+[data-naia-web="true"] .web-chat-actions .web-chat-actions__secondary {
+	border-color: var(--latte);
+	background: var(--espresso-dark);
+}
 [data-naia-web="true"] .web-chat-actions button:hover:not(:disabled) {
 	background: color-mix(in srgb, var(--accent) 24%, var(--espresso-dark));
 }
@@ -1541,15 +1546,44 @@
 [data-naia-web="true"] .nva-gesture-actions:has(.nva-gesture-actions__caption) {
 	flex-wrap: wrap !important;
 }
+[data-naia-web="true"] .web-chat-mic-notice {
+	display: grid;
+	flex-shrink: 0;
+	gap: 6px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--glass-border);
+	font-size: 14px;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+[data-naia-web="true"] .web-chat-mic-notice p {
+	margin: 0;
+}
 
 @media (min-width: 601px) and (orientation: landscape) {
 	[data-naia-web="true"] .nva-gesture-actions__caption {
 		flex-basis: 100%;
 	}
-	/* Keep the starter messages and the composer in the default desktop dock. */
-	[data-naia-web="true"]:not([data-layout-orientation="portrait"]) .app-root:not([data-ui-mode="workspace"]) .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):not([data-chat-user-sized="true"]):has(.web-chat-starters) {
-		min-height: min(23rem, calc(100dvh - 48px));
+	/* Keep first messages and microphone recovery visible above the composer. */
+	[data-naia-web="true"]:not([data-layout-orientation="portrait"]) .app-root:not([data-ui-mode="workspace"]) .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):not([data-chat-user-sized="true"]):has(.web-chat-starters, .web-chat-mic-notice) {
+		min-height: min(var(--web-chat-min-height, 23rem), calc(100dvh - 48px));
 	}
+	[data-naia-web="true"] .naia-chat-wrapper:has(.web-chat-mic-notice) {
+		--web-chat-min-height: 28rem;
+	}
+	[data-naia-web="true"] .web-chat-mic-notice + .chat-input-bar .chat-input {
+		max-height: 4rem;
+	}
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] .app-root .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(.web-chat-mic-notice) {
+	min-height: min(var(--web-chat-min-height, 24rem), calc(var(--naia-vh, 1dvh) * 60 - 24px)) !important;
+}
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:has(.web-chat-mic-notice) {
+	--web-chat-min-height: 14rem;
+}
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .chat-app:has(.web-chat-mic-notice) > .chat-messages {
+	display: none !important;
 }
 
 [data-naia-mobile="true"] .skills-list { grid-template-columns: minmax(0, 1fr); }

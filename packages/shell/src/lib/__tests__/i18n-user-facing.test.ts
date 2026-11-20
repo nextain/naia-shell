@@ -182,6 +182,8 @@ describe("사용자에게 보이는 문구는 i18n 을 지난다 (UC-QUALITY-I18
 			"settings.ollamaPullConfirmExactTag",
 			"settings.ollamaPullRetryButton",
 			"settings.ollamaPullErrorVerification",
+			"chat.webMicRetry",
+			"chat.webMicUseText",
 		];
 		for (const locale of LOCALES) {
 			for (const key of required) {

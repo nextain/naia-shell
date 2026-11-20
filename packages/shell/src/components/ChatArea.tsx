@@ -664,6 +664,9 @@ export function ChatArea({
 		phase: "idle",
 	});
 	const voiceMode = phaseToMode(voiceStatus);
+	const micPermissionBlocked =
+		voiceStatus.phase === "error" &&
+		voiceStatus.reason === "microphone-permission";
 	const lastVoiceStatusRef = useRef<VoiceConnectionStatus>({ phase: "idle" });
 	const voiceCancelledRef = useRef(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -4299,12 +4302,27 @@ export function ChatArea({
 		cleanupPipeline();
 		const terminal: VoiceConnectionStatus = {
 			phase: "error",
-			reason: "unknown",
+			reason: hintKey === "chat.webSpeechErrorNotAllowed"
+				? "microphone-permission"
+				: "unknown",
 			message: content,
 		};
 		setVoiceStatus(terminal);
 		lastVoiceStatusRef.current = terminal;
-		useChatStore.getState().addMessage({ role: "assistant", content });
+		if (terminal.reason !== "microphone-permission") {
+			useChatStore.getState().addMessage({ role: "assistant", content });
+		}
+	}
+
+	function handleContinueInText() {
+		Logger.debug("ChatArea", "Continue in text after microphone permission error");
+		const idle = { phase: "idle" } as const;
+		lastVoiceStatusRef.current = idle;
+		setVoiceStatus(idle);
+		const composer = inputRef.current;
+		composer?.focus();
+		// The chat sheet can shrink after the permission notice closes.
+		requestAnimationFrame(() => composer?.scrollIntoView?.({ block: "nearest" }));
 	}
 
 	async function handleVoiceToggle() {
@@ -5994,8 +6012,8 @@ export function ChatArea({
 				    an explicit Cancel here (→ abandon Pod) instead of a frozen wait. */}
 				{activeTab === "chat" && voiceMode === "connecting" && (
 					<div className="voice-status-banner">
-						<span className="voice-status-spinner" />
-						<span className="voice-status-text">
+						<span className="voice-status-spinner" aria-hidden="true" />
+						<span className="voice-status-text" role="status">
 							{voiceStatus.phase === "cold-start"
 								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s` +
 									(voiceStatus.queuePosition != null
@@ -6034,6 +6052,23 @@ export function ChatArea({
 
 				{(characterTransitionPending || greetingPreparing) && (
 					<output role="status">{t("chat.cardPreparing")}</output>
+				)}
+				{activeTab === "chat" && micPermissionBlocked && (
+					<div className="web-chat-mic-notice">
+						<p role="alert">{t("chat.webSpeechErrorNotAllowed")}</p>
+						<div className="web-chat-actions">
+							<button type="button" onClick={handleVoiceToggle}>
+								{t("chat.webMicRetry")}
+							</button>
+							<button
+								type="button"
+								className="web-chat-actions__secondary"
+								onClick={handleContinueInText}
+							>
+								{t("chat.webMicUseText")}
+							</button>
+						</div>
+					</div>
 				)}
 				{/* Input (chat tab only) */}
 				<div

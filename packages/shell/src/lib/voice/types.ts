@@ -252,6 +252,7 @@ export type VoiceConnectionStatus =
 				| "timeout"
 				| "superseded"
 				| "consent"
+				| "microphone-permission"
 				| "unknown";
 			message: string;
 	  }

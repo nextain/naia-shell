@@ -835,7 +835,7 @@ describe("ChatArea", () => {
 	it.each([
 		["NotAllowedError", "Microphone access is blocked"],
 		["NotFoundError", "No microphone was found"],
-	])("R26 displays guidance for a synchronous %s and allows retry", async (name, guidance) => {
+	])("R26 / R21-4 displays guidance for a synchronous %s and allows retry", async (name, guidance) => {
 		setWebAssetsModeForTests(true);
 		localStorage.setItem("naia-config", JSON.stringify({
 			provider: "nextain",
@@ -855,20 +855,75 @@ describe("ChatArea", () => {
 		if (!voice) throw new Error("Missing voice button");
 		fireEvent.click(voice);
 
-		await waitFor(() => {
-			const messages = useChatStore.getState().messages;
-			expect(messages.filter((m) => m.content.includes(guidance))).toHaveLength(1);
-			expect(messages.at(-1)?.content).not.toContain("Browser detail");
-			expect(voice).not.toHaveClass("active");
-			expect(voice).not.toHaveClass("connecting");
-			expect(voice).toBeEnabled();
-		});
+		const notice = await screen.findByText(new RegExp(guidance));
+		expect(screen.getAllByText(new RegExp(guidance))).toHaveLength(1);
+		expect(notice).not.toHaveTextContent("Browser detail");
+		expect(voice).not.toHaveClass("active");
+		expect(voice).not.toHaveClass("connecting");
+		expect(voice).toBeEnabled();
 		expect(FakeSpeechRecognition.latest?.abort).toHaveBeenCalledOnce();
 		expect(mockInvoke.mock.calls.map(([command]) => command)).not.toContain("plugin:stt|stop_listening");
 
-		fireEvent.click(voice);
+		if (name === "NotAllowedError") {
+			expect(notice).toHaveAttribute("role", "alert");
+			expect(useChatStore.getState().messages).toEqual([]);
+			fireEvent.click(screen.getByRole("button", { name: "Try microphone again" }));
+			expect(screen.getByRole("status")).toHaveTextContent("Connecting...");
+			expect(screen.queryByRole("alert")).toBeNull();
+		} else {
+			expect(useChatStore.getState().messages.at(-1)?.content).toContain(guidance);
+			fireEvent.click(voice);
+		}
 		await waitFor(() => expect(voice).toHaveClass("active"));
 		expect(startFailure).toHaveBeenCalledTimes(2);
+		expect(screen.queryByRole("button", { name: "Chat by text" })).toBeNull();
+	});
+
+	it("R21-4 keeps one permission notice on repeat denial and lets the user send their draft by text", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.mocked(isNewCore).mockReturnValue(true);
+		setWebAdkStatus({ phase: "ready" });
+		setWebModelStatus({ phase: "ready", progress: 1 });
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "webllm",
+			sttProvider: "web-speech",
+		}));
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: FakeSpeechRecognition,
+		});
+		await setLocale("ko");
+		try {
+			render(<ChatArea />);
+			const composer = screen.getByRole("textbox");
+			const draft = "작성해 둔 첫 메시지";
+			fireEvent.change(composer, { target: { value: draft } });
+			expect(screen.queryByRole("button", { name: "글로 대화" })).toBeNull();
+			fireEvent.click(screen.getByRole("button", { name: "음성 대화" }));
+			await waitFor(() => expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledOnce());
+			const first = FakeSpeechRecognition.latest;
+			act(() => first?.onerror?.({ error: "not-allowed", message: "Browser detail" }));
+			expect(screen.getByRole("alert")).toHaveTextContent("마이크 권한이 막혀 있습니다");
+			fireEvent.click(screen.getByRole("button", { name: "마이크 다시 시도" }));
+			await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBe(first));
+			act(() => FakeSpeechRecognition.latest?.onerror?.({ error: "service-not-allowed", message: "Browser detail" }));
+			const alert = screen.getByRole("alert");
+			const continueByText = screen.getByRole("button", { name: "글로 대화" });
+			expect(alert).not.toHaveTextContent(/Browser detail|service-not-allowed/);
+			expect(alert.nextElementSibling).toContainElement(continueByText);
+			expect(useChatStore.getState().messages).toEqual([]);
+
+			fireEvent.click(continueByText);
+			expect(alert).not.toBeInTheDocument();
+			expect(composer).toHaveFocus();
+			expect(composer).toHaveValue(draft);
+			fireEvent.keyDown(composer, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests[0]?.message).toBe(draft));
+			expect(capturedRequests[0].history).toEqual([]);
+		} finally {
+			localStorage.removeItem("naia-config");
+			await setLocale("en");
+		}
 	});
 
 	it("does not send while the lazy at-mention picker is opening", () => {
