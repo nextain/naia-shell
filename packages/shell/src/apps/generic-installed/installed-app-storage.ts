@@ -3,8 +3,7 @@
  *
  * Hosted and web mini apps run in an opaque iframe sandbox (no
  * `allow-same-origin`, see GenericInstalledApp). Their own `indexedDB` therefore
- * throws, and apps such as the character card fall back to memory only. The
- * shell keeps the sandbox and stores data for them in its own IndexedDB, keyed
+ * throws. The shell keeps the sandbox and stores data for them in IndexedDB, keyed
  * by app id so one app can never read another app's data.
  */
 

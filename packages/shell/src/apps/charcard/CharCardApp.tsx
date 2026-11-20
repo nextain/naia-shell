@@ -10,9 +10,11 @@ import {
 	readImageDimensions,
 } from "./card-parser";
 import {
+	CardStorageValueTooLargeError,
 	type CardStorageAdapter,
 	type StoredCardRecord,
 	createCardStorage,
+	createMemoryCardStorage,
 } from "./card-store";
 import {
 	type CharCardMessageKey,
@@ -32,7 +34,10 @@ import "./charcard.css";
 
 const TAG = "CharCardApp";
 
-export type CharCardUiErrorCode = CardParseErrorCode | "CONTEXT_TOO_LARGE";
+export type CharCardUiErrorCode =
+	| CardParseErrorCode
+	| "CONTEXT_TOO_LARGE"
+	| "STORAGE_VALUE_TOO_LARGE";
 
 export interface CharCardContextBridge {
 	pushContext: (context: RoleplayContextPayload | null) => void;
@@ -159,7 +164,7 @@ export function CharCardApp({
 
 	const samples = useMemo(() => getBundledSampleCardRecords(), []);
 	const [importedCards, setImportedCards] = useState<StoredCardRecord[]>([]);
-	const [storageMode, setStorageMode] = useState<"indexeddb" | "memory">(
+	const [storageMode, setStorageMode] = useState<CardStorageAdapter["mode"]>(
 		"indexeddb",
 	);
 	const [selectedCardId, setSelectedCardId] = useState<string>(
@@ -198,11 +203,7 @@ export function CharCardApp({
 		let cancelled = false;
 		setStorageReady(false);
 		const initPromise = (async () => {
-			const store = injectedStorage ?? (await createCardStorage());
-			if (!cancelled) {
-				storageRef.current = store;
-				setStorageMode(store.mode);
-			}
+			let store = injectedStorage ?? (await createCardStorage());
 			try {
 				const saved = await Promise.all(
 					(await store.listCards()).map(async (record) => {
@@ -240,8 +241,11 @@ export function CharCardApp({
 				Logger.warn(TAG, "failed to load stored cards", {
 					error: String(err),
 				});
+				if (store.mode === "host") store = createMemoryCardStorage();
 			} finally {
 				if (!cancelled) {
+					storageRef.current = store;
+					setStorageMode(store.mode);
 					setStorageReady(true);
 				}
 			}
@@ -361,7 +365,11 @@ export function CharCardApp({
 				Logger.warn(TAG, "failed saving card to storage", {
 					error: String(err),
 				});
-				setStorageError({ kind: "save", record });
+				if (err instanceof CardStorageValueTooLargeError) {
+					setErrorCode("STORAGE_VALUE_TOO_LARGE");
+				} else {
+					setStorageError({ kind: "save", record });
+				}
 				return;
 			}
 		}
@@ -693,6 +701,7 @@ export function CharCardApp({
 				<div
 					className="charcard-app__notice charcard-app__notice--warn"
 					data-testid="charcard-memory-banner"
+					role="status"
 				>
 					{msg("charcard.memoryOnlyBanner")}
 				</div>
@@ -825,7 +834,13 @@ export function CharCardApp({
 							role="alert"
 							data-testid="charcard-error-panel"
 						>
-							<h2>{msg("charcard.errorTitle")}</h2>
+							<h2>
+								{msg(
+									errorCode === "STORAGE_VALUE_TOO_LARGE"
+										? "charcard.storageErrorSave"
+										: "charcard.errorTitle",
+								)}
+							</h2>
 							<p>{msg(`charcard.error.${errorCode}`)}</p>
 							<div className="charcard-app__error-actions">
 								<button

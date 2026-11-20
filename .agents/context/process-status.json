@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-19T23:08:38Z",
+  "last_updated": "2026-11-20T00:26:56Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_charcard_storage_r11_20261120": {
+      "requirement_id": "R11",
+      "title": "웹판 캐릭터 카드 파일 보관",
+      "branch": "alpha/webgpu-r45-creds-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-A-R11",
+      "requirements": "docs/requirements.md FR-WEB-A-R11",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/e2e/web-charcard-r11.spec.ts",
+      "last_updated": "2026-11-20T00:26:56Z",
+      "verification": "표적 Vitest 52건, 로컬 /app/ 배포 형식 카드 번들의 Playwright R11 4건 및 R40 2건 통과. 1280×720·390×844에서 새로 고침 뒤 불러온 카드 그림과 키보드 포커스를 확인했다. 저장 한도 초과 뒤 작은 파일 추가와 저장 실패 시 임시 보관 안내를 확인했다. 캡처 bundle-runs/r11-shots/R11-1280.png·R11-390.png."
+    },
     "web_kiosk_app_store_r46_20261120": {
       "requirement_id": "R46",
       "title": "웹 키오스크 앱스토어 안내 시험",

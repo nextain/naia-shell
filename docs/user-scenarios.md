@@ -3278,15 +3278,17 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 
 ## UC-WEB-A-R11. 웹판 캐릭터 카드를 다음 실행에도 남기기
 
-웹판의 캐릭터 카드 앱은 보안 경계(`allow-same-origin` 없는 sandbox iframe) 안에서 돕니다. 그래서 앱 자신의 IndexedDB는 열리지 않고, 이것이 "이번 실행 동안만 보관됩니다" 안내의 원인입니다. 셸은 sandbox를 유지한 채 `storage` 권한을 가진 앱에 `naia-app:storage` 메시지로 저장소를 빌려줍니다. 데이터는 셸 IndexedDB에 앱 id별로 따로 저장되어 다른 앱이 읽지 못합니다. 저장소가 정말 없거나 가득 차면 앱은 짧은 사용자 말로 알립니다.
+브라우저 웹판에서 캐릭터 카드를 열고 파일을 추가합니다. 셸 페이지를 새로 고침해 다시 열어도 카드 목록에서 추가한 카드와 그림을 볼 수 있습니다. 격리된 앱은 자체 IndexedDB를 열 수 없으므로 `storage` 권한으로 셸에 저장을 요청합니다. 셸은 앱 id별로 데이터를 보관합니다. 보관함을 열 수 없을 때는 카드가 창을 닫거나 새로 고침할 때 사라진다고 안내합니다. 저장할 수 있는 크기를 넘는 카드는 더 작은 파일을 고를 수 있게 안내합니다.
 
 ### Test Coverage Map — UC-WEB-A-R11
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
-| 성공 | set·get·keys·delete가 앱 id 범위 안에서 동작, 다른 앱 id 사칭 무시 | `installed-app-host-bridge.test.ts` R11 |
-| 오류 | 권한 없음, 빈 키, 8MB 초과, 모르는 동작, 저장소 실패를 오류 코드로 회신 | `installed-app-host-bridge.test.ts` R11 |
-| 앱 묶음 연결 | 캐릭터 카드 묶음이 자체 IndexedDB 대신 이 프로토콜을 씀 | 미완(묶음 소스가 이 저장소 밖) |
+| 기본·빈 목록 | 앱 안에서 예시 카드와 파일 추가가 보이고, 개인 카드가 없는 보관함에는 임시 보관 안내가 나오지 않음 | `e2e/web-charcard-r11.spec.ts` R11 |
+| 진행 | 카드 추가 중 진행 상태를 알리고 파일 추가와 적용을 잠시 막음 | `e2e/web-charcard-r11.spec.ts` R11 |
+| 성공 | 앱 id 범위에서 추가·읽기·목록·삭제가 동작하며, 웹판 새로 고침 후 추가한 카드의 원본 그림과 내용이 남음 | `installed-app-host-bridge.test.ts`, `card-store.test.ts`, `e2e/web-charcard-r11.spec.ts` R11 |
+| 오류 | 보관함을 열 수 없으면 현재 창에서만 카드를 쓸 수 있다는 한·영 안내가 보임. 크기 초과를 알리고 다른 파일을 고를 수 있음. 셸 저장 권한과 앱 id의 경계를 확인함 | `installed-app-host-bridge.test.ts`, `card-store.test.ts`, `CharCardApp.test.tsx`, `e2e/web-charcard-r11.spec.ts` R11 |
+| 좁은 폭·키보드 | 1280×720·390×844에서 파일 추가와 카드 목록이 보이고 Enter 키로 복원된 카드를 선택할 수 있음 | `e2e/web-charcard-r11.spec.ts`, `bundle-runs/r11-shots/R11-1280.png`·`R11-390.png` |
 
 ## UC-WEB-A-R28. 웹판 대화창이 상태줄에 가려지지 않고 키보드로 닿기
 

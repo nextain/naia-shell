@@ -3,24 +3,13 @@ import {
 	parseCharacterCardJsonText,
 	parsePngOrJsonCardBytes,
 } from "./card-parser";
-import type { StoredCardRecord } from "./card-store";
+import { type StoredCardRecord, decodeDataUrlBytes } from "./card-store";
 import clockworkTinkerV3Json from "./package-public/samples/clockwork-tinker-v3.json";
 import clockworkTinkerPngInline from "./package-public/samples/clockwork-tinker.png?inline";
 import greenhouseKeeperPngInline from "./package-public/samples/greenhouse-keeper.png?inline";
 import starlightArchivistV2 from "./package-public/samples/starlight-archivist-v2.json";
 
 const TAG = "CharCardSampleCards";
-
-export function decodeDataUrlBytes(dataUrl: string): Uint8Array {
-	const commaIdx = dataUrl.indexOf(",");
-	const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
-	const binary = atob(base64.trim());
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
-}
 
 export function getBundledSampleCardRecords(): StoredCardRecord[] {
 	Logger.debug(TAG, "building bundled sample character cards");

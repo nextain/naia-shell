@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CharCardApp } from "../CharCardApp";
 import { parseCharacterCardJsonText } from "../card-parser";
 import {
+	CardStorageValueTooLargeError,
 	type CardStorageAdapter,
 	type StoredCardRecord,
 	createMemoryCardStorage,
@@ -24,6 +25,61 @@ afterEach(() => {
 });
 
 describe("CharCardApp UI", () => {
+	it.each([
+		["ko", "새로 고침하거나 창을 닫으면 사라집니다"],
+		["en", "disappear when you refresh or close this window"],
+	])(
+		"R11 describes temporary cards in %s when storage falls back to memory",
+		async (locale, expected) => {
+			render(
+				<CharCardApp
+					storage={createMemoryCardStorage()}
+					localeOverride={locale}
+				/>,
+			);
+			const notice = await screen.findByTestId("charcard-memory-banner");
+			expect(notice).toHaveAttribute("role", "status");
+			expect(notice).toHaveTextContent(expected);
+			expect(notice).not.toHaveTextContent("IndexedDB");
+			expect(screen.getByTestId("charcard-import-button")).toBeEnabled();
+		},
+	);
+
+	it("R11 tells users to choose a smaller file when the shell cannot fit a card", async () => {
+		render(
+			<CharCardApp
+				storage={{
+					...createMemoryCardStorage(),
+					mode: "host",
+					saveCard: async () => {
+						throw new CardStorageValueTooLargeError();
+					},
+				}}
+				localeOverride="ko"
+			/>,
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
+		);
+		fireEvent.change(screen.getByTestId("charcard-file-input"), {
+			target: {
+				files: [
+					new File(['{"name":"큰 카드"}'], "large.json", {
+						type: "application/json",
+					}),
+				],
+			},
+		});
+
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("카드가 너무 큽니다");
+		expect(
+			within(alert).getByRole("button", { name: "다른 파일 고르기" }),
+		).toBeEnabled();
+		expect(screen.queryByTestId("charcard-memory-banner")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /^큰 카드/ })).not.toBeInTheDocument();
+	});
+
 	it("hides unsafe images saved by an earlier version", async () => {
 		const storage = createMemoryCardStorage();
 		const parsed = parseCharacterCardJsonText(

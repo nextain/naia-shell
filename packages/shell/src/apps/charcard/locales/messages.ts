@@ -25,7 +25,7 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.emptyList":
 		"No character cards yet. Import a .png, .json, or .charx card to start.",
 	"charcard.memoryOnlyBanner":
-		"Stored for this session only (IndexedDB is unavailable in this environment).",
+		"Card storage is unavailable. Cards added here will disappear when you refresh or close this window.",
 	"charcard.activeBanner": "Roleplaying as {name}",
 	"charcard.activeHint":
 		"Say hello in the Naia chat panel! Naia will stay in character as {name} until you end roleplay.",
@@ -73,6 +73,8 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.errorTitle": "Could not load character card",
 	"charcard.errorChooseAnother": "Choose Another File",
 	"charcard.errorDismiss": "Back to Card",
+	"charcard.error.STORAGE_VALUE_TOO_LARGE":
+		"This card is too large to save. Choose a smaller card file.",
 	"charcard.error.FILE_TOO_LARGE":
 		"This file exceeds the 20 MB size limit. Please choose a smaller PNG, JSON, or CHARX card.",
 	"charcard.error.JSON_TOO_LARGE":
@@ -136,7 +138,7 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.emptyList":
 		"아직 카드가 없습니다. .png, .json, .charx 카드를 불러오세요.",
 	"charcard.memoryOnlyBanner":
-		"이번 실행 동안만 보관됩니다 (이 환경에서 IndexedDB를 쓸 수 없습니다).",
+		"카드를 저장할 수 없어 이 창에서만 사용할 수 있습니다. 새로 고침하거나 창을 닫으면 사라집니다.",
 	"charcard.activeBanner": "{name} 연기 중",
 	"charcard.activeHint":
 		"나이아 대화창에서 말을 걸어 보세요! 연기를 끝낼 때까지 나이아가 {name} 캐릭터로 답합니다.",
@@ -182,6 +184,8 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.errorTitle": "캐릭터 카드를 불러오지 못했습니다",
 	"charcard.errorChooseAnother": "다른 파일 고르기",
 	"charcard.errorDismiss": "돌아가기",
+	"charcard.error.STORAGE_VALUE_TOO_LARGE":
+		"카드가 너무 큽니다. 더 작은 카드 파일을 골라 주세요.",
 	"charcard.error.FILE_TOO_LARGE":
 		"파일 크기가 20MB 상한을 넘었습니다. 더 작은 PNG, JSON, CHARX 카드를 골라 주세요.",
 	"charcard.error.JSON_TOO_LARGE":
