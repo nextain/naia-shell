@@ -2049,6 +2049,8 @@ Web startup must select the web runtime using the build mode, even after the web
 |---|---|---|
 | FR-WEB-STUDIO-VOICE.1 | 웹(브라우저) 빌드가 스튜디오 카드를 적용하면 `naia_studio.voice_id`(또는 `tts_voice`)를 아바타와 같이 `ttsVoice` 로 저장합니다. 맨 목록 이름은 `naia-voice:<이름>` 으로 바꿔 게이트웨이 `/v1/audio/speech` 가 나이아 목소리 경로로 보내게 합니다. | Done (local) |
 | FR-WEB-STUDIO-VOICE.2 | 카드에 쓸 수 있는 목소리가 없으면(없음·`user-voice:`) 앞 캐릭터 목소리를 지워 기본 목소리로 돌아갑니다. | Done (local) |
+| FR-WEB-STUDIO-VOICE.3 | 합성 가능한 스튜디오 목소리를 적용하면 캐릭터와 함께 Naia Cloud TTS 공급자 및 목소리 ID를 저장합니다. 읽기 설정이 없으면 켜고, 사용자가 명시한 설정과 로그아웃·크레딧 소진 시 브라우저 대체 동작을 유지합니다. | Done (local) |
+| FR-WEB-STUDIO-VOICE.4 | 스튜디오 적용 시 이미 열려 있는 음성 설정과 빠른 읽기 토글도 새 설정을 표시합니다. 현재 목소리가 기본 목록에 없어도 선택된 목소리로 나타납니다. | Done (local) |
 
 검증: `UC-WEB-STUDIO-VOICE-APPLY`. 게이트웨이 규칙(`naia-voice:` 머리말만 나이아 목소리)은 참고 사본 코드로 확인했고 운영 게이트웨이와 같은지는 미확인입니다. 스튜디오 `user-voice:`(내 목소리)를 셸 실시간 합성에서 쓰는 경로는 없습니다.
 

@@ -15,6 +15,11 @@ import {
 	beginNaiaConfigHydration,
 	completeNaiaConfigHydration,
 } from "../../lib/adk-store";
+import {
+	STUDIO_PENDING_CHARACTER_STORAGE_KEY,
+	consumePendingStudioCharacterCard,
+} from "../../lib/web-runtime/web-studio-handoff";
+import { useAppStore } from "../../stores/app";
 
 const transferMocks = vi.hoisted(() => ({
 	moduleLoaded: vi.fn(),
@@ -6258,6 +6263,45 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(saved.ttsProvider).toBe("nextain");
 		expect(saved.ttsVoice).toBe("ko-KR-SunHi:DragonHDLatestNeural");
 		vi.unstubAllEnvs();
+	});
+
+	it("R16 updates an open web voice panel when Studio applies an unlisted voice", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		const previousTtsEnabled = useAppStore.getState().ttsEnabled;
+		useAppStore.getState().setTtsEnabled(false);
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "browser",
+		}));
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("voice");
+			expect(screen.getByTestId("gateway-tts-provider")).toHaveValue("browser");
+
+			localStorage.setItem(STUDIO_PENDING_CHARACTER_STORAGE_KEY, JSON.stringify({
+				spec: "chara_card_v2",
+				spec_version: "2.0",
+				data: {
+					name: "Minho",
+					extensions: {
+						naia_studio: { avatar_id: "av-def-minho-anime", voice_id: "cc0-ko-male-02" },
+					},
+				},
+			}));
+			await act(async () => {
+				expect(await consumePendingStudioCharacterCard()).toMatchObject({ ok: true });
+			});
+
+			expect(screen.getByTestId("gateway-tts-provider")).toHaveValue("nextain");
+			expect(document.getElementById("tts-voice-select")).toHaveValue("naia-voice:cc0-ko-male-02");
+			expect(screen.getByRole("option", { name: "cc0-ko-male-02" })).toBeInTheDocument();
+			expect(useAppStore.getState().ttsEnabled).toBe(true);
+		} finally {
+			useAppStore.getState().setTtsEnabled(previousTtsEnabled);
+		}
 	});
 
 	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, defaults to Naia Cloud TTS in both profile and voice tabs without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {

@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T00:46:58Z",
+  "last_updated": "2026-11-20T01:06:47Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,18 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_studio_voice_r16_20261120": {
+      "requirement_id": "R16",
+      "title": "스튜디오 적용 시 웹 음성 합성 엔진 전환",
+      "branch": "alpha/webgpu-p2-voice-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-STUDIO-VOICE-APPLY",
+      "requirements": "docs/requirements.md FR-WEB-STUDIO-VOICE.3~4",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/web-runtime/__tests__/web-studio-voice.test.ts, packages/shell/src/components/__tests__/SettingsTab.test.tsx",
+      "verification": "표적 Vitest 173통과·0실패·8제외. 이미 열린 음성 설정과 빠른 읽기 토글 갱신을 확인. 실제 게이트웨이 합성과 두 화면 크기 미확인.",
+      "last_updated": "2026-11-20T01:17:10Z"
+    },
     "web_avatar_clip_r48_20261120": {
       "requirement_id": "R48",
       "title": "웹판 아바타 영상 다운로드와 재시도",

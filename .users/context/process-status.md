@@ -1,3 +1,8 @@
+## 스튜디오 적용 시 웹 음성 합성 엔진 전환 (R16) — 2026-11-20
+
+- 스튜디오 카드의 아바타·목소리와 Naia Cloud TTS 엔진이 함께 적용되며, 열려 있던 음성 설정도 갱신됩니다. 표적 Vitest 173통과·0실패·8제외. 실제 게이트웨이 합성과 화면 미확인.
+- `UC-WEB-STUDIO-VOICE-APPLY` · `FR-WEB-STUDIO-VOICE.3~4` · `web-studio-voice.test.ts` · `SettingsTab.test.tsx`
+
 <!-- src-sha: 7c3b648621572e1f -->
 
 ## 웹판 아바타 영상 다운로드와 재시도 (R48) — 2026-11-20

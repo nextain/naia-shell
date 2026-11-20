@@ -3382,11 +3382,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 
 카드에 목소리가 없거나 셸 음성 합성이 쓰지 못하는 목소리(`user-voice:` — 스튜디오 작업에서만 쓰임)면 앞 캐릭터 목소리를 남기지 않고 기본 목소리(언어·캐릭터 기준)로 돌아갑니다. 못 쓰는 목소리는 기록(Logger.warn)에 남깁니다.
 
+브라우저 내장 목소리를 쓰던 사용자가 합성 가능한 스튜디오 목소리가 든 카드를 적용하면 셸이 Naia Cloud TTS와 그 목소리를 함께 선택합니다. 사용자가 끈 답변 읽기 설정은 유지합니다. 로그인 전이나 크레딧 소진 시에는 기존 브라우저 음성 대체 경로를 이용합니다.
+
 ### Test Coverage Map — UC-WEB-STUDIO-VOICE-APPLY
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
 | 기본·성공 | `avatar_id`+맨 `voice_id` 카드 적용 → 아바타 `naia-video-avatar`, `ttsVoice=naia-voice:<이름>` | `src/lib/web-runtime/__tests__/web-studio-voice.test.ts` R16 |
+| 브라우저 목소리에서 전환 | 아바타 적용 이벤트 시점에 로그인 상태의 합성 엔진과 목소리 ID를 함께 확인하고, 명시적 읽기 끔과 로그아웃·크레딧 소진 시 브라우저 대체 동작을 확인 | `web-studio-voice.test.ts` R16 |
+| 설정을 열어 둔 상태 | 다른 탭에서 카드를 적용하면 이미 열려 있던 음성 탭의 공급자·목소리와 빠른 읽기 토글에 적용 결과가 반영됨 | `src/components/__tests__/SettingsTab.test.tsx` R16 |
 | 형식 | 맨 이름·`naia-voice:`·Dragon·Google 이름 정규화, `user-voice:`·빈 값 거절 | `web-studio-voice.test.ts` R16 |
 | 빈 값·오류 | 목소리 없는 새 캐릭터·`user-voice:` 카드 → 앞 캐릭터 목소리 제거 | `web-studio-voice.test.ts` R16 |
 | 화면 | 받는 쪽은 화면 변화가 설정값뿐이라 단위 시험으로 확인(화면 캡처 없음) | — |

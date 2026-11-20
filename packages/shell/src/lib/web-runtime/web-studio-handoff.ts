@@ -3,6 +3,7 @@ import {
 	parseCharacterCardBytes,
 	parseCharacterCardJsonText,
 } from "../../apps/charcard/card-parser";
+import { useAppStore } from "../../stores/app";
 import { useChatStore } from "../../stores/chat";
 import { writeNaiaConfig } from "../adk-store";
 import {
@@ -254,7 +255,11 @@ export async function applyNormalizedCharacterCardToWebShell(
 				}
 			: {}),
 		...(studioHint.ttsVoice
-			? { ttsVoice: studioHint.ttsVoice }
+			? {
+					ttsProvider: "nextain" as const,
+					ttsVoice: studioHint.ttsVoice,
+					ttsEnabled: existing?.ttsEnabled ?? true,
+				}
 			: {}),
 		...(studioHint.backgroundVideo
 			? { backgroundVideo: studioHint.backgroundVideo }
@@ -278,6 +283,9 @@ export async function applyNormalizedCharacterCardToWebShell(
 	}
 
 	saveConfig(nextConfig);
+	if (nextConfig.ttsEnabled !== undefined) {
+		useAppStore.getState().setTtsEnabled(nextConfig.ttsEnabled);
+	}
 	try {
 		await writeNaiaConfig(nextConfig as unknown as Record<string, unknown>);
 	} catch (err) {
