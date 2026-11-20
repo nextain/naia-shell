@@ -193,6 +193,36 @@ export function createWebSpeechSttSession(
 		}
 	}
 
+	function failRecognition(code: string, message: string): void {
+		stopped = true;
+		clearRecoveryTimer();
+		const instance = recognition;
+		recognition = null;
+		if (instance) killRecognition(instance);
+		Logger.warn("web-speech-stt", "error", { error: code });
+		for (const cb of errorCallbacks) cb({ code, message });
+	}
+
+	function failStart(error: unknown, fallbackCode: string): void {
+		const name = error instanceof Error || error instanceof DOMException
+			? error.name
+			: "";
+		let code = fallbackCode;
+		switch (name) {
+			case "NotAllowedError":
+			case "PermissionDeniedError":
+			case "SecurityError":
+				code = "not-allowed";
+				break;
+			case "NotFoundError":
+			case "NotReadableError":
+			case "OverconstrainedError":
+				code = "audio-capture";
+				break;
+		}
+		failRecognition(code, String(error));
+	}
+
 	function buildRecognition(): SpeechRecognition {
 		const w = window as Window & {
 			SpeechRecognition?: new () => SpeechRecognition;
@@ -235,10 +265,7 @@ export function createWebSpeechSttSession(
 					mountAndStartInstance();
 				} catch (err) {
 					if (stopped) return;
-					stopped = true;
-					const message = err instanceof Error ? err.message : String(err);
-					for (const cb of errorCallbacks)
-						cb({ code: "restart-failed", message });
+					failStart(err, "restart-failed");
 				}
 			}, delayMs);
 		};
@@ -324,13 +351,7 @@ export function createWebSpeechSttSession(
 				}
 			}
 
-			stopped = true;
-			clearRecoveryTimer();
-			Logger.warn("web-speech-stt", "error", { error: event.error });
-			recognition = null;
-			killRecognition(instance);
-			for (const cb of errorCallbacks)
-				cb({ code: event.error, message: event.message ?? event.error });
+			failRecognition(event.error, event.message ?? event.error);
 		};
 
 		instance.onend = () => {
@@ -349,13 +370,22 @@ export function createWebSpeechSttSession(
 		async start() {
 			if (!isWebSpeechAvailable()) {
 				const msg = "Web Speech API not available in this environment";
+				if (continuousRecovery) {
+					failRecognition("NOT_AVAILABLE", msg);
+					return;
+				}
 				Logger.warn("web-speech-stt", msg);
 				for (const cb of errorCallbacks)
 					cb({ code: "NOT_AVAILABLE", message: msg });
 				throw new Error(msg);
 			}
 			consecutiveAudioCaptureErrors = 0;
-			mountAndStartInstance();
+			try {
+				mountAndStartInstance();
+			} catch (err) {
+				if (!continuousRecovery) throw err;
+				failStart(err, "start-failed");
+			}
 		},
 
 		async stop() {

@@ -1081,6 +1081,10 @@ export function SettingsTab() {
 			if (cfg?.backgroundVideo !== undefined) {
 				setBackgroundVideoFilename(cfg.backgroundVideo);
 			}
+			if (cfg && isWebMode() && !isKioskDemo()) {
+				setTtsProvider(cfg.ttsProvider === "nextain" ? "nextain" : "browser");
+				setTtsVoice(cfg.ttsVoice ?? "");
+			}
 		};
 		window.addEventListener("naia-config-changed", syncAvatarFromConfig);
 		return () =>
@@ -7936,6 +7940,12 @@ export function SettingsTab() {
 								? dynamicTtsVoices
 								: (providerMeta?.voices ?? []);
 						if (voiceList.length > 0) {
+							const showSelectedVoice =
+								isWebMode() &&
+								!isKioskDemo() &&
+								ttsProvider === "nextain" &&
+								ttsVoice !== "" &&
+								!voiceList.some((voice) => voice.id === ttsVoice);
 							// R25-v: 언어 정보가 있으면 현재 언어 목소리를 맨 앞에 두고 언어별로 묶는다.
 							const voiceGroups = voiceList.some((v) => "language" in v && v.language)
 								? groupTtsVoicesForLocale(voiceList as readonly TtsVoiceMeta[], locale)
@@ -7955,6 +7965,11 @@ export function SettingsTab() {
 												persistTtsVoice(e.target.value);
 											}}
 										>
+										{showSelectedVoice && (
+											<option value={ttsVoice}>
+												{ttsVoice.replace(/^naia-voice:/, "")}
+											</option>
+										)}
 											{voiceGroups
 												? voiceGroups.map((group) => (
 														<optgroup

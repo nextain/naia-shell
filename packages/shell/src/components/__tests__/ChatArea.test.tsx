@@ -713,6 +713,45 @@ describe("ChatArea", () => {
 		);
 	});
 
+	it.each([
+		["NotAllowedError", "Microphone access is blocked"],
+		["NotFoundError", "No microphone was found"],
+	])("R26 displays guidance for a synchronous %s and allows retry", async (name, guidance) => {
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: "test-model",
+			sttProvider: "web-speech",
+		}));
+		const startFailure = vi.fn()
+			.mockImplementationOnce(() => { throw new DOMException("Browser detail", name); });
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: class extends FakeSpeechRecognition {
+				start = startFailure;
+			},
+		});
+		render(<ChatArea />);
+		const voice = document.querySelector<HTMLButtonElement>(".chat-voice-btn");
+		if (!voice) throw new Error("Missing voice button");
+		fireEvent.click(voice);
+
+		await waitFor(() => {
+			const messages = useChatStore.getState().messages;
+			expect(messages.filter((m) => m.content.includes(guidance))).toHaveLength(1);
+			expect(messages.at(-1)?.content).not.toContain("Browser detail");
+			expect(voice).not.toHaveClass("active");
+			expect(voice).not.toHaveClass("connecting");
+			expect(voice).toBeEnabled();
+		});
+		expect(FakeSpeechRecognition.latest?.abort).toHaveBeenCalledOnce();
+		expect(mockInvoke.mock.calls.map(([command]) => command)).not.toContain("plugin:stt|stop_listening");
+
+		fireEvent.click(voice);
+		await waitFor(() => expect(voice).toHaveClass("active"));
+		expect(startFailure).toHaveBeenCalledTimes(2);
+	});
+
 	it("does not send while the lazy at-mention picker is opening", () => {
 		vi.spyOn(appRegistry, "get").mockReturnValueOnce({} as never);
 		render(<ChatArea />);

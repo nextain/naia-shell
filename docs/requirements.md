@@ -2028,8 +2028,9 @@ Web startup must select the web runtime using the build mode, even after the web
 |---|---|---|
 | FR-WEB-BGM-PLAY.1 | 웹(브라우저) 빌드에서 재생기에 iframe 이 없을 때 상단 바 ▶ 는 지금 곡 → 마지막 곡 → 재생목록 다음 곡 → 정적 목록 첫 곡 순으로 실제 곡을 싣는다. 실을 곡이 없으면 ■ 를 켜지 않는다. | Done (local) |
 | FR-WEB-BGM-PLAY.2 | 페이지가 cross-origin isolated(`crossOriginIsolated=true`)이면 BGM iframe 에 `credentialless` 를 달아 COEP 아래에서도 YouTube 문서가 실린다. isolation 이 없는 데스크톱·로컬에서는 달지 않는다. | Done (local) |
-| FR-WEB-BGM-PLAY.3 | 웹판은 요청 즉시 ■ 로 보이되, 12초 안에 플레이어가 진행(currentTime>0)을 한 번도 알리지 않거나 오류를 보내면 ■ 를 내리고 "유튜브가 이 곡을 재생하지 않았습니다…" 알림(role=status, 닫기 단추)을 보인다. 그 상태에서 ▶ 는 같은 곡을 새로 싣는다. 뒤늦게 실제 재생이 오면 ■ 로 돌아간다. | Done (local) |
+| FR-WEB-BGM-PLAY.3 | 웹판은 요청 즉시 ■ 로 보이되, 12초 안에 플레이어가 재생 시작이나 진행을 알리지 않거나 오류를 보내면 ■ 를 내리고 "유튜브가 이 곡을 재생하지 않았습니다…" 알림(role=status, 닫기 단추)을 보인다. 그 상태에서 ▶ 는 같은 곡을 새로 싣는다. 뒤늦게 실제 재생이 오면 ■ 로 돌아간다. | Done (local) |
 | FR-WEB-BGM-PLAY.4 | 포털 `/app` 응답의 `Permissions-Policy` autoplay 허용 목록에 `https://www.youtube-nocookie.com`·`https://www.youtube.com` 을 넣는다(naia.land `src/lib/web-shell-routing.ts`·`next.config.ts`). 셸 저장소 밖 변경이라 이 묶음에서는 하지 않음. | Open (portal, 승인 필요) |
+| FR-WEB-BGM-PLAY.5 (R7) | 웹판은 YouTube 준비 시 재생을 명령하고, 현재 iframe의 재생 확인 뒤 재생 중 카드와 AI 안내를 표시합니다. 시간 초과 상태에서는 같은 곡을 다시 요청할 수 있습니다. | Done (local) |
 
 검증: `UC-WEB-BGM-TOPBAR-PLAY`. 이 서버의 IP 에서는 쿠키 없는 embed(credentialless 포함)에 YouTube 가 봇 확인 화면을 띄워, 고친 셸 + 포털 헤더 조합의 실제 소리는 이 서버에서 확인하지 못했다(미확인). 쿠키 있는 embed 로 ③ 의 헤더 효과만 실측했다.
 
@@ -2049,6 +2050,8 @@ Web startup must select the web runtime using the build mode, even after the web
 |---|---|---|
 | FR-WEB-STUDIO-VOICE.1 | 웹(브라우저) 빌드가 스튜디오 카드를 적용하면 `naia_studio.voice_id`(또는 `tts_voice`)를 아바타와 같이 `ttsVoice` 로 저장합니다. 맨 목록 이름은 `naia-voice:<이름>` 으로 바꿔 게이트웨이 `/v1/audio/speech` 가 나이아 목소리 경로로 보내게 합니다. | Done (local) |
 | FR-WEB-STUDIO-VOICE.2 | 카드에 쓸 수 있는 목소리가 없으면(없음·`user-voice:`) 앞 캐릭터 목소리를 지워 기본 목소리로 돌아갑니다. | Done (local) |
+| FR-WEB-STUDIO-VOICE.3 | 합성 가능한 스튜디오 목소리를 적용하면 캐릭터와 함께 Naia Cloud TTS 공급자 및 목소리 ID를 저장합니다. 읽기 설정이 없으면 켜고, 사용자가 명시한 설정과 로그아웃·크레딧 소진 시 브라우저 대체 동작을 유지합니다. | Done (local) |
+| FR-WEB-STUDIO-VOICE.4 | 스튜디오 적용 시 이미 열려 있는 음성 설정과 빠른 읽기 토글도 새 설정을 표시합니다. 현재 목소리가 기본 목록에 없어도 선택된 목소리로 나타납니다. | Done (local) |
 
 검증: `UC-WEB-STUDIO-VOICE-APPLY`. 게이트웨이 규칙(`naia-voice:` 머리말만 나이아 목소리)은 참고 사본 코드로 확인했고 운영 게이트웨이와 같은지는 미확인입니다. 스튜디오 `user-voice:`(내 목소리)를 셸 실시간 합성에서 쓰는 경로는 없습니다.
 
@@ -2077,6 +2080,7 @@ Web startup must select the web runtime using the build mode, even after the web
 |---|---|---|
 | FR-WEB-VOICE-MIC.1 | 웹(브라우저) 빌드 음성 대화에서 브라우저 SpeechRecognition 이 `not-allowed`·`service-not-allowed`·`audio-capture`·`network`·`language-not-supported` 를 내거나 음성 인식이 없으면, 음성 대화를 끄고 원래 오류 코드 대신 사용자가 고칠 수 있는 방법(마이크 허용·장치 확인·연결 확인·Chrome 사용)을 대화에 알립니다. 모르는 코드는 예전처럼 코드를 보입니다. 데스크톱 문구는 바꾸지 않습니다. | Done (local) |
 | FR-WEB-VOICE-MIC.2 | 웹판 음성 대화를 끌 때 데스크톱 전용 Tauri STT 플러그인 정지(`plugin:stt|stop_listening`)를 부르지 않습니다. | Done (local) |
+| FR-WEB-VOICE-MIC.3 | 웹 음성 인식의 시작이나 자동 재개 호출이 마이크 권한·장치 예외를 던지면, 같은 복구 안내를 한 번 보이고 인식기를 해제합니다. 음성 대화 단추로 다시 시작할 수 있습니다. | Done (local) |
 
 검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
 ## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)

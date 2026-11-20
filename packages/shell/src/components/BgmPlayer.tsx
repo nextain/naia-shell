@@ -691,12 +691,16 @@ export function BgmPlayer({ naia }: Props) {
 		}
 	}
 
-	// R31 — the web path marks YouTube "playing" as soon as it is requested.
-	// If the player never reports progress (autoplay blocked by the page's
-	// Permissions-Policy, a bot check, an embed refusal), say so and drop the
-	// ■ instead of pretending. A later real PLAYING event restores ■ by itself.
+	function clearWebStartCheck() {
+		if (!webStartCheckRef.current) return;
+		clearTimeout(webStartCheckRef.current);
+		webStartCheckRef.current = null;
+	}
+
+	// The web controls show ■ while the attempt is pending so it can be canceled.
+	// Playback is confirmed separately by the current iframe.
 	function beginWebStartCheck(playbackId: string) {
-		if (webStartCheckRef.current) clearTimeout(webStartCheckRef.current);
+		clearWebStartCheck();
 		setYoutubeNotice(null);
 		webStartCheckRef.current = setTimeout(() => {
 			webStartCheckRef.current = null;
@@ -714,18 +718,14 @@ export function BgmPlayer({ naia }: Props) {
 			Logger.warn("BgmPlayer", "web YouTube playback never started", {
 				playbackId,
 			});
+			observePlayback("timeout", { playbackId, reason: "youtube_start_timeout" });
 			setPlaying(false);
 			setVideoLive(false);
 			setYoutubeNotice(t("bgm.webYoutubeNotPlaying"));
 		}, PLAYBACK_TIMEOUT_MS);
 	}
 
-	useEffect(
-		() => () => {
-			if (webStartCheckRef.current) clearTimeout(webStartCheckRef.current);
-		},
-		[],
-	);
+	useEffect(() => clearWebStartCheck, []);
 
 	function observePlayback(
 		status: Exclude<BgmPlaybackStatus, "requested">,
@@ -768,6 +768,8 @@ export function BgmPlayer({ naia }: Props) {
 			playback_status: next.status,
 		});
 		if (status === "playing") {
+			clearWebStartCheck();
+			setYoutubeNotice(null);
 			if (observedIframeStateRef.current.playbackId === next.playbackId) {
 				observedIframeStateRef.current.hasPlayed = true;
 			}
@@ -776,6 +778,7 @@ export function BgmPlayer({ naia }: Props) {
 			status === "error" ||
 			status === "ended"
 		) {
+			clearWebStartCheck();
 			setVideoLive(false);
 		}
 		if (status === "playing" && current.status !== "playing") {
@@ -1625,12 +1628,6 @@ export function BgmPlayer({ naia }: Props) {
 					msg.event === "onReady" ||
 					newlySubscribed
 				) {
-					if (
-						msg.event === "onReady" &&
-						bgmPlayback.current()?.status !== "playing"
-					) {
-						observePlayback("loading", { playbackId: eventPlaybackId });
-					}
 					const iframe = document.querySelector(
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
@@ -1642,6 +1639,9 @@ export function BgmPlayer({ naia }: Props) {
 						["requested", "loading", "timeout"].includes(current.status) &&
 						manuallyStoppedPlaybackRef.current !== eventPlaybackId
 					) {
+						if (msg.event === "onReady" && current.status === "requested") {
+							observePlayback("loading", { playbackId: eventPlaybackId });
+						}
 						iframe.contentWindow.postMessage(
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
 							"*",
@@ -1717,7 +1717,10 @@ export function BgmPlayer({ naia }: Props) {
 	const [nowPlayingCardHovered, setNowPlayingCardHovered] = useState(false);
 	const [nowPlayingCardFocused, setNowPlayingCardFocused] = useState(false);
 	const nowPlayingCardKey =
-		import.meta.env.MODE === "web" && playing && source === "youtube"
+		import.meta.env.MODE === "web" &&
+		playing &&
+		source === "youtube" &&
+		playbackSnapshot?.status === "playing"
 			? currentYt?.id
 			: undefined;
 	useEffect(() => {
@@ -1827,6 +1830,7 @@ export function BgmPlayer({ naia }: Props) {
 						"*",
 					);
 					if (import.meta.env.MODE === "web") {
+						clearWebStartCheck();
 						setPlaying(false);
 						observePlayback("paused");
 					}
@@ -1834,7 +1838,13 @@ export function BgmPlayer({ naia }: Props) {
 					const iframe = document.querySelector(
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
-					if (!iframe && currentYtRef.current) {
+					const current = bgmPlayback.current();
+					if (
+						currentYtRef.current &&
+						(!iframe ||
+							(import.meta.env.MODE === "web" &&
+								(current?.status === "timeout" || current?.status === "error")))
+					) {
 						handleYtSelect(currentYtRef.current);
 					} else {
 						// Same deliberate-resume latch clear as the button path (#614).
@@ -1843,10 +1853,12 @@ export function BgmPlayer({ naia }: Props) {
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
 							"*",
 						);
-						if (import.meta.env.MODE === "web") {
-							setPlaying(true);
-							setVideoLive(true);
-							observePlayback("playing");
+						if (
+							import.meta.env.MODE === "web" &&
+							iframe?.contentWindow &&
+							current
+						) {
+							beginWebResume(current);
 						}
 					}
 				} else if (msg.type === "bgm_youtube_next") {
@@ -2031,9 +2043,10 @@ export function BgmPlayer({ naia }: Props) {
 			if (import.meta.env.MODE === "web") {
 				const shouldPlay = pending.status !== "paused";
 				setPlaying(shouldPlay);
-				setVideoLive(shouldPlay);
+				setVideoLive(pending.status === "playing");
 				if (pending.status === "requested" || pending.status === "loading") {
-					observePlayback("playing", { playbackId: pending.playbackId });
+					resetObservedIframeState(pending.playbackId);
+					beginWebStartCheck(pending.playbackId);
 				}
 			} else {
 				setPlaying(false);
@@ -2179,7 +2192,6 @@ export function BgmPlayer({ naia }: Props) {
 		resetObservedIframeState(snapshot.playbackId);
 		setPlaybackSnapshot(snapshot);
 		if (import.meta.env.MODE === "web") {
-			observePlayback("playing", { playbackId: snapshot.playbackId });
 			beginWebStartCheck(snapshot.playbackId);
 		} else {
 			beginPlaybackTimeout(snapshot.playbackId);
@@ -2187,10 +2199,9 @@ export function BgmPlayer({ naia }: Props) {
 		setCurrentYt(resolvedVideo);
 		lastYtRef.current = resolvedVideo;
 		setSource("youtube");
-		// Reflect the user's autoplay intent immediately in the controls and in
-		// the checked background surface. Agent truth remains observation-gated.
+		// Let the controls cancel a pending attempt. The web background waits for playback.
 		setPlaying(true);
-		setVideoLive(true);
+		setVideoLive(import.meta.env.MODE !== "web");
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_requested",
@@ -2221,12 +2232,21 @@ export function BgmPlayer({ naia }: Props) {
 		return true;
 	}
 
+	function beginWebResume(current: BgmPlaybackSnapshot) {
+		setPlaying(true);
+		if (current.status === "playing") return;
+		observedIframeStateRef.current.lastCurrentTime = null;
+		observePlayback("loading", { playbackId: current.playbackId });
+		beginWebStartCheck(current.playbackId);
+	}
+
 	function togglePlay() {
 		if (source === "youtube") {
 			if (playing) {
 				manuallyStoppedPlaybackRef.current =
 					bgmPlayback.current()?.playbackId ?? null;
 				clearPlaybackTimeout();
+				clearWebStartCheck();
 				pendingNullTerminalRef.current = null;
 				observedIframeStateRef.current.requerySentForPending = false;
 				youtubeHandshakeRef.current.stop();
@@ -2241,6 +2261,7 @@ export function BgmPlayer({ naia }: Props) {
 				const iframe = document.querySelector(
 					".app-bg-iframe",
 				) as HTMLIFrameElement | null;
+				const current = bgmPlayback.current();
 				if (!iframe) {
 					// No iframe yet (restored from config, or nothing chosen yet).
 					// R31: never flip to "playing" without loading a real track —
@@ -2256,7 +2277,9 @@ export function BgmPlayer({ naia }: Props) {
 				} else if (
 					import.meta.env.MODE === "web" &&
 					currentYt &&
-					!((observedIframeStateRef.current.lastCurrentTime ?? 0) > 0)
+					(current?.status === "timeout" ||
+						current?.status === "error" ||
+						!((observedIframeStateRef.current.lastCurrentTime ?? 0) > 0))
 				) {
 					// R31: the player never started this song — resuming it is
 					// pointless, so load it again as a fresh attempt.
@@ -2269,11 +2292,12 @@ export function BgmPlayer({ naia }: Props) {
 					// otherwise the handler immediately re-sends stopVideo and the
 					// button can never leave "stopped" again (#614).
 					manuallyStoppedPlaybackRef.current = null;
-					if (sendYtCmd("playVideo") || import.meta.env.MODE === "web") {
-						setPlaying(true);
-						setVideoLive(true);
-						if (import.meta.env.MODE === "web") {
-							observePlayback("playing");
+					if (sendYtCmd("playVideo")) {
+						if (import.meta.env.MODE === "web" && current) {
+							beginWebResume(current);
+						} else {
+							setPlaying(true);
+							setVideoLive(true);
 						}
 					}
 				}

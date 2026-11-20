@@ -3338,6 +3338,8 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 
 경로: 웹(브라우저) 빌드(`vite --mode web`). 웹판 사용자가 음악 앱(♫)을 열고 장르(예: 지브리)를 고른 뒤 목록의 한 곡을 누릅니다. 목록에 보인 제목·채널의 영상이 배경 재생기에 실리고, 재생 중 카드와 AI 가 말하는 곡명도 같은 제목입니다. 웹판에는 검색 서버(사이드카)가 없으므로 정적 목록만 쓰며, 목록에 없는 장르(제이팝·시티팝·클래식 등)를 다른 영상에 억지로 붙이지 않습니다. 실시간 방송은 길이 대신 `LIVE` 로 보입니다.
 
+곡을 누르면 재생기의 준비 이벤트에 맞춰 재생 명령을 보냅니다. 플레이어가 재생을 확인하면 재생 중 카드와 AI 안내가 켜집니다. 시작을 확인하지 못하면 정지 표시가 내려가고 오류 안내가 나타납니다. 같은 곡을 다시 골라 재시도할 수 있습니다.
+
 ### Test Coverage Map — UC-WEB-BGM-CATALOG-TRUTH
 
 | 상태 | 판정 | 시험 |
@@ -3345,6 +3347,8 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·성공 | 지브리 장르 첫 줄 제목 = 재생 영상 id(3jWRrafhO7M)·재생 카드 제목 | `e2e/web-bgm-r7.spec.ts` R7 (1280×720, 390×844) |
 | 오류(지어낸 제목) | 예전 지어낸 곡명이 웹 목록에 없음, 주제어 검색이 실제 영상만 고름 | `e2e/web-bgm-r7.spec.ts` R7, `src/lib/__tests__/bgm-skill.test.ts` |
 | 좁은 폭 | 390×844 에서 재생기 안 목록·재생이 동작(세로 모바일 진입점은 앱 바 몫) | `e2e/web-bgm-r7.spec.ts` R7 390 |
+| 대기·성공 | 곡 대기 중에는 AI와 재생 중 카드가 재생을 알리지 않습니다. 준비 이벤트에서 `playVideo`를 보내고, 현재 곡의 재생이 확인되면 알립니다. | `src/components/__tests__/BgmPlayer.test.tsx` R7 |
+| 오류·복구 | 재생 응답이 없으면 시간 초과를 기록하고 안내합니다. 같은 곡을 새로 요청할 수 있고 늦게 도착한 현재 곡의 재생 확인도 반영합니다. | `BgmPlayer.test.tsx` R7, `e2e/web-bgm-r31.spec.ts` (1280×720, 390×844) |
 
 ## UC-WEB-BGM-TOPBAR-PLAY. 웹판 상단 음악 바의 ▶ 로 유튜브 곡을 듣는다 (R31)
 
@@ -3382,11 +3386,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 
 카드에 목소리가 없거나 셸 음성 합성이 쓰지 못하는 목소리(`user-voice:` — 스튜디오 작업에서만 쓰임)면 앞 캐릭터 목소리를 남기지 않고 기본 목소리(언어·캐릭터 기준)로 돌아갑니다. 못 쓰는 목소리는 기록(Logger.warn)에 남깁니다.
 
+브라우저 내장 목소리를 쓰던 사용자가 합성 가능한 스튜디오 목소리가 든 카드를 적용하면 셸이 Naia Cloud TTS와 그 목소리를 함께 선택합니다. 사용자가 끈 답변 읽기 설정은 유지합니다. 로그인 전이나 크레딧 소진 시에는 기존 브라우저 음성 대체 경로를 이용합니다.
+
 ### Test Coverage Map — UC-WEB-STUDIO-VOICE-APPLY
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
 | 기본·성공 | `avatar_id`+맨 `voice_id` 카드 적용 → 아바타 `naia-video-avatar`, `ttsVoice=naia-voice:<이름>` | `src/lib/web-runtime/__tests__/web-studio-voice.test.ts` R16 |
+| 브라우저 목소리에서 전환 | 아바타 적용 이벤트 시점에 로그인 상태의 합성 엔진과 목소리 ID를 함께 확인하고, 명시적 읽기 끔과 로그아웃·크레딧 소진 시 브라우저 대체 동작을 확인 | `web-studio-voice.test.ts` R16 |
+| 설정을 열어 둔 상태 | 다른 탭에서 카드를 적용하면 이미 열려 있던 음성 탭의 공급자·목소리와 빠른 읽기 토글에 적용 결과가 반영됨 | `src/components/__tests__/SettingsTab.test.tsx` R16 |
 | 형식 | 맨 이름·`naia-voice:`·Dragon·Google 이름 정규화, `user-voice:`·빈 값 거절 | `web-studio-voice.test.ts` R16 |
 | 빈 값·오류 | 목소리 없는 새 캐릭터·`user-voice:` 카드 → 앞 캐릭터 목소리 제거 | `web-studio-voice.test.ts` R16 |
 | 화면 | 받는 쪽은 화면 변화가 설정값뿐이라 단위 시험으로 확인(화면 캡처 없음) | — |
@@ -3432,6 +3440,7 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·진행·성공 | 단추를 누르면 듣기(active) → "안녕하세요" 사용자 말 → 답을 읽어 줌(speechSynthesis) → 다시 듣기 → 단추로 끔 | `e2e/web-voice-r26.spec.ts` R26 (1280×720, 390×844, 브라우저 음성은 흉내) |
 | 오류 | 권한 거부 → 음성 대화 꺼짐, "마이크 권한이 막혀 있습니다" 안내, `not-allowed` 코드 안 보임, `plugin:stt|stop_listening` 호출 없음 | `e2e/web-voice-r26.spec.ts` R26 |
 | 오류 코드 표 | 6가지 코드 → 안내 문구 키, 모르는 코드는 null | `src/lib/stt/__tests__/web-speech-stt.test.ts` R26 |
+| 시작·자동 재개 오류 | 브라우저가 시작 호출에서 권한·장치 예외를 던져도 음성 대화가 종료되고 같은 복구 안내를 한 번 표시합니다. 실패한 인식기는 해제돼 다음 클릭에서 다시 시작할 수 있습니다. | `web-speech-stt.test.ts`, `ChatArea.test.tsx` R26 |
 | 데스크톱 회귀 | 데스크톱 Web Speech 권한 오류 문구는 그대로 | `src/components/__tests__/ChatArea.test.tsx` |
 | 좁은 폭 | 390×844 에서 채팅 위 안내 문구가 잘리지 않음 | `e2e/web-voice-r26.spec.ts` R26 390 |
 ## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)

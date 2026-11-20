@@ -1873,6 +1873,7 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 	afterEach(() => {
 		cleanup();
 		vi.useRealTimers();
+		vi.unstubAllEnvs();
 		vi.clearAllMocks();
 		listeners.clear();
 		bgmPlayback.reset();
@@ -2069,11 +2070,15 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 				});
 			});
 
-			expect(bgmPlayback.current()?.status).toBe("playing");
+			expect(bgmPlayback.current()?.status).toBe("requested");
 			expect(useAvatarStore.getState().bgmVideoUrl).toContain(
 				"https://www.youtube-nocookie.com/embed/5yx6BWlEVcY",
 			);
 
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			attachIframeForCurrentPlayback();
+			confirmCurrentFrame();
+			postYtMessage({ event: "onStateChange", info: 1 });
 			const nowPlayingCard = screen.getByTestId("bgm-youtube-now-playing");
 			expect(nowPlayingCard).toHaveTextContent(
 				"Chillhop Music - Jazzy & Lofi Hip Hop Beats",
@@ -2104,6 +2109,9 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 					}),
 				});
 			});
+			attachIframeForCurrentPlayback();
+			confirmCurrentFrame();
+			postYtMessage({ event: "onStateChange", info: 1 });
 			const card = screen.getByTestId("bgm-youtube-now-playing");
 			act(() => useAppStore.setState({ activeApp: "settings" }));
 			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
@@ -2133,6 +2141,104 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			vi.useRealTimers();
 			vi.unstubAllEnvs();
 		}
+	});
+
+	it("R7 requests playback on iframe readiness and announces the track after confirmation", async () => {
+		vi.stubEnv("MODE", "web");
+		const events: string[] = [];
+		const unlisten = onAiInterferenceEvent((event) => events.push(event.action));
+		try {
+			render(<BgmPlayer />);
+			await startTrack("3jWRrafhO7M", "GhibliJazz");
+			const iframe = attachIframeForCurrentPlayback();
+			const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+			const player = document.querySelector(".bgm-player");
+
+			expect(player).toHaveAttribute("data-bgm-playback-status", "requested");
+			expect(player).toHaveAttribute("data-bgm-announced-title", "");
+			expect(events).not.toContain("music_started");
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			postYtObjectMessage({ event: "onReady" });
+			expect(postMessage).toHaveBeenCalledWith(
+				JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+				"*",
+			);
+
+			postYtObjectMessage({
+				event: "infoDelivery",
+				info: { currentTime: 1, playerState: 1, videoData: { video_id: "3jWRrafhO7M" } },
+			});
+			expect(player).toHaveAttribute("data-bgm-playback-status", "playing");
+			expect(player).toHaveAttribute("data-bgm-announced-title", "GhibliJazz");
+			expect(events.filter((event) => event === "music_started")).toHaveLength(1);
+			expect(screen.getByTestId("bgm-youtube-now-playing")).toHaveTextContent("GhibliJazz");
+		} finally {
+			unlisten();
+		}
+	});
+
+	it("R7 times out a pending request recovered on mount and accepts late confirmation", () => {
+		vi.stubEnv("MODE", "web");
+		vi.useFakeTimers();
+		const pending = bgmPlayback.request({ videoId: "pending", title: "Pending Song" });
+		render(<BgmPlayer />);
+		expect(useAvatarStore.getState().bgmVideoUrl).toContain(pending.playbackId);
+		attachIframeForCurrentPlayback();
+
+		act(() => vi.advanceTimersByTime(12_000));
+		expect(bgmPlayback.current()?.status).toBe("timeout");
+		expect(screen.getByRole("status")).toHaveClass("bgm-yt-notice");
+		expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+		confirmCurrentFrame();
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(screen.getByTestId("bgm-youtube-now-playing")).toHaveTextContent("Pending Song");
+	});
+
+	it("R7 lets the user retry the same song after a playback timeout", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.useFakeTimers();
+		render(<BgmPlayer />);
+		await startTrack("retry", "Retry Song");
+		const first = bgmPlayback.current();
+		attachIframeForCurrentPlayback();
+
+		act(() => vi.advanceTimersByTime(12_000));
+		expect(bgmPlayback.current()?.status).toBe("timeout");
+		fireEvent.click(screen.getByRole("button", { name: "Play", exact: true }));
+
+		expect(bgmPlayback.current()?.selected).toEqual(first?.selected);
+		expect(bgmPlayback.current()?.playbackId).not.toBe(first?.playbackId);
+		expect(bgmPlayback.current()?.status).toBe("requested");
+		expect(screen.queryByRole("status")).toBeNull();
+	});
+
+	it("R7 waits for the iframe to confirm a resumed web track", async () => {
+		vi.stubEnv("MODE", "web");
+		render(<BgmPlayer />);
+		await startTrack("resume", "Resume Song");
+		const iframe = attachIframeForCurrentPlayback();
+		const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+		confirmCurrentFrame();
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		act(() => bgmCommandHandler()({
+			payload: JSON.stringify({ type: "bgm_youtube_pause" }),
+		}));
+		expect(bgmPlayback.current()?.status).toBe("paused");
+		act(() => bgmCommandHandler()({
+			payload: JSON.stringify({ type: "bgm_youtube_resume" }),
+		}));
+		expect(postMessage).toHaveBeenCalledWith(
+			JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+			"*",
+		);
+		expect(bgmPlayback.current()?.status).toBe("loading");
+		expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+		postYtMessage({ event: "onStateChange", info: 1 });
+		expect(bgmPlayback.current()?.status).toBe("playing");
 	});
 });
 

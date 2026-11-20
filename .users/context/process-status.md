@@ -1,3 +1,18 @@
+## 웹 음악 재생 준비·확인과 시간 초과 복구 (R7) — 2026-11-20
+
+- YouTube 준비 이벤트에서 재생을 요청하고, 현재 재생기 확인 뒤 재생 중 카드와 AI 안내를 표시합니다. 표적 Vitest 56통과·0실패. 실제 YouTube 소리와 화면 미확인.
+- `UC-WEB-BGM-CATALOG-TRUTH` · `FR-WEB-BGM-PLAY.3, .5` · `BgmPlayer.test.tsx`
+
+## 웹 음성 대화 시작과 재개 시 마이크 예외 처리 (R26) — 2026-11-20
+
+- 권한·장치 예외 안내와 인식기 해제 후 재시도를 확인했습니다. 표적 Vitest 124통과·0실패. 실제 마이크와 화면 미확인.
+- `UC-WEB-VOICE-MIC-ERROR` · `FR-WEB-VOICE-MIC.3` · `web-speech-stt.test.ts` · `ChatArea.test.tsx`
+
+## 스튜디오 적용 시 웹 음성 합성 엔진 전환 (R16) — 2026-11-20
+
+- 스튜디오 카드의 아바타·목소리와 Naia Cloud TTS 엔진이 함께 적용되며, 열려 있던 음성 설정도 갱신됩니다. 표적 Vitest 173통과·0실패·8제외. 실제 게이트웨이 합성과 화면 미확인.
+- `UC-WEB-STUDIO-VOICE-APPLY` · `FR-WEB-STUDIO-VOICE.3~4` · `web-studio-voice.test.ts` · `SettingsTab.test.tsx`
+
 <!-- src-sha: 7c3b648621572e1f -->
 
 ## 웹판 아바타 영상 다운로드와 재시도 (R48) — 2026-11-20

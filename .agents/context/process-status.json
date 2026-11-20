@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T00:46:58Z",
+  "last_updated": "2026-11-20T01:17:56Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,42 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_bgm_playback_r7_20261120": {
+      "requirement_id": "R7",
+      "title": "웹 음악 재생 준비·확인과 시간 초과 복구",
+      "branch": "alpha/webgpu-p2-voice-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-BGM-CATALOG-TRUTH",
+      "requirements": "docs/requirements.md FR-WEB-BGM-PLAY.3, .5",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/components/__tests__/BgmPlayer.test.tsx",
+      "verification": "기준 코드에서 새 회귀 시험 3건 실패 재현. 표적 Vitest 56통과·0실패. 실제 YouTube 소리와 두 화면 크기 미확인.",
+      "last_updated": "2026-11-20T01:14:51Z"
+    },
+    "web_voice_mic_r26_20261120": {
+      "requirement_id": "R26",
+      "title": "웹 음성 대화 시작과 재개 시 마이크 예외 처리",
+      "branch": "alpha/webgpu-p2-voice-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-VOICE-MIC-ERROR",
+      "requirements": "docs/requirements.md FR-WEB-VOICE-MIC.3",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/stt/__tests__/web-speech-stt.test.ts, packages/shell/src/components/__tests__/ChatArea.test.tsx",
+      "verification": "표적 Vitest 124통과·0실패. 권한·장치 동기 예외, 자동 재개 실패, 인식기 정리 및 다시 시작 확인. 실제 마이크와 두 화면 크기 미확인.",
+      "last_updated": "2026-11-20T01:10:19Z"
+    },
+    "web_studio_voice_r16_20261120": {
+      "requirement_id": "R16",
+      "title": "스튜디오 적용 시 웹 음성 합성 엔진 전환",
+      "branch": "alpha/webgpu-p2-voice-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-STUDIO-VOICE-APPLY",
+      "requirements": "docs/requirements.md FR-WEB-STUDIO-VOICE.3~4",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/web-runtime/__tests__/web-studio-voice.test.ts, packages/shell/src/components/__tests__/SettingsTab.test.tsx",
+      "verification": "표적 Vitest 173통과·0실패·8제외. 이미 열린 음성 설정과 빠른 읽기 토글 갱신을 확인. 실제 게이트웨이 합성과 두 화면 크기 미확인.",
+      "last_updated": "2026-11-20T01:17:10Z"
+    },
     "web_avatar_clip_r48_20261120": {
       "requirement_id": "R48",
       "title": "웹판 아바타 영상 다운로드와 재시도",
