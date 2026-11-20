@@ -445,6 +445,40 @@ describe("createWebSpeechSttSession — continuous voice recovery (Stage 1)", ()
 });
 
 describe("R26 web voice chat microphone error guidance", () => {
+	it("R26 routes a device failure during automatic restart through the capture error handler", async () => {
+		vi.useFakeTimers();
+		FakeSpeechRecognition.instances = [];
+		vi.stubGlobal("SpeechRecognition", class extends FakeSpeechRecognition {
+			start = vi.fn(() => {
+				if (FakeSpeechRecognition.instances.length > 1) {
+					throw new DOMException("Device went away", "NotReadableError");
+				}
+			});
+		});
+		const session = createWebSpeechSttSession("ko-KR", webSpeechSttOptions(true));
+		const onError = vi.fn();
+		session.onError?.(onError);
+		try {
+			await session.start();
+			FakeSpeechRecognition.instances[0].emitEnd();
+			await vi.advanceTimersByTimeAsync(150);
+
+			const failed = FakeSpeechRecognition.instances[1];
+			expect(onError).toHaveBeenCalledExactlyOnceWith({
+				code: "audio-capture",
+				message: "NotReadableError: Device went away",
+			});
+			expect(failed.abort).toHaveBeenCalledOnce();
+			expect(failed.onerror).toBeNull();
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(FakeSpeechRecognition.instances).toHaveLength(2);
+		} finally {
+			await session.stop();
+			vi.unstubAllGlobals();
+			vi.useRealTimers();
+		}
+	});
+
 	it.each([
 		["not-allowed", "chat.webSpeechErrorNotAllowed"],
 		["service-not-allowed", "chat.webSpeechErrorNotAllowed"],

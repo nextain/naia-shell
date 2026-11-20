@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T01:06:47Z",
+  "last_updated": "2026-11-20T01:10:19Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,18 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_voice_mic_r26_20261120": {
+      "requirement_id": "R26",
+      "title": "웹 음성 대화 시작과 재개 시 마이크 예외 처리",
+      "branch": "alpha/webgpu-p2-voice-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-VOICE-MIC-ERROR",
+      "requirements": "docs/requirements.md FR-WEB-VOICE-MIC.3",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/stt/__tests__/web-speech-stt.test.ts, packages/shell/src/components/__tests__/ChatArea.test.tsx",
+      "verification": "표적 Vitest 124통과·0실패. 권한·장치 동기 예외, 자동 재개 실패, 인식기 정리 및 다시 시작 확인. 실제 마이크와 두 화면 크기 미확인.",
+      "last_updated": "2026-11-20T01:10:19Z"
+    },
     "web_studio_voice_r16_20261120": {
       "requirement_id": "R16",
       "title": "스튜디오 적용 시 웹 음성 합성 엔진 전환",

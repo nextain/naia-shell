@@ -2079,6 +2079,7 @@ Web startup must select the web runtime using the build mode, even after the web
 |---|---|---|
 | FR-WEB-VOICE-MIC.1 | 웹(브라우저) 빌드 음성 대화에서 브라우저 SpeechRecognition 이 `not-allowed`·`service-not-allowed`·`audio-capture`·`network`·`language-not-supported` 를 내거나 음성 인식이 없으면, 음성 대화를 끄고 원래 오류 코드 대신 사용자가 고칠 수 있는 방법(마이크 허용·장치 확인·연결 확인·Chrome 사용)을 대화에 알립니다. 모르는 코드는 예전처럼 코드를 보입니다. 데스크톱 문구는 바꾸지 않습니다. | Done (local) |
 | FR-WEB-VOICE-MIC.2 | 웹판 음성 대화를 끌 때 데스크톱 전용 Tauri STT 플러그인 정지(`plugin:stt|stop_listening`)를 부르지 않습니다. | Done (local) |
+| FR-WEB-VOICE-MIC.3 | 웹 음성 인식의 시작이나 자동 재개 호출이 마이크 권한·장치 예외를 던지면, 같은 복구 안내를 한 번 보이고 인식기를 해제합니다. 음성 대화 단추로 다시 시작할 수 있습니다. | Done (local) |
 
 검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
 ## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)

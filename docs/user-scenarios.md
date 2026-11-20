@@ -3436,6 +3436,7 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·진행·성공 | 단추를 누르면 듣기(active) → "안녕하세요" 사용자 말 → 답을 읽어 줌(speechSynthesis) → 다시 듣기 → 단추로 끔 | `e2e/web-voice-r26.spec.ts` R26 (1280×720, 390×844, 브라우저 음성은 흉내) |
 | 오류 | 권한 거부 → 음성 대화 꺼짐, "마이크 권한이 막혀 있습니다" 안내, `not-allowed` 코드 안 보임, `plugin:stt|stop_listening` 호출 없음 | `e2e/web-voice-r26.spec.ts` R26 |
 | 오류 코드 표 | 6가지 코드 → 안내 문구 키, 모르는 코드는 null | `src/lib/stt/__tests__/web-speech-stt.test.ts` R26 |
+| 시작·자동 재개 오류 | 브라우저가 시작 호출에서 권한·장치 예외를 던져도 음성 대화가 종료되고 같은 복구 안내를 한 번 표시합니다. 실패한 인식기는 해제돼 다음 클릭에서 다시 시작할 수 있습니다. | `web-speech-stt.test.ts`, `ChatArea.test.tsx` R26 |
 | 데스크톱 회귀 | 데스크톱 Web Speech 권한 오류 문구는 그대로 | `src/components/__tests__/ChatArea.test.tsx` |
 | 좁은 폭 | 390×844 에서 채팅 위 안내 문구가 잘리지 않음 | `e2e/web-voice-r26.spec.ts` R26 390 |
 ## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
