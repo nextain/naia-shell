@@ -6,6 +6,7 @@ import {
 	webBundledSettingsFileUrl,
 	webSettingsImportExtensions,
 } from "./web-settings-catalog";
+import { WEB_SETTINGS_ASSETS_CHANGED_EVENT } from "./web-nva-archive";
 
 export const WEB_WORKSPACE_IMPORT_ROOT = `${WEB_ADK_PATH}/work`;
 const STAGING_DIRECTORY = "naia-workspace-import-staging";
@@ -153,25 +154,56 @@ export async function importWebWorkspaceFile(
 		};
 
 		try {
-			if (typeof temporaryFile.move !== "function") {
-				throw new DOMException("Workspace import unavailable", "NotSupportedError");
+			if (typeof temporaryFile.move === "function") {
+				const writer = await temporaryFile.createWritable();
+				try {
+					await writer.write(file);
+					await writer.close();
+				} catch (error) {
+					await writer.abort().catch(() => {});
+					throw error;
+				}
+				const current = await workspaceDirectory(parts);
+				if (!(await current.isSameEntry(directory))) {
+					throw new DOMException("Workspace import directory changed", "NotFoundError");
+				}
+				const destination = await availableName(directory, name);
+				await temporaryFile.move(directory, destination);
+				if (extensions) {
+					Logger.debug("WebWorkspace", "Saved settings asset", { folder: parts[1] });
+					globalThis.window?.dispatchEvent(
+						new Event(WEB_SETTINGS_ASSETS_CHANGED_EVENT),
+					);
+				}
+				return `${target.path}/${destination}`;
 			}
-			const writer = await temporaryFile.createWritable();
-			try {
-				await writer.write(file);
-				await writer.close();
-			} catch (error) {
-				await writer.abort().catch(() => {});
-				throw error;
-			}
+			await staging.removeEntry(temporaryName).catch(() => {});
 			const current = await workspaceDirectory(parts);
 			if (!(await current.isSameEntry(directory))) {
 				throw new DOMException("Workspace import directory changed", "NotFoundError");
 			}
 			const destination = await availableName(directory, name);
-			await temporaryFile.move(directory, destination);
+			const destinationHandle = await directory.getFileHandle(destination, {
+				create: true,
+			});
+			if (typeof destinationHandle.createWritable !== "function") {
+				await directory.removeEntry(destination).catch(() => {});
+				throw new DOMException("Workspace import unavailable", "NotSupportedError");
+			}
+			const writer = await destinationHandle.createWritable();
+			try {
+				await writer.write(file);
+				await writer.close();
+			} catch (error) {
+				await writer.abort().catch(() => {});
+				await directory.removeEntry(destination).catch(() => {});
+				throw error;
+			}
 			if (extensions) {
 				Logger.debug("WebWorkspace", "Saved settings asset", { folder: parts[1] });
+				globalThis.window?.dispatchEvent(
+					new Event(WEB_SETTINGS_ASSETS_CHANGED_EVENT),
+				);
 			}
 			return `${target.path}/${destination}`;
 		} catch (error) {

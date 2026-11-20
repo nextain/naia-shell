@@ -35,8 +35,8 @@ import {
 	readWebBgmMusicBlob,
 	webBgmFileName,
 } from "../../lib/web-runtime/web-bgm-music";
+import { WEB_SETTINGS_ASSETS_CHANGED_EVENT } from "../../lib/web-runtime/web-nva-archive";
 import {
-	WEB_SETTINGS_ROOT,
 	isWebBundledSettingsDirectory,
 	mergeWebBundledSettingsEntries,
 	webSettingsImportExtensions,
@@ -440,15 +440,20 @@ export default function WebWorkspace() {
 				setExplorerOpen(false);
 			}
 		};
-		const refreshMusic = () => setTreeRevision((previous) => previous + 1);
-		window.addEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshMusic);
+		const refreshTree = () => setTreeRevision((previous) => previous + 1);
+		window.addEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshTree);
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, refreshTree);
 		window.addEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
 		window.addEventListener(
 			"naia:layout-orientation-change",
 			syncExplorerForViewport,
 		);
 		return () => {
-			window.removeEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshMusic);
+			window.removeEventListener(WEB_BGM_MUSIC_CHANGED_EVENT, refreshTree);
+			window.removeEventListener(
+				WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+				refreshTree,
+			);
 			window.removeEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
 			window.removeEventListener(
 				"naia:layout-orientation-change",
@@ -562,8 +567,7 @@ export default function WebWorkspace() {
 		}
 	}
 	const showExplorer = explorerOpen || !file;
-	const isSettingsModel =
-		file.startsWith(`${WEB_SETTINGS_ROOT}/`) && /\.(vrm|nva)$/i.test(file);
+	const isSettingsModel = /\.(vrm|nva)$/i.test(file);
 	const musicName = resolveWorkspaceViewer(file) === "audio" ? null : webBgmFileName(file);
 	return (
 		<div

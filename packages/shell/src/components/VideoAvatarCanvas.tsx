@@ -33,6 +33,10 @@ import {
 	isWebMode,
 	resolveWebPublicAssetUrl,
 } from "../lib/web-runtime/web-assets";
+import {
+	type LoadedWebNvaArchive,
+	loadWebUploadedNvaArchive,
+} from "../lib/web-runtime/web-nva-archive";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -116,6 +120,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const [error, setError] = useState("");
 	const [manifest, setManifest] = useState<NvaManifest | null>(null);
 	const [bundleDir, setBundleDir] = useState("");
+	const [webArchive, setWebArchive] = useState<LoadedWebNvaArchive | null>(
+		null,
+	);
 	const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 	const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
 	const avatarAreaRef = useRef<HTMLDivElement>(null);
@@ -198,6 +205,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		setMode("loading");
 		setError("");
 		setManifest(null);
+		setWebArchive(null);
 		setLoaded(false);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
 		if (isWebMode()) {
@@ -208,54 +216,67 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					/^https:\/\/([a-z0-9-]+\.)?naia\.land\/[A-Za-z0-9/_-]+$/i.test(
 						trimmedModel,
 					));
-			let directory: string;
-			if (isTrustedStudioRemoteDir) {
-				directory = trimmedModel
-					.replace(/\/manifest\.json$/i, "")
-					.replace(/\/+$/, "");
-			} else {
-				const segments = trimmedModel.split(/[/\\]/).filter(Boolean);
-				const bundleName = segments.at(-1) ?? "";
-				if (
-					!bundleName ||
-					segments.includes("..") ||
-					!/^[a-z0-9-]+$/.test(bundleName)
-				) {
-					const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
-					setError(err);
-					setMode("error");
-					useCascadeAvatarStore.getState().setNvaLoadError(err);
-					return;
+			void (async () => {
+				if (!isTrustedStudioRemoteDir) {
+					const uploaded = await loadWebUploadedNvaArchive(trimmedModel);
+					if (uploaded) {
+						if (!disposed) {
+							setWebArchive(uploaded);
+							setBundleDir(uploaded.bundleDir);
+							setManifest(uploaded.manifest);
+						}
+						return;
+					}
 				}
-				directory = resolveWebPublicAssetUrl(`/nva/${bundleName}`);
-			}
-			void fetch(`${directory}/manifest.json`)
-				.then(async (res) => {
-					if (!res.ok) {
-						throw new Error(`HTTP ${res.status}`);
+				let directory: string;
+				if (isTrustedStudioRemoteDir) {
+					directory = trimmedModel
+						.replace(/\/manifest\.json$/i, "")
+						.replace(/\/+$/, "");
+				} else {
+					const segments = trimmedModel.split(/[/\\]/).filter(Boolean);
+					const bundleName = segments.at(-1) ?? "";
+					if (
+						!bundleName ||
+						segments.includes("..") ||
+						!/^[a-z0-9-]+$/.test(bundleName)
+					) {
+						const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
+						if (!disposed) {
+							setError(err);
+							setMode("error");
+							useCascadeAvatarStore.getState().setNvaLoadError(err);
+						}
+						return;
 					}
-					const raw =
-						typeof res.text === "function"
-							? await res.text()
-							: JSON.stringify(await res.json());
-					const parsed = parseNvaManifest(raw);
-					if (!isPrebakedNvaManifest(parsed))
-						throw new Error("NVA requires vrm_slots prebaked WebM assets");
-					for (const clipPath of collectNvaManifestClipPaths(parsed)) {
-						resolveNvaAssetPath(directory, clipPath);
-					}
-					if (!disposed) {
-						setBundleDir(directory);
-						setManifest(parsed);
-					}
-				})
-				.catch((cause) => {
-					if (!disposed) {
-						setError(String(cause));
-						setMode("error");
-						useCascadeAvatarStore.getState().setNvaLoadError(String(cause));
-					}
-				});
+					directory = resolveWebPublicAssetUrl(`/nva/${bundleName}`);
+				}
+				const res = await fetch(`${directory}/manifest.json`);
+				if (!res.ok) {
+					throw new Error(`HTTP ${res.status}`);
+				}
+				const raw =
+					typeof res.text === "function"
+						? await res.text()
+						: JSON.stringify(await res.json());
+				const parsed = parseNvaManifest(raw);
+				if (!isPrebakedNvaManifest(parsed))
+					throw new Error("NVA requires vrm_slots prebaked WebM assets");
+				for (const clipPath of collectNvaManifestClipPaths(parsed)) {
+					resolveNvaAssetPath(directory, clipPath);
+				}
+				if (!disposed) {
+					setWebArchive(null);
+					setBundleDir(directory);
+					setManifest(parsed);
+				}
+			})().catch((cause) => {
+				if (!disposed) {
+					setError(String(cause));
+					setMode("error");
+					useCascadeAvatarStore.getState().setNvaLoadError(String(cause));
+				}
+			});
 			return () => {
 				disposed = true;
 			};
@@ -352,6 +373,14 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			resolveAssetUrl: async (relativePath) => {
 				const cached = urls.get(relativePath);
 				if (cached) return cached;
+				if (isWebMode() && webArchive) {
+					const url = await webArchive.resolveAssetUrl(
+						relativePath,
+						shouldUseStackedAlpha(),
+					);
+					urls.set(relativePath, url);
+					return url;
+				}
 				if (isWebMode()) {
 					const url = resolveWebNvaAssetUrl(
 						bundleDir,
@@ -369,9 +398,13 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				urls.set(relativePath, url);
 				return url;
 			},
-			// Read bytes directly: a Linux webm URL is MediaSource-backed and not fetch()able.
+			// Read bytes directly: a Linux webm URL is MediaSource-backed and not fetch()able;
+			// OPFS-uploaded web `.nva` archives also supply clip and speech blobs from memory.
 			loadAssetBlob: isWebMode()
-				? undefined
+				? webArchive
+					? (relativePath) =>
+							webArchive.loadAssetBlob(relativePath, shouldUseStackedAlpha())
+					: undefined
 				: (relativePath) =>
 						readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath)),
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
@@ -402,7 +435,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			for (const url of urls.values())
 				if (url.startsWith("blob:")) URL.revokeObjectURL(url);
 		};
-	}, [video, canvas, manifest, bundleDir, setLoaded]);
+	}, [video, canvas, manifest, bundleDir, webArchive, setLoaded]);
 
 	return (
 		<div

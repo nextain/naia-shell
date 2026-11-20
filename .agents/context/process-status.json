@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T01:30:00Z",
+  "last_updated": "2026-11-20T01:39:00Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_workspace_nva_import_r17_20261120": {
+      "requirement_id": "R17",
+      "title": "웹판 파일 탐색기 파일 올리기 및 NVA 아바타 재생 경로 보강",
+      "branch": "alpha/webgpu-p3-store-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-WORKSPACE-IMPORT",
+      "requirements": "docs/requirements.md FR-WEB-WORKSPACE-IMPORT.1~4",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/web-runtime/__tests__/web-nva-archive.test.ts, packages/shell/src/apps/workspace/__tests__/web-workspace-path.test.tsx, packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx",
+      "last_updated": "2026-11-20T01:39:00Z",
+      "verification": "표적 Vitest 4파일 41통과·0실패(web-nva-archive, web-workspace-path, web-settings-catalog, VideoAvatarCanvas). 5e4ead30·277dfcdc 포함 확인 후 work/*.nva 바이너리 안내·내려받기, move() 미지원 브라우저 OPFS 쓰기 폴백, naia-settings/nva-files 업로드 .nva의 listNaiaAssets 노출 및 1280×720·390×844 VideoAvatarCanvas OPFS ZIP 재생·손상 파일 오류 복구를 검증. 실서버·실 브라우저 화면은 미확인."
+    },
     "web_app_catalog_unify_r3_20261120": {
       "requirement_id": "R3",
       "title": "웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합",

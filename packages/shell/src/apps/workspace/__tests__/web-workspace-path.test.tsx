@@ -369,4 +369,91 @@ describe("web workspace path", () => {
 		expect(localStorage.getItem("naia:chatMode")).toBe("workspace");
 		expect(localStorage.getItem("naia:railCollapsed")).toBe("true");
 	});
+
+	it("R17 imports an .nva file into work/ even without FileSystemFileHandle.move and shows binary preview instead of text editor", async () => {
+		await setLocale("ko");
+		const files = new Map<string, File>();
+		const stagingFiles = new Map<string, File>();
+		function mockDirWithoutMove(
+			directoryName: string,
+			contents: Map<string, File>,
+		) {
+			const directory = {
+				kind: "directory",
+				name: directoryName,
+				async *values() {
+					for (const name of contents.keys()) yield { kind: "file", name };
+				},
+				isSameEntry: async (candidate: unknown) => candidate === directory,
+				async getFileHandle(name: string, options?: { create?: boolean }) {
+					if (!contents.has(name) && !options?.create)
+						throw new DOMException("Missing file", "NotFoundError");
+					return {
+						getFile: async () => contents.get(name),
+						createWritable: async () => ({
+							write: async (file: File) => {
+								contents.set(name, file);
+							},
+							close: async () => {},
+							abort: async () => {},
+						}),
+					};
+				},
+				removeEntry: async (name: string) => {
+					contents.delete(name);
+				},
+			};
+			return directory;
+		}
+		const work = mockDirWithoutMove("work", files);
+		const staging = mockDirWithoutMove(
+			"naia-workspace-import-staging",
+			stagingFiles,
+		);
+		const workspace = {
+			getDirectoryHandle: async () => work,
+			async *values() {
+				yield work;
+			},
+		};
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => ({
+					getDirectoryHandle: async (name: string) =>
+						name === staging.name ? staging : workspace,
+				}),
+			},
+			locks: { request: async (_name: string, task: () => unknown) => task() },
+		});
+		setWebAdkStatus({ phase: "ready" });
+
+		const nvaIncoming = new File(["PK\x03\x04binary-nva"], "내 아바타.nva", {
+			type: "application/zip",
+		});
+		const { container } = render(<WebWorkspace />);
+		const choose = screen.getByRole("button", { name: "작업 폴더 선택" });
+		const upload = screen.getByRole("button", { name: "파일 가져오기" });
+		await waitFor(() => expect(choose).toBeEnabled());
+		fireEvent.click(choose);
+		expect(
+			await screen.findByTestId("web-workspace-import-destination"),
+		).toHaveTextContent("저장 위치 work");
+		fireEvent.click(upload);
+		fireEvent.change(container.querySelector('input[type="file"]')!, {
+			target: { files: [nvaIncoming] },
+		});
+
+		const uploadedRow = await screen.findByRole("button", {
+			name: /내 아바타\.nva/,
+		});
+		expect(uploadedRow).toBeVisible();
+		expect(stagingFiles.size).toBe(0);
+		expect(await getWebWorkspaceFile("opfs://naia-adk/work/내 아바타.nva")).toBe(
+			nvaIncoming,
+		);
+
+		fireEvent.click(uploadedRow);
+		expect(await screen.findByText(/미리 볼 수 없습니다/)).toBeVisible();
+		expect(screen.getByRole("button", { name: "내려받기" })).toBeVisible();
+	});
 });

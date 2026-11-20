@@ -425,6 +425,109 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 
+	describe.each([
+		[1280, 720],
+		[390, 844],
+	])("R17 uploaded OPFS .nva archive (%i×%i)", (width, height) => {
+		it("plays an OPFS-imported .nva archive without HTTP fetch or Tauri invoke and reports corrupt archives", async () => {
+			const { strToU8, zipSync } = await import("fflate");
+			const prevViewport: [number, number] = [
+				window.innerWidth,
+				window.innerHeight,
+			];
+			[window.innerWidth, window.innerHeight] = [width, height];
+			setWebAssetsModeForTests(true);
+			mockGetAdkPath.mockReturnValue(null as unknown as string);
+			const fetchSpy = vi
+				.spyOn(globalThis, "fetch")
+				.mockRejectedValue(new Error("unexpected_http_fetch"));
+
+			const validZip = zipSync({
+				"manifest.json": strToU8(webManifestJson),
+				"clips/idle.webm": strToU8("idle-webm"),
+				"clips/idle.stacked.mp4": strToU8("idle-stacked-mp4"),
+				"clips/talking-ko.webm": strToU8("talk-webm"),
+				"clips/talking-ko.stacked.mp4": strToU8("talk-stacked-mp4"),
+			});
+			const validFile = new File([validZip as BlobPart], "내 아바타.nva", {
+				type: "application/zip",
+			});
+			const brokenFile = new File([strToU8("broken")], "깨진.nva", {
+				type: "application/zip",
+			});
+			const origStorage = window.navigator.storage;
+			Object.defineProperty(window.navigator, "storage", {
+				configurable: true,
+				value: {
+					getDirectory: async () => ({
+						getDirectoryHandle: async (name: string) => {
+							if (name !== "naia-adk")
+								throw new DOMException("Missing", "NotFoundError");
+							return {
+								getDirectoryHandle: async (sub: string) => {
+									if (sub !== "naia-settings")
+										throw new DOMException("Missing", "NotFoundError");
+									return {
+										getDirectoryHandle: async (leaf: string) => {
+											if (leaf !== "nva-files")
+												throw new DOMException("Missing", "NotFoundError");
+											return {
+												getFileHandle: async (fname: string) => {
+													if (fname === "내 아바타.nva")
+														return { getFile: async () => validFile };
+													if (fname === "깨진.nva")
+														return { getFile: async () => brokenFile };
+													throw new DOMException("Missing", "NotFoundError");
+												},
+											};
+										},
+									};
+								},
+							};
+						},
+					}),
+				},
+			});
+
+			try {
+				const { container, rerender } = render(
+					<VideoAvatarCanvas nvaModel="내 아바타.nva" />,
+				);
+				await vi.waitFor(() =>
+					expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+						"data-video-avatar-mode",
+						"prebaked",
+					),
+				);
+				await vi.waitFor(() => {
+					const video = container.querySelector("video");
+					expect(video?.dataset.naiaClipUrl).toBe(
+						"opfs://naia-adk/naia-settings/nva-files/내 아바타.nva/clips/idle.stacked.mp4",
+					);
+				});
+				expect(fetchSpy).not.toHaveBeenCalled();
+				expect(mockInvoke).not.toHaveBeenCalled();
+
+				rerender(<VideoAvatarCanvas nvaModel="깨진.nva" />);
+				await vi.waitFor(() =>
+					expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+						"data-video-avatar-mode",
+						"error",
+					),
+				);
+				expect(useCascadeAvatarStore.getState().nvaLoadError).toContain(
+					"nva_invalid_zip",
+				);
+			} finally {
+				Object.defineProperty(window.navigator, "storage", {
+					configurable: true,
+					value: origStorage,
+				});
+				[window.innerWidth, window.innerHeight] = prevViewport;
+			}
+		});
+	});
+
 	describe.each([[1280, 720], [390, 844]])("R48 web viewport %i×%i", (width, height) => {
 		const idleUrl = "/app/nva/naia/clips/idle.webm";
 		const manifestUrl = "/app/nva/naia/manifest.json";

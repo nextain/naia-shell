@@ -1,3 +1,10 @@
+<!-- src-sha: r17nva20261120 -->
+
+## 웹판 파일 탐색기 파일 올리기 및 NVA 아바타 재생 경로 보강 (R17) — 2026-11-20
+
+- `5e4ead30`·`277dfcdc` 포함을 확인하고, `work/`에 올린 `.nva`·`.vrm` 바이너리 안내·원본 내려받기, `FileSystemFileHandle.move()` 미지원 브라우저 OPFS 쓰기 폴백, `naia-settings/nva-files`에 올린 `.nva` ZIP의 설정 목록 반영(`listNaiaAssets`) 및 1280×720·390×844 `VideoAvatarCanvas` 직접 재생 경로를 연결했습니다. 표적 Vitest 4파일 41통과·0실패. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-WORKSPACE-IMPORT` · `FR-WEB-WORKSPACE-IMPORT.1~4` · `web-nva-archive.test.ts` · `web-workspace-path.test.tsx` · `VideoAvatarCanvas.test.tsx`
+
 <!-- src-sha: r3unify20261120 -->
 
 ## 웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합 (R3) — 2026-11-20

@@ -3228,19 +3228,20 @@ In a fresh web browser, the web runtime may provide a Tauri-compatible shim, but
 
 Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean web boot with `NAIA_E2E_WEB=1` and `PLAYWRIGHT_SERVER_COMMAND='pnpm exec vite --mode web'`; `packages/shell/e2e/adk-home-isolation.spec.ts` exercises mocked native workspace restoration and failure. It does not replace a real Tauri test.
 
-## UC-WEB-WORKSPACE-IMPORT. 탐색기에서 작업 파일 가져오기
+## UC-WEB-WORKSPACE-IMPORT. 탐색기에서 작업 파일·NVA 아바타 가져오기 (R17)
 
-정식 웹판의 사용자가 파일 탐색기의 작업 폴더를 엽니다. 처음에는 [작업 폴더 선택]으로 `work`를 만들거나 엽니다. 그 아래 폴더에서는 해당 폴더를 가져오기 대상으로 선택합니다. 파일을 고르기 전에 목적지를 확인합니다. 선택한 파일을 브라우저에 저장하면 목록에 이름이 나타나며 기존 열기·내려받기로 다시 사용합니다. 같은 이름은 접미 번호로 구별합니다.
+정식 웹판의 사용자가 파일 탐색기의 작업 폴더(`work`) 또는 `naia-settings/nva-files`(·`vrm-files`·`background`) 폴더를 엽니다. 처음에는 [작업 폴더 선택]으로 `work`를 만들거나 열고, 하위 폴더에서는 해당 폴더를 가져오기 대상으로 고릅니다. 파일을 고르기 전에 목적지를 확인하고 브라우저에 저장하면 목록에 이름이 나타나며 열기·내려받기로 다시 사용합니다. 같은 이름은 접미 번호로 구별합니다.
 
-브라우저가 저장소를 열 수 없거나 안전한 가져오기를 지원하지 않으면 이유가 보입니다. 쓰기 실패와 용량 부족을 구분하고 재시도할 수 있습니다. 강제로 창이 닫힌 뒤 다음 가져오기에서 앱 전용 임시 저장소를 정리합니다. 파일을 고르는 동안 탐색 위치를 바꿔도 이미 표시된 목적지가 유효하면 그 위치에 저장됩니다. 폴더가 사라지거나 교체됐으면 다시 선택합니다.
+어느 폴더(`work/` 또는 `naia-settings/`)에 올린 `.nva`·`.vrm` 묶음 파일이든 파일 탐색기에서 누르면 텍스트 편집기로 깨지지 않고 바이너리 안내와 원본 바이트 내려받기를 표시합니다. `FileSystemFileHandle.move()`를 지원하지 않는 브라우저에서도 OPFS 쓰기 폴백으로 기존 파일을 해치지 않고 저장합니다. `naia-settings/nva-files`에 올린 `.nva` 묶음은 설정(아바타 > 비디오 아바타 NVA) 목록에 바로 나타나고, 선택하면 `VideoAvatarCanvas`가 브라우저 저장소의 `.nva` ZIP에서 `manifest.json`·영상 클립·발화 자산을 직접 풀어 재생합니다. 읽을 수 없는 `.nva` 묶음은 기존 아바타 초기화 실패 안내로 복구할 수 있습니다.
 
 ### Test Coverage Map — UC-WEB-WORKSPACE-IMPORT
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
-| 기본·빈 폴더·읽기 전용 | 목적지가 없을 때 안내를 보이고 작업 폴더를 고르면 해당 위치가 보임 | `web-workspace-path.test.tsx` |
-| 진행·성공·좁은 화면 | 진행 상태, 새 항목 열기·내려받기, 키보드·400px 폭에서 목적지와 단추 표시 | `web-workspace-path.test.tsx`와 좁은 화면 브라우저 확인 |
-| 오류·충돌 | 기존 파일 보존, 새 파일 바이트 확인, 작업 폴더 교체·용량 부족 때 재선택 또는 재시도 | `web-workspace-path.test.tsx` |
+| 기본·빈 폴더·읽기 전용 | 목적지가 없을 때 안내를 보이고 작업 폴더나 `nva-files`를 고르면 위치와 허용 확장자가 보임 | `web-workspace-path.test.tsx`, `web-settings-catalog.test.ts` |
+| 진행·성공·좁은 화면 | 진행 상태, 새 항목 열기·내려받기, `work/*.nva` 바이너리 안내, 1280×720·390×844 탐색기 열기/접기 | `web-workspace-path.test.tsx` |
+| NVA 아바타 연동 | `naia-settings/nva-files`에 올린 `.nva`가 `listNaiaAssets("nva-files")`와 설정 목록에 나타나고 `VideoAvatarCanvas`가 네트워크 요청 없이 OPFS ZIP에서 재생 | `web-nva-archive.test.ts`, `VideoAvatarCanvas.test.tsx` R17 |
+| 오류·충돌·브라우저 호환 | 기존 파일 보존, `move()` 미지원 브라우저 쓰기 폴백 및 용량 부족 시 반쪽 파일 제거, 깨진 `.nva` 오류 표시 | `web-workspace-path.test.tsx`, `web-nva-archive.test.ts`, `VideoAvatarCanvas.test.tsx` R17 |
 
 ## UC-WEB-A-R8. 웹판 상단 막대에서 음악 플레이어를 맨 오른쪽에 두기
 

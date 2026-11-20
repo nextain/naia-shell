@@ -1989,15 +1989,16 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 
 Web startup must select the web runtime using the build mode, even after the web Tauri-compatibility shim has installed `__TAURI_INTERNALS__`. It must neither invoke native workspace bootstrap nor install the native coding-worker adapter. Native Tauri builds retain both native paths and fail visibly when native workspace restoration fails. Verification: `UC-WEB-BOOT-RUNTIME-SEPARATION`.
 
-## 작업 파일을 브라우저 탐색기로 가져오기
+## 작업 파일·NVA 아바타를 브라우저 탐색기로 가져오기 (R17)
 
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
-| FR-WEB-WORKSPACE-IMPORT.1 | 정식 웹의 탐색기는 사용자가 고른 `work/` 또는 그 아래 작업 폴더를 표시합니다. 파일 선택을 시작하면 해당 폴더의 경로와 동일성이 작업에 연결됩니다. | Done (local) |
-| FR-WEB-WORKSPACE-IMPORT.2 | 파일 한 개를 동일 출처의 브라우저 저장소에 원래 바이트대로 보관합니다. 동명 항목과 동시에 선택한 파일은 구별된 이름으로 남습니다. 완료된 항목은 기존 탐색기, 열기, 내려받기에서 사용합니다. | Done (local) |
-| FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존됩니다. 저장소 미지원과 용량 부족은 사용자에게 알려 줍니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.1 | 정식 웹의 탐색기는 사용자가 고른 `work/`(및 하위 폴더) 또는 `naia-settings/{background,vrm-files,nva-files}`를 가져오기 대상으로 표시하며, 파일 선택 시 해당 폴더 경로와 동일성을 검증합니다. (UC-WEB-WORKSPACE-IMPORT) | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.2 | 파일 한 개를 동일 출처 브라우저 저장소(OPFS)에 원래 바이트대로 보관하고(`move()` 지원 시 스테이징 이동, 미지원 시 새 목적지 이름에 직접 기록 후 실패 시 정리), 동명 항목은 접미 번호로 구별합니다. `work/`·`naia-settings/` 어디에서든 `.nva`·`.vrm` 파일을 열면 텍스트 편집기 대신 바이너리 안내와 원본 내려받기를 제공합니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존되며, 저장소 미지원·형식 불일치·용량 부족을 구분해 알립니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.4 | 웹판에서 `naia-settings/nva-files`에 올린 `.nva` 묶음은 `listNaiaAssets("nva-files")` 및 설정 비디오 아바타 목록에 즉시 반영되고, 선택 시 `VideoAvatarCanvas`가 OPFS의 `.nva` ZIP 아카이브에서 `manifest.json`·클립·발화 자산을 검증해 재생합니다. 손상되거나 경로 탈출이 포함된 `.nva`는 거부하고 기존 아바타 오류 안내를 유지합니다. | Done (local) |
 
-로컬 후보 검증은 2026-11-19 03:53 UTC Chromium 탐색기 실동작과 탐색기 회귀 시험 7건입니다. 시스템 기본 작업 공간 준비는 별도 진입 시험에서 확인합니다.
+검증: `UC-WEB-WORKSPACE-IMPORT` (`web-workspace-path.test.tsx`, `web-nva-archive.test.ts`, `VideoAvatarCanvas.test.tsx`).
 
 ## 웹판 화면 묶음 A (2026-11-19)
 

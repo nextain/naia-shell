@@ -282,6 +282,7 @@ import {
 } from "./ProactiveSpeechSettingsSection";
 import { RefAudioSection } from "./RefAudioSection";
 import { useWebModelStatus } from "./WebModelStatusBar";
+import { WEB_SETTINGS_ASSETS_CHANGED_EVENT } from "../lib/web-runtime/web-nva-archive";
 
 const WebVisualAgentSlugSettings = lazy(() => import("./WebVisualAgentSlugSettings"));
 
@@ -3897,11 +3898,22 @@ export function SettingsTab() {
 		if (match) setActiveBgPath(match);
 	}, [backgroundVideoFilename, naiaBgs]);
 
-	// Load .nva directory list from naia-settings
+	// Load .nva directory list from naia-settings (and refresh when web OPFS assets change)
 	useEffect(() => {
-		listNaiaAssets("nva-files").then((paths) => {
-			setNaiaNvas(paths);
-		});
+		const refreshNvas = () => {
+			void listNaiaAssets("nva-files").then((paths) => {
+				setNaiaNvas(paths);
+			});
+		};
+		refreshNvas();
+		if (!isWebMode() || typeof window === "undefined") return;
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, refreshNvas);
+		return () => {
+			window.removeEventListener(
+				WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+				refreshNvas,
+			);
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
