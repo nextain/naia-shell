@@ -1,6 +1,7 @@
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import { nvaGestureShortcutLabel } from "../lib/avatar/nva-action-hotkeys";
 import { t } from "../lib/i18n";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
 interface Props {
@@ -12,12 +13,14 @@ export function NvaGestureActions({ onManualAction }: Props) {
 	const renderer = useCascadeAvatarStore((state) => state.renderer);
 	const actions = renderer ? getCameraActions().getGestureActions() : [];
 	if (actions.length === 0) return null;
+	const label = t("ai.avatarGestures");
 
 	return (
 		<fieldset className="nva-gesture-actions" data-testid="nva-gesture-actions">
-			<legend className="nva-gesture-actions__legend">
-				{t("ai.avatarGestures")}
-			</legend>
+			<legend className="nva-gesture-actions__legend">{label}</legend>
+			{isWebMode() && (
+				<span className="nva-gesture-actions__caption" aria-hidden="true">{label}</span>
+			)}
 			{actions.map((action, index) => {
 				const shortcut = nvaGestureShortcutLabel(index);
 				const accessibleName = shortcut

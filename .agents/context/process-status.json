@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T01:39:00Z",
+  "last_updated": "2026-11-20T02:23:03Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,30 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_mic_recovery_r21_4_20261120": {
+      "requirement_id": "R21-4",
+      "title": "웹판 마이크 권한 재시도와 글로 대화",
+      "branch": "alpha/webgpu-p6-first-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-VOICE-MIC-ERROR",
+      "requirements": "docs/requirements.md FR-WEB-VOICE-MIC.4",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/components/__tests__/ChatArea.test.tsx, packages/shell/src/lib/__tests__/i18n-user-facing.test.ts",
+      "verification": "표적 Vitest 111통과·0실패. 권한 거부 후 재시도·재거부 및 글로 대화의 입력 초점·초안을 확인했습니다. 셸 타입 검사는 기준 오류 1건과 동일. 1280×720·390×844 오프라인 CSS 미리보기에서 안내·단추·입력란 배치를 확인했습니다. 웹 앱과 실제 마이크 미확인.",
+      "last_updated": "2026-11-20T02:23:03Z"
+    },
+    "web_chat_start_r21_1_20261120": {
+      "requirement_id": "R21-1",
+      "title": "웹판 첫 메시지와 아바타 동작 안내",
+      "branch": "alpha/webgpu-p6-first-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CHAT-START",
+      "requirements": "docs/requirements.md FR-WEB-CHAT-START.1~2",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/components/__tests__/ChatArea.test.tsx, packages/shell/src/components/__tests__/NvaGestureActions.test.tsx, packages/shell/src/lib/__tests__/i18n-user-facing.test.ts",
+      "verification": "표적 Vitest 116통과·0실패. 셸 타입 검사는 기준 오류 1건과 동일. 1280×720·390×844 오프라인 CSS 미리보기에서 첫 말·아바타 동작·입력란의 배치를 확인했습니다. 웹 앱 실기 미확인.",
+      "last_updated": "2026-11-20T02:12:21Z"
+    },
     "web_app_catalog_unify_r3_20261120": {
       "requirement_id": "R3",
       "title": "웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합",

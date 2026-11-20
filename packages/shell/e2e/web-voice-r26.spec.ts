@@ -81,12 +81,16 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 		await openWebShellWithBgm(deniedPage, { openBgm: false });
 		const deniedVoice = deniedPage.locator(".chat-voice-btn");
 		await deniedVoice.click();
-		const last = deniedPage.locator(".chat-messages .chat-message.assistant").last();
-		await expect(last).toContainText("마이크 권한이 막혀 있습니다", { timeout: 60_000 });
-		await expect(last).not.toContainText("not-allowed");
+		const micNotice = deniedPage.getByRole("alert").filter({ hasText: "마이크 권한이 막혀 있습니다" });
+		await expect(micNotice).toBeVisible({ timeout: 60_000 });
+		await expect(micNotice).not.toContainText("not-allowed");
+		await expect(deniedPage.getByRole("button", { name: "마이크 다시 시도" })).toBeVisible();
 		await expect(deniedVoice).not.toHaveClass(/active/);
 		expect(deniedLogs.filter((line) => line.includes("plugin:stt|stop_listening"))).toEqual([]);
 		if (SHOTS) await deniedPage.screenshot({ path: `${SHOTS}/R26-${viewport.width}.png` });
+		await deniedPage.getByRole("button", { name: "글로 대화" }).click();
+		await expect(micNotice).toHaveCount(0);
+		await expect(deniedPage.locator(".chat-input")).toBeFocused();
 		await denied.close();
 	});
 }

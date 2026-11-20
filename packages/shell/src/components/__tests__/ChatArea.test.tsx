@@ -7,6 +7,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +24,7 @@ import {
 	sendAppSkillsClear,
 	cancelChat,
 } from "../../lib/chat-service";
+import { setLocale } from "../../lib/i18n";
 import { SLIDE_PRESENTER_CANCEL_EVENT, SLIDE_PRESENTER_SPEECH_RESULT_EVENT, SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
 import * as voiceSessionApi from "../../lib/voice/index";
@@ -347,7 +349,7 @@ describe("ChatArea", () => {
 		expect(screen.queryByRole("button", { name: "처음으로" })).toBeNull();
 	});
 
-	it("R12: starting a character card from history switches to chat and focuses the reply", async () => {
+	it("R12 / R21-1: starting a card conversation opens chat, offers first messages and focuses the reply", async () => {
 		setWebAssetsModeForTests(true);
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
 		useAppStore.getState().setActiveApp(CHARCARD_APP_ID);
@@ -369,12 +371,98 @@ describe("ChatArea", () => {
 			}, CHARCARD_APP_ID));
 			expect(openChat).toHaveBeenCalledOnce();
 			expect(screen.getByText(greeting)).toBeVisible();
+			expect(screen.getByRole("group", { name: "Hi, I'm Tinker. Pick a message to start." })).toBeVisible();
 			expect(container.querySelector('[data-chat-tab="chat"]')).toHaveClass("active");
 			await waitFor(() => expect(input).toHaveFocus());
 		} finally {
 			unmount();
 			useAppStore.getState().setActiveApp(null);
 		}
+	});
+
+	describe("R21-1 web first messages", () => {
+		const model = "Qwen3-4B-q4f32_1-MLC";
+
+		beforeEach(() => {
+			vi.stubEnv("MODE", "web");
+			vi.mocked(isNewCore).mockReturnValue(true);
+			localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model }));
+			setWebAdkStatus({ phase: "ready" });
+			setWebModelStatus({ phase: "ready", model, progress: 1 });
+		});
+
+		afterEach(async () => {
+			localStorage.removeItem("naia-config");
+			await setLocale("en");
+		});
+
+		it("offers two starters, sends the selected text once and makes room for the reply", async () => {
+			setWebModelStatus({ phase: "checking", model });
+			render(<ChatArea />);
+			const group = screen.getByRole("group", { name: "Hi, I'm Naia. Pick a message to start." });
+			const starter = within(group).getByRole("button", { name: "Hi, who are you?" });
+			const other = within(group).getByRole("button", { name: "What's on your mind?" });
+			expect(group.closest(".chat-messages")).toBeVisible();
+			expect(within(group).getAllByRole("button")).toHaveLength(2);
+			expect(starter).toBeDisabled();
+			act(() => setWebModelStatus({ phase: "error", model, errorKind: "no-webgpu" }));
+			expect(starter).toBeDisabled();
+			expect(screen.getByTestId("web-model-status")).toHaveAttribute("role", "alert");
+			expect(sendChatMessage).not.toHaveBeenCalled();
+
+			act(() => setWebModelStatus({ phase: "ready", model, progress: 1 }));
+			expect(starter).toBeEnabled();
+			fireEvent.click(starter);
+			fireEvent.click(other);
+			await waitFor(() => expect(sendChatMessage).toHaveBeenCalledOnce());
+			const request = capturedRequests[0];
+			expect(request.message).toBe("Hi, who are you?");
+			expect(group).not.toBeInTheDocument();
+			expect(screen.getByRole("textbox")).toHaveFocus();
+			expect(useChatStore.getState().messageQueue).toEqual([]);
+
+			act(() => {
+				request.onChunk({ type: "text", requestId: request.requestId, text: "Hello, I'm Naia." });
+				request.onChunk({ type: "finish", requestId: request.requestId });
+			});
+			expect(await screen.findByText("Hello, I'm Naia.")).toBeVisible();
+			expect(screen.queryByRole("group", { name: /Pick a message to start/ })).toBeNull();
+			act(() => useChatStore.getState().newConversation(null));
+			expect(screen.getByRole("group", { name: /Pick a message to start/ })).toBeVisible();
+		});
+
+		it("shows Korean starters before a typed first message and hides them after it is sent", async () => {
+			await setLocale("ko");
+			render(<ChatArea />);
+			const group = screen.getByRole("group", { name: "반가워요, 나이아입니다. 첫 말을 골라 보세요." });
+			expect(within(group).getByRole("button", { name: "자기소개해 줄래?" })).toBeEnabled();
+			expect(within(group).getByRole("button", { name: "오늘 무슨 얘기 할까?" })).toBeEnabled();
+
+			const input = screen.getByRole("textbox");
+			fireEvent.change(input, { target: { value: "안녕하세요" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests[0]?.message).toBe("안녕하세요"));
+			expect(group).not.toBeInTheDocument();
+		});
+
+		it("uses the saved active card name when its greeting is the only message", async () => {
+			const card = {
+				version: 1,
+				id: "gardener",
+				name: "Gardener",
+				greeting: "Welcome to the garden.",
+				rawJson: { data: { name: "Gardener" } },
+				sourceBase64: "",
+			};
+			localStorage.setItem("naia-config", JSON.stringify({
+				provider: "webllm", model,
+				uiPreferences: { b2cActiveCardId: card.id, b2cCardLibrary: [card] },
+			}));
+			useChatStore.getState().newConversation();
+			render(<ChatArea />);
+			expect(screen.getByRole("group", { name: "Hi, I'm Gardener. Pick a message to start." })).toBeVisible();
+			expect(await screen.findByText(card.greeting)).toBeVisible();
+		});
 	});
 
 	it("S5: kiosk demo greeting respects config ttsProvider (nextain gateway) in web mode", async () => {
@@ -753,7 +841,7 @@ describe("ChatArea", () => {
 	it.each([
 		["NotAllowedError", "Microphone access is blocked"],
 		["NotFoundError", "No microphone was found"],
-	])("R26 displays guidance for a synchronous %s and allows retry", async (name, guidance) => {
+	])("R26 / R21-4 displays guidance for a synchronous %s and allows retry", async (name, guidance) => {
 		setWebAssetsModeForTests(true);
 		localStorage.setItem("naia-config", JSON.stringify({
 			provider: "nextain",
@@ -773,20 +861,75 @@ describe("ChatArea", () => {
 		if (!voice) throw new Error("Missing voice button");
 		fireEvent.click(voice);
 
-		await waitFor(() => {
-			const messages = useChatStore.getState().messages;
-			expect(messages.filter((m) => m.content.includes(guidance))).toHaveLength(1);
-			expect(messages.at(-1)?.content).not.toContain("Browser detail");
-			expect(voice).not.toHaveClass("active");
-			expect(voice).not.toHaveClass("connecting");
-			expect(voice).toBeEnabled();
-		});
+		const notice = await screen.findByText(new RegExp(guidance));
+		expect(screen.getAllByText(new RegExp(guidance))).toHaveLength(1);
+		expect(notice).not.toHaveTextContent("Browser detail");
+		expect(voice).not.toHaveClass("active");
+		expect(voice).not.toHaveClass("connecting");
+		expect(voice).toBeEnabled();
 		expect(FakeSpeechRecognition.latest?.abort).toHaveBeenCalledOnce();
 		expect(mockInvoke.mock.calls.map(([command]) => command)).not.toContain("plugin:stt|stop_listening");
 
-		fireEvent.click(voice);
+		if (name === "NotAllowedError") {
+			expect(notice).toHaveAttribute("role", "alert");
+			expect(useChatStore.getState().messages).toEqual([]);
+			fireEvent.click(screen.getByRole("button", { name: "Try microphone again" }));
+			expect(screen.getByRole("status")).toHaveTextContent("Connecting...");
+			expect(screen.queryByRole("alert")).toBeNull();
+		} else {
+			expect(useChatStore.getState().messages.at(-1)?.content).toContain(guidance);
+			fireEvent.click(voice);
+		}
 		await waitFor(() => expect(voice).toHaveClass("active"));
 		expect(startFailure).toHaveBeenCalledTimes(2);
+		expect(screen.queryByRole("button", { name: "Chat by text" })).toBeNull();
+	});
+
+	it("R21-4 keeps one permission notice on repeat denial and lets the user send their draft by text", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.mocked(isNewCore).mockReturnValue(true);
+		setWebAdkStatus({ phase: "ready" });
+		setWebModelStatus({ phase: "ready", progress: 1 });
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "webllm",
+			sttProvider: "web-speech",
+		}));
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: FakeSpeechRecognition,
+		});
+		await setLocale("ko");
+		try {
+			render(<ChatArea />);
+			const composer = screen.getByRole("textbox");
+			const draft = "작성해 둔 첫 메시지";
+			fireEvent.change(composer, { target: { value: draft } });
+			expect(screen.queryByRole("button", { name: "글로 대화" })).toBeNull();
+			fireEvent.click(screen.getByRole("button", { name: "음성 대화" }));
+			await waitFor(() => expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledOnce());
+			const first = FakeSpeechRecognition.latest;
+			act(() => first?.onerror?.({ error: "not-allowed", message: "Browser detail" }));
+			expect(screen.getByRole("alert")).toHaveTextContent("마이크 권한이 막혀 있습니다");
+			fireEvent.click(screen.getByRole("button", { name: "마이크 다시 시도" }));
+			await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBe(first));
+			act(() => FakeSpeechRecognition.latest?.onerror?.({ error: "service-not-allowed", message: "Browser detail" }));
+			const alert = screen.getByRole("alert");
+			const continueByText = screen.getByRole("button", { name: "글로 대화" });
+			expect(alert).not.toHaveTextContent(/Browser detail|service-not-allowed/);
+			expect(alert.nextElementSibling).toContainElement(continueByText);
+			expect(useChatStore.getState().messages).toEqual([]);
+
+			fireEvent.click(continueByText);
+			expect(alert).not.toBeInTheDocument();
+			expect(composer).toHaveFocus();
+			expect(composer).toHaveValue(draft);
+			fireEvent.keyDown(composer, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests[0]?.message).toBe(draft));
+			expect(capturedRequests[0].history).toEqual([]);
+		} finally {
+			localStorage.removeItem("naia-config");
+			await setLocale("en");
+		}
 	});
 
 	it("does not send while the lazy at-mention picker is opening", () => {

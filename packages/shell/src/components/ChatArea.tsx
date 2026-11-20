@@ -114,7 +114,11 @@ import {
 	setCurrentSpeechActivityId,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
-import { getWebCharcardContext } from "../lib/charcard-chat-start";
+import {
+	extractCharcardGreeting,
+	getWebCharcardContext,
+} from "../lib/charcard-chat-start";
+import { activeCharacterCard } from "../lib/character-greeting";
 import {
 	type AppConfig,
 	DEFAULT_NAIA_LOCAL_URL,
@@ -696,6 +700,9 @@ export function ChatArea({
 		phase: "idle",
 	});
 	const voiceMode = phaseToMode(voiceStatus);
+	const micPermissionBlocked =
+		voiceStatus.phase === "error" &&
+		voiceStatus.reason === "microphone-permission";
 	const lastVoiceStatusRef = useRef<VoiceConnectionStatus>({ phase: "idle" });
 	const voiceCancelledRef = useRef(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -4323,12 +4330,27 @@ export function ChatArea({
 		cleanupPipeline();
 		const terminal: VoiceConnectionStatus = {
 			phase: "error",
-			reason: "unknown",
+			reason: hintKey === "chat.webSpeechErrorNotAllowed"
+				? "microphone-permission"
+				: "unknown",
 			message: content,
 		};
 		setVoiceStatus(terminal);
 		lastVoiceStatusRef.current = terminal;
-		useChatStore.getState().addMessage({ role: "assistant", content });
+		if (terminal.reason !== "microphone-permission") {
+			useChatStore.getState().addMessage({ role: "assistant", content });
+		}
+	}
+
+	function handleContinueInText() {
+		Logger.debug("ChatArea", "Continue in text after microphone permission error");
+		const idle = { phase: "idle" } as const;
+		lastVoiceStatusRef.current = idle;
+		setVoiceStatus(idle);
+		const composer = inputRef.current;
+		composer?.focus();
+		// The chat sheet can shrink after the permission notice closes.
+		requestAnimationFrame(() => composer?.scrollIntoView?.({ block: "nearest" }));
 	}
 
 	async function handleVoiceToggle() {
@@ -5539,6 +5561,35 @@ export function ChatArea({
 			});
 		}
 	}
+
+	const visibleMessages = messages.filter(
+		(msg) => {
+			if (msg.role === "user") return !msg.content.startsWith("Read HEARTBEAT.md if it exists");
+			if (msg.role === "assistant") return !/^HEARTBEAT_OK\b/.test(msg.content.trim());
+			return true;
+		},
+	);
+	const canShowStarters =
+		isWebMode() && !isKioskDemo() && activeTab === "chat" &&
+		!webWorkspacePending && !isStreaming && visibleMessages.length <= 1;
+	const savedCard = canShowStarters
+		? activeCharacterCard(installedAppConfig)
+		: undefined;
+	const charcardName = charcardContext?.data.character;
+	const starterName =
+		(typeof charcardName === "string" && charcardName.trim()) ||
+		savedCard?.name.trim() || t("onboard.defaultAgentName");
+	const openingGreeting = charcardContext
+		? extractCharcardGreeting(charcardContext.data.roleplay)
+		: savedCard?.greeting;
+	// A card can open with a greeting before the user has sent a first message.
+	const showStarters = canShowStarters && (
+		visibleMessages.length === 0 ||
+		(visibleMessages[0]?.role === "assistant" && visibleMessages[0].content === openingGreeting)
+	);
+	const startersDisabled =
+		webSendBlocked || characterTransitionPending || greetingPreparing || voiceMode === "connecting";
+
 	return (
 		<>
 			<div className={`chat-app chat-app--${variant}${webWorkspacePending ? " chat-app--workspace-pending" : ""}`}>
@@ -5791,21 +5842,7 @@ export function ChatArea({
 				>
 					{webWorkspacePending ? null : (
 						<>
-							{messages
-						.filter((msg) => {
-							if (
-								msg.role === "user" &&
-								msg.content.startsWith("Read HEARTBEAT.md if it exists")
-							)
-								return false;
-							if (
-								msg.role === "assistant" &&
-								/^HEARTBEAT_OK\b/.test(msg.content.trim())
-							)
-								return false;
-							return true;
-						})
-						.map((msg) => (
+							{visibleMessages.map((msg) => (
 							<div key={msg.id} className={`chat-message ${msg.role}`}>
 								{msg.appName && <small>{msg.appName}</small>}
 								{msg.thinking && (
@@ -5897,6 +5934,40 @@ export function ChatArea({
 							</div>
 						))}
 
+					{showStarters && (
+						<div
+							className="web-chat-starters"
+							role="group"
+							aria-labelledby="web-chat-intro"
+						>
+							<p id="web-chat-intro">
+								{t("chat.webStarterIntro", { name: starterName })}
+							</p>
+							<div className="web-chat-actions">
+								{(["chat.webStarterIntroduce", "chat.webStarterTopic"] as const).map((key) => {
+									const message = t(key);
+									return (
+										<button
+											key={key}
+											type="button"
+											disabled={startersDisabled}
+											aria-describedby={webSendBlocked ? "web-model-status" : undefined}
+											onClick={(event) => {
+												if (sendingRef.current || isChatRequestActive()) return;
+												if (event.detail === 0) {
+													inputRef.current?.focus({ preventScroll: true });
+												}
+												void handleSend(message);
+											}}
+										>
+											{message}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					)}
+
 					{/* Streaming content */}
 					{isStreaming && (
 						<div className="chat-message assistant streaming">
@@ -5966,8 +6037,8 @@ export function ChatArea({
 				    an explicit Cancel here (→ abandon Pod) instead of a frozen wait. */}
 				{activeTab === "chat" && voiceMode === "connecting" && (
 					<div className="voice-status-banner">
-						<span className="voice-status-spinner" />
-						<span className="voice-status-text">
+						<span className="voice-status-spinner" aria-hidden="true" />
+						<span className="voice-status-text" role="status">
 							{voiceStatus.phase === "cold-start"
 								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s` +
 									(voiceStatus.queuePosition != null
@@ -6010,6 +6081,23 @@ export function ChatArea({
 
 				{(characterTransitionPending || greetingPreparing) && (
 					<output role="status">{t("chat.cardPreparing")}</output>
+				)}
+				{activeTab === "chat" && micPermissionBlocked && (
+					<div className="web-chat-mic-notice">
+						<p role="alert">{t("chat.webSpeechErrorNotAllowed")}</p>
+						<div className="web-chat-actions">
+							<button type="button" onClick={handleVoiceToggle}>
+								{t("chat.webMicRetry")}
+							</button>
+							<button
+								type="button"
+								className="web-chat-actions__secondary"
+								onClick={handleContinueInText}
+							>
+								{t("chat.webMicUseText")}
+							</button>
+						</div>
+					</div>
 				)}
 				{/* Input (chat tab only) */}
 				<div

@@ -2012,6 +2012,16 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-A-R2 | 설정 적용 단추는 그림자 없는 8px 모서리 기본 단추로, 높이 36px 이상, 기본·사쿠라 테마에서도 글자 대비 4.5:1 이상, 좁은 화면에서도 한 줄 글자, 초점 테두리를 가진다. 검증: `UC-WEB-A-R2`. | Done (local Vitest) |
 | FR-WEB-A-R5 | 내장이 아닌 설치 앱은 앱 이름과 닫기 단추를 가진 셸 제목 막대 아래에 표시되어, 앱 자체 머리 영역의 단추가 셸 닫기 단추에 가려지지 않는다. 앱 묶음 내부 디자인(저장소 밖)은 해당 앱 저장소에서 맞춘다. 검증: `UC-WEB-A-R5`. | Done (local, 셸 쪽) |
 | FR-WEB-A-R12 | 웹판에서 캐릭터 카드 앱이 `charcard` 대화 문맥을 보내면 셸은 새 대화에 카드 첫 인사를 넣고 대화 탭을 열어 입력란에 초점을 준다. 세로 화면에서는 카드가 대화를 가리지 않고, 메뉴로 카드에 돌아가도 연기 문맥과 대화를 보존한다. 카드 첫 인사가 비어 있으면 빈 대화를 연다. 검증: `UC-WEB-A-R12`. | Done (local Vitest) |
+
+## 웹판 첫 대화 안내 (R21-1)
+
+| 요구사항 | 계약 | 상태 |
+|---|---|---|
+| FR-WEB-CHAT-START.1 | 빈 웹 대화에 나이아 또는 적용한 캐릭터의 이름과 첫 말 단추 두 개를 표시합니다. 카드 첫 인사만 있는 대화도 포함합니다. 단추는 기존 채팅 경로로 표시된 문장을 한 번 전송하고, 첫 메시지가 전송되면 안내를 숨깁니다. | Done (local Vitest) |
+| FR-WEB-CHAT-START.2 | 소개와 첫 말은 한·영으로 표시합니다. 1280×720과 390×844에서 첫 말 단추와 채팅 입력을 읽고 조작할 수 있습니다. 캐릭터 동작은 동작 이름과 함께 표시합니다. | Done (local Vitest·CSS 미리보기) |
+
+검증은 `UC-WEB-CHAT-START`를 따릅니다.
+
 ## 웹판 음악 목록의 정직성 (R7)
 
 | 요구사항 | 계약 | 상태 |
@@ -2082,6 +2092,7 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-VOICE-MIC.1 | 웹(브라우저) 빌드 음성 대화에서 브라우저 SpeechRecognition 이 `not-allowed`·`service-not-allowed`·`audio-capture`·`network`·`language-not-supported` 를 내거나 음성 인식이 없으면, 음성 대화를 끄고 원래 오류 코드 대신 사용자가 고칠 수 있는 방법(마이크 허용·장치 확인·연결 확인·Chrome 사용)을 대화에 알립니다. 모르는 코드는 예전처럼 코드를 보입니다. 데스크톱 문구는 바꾸지 않습니다. | Done (local) |
 | FR-WEB-VOICE-MIC.2 | 웹판 음성 대화를 끌 때 데스크톱 전용 Tauri STT 플러그인 정지(`plugin:stt|stop_listening`)를 부르지 않습니다. | Done (local) |
 | FR-WEB-VOICE-MIC.3 | 웹 음성 인식의 시작이나 자동 재개 호출이 마이크 권한·장치 예외를 던지면, 같은 복구 안내를 한 번 보이고 인식기를 해제합니다. 음성 대화 단추로 다시 시작할 수 있습니다. | Done (local) |
+| FR-WEB-VOICE-MIC.4 | 웹판에서 음성 인식의 마이크 권한이 거부되면 채팅 입력란 위에 한·영 안내와 [마이크 다시 시도]·[글로 대화]를 표시합니다. 재시도는 기존 음성 연결 경로를 시작하고, 글로 대화는 안내를 닫고 작성 중인 글을 보존한 채 입력란에 초점을 줍니다. 안내를 대화 기록에 넣지 않으며 1280×720과 390×844에서 조작할 수 있습니다. (R21-4) | Done (local Vitest·CSS 미리보기) |
 
 검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
 ## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-20)
