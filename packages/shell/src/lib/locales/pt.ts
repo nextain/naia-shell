@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "Ativado",
 	"settings.thinkingLevelLow": "Baixo",
 	"settings.thinkingLevelHigh": "Alto",
+	"settings.thinkingLevelXhigh": "Muito alto",
 	"settings.thinkingLevelHint": "Ativar o raciocínio torna as respostas mais lentas e aumenta o custo de tokens.",
 	"settings.gatewayUrl": "URL do Gateway Naia",
 	"settings.gatewayToken": "Token do Gateway Naia",

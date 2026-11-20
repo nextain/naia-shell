@@ -7224,7 +7224,9 @@ export function SettingsTab() {
 													? t("settings.thinkingLevelOff")
 													: level === "low"
 														? t("settings.thinkingLevelLow")
-														: level === "xhigh" ? "xhigh" : t("settings.thinkingLevelHigh");
+														: level === "xhigh"
+															? t("settings.thinkingLevelXhigh")
+															: t("settings.thinkingLevelHigh");
 											return (
 												<button
 													key={level}

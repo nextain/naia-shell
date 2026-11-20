@@ -2244,3 +2244,10 @@ Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-ru
 |---|---|---|
 | FR-WEB-CREDIT-CONTEXT.1 | 정식 웹판 비로그인 상태에서 로그인 단추 근처(상단 하네스 바 기본 화면·모바일 메뉴·로그인 안내 모달·설정 웹 계정·웹 로그인 화면)에 가입 시 무료 200 Cr 지급과 클라우드 대화 비용이 답 길이에 따라 달라진다는 한 줄 안내를 한국어·영어 등 다국어로 표시합니다. 코드에 정적 클라우드 단가를 두지 않으며 금액·차감 규칙은 바꾸지 않습니다. (UC-WEB-CREDIT-CONTEXT) | Done (local) |
 | FR-WEB-CREDIT-CONTEXT.2 | 정식 웹판 대화 입력칸 바로 위에 클라우드 모델(`nextain`) 첫 메시지 전송 직전 한 번만 답마다 Cr 차감 및 남은 Cr(`남은 Cr N`, 잔액 미확정 시 차감 안내만) 한 줄을 표시하고, 닫거나 첫 클라우드 전송 시 브라우저 저장소에 기억해 다시 보이지 않습니다. 내 기기 모델(`webllm`) 준비·대화 중(오류·초기 설치 제외)에는 `무료` 안내를 표시합니다. (UC-WEB-CREDIT-CONTEXT) | Done (local) |
+
+## 웹판 좁은 설정 탭 잘림 방지와 생각 세기 쉬운 이름 표기 (R21-8)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-SETTINGS-TABS-THINKING.1 | 모바일 및 좁은 세로 화면(390×844 포함)의 `.settings-tab-bar`는 우측 닫기 단추 영역(`margin-right: 44px`)을 침범하지 않으면서 탭 여백·글자 크기를 줄이고 `flex-wrap: wrap`을 허용하여 마지막 탭(`일반`/`General`) 이름이 잘리지 않게 표시합니다. (UC-WEB-SETTINGS-TABS-THINKING) | Done (local) |
+| FR-WEB-SETTINGS-TABS-THINKING.2 | 두뇌 설정의 생각 세기 선택기에서 `"xhigh"` 단계는 개발 식별자 원문 대신 `settings.thinkingLevelXhigh`(한국어 `매우 높음`, 영어 `Very High` 등 14개 로케일)로 표시하며 저장·전송 값은 기존 `"xhigh"`를 유지합니다. (UC-WEB-SETTINGS-TABS-THINKING) | Done (local) |

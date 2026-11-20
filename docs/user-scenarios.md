@@ -3714,3 +3714,16 @@ P04 표적 Vitest에서 R48 10건을 확인했습니다. 1280×720·390×844 모
 | 성공 | 안내 닫기 단추를 누르거나 첫 클라우드 메시지를 보내면 브라우저 저장소에 기억되어 새로 그림 뒤에도 다시 나타나지 않음 | `ChatArea.test.tsx`, `credits.test.ts` R21-3 |
 | 오류 | 잔액 조회가 아직 안 되었거나 실패한 경우에도 잘못된 숫자 없이 답마다 Cr 차감 문구만 안전하게 표시하며 로컬 모델 준비 오류(`phase="error"`) 중에는 오류 카드를 가리지 않음 | `ChatArea.test.tsx` R21-3 |
 | 좁은 폭·키보드 | 1280×720 상단 바와 390×844 모바일 메뉴·시트에서 다른 요소를 밀어내지 않고 닫기 단추에 키보드로 접근 가능 | `web-stage1-features.test.tsx`, `ChatArea.test.tsx` R21-3 |
+
+## UC-WEB-SETTINGS-TABS-THINKING. 좁은 설정 화면에서 모든 탭 이름을 읽고 쉬운 생각 세기 이름을 고른다 (R21-8)
+
+390×844 모바일이나 좁은 창에서 설정을 연 사용자는 첫 탭(`프로파일`/`Profile`)부터 마지막 탭(`일반`/`General`)까지 오른쪽 닫기 단추에 가리거나 중간에서 잘리지 않은 전체 탭 이름을 읽고 전환합니다. 두뇌 설정의 생각 세기 라디오 단추에서는 개발 식별자 `xhigh` 대신 한국어 `매우 높음`, 영어 `Very High` 등 현재 언어에 맞는 쉬운 이름을 보고 선택합니다.
+
+### Test Coverage Map — UC-WEB-SETTINGS-TABS-THINKING
+
+| 상태 | 수용 기준 | 검증 |
+|---|---|---|
+| 기본·빈 설정 | 기본 설정 및 Terra 기본값(`thinkingLevel: "xhigh"`)에서 생각 세기 네 단계가 `끔·낮음·높음·매우 높음`(`Off·Low·High·Very High`)으로 표시되고 원시 `xhigh` 문자열이 보이지 않음 | `SettingsTab.test.tsx` R21-8 |
+| 진행·성공 | 생각 세기 단추 선택과 좌우 화살표 이동 시 설정 저장소에는 기존 프로토콜 값(`"xhigh"` 등)이 그대로 저장되며 UI 라벨만 다국어로 표시됨 | `SettingsTab.test.tsx`, `i18n-user-facing.test.ts` R21-8 |
+| 오류·키오스크 | 키오스크 읽기 전용 잠금 및 다른 모델 전환 시 기존 생각 세기 격리 동작 유지 | `SettingsTab.test.tsx` UT-SM-04 |
+| 좁은 폭·키보드 | 390×844 세로·모바일 폭에서 설정 탭 막대가 우측 닫기 단추 여백(`margin-right: 44px`)을 지키면서 간격을 줄이고 줄바꿈(`flex-wrap: wrap`)을 허용해 마지막 `일반`/`General` 탭이 잘리지 않음 | `SettingsTab.test.tsx` R21-8 |

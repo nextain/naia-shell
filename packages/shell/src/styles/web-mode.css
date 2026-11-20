@@ -398,8 +398,8 @@
 .web-mobile-workspace-close { display: none; }
 
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .web-mobile-workspace-close { display: block; position: fixed; right: 8px; top: 8px; z-index: 110; width: 40px; height: 40px; border: 0; border-radius: 10px; color: white; background: #172136; font-size: 20px; }
-	[data-naia-mobile="true"] .settings-tab-bar { margin-right: 52px; padding-right: 8px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
-	[data-naia-mobile="true"] .settings-tab-btn { padding: 10px 10px; font-size: 12.5px; }
+	[data-naia-mobile="true"] .settings-tab-bar { margin-right: 44px; padding: 4px 4px 0 8px; flex-wrap: wrap; overflow-x: visible; overflow-y: visible; row-gap: 2px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
+	[data-naia-mobile="true"] .settings-tab-btn { padding: 8px 6px; font-size: 12px; }
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout[data-web-hosted-app] .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has(.app-bar-settings--active) .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar,
@@ -629,8 +629,8 @@
 }
 @media (max-width: 600px) and (orientation: portrait) {
 	:root:not([data-layout-orientation="landscape"]) .web-mobile-workspace-close { display: block; position: fixed; right: 8px; top: 8px; z-index: 110; width: 40px; height: 40px; border: 0; border-radius: 10px; color: white; background: #172136; font-size: 20px; }
-	.settings-tab-bar { min-width: 0; overflow-x: auto; margin-right: 52px; padding-right: 8px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
-	.settings-tab-btn { flex: 0 0 auto; white-space: nowrap; padding: 10px 10px; font-size: 12.5px; }
+	.settings-tab-bar { min-width: 0; margin-right: 44px; padding: 4px 4px 0 8px; flex-wrap: wrap; overflow-x: visible; overflow-y: visible; row-gap: 2px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
+	.settings-tab-btn { flex: 0 0 auto; white-space: nowrap; padding: 8px 6px; font-size: 12px; }
 	.settings-tab,
 	.settings-model-roles,
 	.skills-list { grid-template-columns: minmax(0, 1fr); }
@@ -900,16 +900,19 @@
 }
 [data-layout-orientation="portrait"] .settings-tab-bar {
 	min-width: 0;
-	overflow-x: auto;
-	margin-right: 52px;
-	padding-right: 8px;
+	margin-right: 44px;
+	padding: 4px 4px 0 8px;
+	flex-wrap: wrap;
+	overflow-x: visible;
+	overflow-y: visible;
+	row-gap: 2px;
 	box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1));
 }
 [data-layout-orientation="portrait"] .settings-tab-btn {
 	flex: 0 0 auto;
 	white-space: nowrap;
-	padding: 10px 10px;
-	font-size: 12.5px;
+	padding: 8px 6px;
+	font-size: 12px;
 }
 [data-layout-orientation="portrait"] .settings-tab,
 [data-layout-orientation="portrait"] .settings-model-roles,
@@ -1478,7 +1481,7 @@
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"] [data-testid="slot-main"] .settings-summary-value,
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"] [data-testid="slot-sub"] .settings-summary-value,
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"] [data-testid="slot-embedding"] .settings-summary-value { display: none; }
-[data-naia-mobile="true"] .settings-tab-bar { min-width: 0; overflow-x: auto; }
+[data-naia-mobile="true"] .settings-tab-bar { min-width: 0; flex-wrap: wrap; overflow-x: visible; overflow-y: visible; }
 [data-naia-mobile="true"] .settings-tab-btn { flex: 0 0 auto; white-space: nowrap; }
 
 [data-naia-mobile="true"] .settings-tab,

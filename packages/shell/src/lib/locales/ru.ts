@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "Вкл",
 	"settings.thinkingLevelLow": "Низкий",
 	"settings.thinkingLevelHigh": "Высокий",
+	"settings.thinkingLevelXhigh": "Очень высокий",
 	"settings.thinkingLevelHint": "Включение размышлений замедляет ответы и увеличивает расход токенов.",
 	"settings.gatewayUrl": "URL-адрес шлюза Naia",
 	"settings.gatewayToken": "Токен шлюза Naia",

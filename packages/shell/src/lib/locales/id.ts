@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "Aktif",
 	"settings.thinkingLevelLow": "Rendah",
 	"settings.thinkingLevelHigh": "Tinggi",
+	"settings.thinkingLevelXhigh": "Sangat tinggi",
 	"settings.thinkingLevelHint": "Mengaktifkan pemikiran memperlambat respons dan meningkatkan biaya token.",
 	"settings.gatewayUrl": "URL Gateway Naia",
 	"settings.gatewayToken": "Token Gateway Naia",

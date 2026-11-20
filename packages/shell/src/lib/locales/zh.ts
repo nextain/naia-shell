@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "开启",
 	"settings.thinkingLevelLow": "低",
 	"settings.thinkingLevelHigh": "高",
+	"settings.thinkingLevelXhigh": "极高",
 	"settings.thinkingLevelHint": "启用思考会减慢回答速度并增加 Token 费用。",
 	"settings.gatewayUrl": "Naia 网关地址",
 	"settings.gatewayToken": "Naia 网关令牌",

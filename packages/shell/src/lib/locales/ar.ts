@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "تشغيل",
 	"settings.thinkingLevelLow": "منخفض",
 	"settings.thinkingLevelHigh": "عالي",
+	"settings.thinkingLevelXhigh": "عالٍ جدًا",
 	"settings.thinkingLevelHint": "تفعيل التفكير يؤدي إلى إبطاء الردود وزيادة تكلفة الرموز.",
 	"settings.gatewayUrl": "عنوان URL لبوابة Naia",
 	"settings.gatewayToken": "رمز بوابة Naia",

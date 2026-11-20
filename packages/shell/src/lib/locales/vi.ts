@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "Bật",
 	"settings.thinkingLevelLow": "Thấp",
 	"settings.thinkingLevelHigh": "Cao",
+	"settings.thinkingLevelXhigh": "Rất cao",
 	"settings.thinkingLevelHint": "Bật suy nghĩ sẽ làm chậm phản hồi và tăng chi phí token.",
 	"settings.gatewayUrl": "URL cổng Naia",
 	"settings.gatewayToken": "Mã thông báo cổng Naia",

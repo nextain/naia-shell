@@ -417,6 +417,7 @@ export default {
 	"settings.thinkingLevelOn": "켬",
 	"settings.thinkingLevelLow": "낮음",
 	"settings.thinkingLevelHigh": "높음",
+	"settings.thinkingLevelXhigh": "매우 높음",
 	"settings.thinkingLevelHint": "생각을 켜면 답변 생성이 느려지고 토큰 비용이 늘어납니다.",
 	"settings.gatewayUrl": "Naia Gateway URL",
 	"settings.gatewayToken": "Naia Gateway 토큰",
