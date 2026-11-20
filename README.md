@@ -220,14 +220,13 @@ naia-shell/
 
 ---
 
-## 라이선스
+## License & Patent Notice
 
-- **소스 코드**: Apache License 2.0 — [`LICENSE`](LICENSE).
-- **AI 컨텍스트**(`.agents/`·`.users/`·`AGENTS.md`): CC-BY-SA 4.0 — [`CONTEXT-LICENSE`](CONTEXT-LICENSE).
-
-**왜 듀얼 라이선스인가?** 소스 코드는 Apache 2.0 으로 자유롭게 수정·상용 가능하지만, AI 컨텍스트 파일(프로젝트 철학·기여 구조·AI 에이전트 협업 원칙)은 CC-BY-SA 4.0 입니다. 포크 시 컨텍스트 변경분도 **동일 라이선스로 공유(ShareAlike)**하고 원작자(Nextain)를 명시해야 합니다 — 업스트림 생태계(오픈소스 기여 구조 + AI 협업 원칙)가 모든 포크에 전파되도록 보호하기 위함입니다. 상세 = [`CONTEXT-LICENSE`](CONTEXT-LICENSE).
-
-기여 가이드·행동강령·보안정책은 [`.github/`](.github/) 참조.
+- **Code (`Apache-2.0`):** Licensed under the [Apache License 2.0 (`Apache-2.0`)](LICENSE). Free to use, modify, and distribute—including for commercial purposes, paid hosted or managed services (SaaS), and organizations of any size. Section 3 of the Apache License 2.0 includes a patent license for the code contained in this repository.
+- **Patents:** [`PATENTS.md`](PATENTS.md) explains the claim boundary split, lists Nextain's patent applications, and grants an additional conditional patent covenant (beyond the scope already licensed under Section 3 of the Apache License 2.0) for individuals, non-profits, and conforming Naia ecosystem developers. That additional covenant does not cover practicing a Listed Patent through a method or module not contained in this repository in paid hosted services for third parties, closed/OEM products, or enterprise-wide deployments meeting or exceeding the revenue or seat thresholds in [`PATENTS.md`](PATENTS.md) Section 2; see [`PATENTS.md`](PATENTS.md) Sections 2 and 3.
+- **Commercial:** [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md) covers proprietary Nextain Tier-2 modules and cloud pipelines not published in this repository, commercial patent licenses for methods not contained here, and enterprise support and indemnification.
+- **Contributing:** see [`CONTRIBUTING.md`](CONTRIBUTING.md). Pull requests are accepted under [`CLA.md`](CLA.md) (or [`CLA-CORPORATE.md`](CLA-CORPORATE.md) for corporate contributions).
+- **AI 컨텍스트 (`.agents/`·`.users/`·`AGENTS.md`):** CC-BY-SA 4.0 — [`CONTEXT-LICENSE`](CONTEXT-LICENSE). 포크 시 컨텍스트 변경분도 **동일 라이선스로 공유(ShareAlike)**하고 원작자(Nextain)를 명시해야 합니다. 추가 기여 가이드·행동강령·보안정책은 [`.github/`](.github/) 참조.
 
 ## 링크
 
