@@ -1482,7 +1482,7 @@ export function App() {
 				}}
 			/>
 			<WebLoginPromptModal />
-			<WebAppInstallLink />
+			<WebAppInstallLink ready={configHydrated && !showAdkSetup && !showOnboarding} />
 			{globalToast && (
 				<div
 					className="workspace-app__idle-toast"

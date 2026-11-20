@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadInstalledApps } from "../../lib/app-loader";
 import { appRegistry } from "../../lib/app-registry";
@@ -11,6 +11,7 @@ import {
 	setPlatformAppStoreAdapterForTests,
 } from "../../lib/app-store-adapter";
 import { setLocale } from "../../lib/i18n";
+import { resetWebAdkStatusForTests, setWebAdkStatus } from "../../lib/web-runtime/web-adk-status";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { onWebLoginPrompt } from "../../lib/web-runtime/web-login-prompt";
 import { useAppStore } from "../../stores/app";
@@ -50,13 +51,14 @@ function registerApp() {
 }
 
 async function showLink() {
-	render(<WebAppInstallLink />);
+	render(<WebAppInstallLink ready />);
 	return screen.findByTestId("web-app-install-accept");
 }
 
 describe("web catalog install handoff", () => {
 	beforeEach(async () => {
 		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
 		await setLocale("en");
 		window.history.replaceState(null, "", "/app/?installApp=naia-slides&keep=1#section");
 		useAppStore.getState().setActiveApp(null);
@@ -68,6 +70,7 @@ describe("web catalog install handoff", () => {
 		appRegistry.unregister(appId);
 		setPlatformAppStoreAdapterForTests(null);
 		setWebAssetsModeForTests(null);
+		resetWebAdkStatusForTests();
 		window.history.replaceState(null, "", "/");
 	});
 
@@ -86,6 +89,21 @@ describe("web catalog install handoff", () => {
 		expect(adapter.purchaseApp).not.toHaveBeenCalled();
 		expect(loadInstalledApps).toHaveBeenCalledOnce();
 		expect(window.location.search + window.location.hash).toBe("?keep=1#section");
+	});
+
+	it("leaves first workspace setup accessible and waits for config hydration", async () => {
+		const adapter = createAdapter();
+		setWebAdkStatus({ phase: "needs-setup" });
+		const { rerender } = render(<WebAppInstallLink ready={false} />);
+		expect(screen.queryByTestId("web-app-install-confirm")).not.toBeInTheDocument();
+		expect(adapter.listCatalog).not.toHaveBeenCalled();
+		expect(window.location.search).toContain("installApp=naia-slides");
+
+		rerender(<WebAppInstallLink ready />);
+		expect(screen.queryByTestId("web-app-install-confirm")).not.toBeInTheDocument();
+		act(() => setWebAdkStatus({ phase: "ready" }));
+		expect(await screen.findByTestId("web-app-install-accept")).toBeInTheDocument();
+		expect(adapter.installApp).not.toHaveBeenCalled();
 	});
 
 	it("opens an installed app only after a strict entitlement check", async () => {
@@ -135,7 +153,7 @@ describe("web catalog install handoff", () => {
 	it("does not look up conflicting parameters", () => {
 		const adapter = createAdapter();
 		window.history.replaceState(null, "", "/app/?installApp=naia-slides&installApp=land.naia.elsewhere");
-		render(<WebAppInstallLink />);
+		render(<WebAppInstallLink ready />);
 		expect(screen.getByTestId("web-app-install-error")).toBeInTheDocument();
 		expect(screen.queryByTestId("web-app-install-accept")).not.toBeInTheDocument();
 		expect(adapter.listCatalog).not.toHaveBeenCalled();

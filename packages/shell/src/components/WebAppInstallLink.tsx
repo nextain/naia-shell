@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { localizeStoreProduct } from "../lib/app-catalog";
 import { loadInstalledApps } from "../lib/app-loader";
 import { appRegistry } from "../lib/app-registry";
@@ -11,6 +11,7 @@ import {
 import { NAIA_WEB_BASE_URL } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { getWebAdkStatus, subscribeWebAdkStatus } from "../lib/web-runtime/web-adk-status";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 import {
 	readWebAppInstallId,
@@ -49,9 +50,16 @@ const KOREAN_COPY: typeof ENGLISH_COPY = {
 	failed: "앱을 열지 못했습니다. 다시 시도하세요.",
 };
 
-export function WebAppInstallLink() {
+export function WebAppInstallLink({ ready }: { ready: boolean }) {
 	const [dismissedSearch, setDismissedSearch] = useState<string | null>(null);
-	if (!isWebMode() || isKioskDemo() || typeof window === "undefined") return null;
+	const workspace = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
+	if (
+		!ready ||
+		workspace.phase !== "ready" ||
+		!isWebMode() ||
+		isKioskDemo() ||
+		typeof window === "undefined"
+	) return null;
 
 	const search = window.location.search;
 	const params = new URLSearchParams(search);
