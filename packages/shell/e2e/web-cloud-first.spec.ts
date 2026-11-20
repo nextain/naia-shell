@@ -25,6 +25,17 @@ test("the first visit with an available GPU selects cloud without loading the br
 		}
 		return request.origin === origin ? route.continue() : route.abort();
 	});
+	await page.route("**/web-adk/*.json", async (route) => {
+		if (new URL(route.request().url()).origin !== origin) {
+			await route.abort();
+			return;
+		}
+		const response = await route.fetch();
+		const bundle = await response.json();
+		const agents = bundle.files.find((file: { path: string }) => file.path === "AGENTS.md");
+		if (!agents) throw new Error("workspace bundle lacks AGENTS.md");
+		await route.fulfill({ json: { ...bundle, files: [agents], dirs: [] } });
+	});
 	await page.addInitScript(() => {
 		const starts: (string | null)[] = [];
 		let adapterChecks = 0;
@@ -50,7 +61,7 @@ test("the first visit with an available GPU selects cloud without loading the br
 		});
 	});
 
-	await page.goto("/");
+	await page.goto("/", { waitUntil: "domcontentloaded" });
 	await page.getByTestId("web-workspace-start-default").click();
 	await waitWebWorkspaceReady(page);
 	await expect.poll(() => page.evaluate(() => {
