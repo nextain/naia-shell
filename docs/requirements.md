@@ -2095,18 +2095,18 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-VOICE-MIC.4 | 웹판에서 음성 인식의 마이크 권한이 거부되면 채팅 입력란 위에 한·영 안내와 [마이크 다시 시도]·[글로 대화]를 표시합니다. 재시도는 기존 음성 연결 경로를 시작하고, 글로 대화는 안내를 닫고 작성 중인 글을 보존한 채 입력란에 초점을 줍니다. 안내를 대화 기록에 넣지 않으며 1280×720과 390×844에서 조작할 수 있습니다. (R21-4) | Done (local Vitest·CSS 미리보기) |
 
 검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
-## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-20)
+## 웹판 공식 앱스토어와 관리자 등록 앱 (R3·R4, 2026-11-20)
 
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
-| FR-WEB-APP-CATALOG.1 | 셸의 앱스토어 카탈로그 생성·정규화·표시 규칙은 `packages/shell/src/lib/app-catalog.ts` 한 모듈에 통합하고 데스크톱·웹 어댑터(`app-store-adapter.ts`)와 웹 스토어 모달(`WebAppStoreModal.tsx`)이 공유합니다. 정식 웹판은 내장 Stage-1 앱 → 게이트웨이 `GET /v1/apps/products` → 포털 `GET {NAIA_WEB_BASE_URL}/api/apps` 순서로 합친 한 목록을 보여 주며 같은 id 는 앞 출처가 이깁니다. (UC-WEB-APP-CATALOG) | Done (local) |
-| FR-WEB-APP-CATALOG.2 | 포털 목록은 4초 안에 응답이 없거나 실패·형식 오류면 빈 목록으로 처리하고, 스토어는 오류 없이 내장 목록만 보입니다. 모달에서 조회·실행 오류가 발생하면 재시도 단추로 복구할 수 있고 `Escape`로 닫을 수 있습니다. | Done (local) |
-| FR-WEB-APP-CATALOG.3 | 어드민 앱은 `docs/app-store-protocol.md` 계약을 따르고 공개(`visibility`)·제공 언어(`locales`)·허용 출처(`url`) 검사를 통과한 것만 보입니다. `/app/` 아래에 마운트된 웹 셸은 포털의 `/hosted-apps/…` 상대·절대 주소를 `${shellOrigin}${shellBasePath}hosted-apps/…`로 정규화하며, 포털 상점 상세 주소(`/apps/<slug>`)는 기본 호스팅 번들 주소로 대체합니다. 포털 목록의 유료 스토어 항목(`source: "store"` 또는 `creditPrice > 0`)은 가격과 구매·권한 검사를 유지하고, 무료 어드민 앱만 로그인·구매 없이 설치·실행합니다. | Done (local) |
-| FR-WEB-APP-CATALOG.5 | `WebAppStoreModal`은 14개 로케일 번역과 포털 상점과 같은 다국어 이름·설명 폴백(`names[locale]` → 한국어는 `ko`, 그 외는 `en` → 기본 이름) 및 가격 표기(`무료` 또는 `formatWebCredits` `1,234 Cr`)를 사용하며, 1280×720과 390×844에서 가로 넘침 없이 동작합니다. | Done (local) |
-| FR-WEB-APP-CATALOG.4 | 포털 상점 화면 `/{locale}/apps` 도 같은 `/api/apps` 목록으로 그립니다. | 포털 작업(이 저장소 밖), 미착수 |
-| FR-WEB-APP-CATALOG.6 | 웹 앱을 설치할 때 기존 설치 목록을 보존하고 같은 앱의 중복 추가를 막습니다. 설치 목록이 아직 없으면 표시 중인 기본 내장 앱을 유지합니다. 첫 제거에서도 선택한 앱만 목록에서 빼며, 이미 제거한 내장 앱과 명시적으로 비운 설치 목록을 존중합니다. (UC-WEB-APP-CATALOG) | Done (local) |
+| FR-WEB-APP-CATALOG.1 | 웹 셸 앱 바와 모바일 메뉴의 [앱스토어]는 공식 웹 상점 `/{locale}/apps?target=web`을 새 창으로 엽니다. 셸은 내장 앱·게이트웨이 상품·포털 공개 자료에서 설치 대상 앱을 찾습니다. | 로컬 후보 |
+| FR-WEB-APP-CATALOG.2 | 목록 일부 조회가 실패해도 사용 가능한 항목을 보존합니다. 선택한 앱을 설치할 수 없으면 안내를 표시하고 상점으로 돌아갈 수 있습니다. | 로컬 후보 |
+| FR-WEB-APP-CATALOG.3 | 등록 앱은 공개·제공 언어·허용 출처를 검사하고 `/hosted-apps/…`를 셸 기본 경로에 맞춥니다. 공개 무료 등록 앱은 바로 설치할 수 있고 유료 앱은 상점에서 구매한 계정의 보유 권한을 확인합니다. | 로컬 후보 |
+| FR-WEB-APP-CATALOG.4 | 포털은 공개 API와 같은 상품 자료를 목록·상세에서 씁니다. 설치 가능한 상품 상세에서 `/app/?installApp=<공개 앱 ID>`로 이어집니다. | 포털 로컬 후보 |
+| FR-WEB-APP-CATALOG.5 | 셸은 선택한 앱 하나의 이름과 확인을 표시합니다. 확인하면 앱 바에 추가하고 실행합니다. 설치 링크를 열거나 확인해도 추가 구매 요청은 발생하지 않습니다. | 로컬 후보 |
+| FR-WEB-APP-CATALOG.6 | 첫 설치에서 기본 앱을 유지하고 같은 앱을 중복 추가하지 않습니다. 첫 제거에서는 고른 앱만 빼며 이전 삭제와 명시적으로 비운 목록을 존중합니다. | 로컬 후보 |
 
-로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`·`WebAppStoreModal.test.tsx`·`i18n-web-strings.test.ts`·`i18n-user-facing.test.ts`, 기존 Playwright `e2e/web-app-store-catalog.spec.ts`(1280×720·390×844). 실제 포털 서버 응답은 미확인.
+검수 경로는 `UC-WEB-APP-CATALOG`에 있습니다. 개발판의 실제 관리자 등록·유료 구매·실행은 승인된 계정으로 대조합니다.
 
 ## 웹판 슬라이드 PPTX 열기 (R27, 2026-11-19)
 

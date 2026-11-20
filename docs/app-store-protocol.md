@@ -34,44 +34,25 @@ The Shell owns `data-private/apps/land.naia.shell/diagnostics/voice/` for local
 VoxCPM2 chat diagnostics. It uses the same WAV + JSON format, with no slide
 identity. This lets a voice incident be attributed to source generation before
 
-## Unified web app catalog (R3 · R4, 2026-11-19)
+## Web storefront and installation (R3 · R4, 2026-11-20)
 
-Scope: the official web shell (browser, `vite --mode web`). The desktop
-(Tauri) build keeps its signed-package store window and is unchanged.
+The app bar opens the portal storefront at `/{locale}/apps?target=web` in
+a new window with `noopener,noreferrer`. The portal handles browsing, pricing
+and purchase. Desktop uses the existing `naia://app-install` signed-package
+flow.
 
-### Before (fragmented)
+The portal hands a public catalog ID to the same origin at
+`/app/?installApp=<id>`. A free registered app can link directly. A paid
+product exposes a Web install link after purchase. The shell checks the
+current catalog, shows confirmation for that app, and verifies ownership.
+Opening or confirming this link never issues a purchase request.
 
-| Surface | List source | Install / open |
-|---|---|---|
-| In-shell mini-app store (`WebAppStoreModal`, App bar "앱스토어" in web) | gateway `GET /v1/apps/products` merged with the hard-coded `STAGE1_HOSTED_MINI_APPS` (4 apps); Stage-2 ids hidden | `WebHttpAppStoreAdapter.installApp` → `installedWebApps` in config → iframe `${shellOrigin}${shellBase}hosted-apps/<slug>/index.html` |
-| Portal storefront `naia.land/{locale}/apps` (desktop opens it in the `app-store` window) | portal `listApps()` → the same gateway products, all active items (shows Stage-2 apps, lacks `charcard`) | portal purchase → `naia://` install deep link (desktop only) |
-
-The two lists differ and an admin had no way to add an app to either.
-
-### After (one catalog)
-
-`packages/shell/src/lib/app-catalog.ts` owns the canonical built-in specs
-(`STAGE1_HOSTED_MINI_APPS`), gateway/portal normalization, unified catalog merge
-(`buildUnifiedAppCatalog`), and localized card copy/price helpers
-(`localizeStoreProduct`, `formatStoreProductPrice`). Both
-`WebHttpAppStoreAdapter`/`DesktopTauriAppStoreAdapter` and `WebAppStoreModal`
-share this module, building one list in this order (earlier sources win on an id
-collision):
-
-1. built-in Stage-1 apps (`STAGE1_HOSTED_MINI_APPS`) — always shown;
-2. gateway products (`GET /v1/apps/products`);
-3. public catalog items from `GET {NAIA_WEB_BASE_URL}/api/apps` (both
-   admin-registered `registry` apps and `store` product records).
-
-A failure of 2 or 3 (offline, timeout 4 s, non-2xx, malformed body) is silent:
-the store then shows the built-in list only. Site-relative `/hosted-apps/…` or
-portal-root `${portal}/hosted-apps/…` URLs are normalized onto the shell's
-hosted-apps prefix (e.g. `/app/hosted-apps/…` when `BASE_URL` is `/app/`), while
-portal storefront page links (`/apps/<slug>`) fall back to the default hosted
-bundle path. Paid store records (`source: "store"` or `creditPrice > 0`) keep
-their price and entitlement checks; free admin-registered apps launch without
-login. Installing any catalog item uses the same `installedWebApps` list and the
-same iframe sandbox checks.
+The shell resolves apps from built-in Stage-1 entries, gateway products and
+the portal public catalog, in that order. Lookup failures leave available
+entries intact. Installation uses the existing `installedWebApps` config
+and iframe sandbox. Portal `/hosted-apps/…` URLs map to the shell base,
+for example `/app/hosted-apps/…`. The receiving shell adds the selected app
+to its app bar and opens it after confirmation.
 
 ### Built-in hosted app bundles (R35)
 
@@ -139,6 +120,5 @@ Rules the shell enforces:
   Paid apps must be registered as gateway products.
 - At most 200 items are read.
 
-Portal follow-up (not in this repository): the storefront page
-`/{locale}/apps` should render from the same `/api/apps` list so the portal
-and the in-shell store show the same apps.
+The portal storefront at `/{locale}/apps` uses the same public catalog source
+as the `/api/apps` response.

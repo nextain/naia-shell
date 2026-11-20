@@ -3474,22 +3474,20 @@ R21-4에서 마이크 권한이 거부되면 채팅 입력란 위에 사이트�
 | 오류·키보드 | 재시도가 실패해도 안내 하나만 보입니다. [글로 대화]를 선택하면 안내가 닫히고 입력란에서 작성하던 글을 보낼 수 있습니다. | `ChatArea.test.tsx`, `i18n-user-facing.test.ts` R21-4 |
 | 좁은 폭 | 1280×720과 390×844의 기본 채팅 및 390×844의 접힌 채팅에서 안내와 단추의 줄바꿈, 입력란 배치를 검토합니다. | `web-mode.css` 레이아웃 검토, `e2e/web-voice-r26.spec.ts` |
 
-## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-20)
+## UC-WEB-APP-CATALOG. 공식 웹 상점에서 웹 나이아에 앱 설치 (R3·R4, 2026-11-20)
 
-정식 웹판(브라우저) 사용자가 상단 앱 막대 또는 모바일(`390×844`) `☰` 메뉴의 [앱스토어]를 누릅니다. 셸 안 미니앱 스토어(`WebAppStoreModal`)는 단일 카탈로그 모듈(`packages/shell/src/lib/app-catalog.ts`)이 합친 한 목록으로 내장 앱 4개(캐릭터 카드·슬라이드·이음오피스·카페루아 타로), 게이트웨이 상품(`GET /v1/apps/products`), 포털 공개 목록(`GET {NAIA_WEB_BASE_URL}/api/apps`)의 어드민 등록 앱과 스토어 상품을 보여 줍니다. 각 카드에는 포털 웹 앱스토어(`/{locale}/apps`)와 같은 언어 폴백 규칙의 이름·설명, 버전, 가격(`무료` 또는 `1,234 Cr`)이 14개 언어로 표시됩니다. 무료 어드민 앱은 로그인 없이 [실행]으로 바로 열리고, 유료 스토어 상품은 로그인·권한 확인·구매 흐름을 그대로 거칩니다.
+사용자는 웹 나이아의 앱 바 또는 모바일 메뉴에서 [앱스토어]를 누릅니다. 새 창의 공식 상점에서 상품을 찾아 상세를 열고 [웹 나이아에 설치]를 선택합니다. 유료 앱은 기존 상점 구매 흐름을 거칩니다. 웹 나이아에서 선택한 앱을 확인하면 앱 바에 추가하고 격리 iframe에서 엽니다.
 
-포털이 `/app/` 아래에 마운트된 웹 셸에 사이트 상대 경로(`/hosted-apps/<slug>/index.html`)나 포털 루트 주소(`${portal}/hosted-apps/<slug>/index.html`)를 내려보내도 셸 기본 경로(`/app/hosted-apps/<slug>/index.html`)로 정규화해 격리 샌드박스에서 엽니다. 포털 공개 목록의 상점 상세 페이지 주소(`/apps/<slug>`)는 iframe 주소로 오인하지 않고 기본 호스팅 번들 주소로 연결합니다. 포털·게이트웨이 서버가 없거나 실패하면 오류 없이 내장 목록만 보이며, 모달 조회·실행 오류가 나면 다시 시도할 수 있고 `Escape` 키로 닫을 수 있습니다. 계약: `docs/app-store-protocol.md` "Unified web app catalog".
+유료 앱을 보유하지 않았다면 상점으로 돌아갈 수 있고, 로그인이 필요한 경우 기존 로그인 안내를 씁니다. 등록 앱의 호스팅 경로는 셸 기본 경로에 맞춰 검사합니다. 계약은 `docs/app-store-protocol.md`에 있습니다.
 
 ### Test Coverage Map — UC-WEB-APP-CATALOG
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
-| 기본(서버 정상·단일 모듈) | 내장 4개 뒤에 게이트웨이·포털 어드민 앱이 순서대로 중복 없이 보이며, 카드마다 다국어 이름·설명·버전·가격(`무료` / `Cr`)이 표시됨 | `app-catalog.test.ts`, `WebAppStoreModal.test.tsx`, `e2e/web-app-store-catalog.spec.ts` (1280×720·390×844) |
-| 빈 목록·실패·복구 | 포털·게이트웨이 실패 시 내장 목록만 표시. 카탈로그 조회 실패 시 재시도 단추로 복구 가능, 빈 목록 안내 및 `Escape` 닫기 동작 | `app-catalog.test.ts`, `WebAppStoreModal.test.tsx` |
-| 진행·성공·`/app/` 경로 | `/app/` 기준 경로에서도 포털 `/hosted-apps/…` 상대·절대 주소 어드민 앱이 `/app/hosted-apps/…`로 열리고, 유료 스토어 항목은 가격·권한 검사를 유지함 | `app-catalog.test.ts`, `app-store-adapter.test.ts` |
-| 첫 설치·재설치·제거 | 무료 등록 앱을 처음 설치해도 이미 설치된 앱이 남고 같은 앱을 다시 설치해도 한 번만 보임. 기본 앱의 첫 제거는 선택한 앱에만 적용되며, 제거할 앱이 없거나 명시적으로 비운 목록은 그대로 유지함 | `app-catalog.test.ts` |
-| 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts`, `app-store-adapter.test.ts` |
-| 좁은 폭·다국어 | 1280×720·390×844 및 14개 언어에서 모달·카드·가격·[실행] 단추가 넘치지 않고 비한국어 로케일은 영어/해당 언어로 폴백됨 | `WebAppStoreModal.test.tsx`, `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts` |
+| 상점 진입·설치 | 공식 상점이 새 창에 열리고, 설치 주소에서 선택한 앱을 확인하고 실행합니다. | `e2e/web-app-store-catalog.spec.ts` |
+| 권한·오류 | 숨김·미등록·준비 중인 앱을 거절합니다. 유료 앱은 보유 권한을 확인하며 설치 링크에서 구매 요청을 보내지 않습니다. | `app-catalog.test.ts`, `app-store-adapter.test.ts`, `e2e/web-app-store-catalog.spec.ts` |
+| 앱 바 | 새 앱을 설치한 뒤 기존 앱이 유지됩니다. | `app-catalog.test.ts`, `e2e/web-app-store-catalog.spec.ts` |
+| 모바일 | 390×844에서 상점 진입과 설치 확인을 조작할 수 있습니다. | `e2e/web-app-store-catalog.spec.ts` |
 
 ## UC-WEB-SLIDES-PPTX. 웹판 슬라이드에서 PPTX 열기 (R27, 2026-11-19)
 
