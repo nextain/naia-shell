@@ -1,11 +1,41 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { openWebShellWithBgm, WEB_BGM_VIEWPORTS } from "./helpers/web-bgm";
 
 test.skip(process.env.NAIA_E2E_WEB !== "1" || process.env.VITE_NAIA_WEB_LLM !== "fake", "requires the fake browser engine");
 
+const f16 = "Qwen3-4B-q4f16_1-MLC";
+const f32 = "Qwen3-4B-q4f32_1-MLC";
+
+async function openDeviceChat(page: Page, model = f32) {
+	await openWebShellWithBgm(page, { openBgm: false });
+	// A fresh workspace starts in cloud mode. Set up an explicit on-device
+	// choice before exercising the recovery controls themselves.
+	await page.evaluate(async (selection) => {
+		const configPath = "/src/lib/config.ts";
+		const storePath = "/src/lib/adk-store.ts";
+		const bridgePath = "/src/lib/web-runtime/agent-bridge.ts";
+		const startPath = "/src/lib/web-runtime/model-start.ts";
+		const [config, store, agent, runtime] = await Promise.all([
+			import(configPath), import(storePath), import(bridgePath), import(startPath),
+		]);
+		const current = config.loadConfig();
+		if (!current) throw new Error("expected persisted cloud defaults before picking a device model");
+		const role = { ...current.llmRoles?.main, provider: "webllm", model: selection };
+		const next = { ...current, ...role, llmRoles: { ...current.llmRoles, main: role }, webAutoDefaultModel: false };
+		config.saveConfig(next);
+		await store.writeNaiaConfig(next);
+		localStorage.setItem("naia-web-llm-model", selection);
+		await runtime.startWebModel({
+			gpu: undefined, storage: localStorage, engineKind: "fake", preferredModel: selection,
+			bridge: agent.getStartableAgentBridge(),
+		});
+	}, model);
+	await expect(page.getByTestId("web-model-status")).toHaveAttribute("data-model", model);
+}
+
 test("restarts the same device model in the worker and keeps the open draft", async ({ page }) => {
 	await page.context().route(/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::\d+)?\/)/, (route) => route.abort());
-	await openWebShellWithBgm(page, { openBgm: false });
+	await openDeviceChat(page);
 	const status = page.getByTestId("web-model-status");
 	const input = page.locator(".naia-chat-area .chat-input");
 	await expect(status).toHaveAttribute("data-phase", "ready");
@@ -25,13 +55,10 @@ test("restarts the same device model in the worker and keeps the open draft", as
 	expect(navigations).toBe(0);
 });
 
-const f16 = 'Qwen3-4B-q4f16_1-MLC';
-const f32 = 'Qwen3-4B-q4f32_1-MLC';
 test('compatible model preserves and sends the draft through a fresh worker', async ({ page }) => {
   const blocked: string[] = [];
   await page.context().route(/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::\d+)?\/)/, route => { blocked.push(route.request().url()); return route.abort(); });
-  await page.addInitScript(({f16}) => { if (!localStorage.getItem('naia-web-llm-model')) localStorage.setItem('naia-web-llm-model', f16); if (!localStorage.getItem('naia-config')) localStorage.setItem('naia-config', JSON.stringify({provider:'webllm',model:f16,ttsEnabled:false,locale:'ko'})); }, {f16});
-  await openWebShellWithBgm(page, {openBgm:false});
+  await openDeviceChat(page, f16);
   const status = page.getByTestId('web-model-status');
   const input = page.locator('.naia-chat-area .chat-input');
   await expect(status).toHaveAttribute('data-phase','ready');
@@ -70,7 +97,7 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 	test(`returns to the default device model in the current conversation (${viewport.width}px)`, async ({ page }) => {
 		await page.setViewportSize(viewport);
 		await page.context().route(/^https?:\/\/(?!(?:localhost|127\.0\.0\.1)(?::\d+)?\/)/, (route) => route.abort());
-		await openWebShellWithBgm(page, { openBgm: false });
+		await openDeviceChat(page, f32);
 		const status = page.getByTestId("web-model-status");
 		const input = page.locator(".naia-chat-area .chat-input");
 		await expect(status).toHaveAttribute("data-phase", "ready");
