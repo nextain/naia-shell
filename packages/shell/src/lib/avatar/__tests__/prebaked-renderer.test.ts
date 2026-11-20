@@ -82,7 +82,7 @@ describe("R48 web clip playback", () => {
 	const idleUrl = "/app/nva/naia/clips/idle.webm";
 	let renderer: PrebakedAvatarRenderer;
 	let video: HTMLVideoElement;
-	let onPlaybackFailure: ReturnType<typeof vi.fn>;
+	let onPlaybackFailure: (reason: string) => void;
 
 	beforeEach(() => {
 		setWebAssetsModeForTests(true);
