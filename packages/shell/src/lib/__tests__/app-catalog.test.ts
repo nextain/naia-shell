@@ -2,8 +2,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	fetchPortalCatalog,
+	formatStoreProductPrice,
 	isOfferedInLocale,
+	localizeStoreProduct,
 	parsePortalCatalog,
+	portalCatalogUrl,
+	resolvePortalHostedEntryUrl,
 } from "../app-catalog";
 import { WebHttpAppStoreAdapter } from "../app-store-adapter";
 
@@ -246,5 +250,118 @@ describe("R3 unified web catalog (built-in + gateway + admin)", () => {
 			/login is required/,
 		);
 		localStorage.clear();
+	});
+
+	it("R3 normalizes portal /hosted-apps/ URLs under /app/ base path and preserves paid store records", async () => {
+		localStorage.clear();
+		const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.startsWith(`${SHELL}/api/apps`)) {
+				return jsonResponse(200, {
+					apps: [
+						{
+							id: "land.naia.rel-quiz",
+							name: "Relative Quiz",
+							url: "/hosted-apps/rel-quiz/index.html",
+							source: "registry",
+						},
+						{
+							id: "land.naia.abs-quiz",
+							name: "Absolute Quiz",
+							url: `${SHELL}/hosted-apps/abs-quiz/index.html`,
+							source: "registry",
+						},
+						{
+							id: "db-123",
+							slug: "land.naia.paid-pro",
+							name: "Paid Pro",
+							url: "/apps/land.naia.paid-pro",
+							creditPrice: 1500,
+							source: "store",
+						},
+					],
+				});
+			}
+			throw new TypeError(`network down: ${url}`);
+		}) as unknown as typeof fetch;
+
+		const adapter = new WebHttpAppStoreAdapter({
+			stage1HostedCatalog: true,
+			fetchImpl,
+			getGatewayUrl: () => "https://api-dev.naia.land",
+			getShellOrigin: () => SHELL,
+			getShellBasePath: () => "/app/",
+			getPortalBaseUrl: () => SHELL,
+			getLocale: () => "ko",
+			getAuthKey: () => undefined,
+		});
+
+		const catalog = await adapter.listCatalog();
+		const relQuiz = catalog.find((c) => c.appId === "land.naia.rel-quiz");
+		const absQuiz = catalog.find((c) => c.appId === "land.naia.abs-quiz");
+		const paidPro = catalog.find((c) => c.appId === "land.naia.paid-pro");
+
+		expect(relQuiz?.hostedEntryUrl).toBe(
+			`${SHELL}/app/hosted-apps/rel-quiz/index.html`,
+		);
+		expect(absQuiz?.hostedEntryUrl).toBe(
+			`${SHELL}/app/hosted-apps/abs-quiz/index.html`,
+		);
+		expect(paidPro).toMatchObject({
+			appId: "land.naia.paid-pro",
+			priceCredits: 1500,
+			hostedEntryUrl: `${SHELL}/app/hosted-apps/land.naia.paid-pro/index.html`,
+		});
+
+		// Free admin registry apps launch without login, whereas paid store records still require login.
+		await expect(
+			adapter.checkEntitlement("land.naia.rel-quiz"),
+		).resolves.toBe(true);
+		await expect(
+			adapter.checkEntitlement("land.naia.paid-pro"),
+		).rejects.toThrow(/login is required/);
+
+		expect(portalCatalogUrl(SHELL, "ja")).toBe(`${SHELL}/api/apps?lang=ja`);
+		expect(
+			resolvePortalHostedEntryUrl("https://evil.example/hosted-apps/a/index.html", {
+				shellOrigin: SHELL,
+				portalOrigin: SHELL,
+				hostedAppsPrefix: "/app/hosted-apps/",
+			}),
+		).toBe("https://evil.example/hosted-apps/a/index.html");
+	});
+
+	it("R3 shares portal-compatible locale fallback and R42 credit price formatting", () => {
+		const sample = {
+			appId: "land.naia.sample",
+			manifest: {
+				id: "land.naia.sample",
+				name: "Fallback Name",
+				names: {
+					ko: "한국어 이름",
+					en: "English Name",
+					ja: "日本語の名前",
+				},
+				descriptions: {
+					ko: "한국어 설명",
+					en: "English description",
+				},
+				version: "1.0.0",
+			},
+		};
+		expect(localizeStoreProduct(sample, "ko-KR")).toEqual({
+			title: "한국어 이름",
+			description: "한국어 설명",
+		});
+		expect(localizeStoreProduct(sample, "ja")).toEqual({
+			title: "日本語の名前",
+			description: "English description",
+		});
+		expect(localizeStoreProduct(sample, "fr")).toEqual({
+			title: "English Name",
+			description: "English description",
+		});
+		expect(formatStoreProductPrice(0, "무료")).toBe("무료");
+		expect(formatStoreProductPrice(3000, "무료")).toBe("3,000 Cr");
 	});
 });

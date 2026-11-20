@@ -1,3 +1,10 @@
+<!-- src-sha: r3unify20261120 -->
+
+## 웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합 (R3) — 2026-11-20
+
+- 셸 안의 내장 앱 정의·게이트웨이 상품 정규화·포털 공개 목록(`GET /api/apps`) 병합·다국어 이름/설명 폴백·가격 표기(`무료` / `Cr`)를 `app-catalog.ts` 한 코드로 통합하고 어댑터와 `WebAppStoreModal`(14개국어·`Escape` 닫기·오류 재시도·1280×720/390×844 줄바꿈)에 연결했습니다. `/app/` 경로에서도 포털 `/hosted-apps/` 주소를 정규화하고 유료 스토어 상품의 가격·권한 검사를 보존합니다. 표적 Vitest 6파일 34통과·0실패. 실서버 화면은 미확인입니다.
+- `UC-WEB-APP-CATALOG` · `FR-WEB-APP-CATALOG.1~5` · `app-catalog.test.ts` · `WebAppStoreModal.test.tsx`
+
 <!-- src-sha: 7c3b648621572e1f -->
 
 ## 웹판 아바타 영상 다운로드와 재시도 (R48) — 2026-11-20

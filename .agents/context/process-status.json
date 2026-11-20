@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T00:46:58Z",
+  "last_updated": "2026-11-20T01:30:00Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_app_catalog_unify_r3_20261120": {
+      "requirement_id": "R3",
+      "title": "웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합",
+      "branch": "alpha/webgpu-p3-store-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-APP-CATALOG",
+      "requirements": "docs/requirements.md FR-WEB-APP-CATALOG.1~5",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/__tests__/app-catalog.test.ts, packages/shell/src/lib/__tests__/app-store-adapter.test.ts, packages/shell/src/components/__tests__/WebAppStoreModal.test.tsx",
+      "last_updated": "2026-11-20T01:30:00Z",
+      "verification": "표적 Vitest 6파일 34통과·0실패(app-catalog, app-store-adapter, app-store-adapter-package-icon, WebAppStoreModal, i18n-web-strings, i18n-user-facing). 1280×720·390×844 및 14개 로케일에서 단일 카탈로그 병합, /app/ 기준 경로의 포털 /hosted-apps/ 정규화, 유료 스토어 항목 가격·권한 보존, 모달 가격 배지·Escape 닫기·재시도를 확인. 실서버·실 브라우저 캡처는 미확인."
+    },
     "web_avatar_clip_r48_20261120": {
       "requirement_id": "R48",
       "title": "웹판 아바타 영상 다운로드와 재시도",

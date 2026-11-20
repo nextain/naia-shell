@@ -3434,21 +3434,21 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 오류 코드 표 | 6가지 코드 → 안내 문구 키, 모르는 코드는 null | `src/lib/stt/__tests__/web-speech-stt.test.ts` R26 |
 | 데스크톱 회귀 | 데스크톱 Web Speech 권한 오류 문구는 그대로 | `src/components/__tests__/ChatArea.test.tsx` |
 | 좁은 폭 | 390×844 에서 채팅 위 안내 문구가 잘리지 않음 | `e2e/web-voice-r26.spec.ts` R26 390 |
-## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
+## UC-WEB-APP-CATALOG. 웹판 앱스토어 한 목록과 어드민 등록 앱 (R3·R4, 2026-11-20)
 
-정식 웹판(브라우저) 사용자가 앱 막대의 [앱스토어]를 누릅니다. 셸 안 미니앱 스토어에는 내장 앱 4개(캐릭터 카드·슬라이드·이음오피스·카페루아 타로), 게이트웨이 상품, 포털 어드민이 등록한 앱이 한 목록으로 보입니다. 어드민 앱은 로그인 없이 [실행]으로 바로 열리고, 설치된 뒤에는 앱 막대에 내장 앱과 같은 방식으로 남습니다.
+정식 웹판(브라우저) 사용자가 상단 앱 막대 또는 모바일(`390×844`) `☰` 메뉴의 [앱스토어]를 누릅니다. 셸 안 미니앱 스토어(`WebAppStoreModal`)는 단일 카탈로그 모듈(`packages/shell/src/lib/app-catalog.ts`)이 합친 한 목록으로 내장 앱 4개(캐릭터 카드·슬라이드·이음오피스·카페루아 타로), 게이트웨이 상품(`GET /v1/apps/products`), 포털 공개 목록(`GET {NAIA_WEB_BASE_URL}/api/apps`)의 어드민 등록 앱과 스토어 상품을 보여 줍니다. 각 카드에는 포털 웹 앱스토어(`/{locale}/apps`)와 같은 언어 폴백 규칙의 이름·설명, 버전, 가격(`무료` 또는 `1,234 Cr`)이 14개 언어로 표시됩니다. 무료 어드민 앱은 로그인 없이 [실행]으로 바로 열리고, 유료 스토어 상품은 로그인·권한 확인·구매 흐름을 그대로 거칩니다.
 
-포털 서버가 없거나 실패하면 오류 없이 내장 목록만 보입니다. 어드민이 내장 앱과 같은 id 로 등록해도 내장 앱 이름·주소는 바뀌지 않습니다. 허용된 앱 주소(포털 `/hosted-apps/` 또는 앱 샌드박스 출처)가 아닌 앱, 공개가 아닌 앱, 현재 언어에서 제공하지 않는 앱은 보이지 않습니다. 계약: `docs/app-store-protocol.md` "Unified web app catalog".
+포털이 `/app/` 아래에 마운트된 웹 셸에 사이트 상대 경로(`/hosted-apps/<slug>/index.html`)나 포털 루트 주소(`${portal}/hosted-apps/<slug>/index.html`)를 내려보내도 셸 기본 경로(`/app/hosted-apps/<slug>/index.html`)로 정규화해 격리 샌드박스에서 엽니다. 포털 공개 목록의 상점 상세 페이지 주소(`/apps/<slug>`)는 iframe 주소로 오인하지 않고 기본 호스팅 번들 주소로 연결합니다. 포털·게이트웨이 서버가 없거나 실패하면 오류 없이 내장 목록만 보이며, 모달 조회·실행 오류가 나면 다시 시도할 수 있고 `Escape` 키로 닫을 수 있습니다. 계약: `docs/app-store-protocol.md` "Unified web app catalog".
 
 ### Test Coverage Map — UC-WEB-APP-CATALOG
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
-| 기본(서버 정상) | 내장 4개 뒤에 게이트웨이·어드민 앱이 순서대로, 중복 없이 보임 | `app-catalog.test.ts` "R3 R4 appends…"; `e2e/web-app-store-catalog.spec.ts` 1280×720·390×844 |
-| 빈 목록·실패 | 포털 끊김·500·HTML 응답·게이트웨이 503 이면 내장 목록만, 오류 알림 없음 | `app-catalog.test.ts` "never throws", "only built-in"; e2e "portal catalog is unreachable" |
-| 진행·성공 | 어드민 앱 [실행] → 구매 요청 없이 설치 → 앱 iframe 이 열림 | `app-catalog.test.ts` "launch without login"; e2e 두 폭 |
-| 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts` 계약 시험; e2e 가짜 슬라이드 미표시 |
-| 좁은 폭 | 390px 에서 카드·[실행] 단추가 화면 안 | e2e 390×844 상자 검사, `shots/D/R3-390.png` |
+| 기본(서버 정상·단일 모듈) | 내장 4개 뒤에 게이트웨이·포털 어드민 앱이 순서대로 중복 없이 보이며, 카드마다 다국어 이름·설명·버전·가격(`무료` / `Cr`)이 표시됨 | `app-catalog.test.ts`, `WebAppStoreModal.test.tsx`, `e2e/web-app-store-catalog.spec.ts` (1280×720·390×844) |
+| 빈 목록·실패·복구 | 포털·게이트웨이 실패 시 내장 목록만 표시. 카탈로그 조회 실패 시 재시도 단추로 복구 가능, 빈 목록 안내 및 `Escape` 닫기 동작 | `app-catalog.test.ts`, `WebAppStoreModal.test.tsx` |
+| 진행·성공·`/app/` 경로 | `/app/` 기준 경로에서도 포털 `/hosted-apps/…` 상대·절대 주소 어드민 앱이 `/app/hosted-apps/…`로 열리고, 유료 스토어 항목은 가격·권한 검사를 유지함 | `app-catalog.test.ts`, `app-store-adapter.test.ts` |
+| 오류·보안 | 내장 id 가로채기·외부 출처 주소·비공개·제2단계 앱은 목록에서 빠짐 | `app-catalog.test.ts`, `app-store-adapter.test.ts` |
+| 좁은 폭·다국어 | 1280×720·390×844 및 14개 언어에서 모달·카드·가격·[실행] 단추가 넘치지 않고 비한국어 로케일은 영어/해당 언어로 폴백됨 | `WebAppStoreModal.test.tsx`, `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts` |
 
 ## UC-WEB-SLIDES-PPTX. 웹판 슬라이드에서 PPTX 열기 (R27, 2026-11-19)
 

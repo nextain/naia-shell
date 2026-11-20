@@ -1,8 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
 	type AdminCatalogEntry,
+	type RawStoreProduct,
+	STAGE1_EXCLUDED_WEB_APP_IDS,
+	STAGE1_HOSTED_BY_ID,
+	STAGE1_HOSTED_MINI_APPS,
+	type StoreProductSummary,
+	buildUnifiedAppCatalog,
 	fetchPortalCatalog,
-	isOfferedInLocale,
+	isValidStoreAppId,
+	normalizeCanonicalWebAppId,
+	normalizeGatewayStoreProduct,
 } from "./app-catalog";
 import type { InstalledAppManifest } from "./app-loader";
 import { getStoreGatewayUrl } from "./app-store-client";
@@ -15,9 +23,15 @@ import {
 	isValidWebAuthKey,
 } from "./web-runtime/web-auth";
 
-export const DEFAULT_WEB_APPS_SANDBOX_ORIGIN = "https://apps-sandbox.naia.land";
+export {
+	STAGE1_EXCLUDED_WEB_APP_IDS,
+	STAGE1_HOSTED_MINI_APPS,
+	isValidStoreAppId,
+	normalizeCanonicalWebAppId,
+	type StoreProductSummary,
+};
 
-const VALID_STORE_APP_ID_RE = /^[a-z0-9]+(?:\.[a-z0-9-]+)+$/i;
+export const DEFAULT_WEB_APPS_SANDBOX_ORIGIN = "https://apps-sandbox.naia.land";
 
 export type AppStoreErrorCode =
 	| "invalid_app_id"
@@ -39,15 +53,6 @@ export class AppStoreHttpError extends Error {
 	}
 }
 
-export function isValidStoreAppId(appId: string): boolean {
-	return (
-		typeof appId === "string" &&
-		appId.length >= 3 &&
-		appId.length <= 128 &&
-		VALID_STORE_APP_ID_RE.test(appId)
-	);
-}
-
 export function getWebAppsSandboxOrigin(envOverride?: string): string {
 	const raw =
 		envOverride ??
@@ -56,19 +61,6 @@ export function getWebAppsSandboxOrigin(envOverride?: string): string {
 	return trimmed && trimmed.length > 0
 		? trimmed
 		: DEFAULT_WEB_APPS_SANDBOX_ORIGIN;
-}
-
-export interface StoreProductSummary {
-	appId: string;
-	version: string;
-	priceCredits: number;
-	hostedEntryUrl?: string;
-	/** Store card picture for admin-registered apps (R4). */
-	iconUrl?: string;
-	manifest: Omit<
-		InstalledAppManifest,
-		"htmlEntry" | "store_signature_verified" | "store_signature_issued_at_ms"
-	>;
 }
 
 export interface StoreEntitlementSummary {
@@ -122,132 +114,6 @@ export interface WebHttpAppStoreAdapterDeps {
 	getLocale?: () => string;
 }
 
-/** Stage-2 coding / courseware mini-apps excluded from Stage-1 web launch list. */
-export const STAGE1_EXCLUDED_WEB_APP_IDS = new Set([
-	"land.naia.blackjack",
-	"blackjack",
-	"land.naia.nts-edu-helper",
-	"nts-edu-helper",
-	"land.naia.public-ax",
-	"public-ax",
-]);
-
-interface Stage1HostedAppSpec {
-	readonly appId: string;
-	readonly hostedSlug: string;
-	readonly version: string;
-	readonly defaultPriceCredits: number;
-	readonly freeWithoutLogin: boolean;
-	readonly forceVersion?: boolean;
-	readonly manifest: StoreProductSummary["manifest"];
-}
-
-export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
-	{
-		appId: "land.naia.charcard",
-		hostedSlug: "naia-charcard",
-		version: "1.0.0",
-		defaultPriceCredits: 0,
-		freeWithoutLogin: true,
-		manifest: {
-			id: "land.naia.charcard",
-			name: "캐릭터 카드",
-			names: { ko: "캐릭터 카드", en: "Character Cards" },
-			icon: "🃏",
-			description: "SillyTavern V2/V3 PNG·JSON 캐릭터 카드 불러오기·편집·적용",
-			descriptions: {
-				ko: "실리태번 호환 캐릭터 카드(.png / .json)를 불러오고 나이아 에이전트에 바로 입힙니다.",
-				en: "Import, edit, and apply SillyTavern V2/V3 PNG & JSON character cards.",
-			},
-			version: "1.0.0",
-			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask", "storage"],
-			keepAlive: true,
-		},
-	},
-	{
-		appId: "land.naia.slides",
-		hostedSlug: "naia-slides",
-		version: "0.1.2",
-		defaultPriceCredits: 0,
-		freeWithoutLogin: true,
-		manifest: {
-			id: "land.naia.slides",
-			name: "슬라이드",
-			names: { ko: "슬라이드", en: "Naia Slides" },
-			icon: "▣",
-			description: "나이아 아바타와 함께하는 슬라이드 발표 미니앱",
-			descriptions: {
-				ko: "PDF·PPTX 발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
-				en: "Open a PDF or PPTX deck and present it with your Naia avatar.",
-			},
-			version: "0.1.2",
-			manifest_version: 2,
-			permissions: ["speech", "locale"],
-			keepAlive: true,
-		},
-	},
-	{
-		appId: "land.naia.ieumoffice",
-		hostedSlug: "ieumoffice",
-		version: "0.2.0",
-		defaultPriceCredits: 0,
-		freeWithoutLogin: true,
-		forceVersion: true,
-		manifest: {
-			id: "land.naia.ieumoffice",
-			name: "이음오피스",
-			names: { ko: "이음오피스", en: "IeumOffice" },
-			icon: "📑",
-			description: "이음오피스 v0.2.0 문서·발표 웹 스튜디오",
-			descriptions: {
-				ko: "이음오피스 v0.2.0 웹 스튜디오에서 문서·슬라이드를 작성하고 나이아와 협업합니다.",
-				en: "Author documents and slide decks in IeumOffice v0.2.0 Web Studio.",
-			},
-			version: "0.2.0",
-			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask"],
-			keepAlive: true,
-		},
-	},
-	{
-		appId: "land.naia.cafelua-tarot",
-		hostedSlug: "cafelua-tarot",
-		version: "0.1.5",
-		defaultPriceCredits: 3000,
-		freeWithoutLogin: true,
-		forceVersion: true,
-		manifest: {
-			id: "land.naia.cafelua-tarot",
-			name: "카페루아 타로",
-			names: { ko: "카페루아 타로", en: "Cafe Lua Tarot" },
-			icon: "🔮",
-			description:
-				"카페루아 타로 v0.1.5 — 1/3/10장 스프레드 리딩 및 타로 이야기 낭독",
-			descriptions: {
-				ko: "나이아가 카페루아의 타로 리더가 되어 1/3/10장 카드를 풀어 주고 타로 이야기를 낭독합니다.",
-				en: "Cafe Lua Tarot v0.1.5 — 1/3/10-card spreads and narrated tarot stories with Naia.",
-			},
-			version: "0.1.5",
-			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask"],
-			keepAlive: true,
-		},
-	},
-];
-
-const STAGE1_HOSTED_BY_ID = new Map(
-	STAGE1_HOSTED_MINI_APPS.map((spec) => [spec.appId, spec]),
-);
-const STAGE1_SHORT_SLUG_TO_ID = new Map(
-	STAGE1_HOSTED_MINI_APPS.map((spec) => [spec.hostedSlug, spec.appId]),
-);
-
-export function normalizeCanonicalWebAppId(rawAppId: string): string {
-	const trimmed = rawAppId.trim();
-	return STAGE1_SHORT_SLUG_TO_ID.get(trimmed) ?? trimmed;
-}
-
 const PACKAGE_ICON_MAX_CHARS = 512 * 1024;
 const SVG_DOCUMENT_START =
 	/^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i;
@@ -294,63 +160,6 @@ function isLoopbackHostname(hostname: string): boolean {
 	);
 }
 
-function parsePriceCredits(value: unknown): number | undefined {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return Math.max(0, value);
-	}
-	if (typeof value === "string" && value.trim().length > 0) {
-		const parsed = Number(value.trim());
-		if (Number.isFinite(parsed)) return Math.max(0, parsed);
-	}
-	return undefined;
-}
-
-interface RawStoreProduct {
-	app_id?: string;
-	appId?: string;
-	version?: string;
-	price_credits?: number | string;
-	priceCredits?: number | string;
-	hosted_entry_url?: string | null;
-	hostedEntryUrl?: string | null;
-	manifest?: Partial<InstalledAppManifest> & { status?: string };
-}
-
-function normalizeStoreProduct(
-	raw: RawStoreProduct,
-): StoreProductSummary | null {
-	const appId = normalizeCanonicalWebAppId(
-		raw.app_id ?? raw.appId ?? raw.manifest?.id ?? "",
-	);
-	if (!isValidStoreAppId(appId)) return null;
-	const manifest = raw.manifest ?? {};
-	const version =
-		(raw.version ?? manifest.version ?? "1.0.0").trim() || "1.0.0";
-	const priceCredits =
-		parsePriceCredits(raw.price_credits) ??
-		parsePriceCredits(raw.priceCredits) ??
-		0;
-	const hostedEntryUrl = (raw.hosted_entry_url ?? raw.hostedEntryUrl)?.trim();
-	const {
-		htmlEntry: _ignoredHtml,
-		store_signature_verified: _ignoredVerified,
-		store_signature_issued_at_ms: _ignoredIssuedAt,
-		...restManifest
-	} = manifest;
-	return {
-		appId,
-		version,
-		priceCredits,
-		...(hostedEntryUrl ? { hostedEntryUrl } : {}),
-		manifest: {
-			...restManifest,
-			id: appId,
-			name: restManifest.name || appId,
-			version,
-		},
-	};
-}
-
 function defaultReadWebAuthKey(): string | undefined {
 	const stored =
 		typeof localStorage !== "undefined"
@@ -375,9 +184,14 @@ export class DesktopTauriAppStoreAdapter implements PlatformAppStoreAdapter {
 			);
 		}
 		const body = (await res.json()) as { data?: RawStoreProduct[] };
-		return (body.data ?? [])
-			.map(normalizeStoreProduct)
+		const gatewayItems = (body.data ?? [])
+			.map(normalizeGatewayStoreProduct)
 			.filter((item): item is StoreProductSummary => item !== null);
+		return buildUnifiedAppCatalog({
+			gatewayItems,
+			stage1HostedCatalog: false,
+			resolveDefaultHostedEntryUrl: () => "",
+		}).items;
 	}
 
 	async listEntitlements(): Promise<StoreEntitlementSummary[]> {
@@ -535,116 +349,9 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 		return `${sandboxOrigin}/${encodeURIComponent(appId)}/${encodeURIComponent(version)}/index.html`;
 	}
 
-	private mergeStage1Catalog(
-		remoteItems: StoreProductSummary[],
-	): StoreProductSummary[] {
-		const filtered = remoteItems.filter(
-			(item) => !STAGE1_EXCLUDED_WEB_APP_IDS.has(item.appId),
-		);
-		const byId = new Map<string, StoreProductSummary>();
-		for (const item of filtered) {
-			const manifestStatus = (
-				item.manifest as InstalledAppManifest & { status?: string }
-			).status;
-			// Non-Stage1 items marked coming_soon stay hidden in Stage 1.
-			if (
-				manifestStatus === "coming_soon" &&
-				!STAGE1_HOSTED_BY_ID.has(item.appId)
-			) {
-				continue;
-			}
-			byId.set(item.appId, item);
-		}
-
-		for (const spec of STAGE1_HOSTED_MINI_APPS) {
-			const existing = byId.get(spec.appId);
-			const version =
-				spec.forceVersion || !existing ? spec.version : existing.version;
-			const mergedManifest = {
-				...(existing?.manifest ?? {}),
-				...spec.manifest,
-				id: spec.appId,
-				version,
-				status: "active",
-				tools: existing?.manifest.tools?.length
-					? existing.manifest.tools
-					: spec.manifest.tools,
-			} as StoreProductSummary["manifest"];
-			const bundledCharacterCard =
-				spec.appId === "land.naia.charcard" && !this.hasCustomSandboxOrigin;
-			const hostedEntryUrl =
-				(!bundledCharacterCard && existing?.hostedEntryUrl) ||
-				this.resolveDefaultHostedEntryUrl(spec.appId, version);
-			byId.set(spec.appId, {
-				appId: spec.appId,
-				version,
-				priceCredits: existing
-					? existing.priceCredits
-					: spec.defaultPriceCredits,
-				hostedEntryUrl,
-				manifest: mergedManifest,
-			});
-		}
-
-		// Preserve Stage-1 canonical order first, then any extra active products.
-		const ordered: StoreProductSummary[] = [];
-		for (const spec of STAGE1_HOSTED_MINI_APPS) {
-			const item = byId.get(spec.appId);
-			if (item) {
-				ordered.push(item);
-				byId.delete(spec.appId);
-			}
-		}
-		for (const rest of byId.values()) {
-			ordered.push(rest);
-		}
-		return ordered;
-	}
-
-	/**
-	 * Append admin-registered apps (R4).  Built-in and gateway entries win on
-	 * id collisions; admin entries whose frame URL is not an allowed sandbox
-	 * or `/hosted-apps/` origin are dropped instead of failing at launch.
-	 */
-	private mergeAdminCatalog(
-		items: StoreProductSummary[],
-		adminItems: AdminCatalogEntry[],
-	): StoreProductSummary[] {
-		const adminIds = new Set<string>();
-		this.adminAppIds = adminIds;
-		if (adminItems.length === 0) return items;
-		const known = new Set(items.map((item) => item.appId));
-		const locale = this.getLocale();
-		const merged = [...items];
-		for (const entry of adminItems) {
-			if (known.has(entry.appId)) continue;
-			if (STAGE1_EXCLUDED_WEB_APP_IDS.has(entry.appId)) continue;
-			if (!isOfferedInLocale(entry, locale)) continue;
-			const hostedEntryUrl =
-				entry.hostedEntryUrl ??
-				this.resolveDefaultHostedEntryUrl(entry.appId, entry.version);
-			try {
-				this.resolveFrameSrc(hostedEntryUrl);
-			} catch {
-				continue;
-			}
-			known.add(entry.appId);
-			adminIds.add(entry.appId);
-			merged.push({
-				appId: entry.appId,
-				version: entry.version,
-				priceCredits: 0,
-				hostedEntryUrl,
-				...(entry.iconUrl ? { iconUrl: entry.iconUrl } : {}),
-				manifest: entry.manifest,
-			});
-		}
-		return merged;
-	}
-
 	async listCatalog(): Promise<StoreProductSummary[]> {
 		const portalBase = this.stage1HostedCatalog ? this.getPortalBaseUrl() : "";
-		const adminCatalog = portalBase
+		const portalCatalog = portalBase
 			? fetchPortalCatalog(this.fetchImpl, portalBase)
 			: Promise.resolve<AdminCatalogEntry[]>([]);
 		const base = this.getGatewayUrl().replace(/\/+$/, "");
@@ -662,17 +369,27 @@ export class WebHttpAppStoreAdapter implements PlatformAppStoreAdapter {
 			} else {
 				const body = (await res.json()) as { data?: RawStoreProduct[] };
 				remoteItems = (body.data ?? [])
-					.map(normalizeStoreProduct)
+					.map(normalizeGatewayStoreProduct)
 					.filter((item): item is StoreProductSummary => item !== null);
 			}
 		} catch (err) {
 			if (!this.stage1HostedCatalog) throw err;
 		}
-		if (!this.stage1HostedCatalog) return remoteItems;
-		return this.mergeAdminCatalog(
-			this.mergeStage1Catalog(remoteItems),
-			await adminCatalog,
-		);
+		const unified = buildUnifiedAppCatalog({
+			gatewayItems: remoteItems,
+			portalItems: this.stage1HostedCatalog ? await portalCatalog : [],
+			stage1HostedCatalog: this.stage1HostedCatalog,
+			hasCustomSandboxOrigin: this.hasCustomSandboxOrigin,
+			locale: this.getLocale(),
+			shellOrigin: this.getShellOrigin(),
+			portalOrigin: portalBase || undefined,
+			hostedAppsPrefix: this.hostedAppsPrefix(),
+			resolveDefaultHostedEntryUrl: (appId, version) =>
+				this.resolveDefaultHostedEntryUrl(appId, version),
+			validateFrameSrc: (entryUrl) => this.resolveFrameSrc(entryUrl),
+		});
+		this.adminAppIds = unified.adminAppIds;
+		return unified.items;
 	}
 
 	async listEntitlements(): Promise<StoreEntitlementSummary[]> {
