@@ -191,6 +191,14 @@ describe("사용자에게 보이는 문구는 i18n 을 지난다 (UC-QUALITY-I18
 		}
 	});
 
+	it("R21-1 첫 대화 안내는 현재 언어에서 캐릭터 이름을 채운다", async () => {
+		for (const locale of LOCALES) {
+			await setLocale(locale);
+			expect(t("chat.webStarterIntro", { name: "Tinker" })).toContain("Tinker");
+		}
+		await setLocale("ko");
+	});
+
 	it("값이 끼어드는 문구도 로케일을 지난다", async () => {
 		await setLocale("ko");
 		const korean = t("voice.ref.recording", { seconds: 7 });

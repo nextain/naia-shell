@@ -25,6 +25,20 @@ describe("NvaGestureActions", () => {
 		cleanup();
 		useCascadeAvatarStore.getState().setRenderer(null);
 		clearCameraActions();
+		vi.unstubAllEnvs();
+	});
+
+	it("R21-1 displays the avatar gesture label beside the action names in web mode", () => {
+		vi.stubEnv("MODE", "web");
+		registerCameraActions({ getGestureActions: () => [{ key: "wave", label: "Welcome" }] });
+		useCascadeAvatarStore.getState().setRenderer({} as never);
+		render(<NvaGestureActions />);
+
+		const group = screen.getByRole("group", { name: "Avatar gestures" });
+		const caption = group.querySelector(".nva-gesture-actions__caption");
+		expect(caption).toHaveTextContent("Avatar gestures");
+		expect(caption).toBeVisible();
+		expect(screen.getByRole("button", { name: "Welcome (Alt+1)" })).toBeVisible();
 	});
 
 	it("places accessible action buttons directly beside the chat input", () => {
