@@ -19,6 +19,7 @@ export const WEB_OAUTH_STATE_STORAGE_KEY = "naia-web-oauth-state";
 export const WEB_REMOTE_KEY_STORAGE_KEY = "naia-remote-key";
 export const WEB_REMOTE_USER_ID_STORAGE_KEY = "naia-remote-user-id";
 export const DEFAULT_WEB_LOGIN_BASE_URL = "https://naia.land";
+const KEEP_LOCAL_MODEL_STATE_PREFIX = "keep-local-model:";
 
 let webLoginRequiredOverride: boolean | null = null;
 
@@ -150,19 +151,23 @@ export function startWebLoginRedirect(opts?: {
 	basePath?: string;
 	state?: string;
 	baseUrl?: string;
+	keepLocalModel?: boolean;
 	navigate?: (url: string) => void;
 }): { url: string; state: string; redirectUri: string } {
 	const built = buildWebLoginRedirectUrl(opts);
+	const storedState = opts?.keepLocalModel
+		? KEEP_LOCAL_MODEL_STATE_PREFIX + built.state
+		: built.state;
 	try {
 		if (typeof sessionStorage !== "undefined") {
-			sessionStorage.setItem(WEB_OAUTH_STATE_STORAGE_KEY, built.state);
+			sessionStorage.setItem(WEB_OAUTH_STATE_STORAGE_KEY, storedState);
 		}
 	} catch {
 		// ignore sessionStorage failure
 	}
 	try {
 		if (typeof localStorage !== "undefined") {
-			localStorage.setItem(WEB_OAUTH_STATE_STORAGE_KEY, built.state);
+			localStorage.setItem(WEB_OAUTH_STATE_STORAGE_KEY, storedState);
 		}
 	} catch {
 		// ignore localStorage failure
@@ -184,6 +189,8 @@ export interface CompleteWebNaiaLoginOptions {
 	 * 생략되면 기존 사용자 설정 및 키오스크 모드를 바탕으로 판정한다.
 	 */
 	onboardingComplete?: boolean;
+	/** Keep the selected model until the user checks credits and switches in chat. */
+	keepLocalModel?: boolean;
 }
 
 function parseCallbackBooleanFlag(raw: string): boolean | undefined {
@@ -287,7 +294,9 @@ export async function completeWebNaiaLogin(
 			});
 	const shouldUpgradeAutoSeedToCloud =
 		!existing ||
-		(existing.webAutoDefaultModel === true && existing.provider === "webllm");
+		(!opts?.keepLocalModel &&
+			existing.webAutoDefaultModel === true &&
+			existing.provider === "webllm");
 	const nextProvider = shouldUpgradeAutoSeedToCloud
 		? "nextain"
 		: existing?.provider || "nextain";
@@ -454,6 +463,10 @@ export async function consumeWebAuthCallbackFromLocation(
 		preservedSearch ? `${cleanTargetPath}?${preservedSearch}` : cleanTargetPath,
 	);
 
+	const keepLocalModel = expectedState.startsWith(KEEP_LOCAL_MODEL_STATE_PREFIX);
+	if (keepLocalModel) {
+		expectedState = expectedState.slice(KEEP_LOCAL_MODEL_STATE_PREFIX.length);
+	}
 	const requireStateValidation =
 		isAuthCallbackPath || Boolean(expectedState) || Boolean(returnedState);
 	if (
@@ -486,7 +499,7 @@ export async function consumeWebAuthCallbackFromLocation(
 			: explicitNewUserFlag !== undefined
 				? !explicitNewUserFlag
 				: undefined;
-	await completeWebNaiaLogin(rawKey, userId, { onboardingComplete });
+	await completeWebNaiaLogin(rawKey, userId, { onboardingComplete, keepLocalModel });
 	return {
 		handled: true,
 		ok: true,

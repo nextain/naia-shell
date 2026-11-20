@@ -90,6 +90,32 @@ describe("web-auth (item 5)", () => {
 		expect(nav).toHaveBeenCalledWith(built.url);
 	});
 
+	it("keeps on-device selection after a recovery sign-in until the user can confirm the cloud switch", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "webllm",
+			model: "Qwen3-4B-q4f32_1-MLC",
+			webAutoDefaultModel: true,
+		}));
+		const { state } = startWebLoginRedirect({
+			keepLocalModel: true,
+			state: "fixture-recovery-state",
+			navigate: () => {},
+		});
+		const res = await consumeWebAuthCallbackFromLocation({
+			pathname: "/auth/callback",
+			search: "",
+			hash: `#key=fixture-account-key&state=${state}`,
+		});
+		expect(res.ok).toBe(true);
+		expect(isWebAuthenticated()).toBe(true);
+		expect(loadConfig()).toMatchObject({
+			provider: "webllm",
+			model: "Qwen3-4B-q4f32_1-MLC",
+		});
+		expect(sessionStorage.getItem(WEB_OAUTH_STATE_STORAGE_KEY)).toBeNull();
+		expect(localStorage.getItem(WEB_OAUTH_STATE_STORAGE_KEY)).toBeNull();
+	});
+
 	it("verifies state on /auth/callback, persists key & user_id, and cleans up URL", async () => {
 		startWebLoginRedirect({
 			origin: "https://web.naia.land",

@@ -1563,15 +1563,75 @@
 	overflow-wrap: anywhere;
 	flex-shrink: 0;
 }
+
+[data-naia-web="true"] #web-model-status .web-model-details {
+	padding-inline: 8px;
+}
+
+[data-naia-web="true"] #web-model-status .web-model-details__summary {
+	font: 12px/20px system-ui, sans-serif;
+	cursor: pointer;
+}
+
+[data-naia-web="true"] #web-model-status[data-phase="ready"] .web-model-details__summary {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+[data-naia-web="true"] #web-model-status .web-model-details__summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app:not(.chat-app--workspace-pending) {
 	overflow-y: auto;
 }
 
-/* On model errors the two scrollable blocks share the space above the composer. */
-[data-naia-web="true"] .chat-app:has(> #web-model-status[data-phase="error"]) > .chat-messages,
+/* Let the message viewport shrink when model information needs more room. */
+[data-naia-web="true"] .chat-app:has(> #web-model-status[data-phase="error"], > #web-model-status > .web-model-details[open]) > .chat-messages,
 [data-naia-web="true"] .chat-app > #web-model-status[data-phase="error"] {
 	min-height: 0;
 	flex-shrink: 1;
+}
+
+[data-naia-web="true"] .chat-app > #web-model-status[data-phase="error"][data-cloud-recovery] {
+	max-height: 132px;
+	padding-block: 8px;
+}
+
+.web-model-recovery {
+	margin: 0 0 6px;
+}
+
+.web-model-recovery p {
+	margin: 0 0 4px;
+}
+
+.web-model-recovery__button {
+	max-width: 100%;
+	min-height: 36px;
+	padding: 4px 10px;
+	border: 1px solid var(--accent);
+	border-radius: 6px;
+	background: var(--accent-bg);
+	color: var(--latte);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.web-model-recovery__button:disabled {
+	opacity: 0.65;
+	cursor: wait;
+}
+
+[data-naia-web="true"] #web-model-status[data-phase="error"] .update-banner-actions {
+	flex-wrap: wrap;
+}
+
+[data-naia-web="true"] .chat-app:has(> #web-model-status[data-cloud-recovery]) .chat-input:disabled {
+	opacity: 0.65;
+	cursor: not-allowed;
 }
 
 /* Keep the composer inside the chat while the viewport changes during an error. */
@@ -1582,6 +1642,28 @@
 /* The compact portrait sheet also needs room for the error above its composer. */
 [data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app > #web-model-status[data-phase="error"]) {
 	min-height: 148px !important;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app > #web-model-status[data-cloud-recovery]) {
+	min-height: 224px !important;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] #web-model-status[data-cloud-recovery] {
+	margin-top: auto;
+}
+
+/* Reserve the collapsed sheet's extra row only while model information is visible. */
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app:not(.chat-app--workspace-pending) > #web-model-status:not([hidden]) > .web-model-details) {
+	min-height: 104px !important;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app:not(.chat-app--workspace-pending) > #web-model-status:not([hidden]) > .web-model-details[open]) {
+	min-height: 136px !important;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .chat-app:not(.chat-app--workspace-pending) > #web-model-status:has(> .web-model-details) {
+	margin-top: auto;
+	flex-shrink: 1;
 }
 
 /* On short landscape windows the default 40%-height chat cannot fit the

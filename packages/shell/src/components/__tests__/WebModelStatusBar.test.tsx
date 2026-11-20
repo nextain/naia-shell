@@ -2,7 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebModelStatusBar } from "../WebModelStatusBar";
-import { t } from "../../lib/i18n";
+import { setLocale, t } from "../../lib/i18n";
+import * as labBalance from "../../lib/lab-balance";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import * as webAuth from "../../lib/web-runtime/web-auth";
 import {
 	resetWebModelStatusForTests,
 	setWebModelStatus,
@@ -15,11 +18,17 @@ import {
 describe("WebModelStatusBar", () => {
 	beforeEach(() => {
 		resetWebModelStatusForTests();
+		localStorage.clear();
+		setWebAssetsModeForTests(true);
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		cleanup();
 		resetWebModelStatusForTests();
+		setWebAssetsModeForTests(null);
+		localStorage.clear();
+		vi.restoreAllMocks();
+		await setLocale("en");
 	});
 
 	it("renders checking phase as role status", () => {
@@ -33,7 +42,7 @@ describe("WebModelStatusBar", () => {
 		expect(el.textContent).toContain(t("webModel.checking"));
 	});
 
-	it("renders loading phase with 42% progress and role status", () => {
+	it("shows plain-language progress with the exact model hidden until expanded", () => {
 		setWebModelStatus({
 			phase: "loading",
 			progress: 0.42,
@@ -44,10 +53,15 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.getAttribute("data-phase")).toBe("loading");
-		expect(el.textContent).toContain("42%");
+		const summary = el.querySelector("summary")!;
+		expect(summary).toHaveTextContent("Preparing on-device model (42%)");
+		const name = screen.getByText("Qwen3 4B (4bit f16)");
+		expect(name).not.toBeVisible();
+		fireEvent.click(summary);
+		expect(name).toBeVisible();
 	});
 
-	it("renders ready phase as role status", () => {
+	it("shows one ready label with the default model and adapter in the details", () => {
 		setWebModelStatus({
 			phase: "ready",
 			progress: 1,
@@ -60,11 +74,20 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.getAttribute("data-phase")).toBe("ready");
-		expect(el.textContent).toContain("Qwen3 4B (4bit f16)");
-		expect(el.textContent).toContain("NVIDIA · Ada · RTX 4060");
+		const summary = el.querySelector("summary")!;
+		expect(summary).toHaveTextContent(/^On-device model ready$/);
+		expect(summary).toHaveAttribute("title", "Qwen3 4B (4bit f16)");
+		const name = screen.getByText(/Qwen3 4B \(4bit f16\)/);
+		const adapter = screen.getByText(/NVIDIA · Ada · RTX 4060/);
+		expect(name).not.toBeVisible();
+		expect(adapter).not.toBeVisible();
+		fireEvent.click(summary);
+		expect(name).toBeVisible();
+		expect(adapter).toBeVisible();
 	});
 
-	it("renders ready phase with fallback model and invokes onSwitchModel on return to default", async () => {
+	it("uses a one-line Korean compatibility label and keeps the default-model action in the details", async () => {
+		await setLocale("ko");
 		const onSwitchModel = vi.fn();
 		setWebModelStatus({
 			phase: "ready",
@@ -75,16 +98,18 @@ describe("WebModelStatusBar", () => {
 
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
-		expect(el.textContent).toContain(t("webModel.fallbackActive"));
 		const details = screen.getByTestId("web-model-ready-details") as HTMLDetailsElement;
 		const summary = details.querySelector("summary");
 		expect(details.open).toBe(false);
 		expect(el.hasAttribute("tabindex")).toBe(false);
-		expect(summary?.textContent).toContain(t("webModel.fallbackActive"));
-		expect(summary?.textContent).toContain("Qwen3 4B (4bit f32)");
 		if (!summary) throw new Error("model details summary missing");
+		expect(summary).toHaveTextContent(/^내 기기 모델 · 호환 모드$/);
+		expect(summary).toHaveAttribute("title", "Qwen3 4B (4bit f32)");
+		const model = screen.getByText(/Qwen3 4B \(4bit f32\)/);
+		expect(model).not.toBeVisible();
 		fireEvent.click(summary);
 		expect(details.open).toBe(true);
+		expect(model).toBeVisible();
 		await waitFor(() => expect(el.getAttribute("tabindex")).toBe("0"));
 
 		const backBtn = screen.getByTestId("web-model-back-to-default");
@@ -92,6 +117,7 @@ describe("WebModelStatusBar", () => {
 		fireEvent.click(backBtn);
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_MODEL_ID);
 		fireEvent.click(summary);
+		expect(model).not.toBeVisible();
 		await waitFor(() => expect(el.hasAttribute("tabindex")).toBe(false));
 	});
 
@@ -115,7 +141,7 @@ describe("WebModelStatusBar", () => {
 		expect(onRetry).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders no-shader-f16 error with 4B f32 fallback button", () => {
+	it("renders a plain-language compatibility action for the fallback model", () => {
 		const onSwitchModel = vi.fn();
 		setWebModelStatus({
 			phase: "error",
@@ -130,9 +156,49 @@ describe("WebModelStatusBar", () => {
 		expect(el.getAttribute("data-error-kind")).toBe("no-shader-f16");
 
 		const fallbackBtn = screen.getByTestId("web-model-fallback");
-		expect(fallbackBtn.textContent).toContain("Qwen3 4B (4bit f32)");
+		expect(fallbackBtn).toHaveTextContent("Try a compatible model");
 		fireEvent.click(fallbackBtn);
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_FALLBACK_F32);
+	});
+
+	it.each([
+		["ko", "이 기기에서는 내 기기 대화를 시작할 수 없어요.", "로그인하고 클라우드로 대화하기 (무료 200 Cr)"],
+		["en", "On-device chat couldn't start.", "Sign in for cloud chat (free 200 Cr)"],
+	] as const)("offers an actionable sign-in in %s after local startup fails", async (locale, heading, label) => {
+		await setLocale(locale);
+		const login = vi.spyOn(webAuth, "startWebLoginRedirect").mockImplementation(() => ({
+			url: "", state: "", redirectUri: "",
+		}));
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		expect(screen.getByRole("alert")).toHaveTextContent(heading);
+		fireEvent.click(screen.getByRole("button", { name: label }));
+		expect(login).toHaveBeenCalledOnce();
+		expect(login).toHaveBeenCalledWith({ keepLocalModel: true });
+	});
+
+	it("allows a new balance check after the account service is unavailable", async () => {
+		localStorage.setItem(webAuth.WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+		const fetchBalance = vi.spyOn(labBalance, "fetchLabBalancePayload")
+			.mockRejectedValueOnce(new Error("HTTP 503"))
+			.mockResolvedValueOnce({ credits: 6 });
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		expect(screen.getByText("Checking credits for cloud chat…")).toBeVisible();
+		expect(await screen.findByText("Couldn't check your cloud chat credits.")).toBeVisible();
+		expect(screen.queryByRole("button", { name: "Switch to cloud chat" })).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Check credits again" }));
+		expect(await screen.findByRole("button", { name: "Switch to cloud chat" })).toBeEnabled();
+		expect(fetchBalance).toHaveBeenCalledTimes(2);
+	});
+
+	it("offers sign-in again when the account service rejects the saved sign-in", async () => {
+		localStorage.setItem(webAuth.WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+		vi.spyOn(labBalance, "fetchLabBalancePayload").mockRejectedValue(new Error("HTTP 401"));
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		expect(await screen.findByRole("button", { name: "Sign in again for cloud chat" })).toBeEnabled();
+		expect(screen.queryByRole("button", { name: "Switch to cloud chat" })).toBeNull();
 	});
 
 	it("renders device-lost error with shaderF16 true proposing retry button only and no fallback button", () => {

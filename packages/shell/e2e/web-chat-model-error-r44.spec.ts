@@ -125,9 +125,13 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		await expect(status).toHaveAttribute("role", "status");
 		await expect(status).toHaveAttribute("data-phase", "checking");
 		const checking = await checkComposerPlacement(input, initialViewport);
+		await input.fill("A");
 		await page.evaluate(() => window.dispatchEvent(new Event("r44-no-gpu-adapter")));
 		await expect(status).toHaveAttribute("role", "alert");
 		await expect(status).toHaveAttribute("data-error-kind", "no-webgpu");
+		await expect(input).toBeDisabled();
+		await expect(input).toHaveValue("A");
+		await expect(status.getByRole("button", { name: /로그인하고 클라우드로 대화하기/ })).toBeInViewport({ ratio: 1 });
 		const firstError = await checkComposerPlacement(input, initialViewport);
 		const shots = process.env.NAIA_E2E_SHOTS_DIR;
 		if (shots) {
@@ -163,9 +167,7 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		});
 		const resizedBack = await checkComposerPlacement(input, initialViewport);
 
-		await input.focus();
-		await expect(input).toBeFocused();
-		await input.press("A");
+		await expect(input).toBeDisabled();
 		await expect(input).toHaveValue("A");
 		await page.evaluate(async () => {
 			const source = "/src/lib/web-runtime/web-model-status.ts";
@@ -174,10 +176,20 @@ for (const initialViewport of WEB_BGM_VIEWPORTS) {
 		});
 		await expect(status).toHaveAttribute("role", "status");
 		await expect(status).toHaveAttribute("data-phase", "ready");
+		await expect(input).toBeEnabled();
 		await expect(input).toHaveValue("A");
 		const ready = await checkComposerPlacement(input, initialViewport);
 		expect(ready.inputTop).toBeCloseTo(checking.inputTop, 0);
 		expect(ready.inputBottom).toBeCloseTo(checking.inputBottom, 0);
+		const readyDetails = status.getByTestId("web-model-ready-details");
+		const readySummary = readyDetails.locator("summary");
+		await expect(readySummary).toHaveText("내 기기 모델 · 호환 모드");
+		await expect(readySummary).toHaveCSS("white-space", "nowrap");
+		const detailedModelName = readyDetails.getByText(/Qwen3 4B \(4bit f32\)/);
+		await expect(detailedModelName).toBeHidden();
+		await readySummary.press("Enter");
+		await expect(detailedModelName).toBeVisible();
+		await checkComposerPlacement(input, initialViewport);
 		await testInfo.attach("R44 viewport geometry", {
 			body: JSON.stringify({ checking, firstError, expandedError, resized, resizedBack, ready }, null, 2),
 			contentType: "application/json",
