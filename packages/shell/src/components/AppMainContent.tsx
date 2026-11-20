@@ -12,6 +12,7 @@ import { closeRunningApp } from "../lib/app-lifecycle";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
 import type { AppInstallRequest } from "../lib/app-store-client";
 import { getCameraActions } from "../lib/avatar/camera-actions";
+import { CHARCARD_APP_ID, getWebCharcardContext } from "../lib/charcard-chat-start";
 import { loadConfig } from "../lib/config";
 import { usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
@@ -218,6 +219,11 @@ export function AppMainContent(props: AppMainContentProps) {
 	);
 	const paymentLinksHidden = usePaymentLinksHidden();
 	const layoutOrientation = useEffectiveLayoutOrientation();
+	const charcardContext = useAppStore(getWebCharcardContext);
+	const [cardViewContext, setCardViewContext] = useState<typeof charcardContext>(null);
+	const mobileCharcardChat = layoutOrientation === "portrait" &&
+		webHostedAppOpen && activeApp === CHARCARD_APP_ID &&
+		charcardContext !== null && charcardContext !== cardViewContext;
 	const webWorkspacePhase = useSyncExternalStore(subscribeWebAdkStatus, () => getWebAdkStatus().phase);
 	useEffect(() => {
 		if (hasMessages !== previousHasMessages.current) {
@@ -238,6 +244,11 @@ export function AppMainContent(props: AppMainContentProps) {
 			setMobileSheet((current) => current === "collapsed" ? "half" : current);
 		}
 	}, [webMode, webWorkspacePhase, layoutOrientation]);
+	useEffect(() => {
+		if (mobileCharcardChat) {
+			setMobileSheet((current) => current === "collapsed" ? "half" : current);
+		}
+	}, [mobileCharcardChat]);
 	const showNarrowMobileChrome = webMode || layoutOrientation === "portrait";
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [avatarCornerOpen, setAvatarCornerOpen] = useState(false);
@@ -484,11 +495,15 @@ export function AppMainContent(props: AppMainContentProps) {
 										📁 {t("appbar.workspace")}
 									</button>
 									{webMode && !kioskDemo && (
-											<button
+										<button
 											type="button"
 											data-testid="web-character-card-mobile-btn"
 											onClick={() => {
 												setMobileMenu(false);
+												if (mobileCharcardChat) {
+													setCardViewContext(charcardContext);
+													return;
+												}
 												void toggleWebCharacterCard();
 											}}
 										>
@@ -872,6 +887,7 @@ export function AppMainContent(props: AppMainContentProps) {
 				className="app-layout"
 				data-web-hosted-app={webHostedAppOpen || undefined}
 				style={{
+					display: mobileCharcardChat ? "none" : undefined,
 					left: showOnboarding
 						? 0
 						: !naiaVisible

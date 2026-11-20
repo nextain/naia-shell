@@ -1194,6 +1194,7 @@ export function App() {
 	const openChatForCharcard = useCallback(() => {
 		setNaiaVisible(true);
 		setChatVisible(true);
+		setRailCollapsed(false);
 	}, []);
 	useCharcardChatStart(openChatForCharcard);
 

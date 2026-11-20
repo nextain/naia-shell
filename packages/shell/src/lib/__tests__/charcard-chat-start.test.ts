@@ -98,4 +98,34 @@ describe("R12: character card start opens chat with the card greeting (web)", ()
 		useAppStore.getState().setActiveAppContext(roleplayFor(GREETING).context, CHARCARD_APP_ID);
 		expect(openChat).not.toHaveBeenCalled();
 	});
+
+	it("R12: a card without a greeting opens an empty conversation", () => {
+		const config = localStorage.getItem("naia-config");
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			uiPreferences: {
+				b2cActiveCardId: "other-card",
+				b2cCardLibrary: [{
+					version: 1,
+					id: "other-card",
+					name: "Other",
+					greeting: "이전 인사",
+					rawJson: { name: "Other" },
+					sourceBase64: "e30=",
+				}],
+			},
+		}));
+		try {
+			const openChat = vi.fn();
+			useChatStore.getState().newConversation();
+			expect(useChatStore.getState().messages[0]?.content).toBe("이전 인사");
+			renderHook(() => useCharcardChatStart(openChat));
+			useAppStore.getState().setActiveAppContext(roleplayFor("").context, CHARCARD_APP_ID);
+			expect(openChat).toHaveBeenCalledOnce();
+			expect(useChatStore.getState().messages).toEqual([]);
+		} finally {
+			if (config === null) localStorage.removeItem("naia-config");
+			else localStorage.setItem("naia-config", config);
+		}
+	});
 });

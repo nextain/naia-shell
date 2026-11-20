@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { appRegistry } from "../../lib/app-registry";
 import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
+import { CHARCARD_APP_ID } from "../../lib/charcard-chat-start";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { AppMainContent, mobileSheetDragHeight, type AppMainContentProps } from "../AppMainContent";
 import { AppShellFrame } from "../AppShellFrame";
@@ -142,6 +144,48 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 		expect(sheet?.getAttribute("data-mobile-sheet")).toBe("half");
 		act(() => useChatStore.setState({ messages: [] }));
 		expect(sheet?.getAttribute("data-mobile-sheet")).toBe("collapsed");
+	});
+
+	it.each([
+		{ width: 1280, height: 720, portrait: false },
+		{ width: 390, height: 844, portrait: true },
+	])("R12: opens the chat without the card covering it at $width×$height", ({ width, height, portrait }) => {
+		setWebAssetsModeForTests(true);
+		vi.stubGlobal("innerWidth", width);
+		vi.stubGlobal("innerHeight", height);
+		appRegistry.register({
+			id: CHARCARD_APP_ID,
+			name: "Character Cards",
+			htmlEntry: "/hosted-apps/naia-charcard/index.html",
+			center: () => <div data-testid="hosted-card" />,
+		});
+		useAppStore.getState().setActiveApp(CHARCARD_APP_ID);
+		try {
+			render(<AppMainContent {...baseProps({ activeApp: CHARCARD_APP_ID, naiaVisible: true })} />);
+			const card = screen.getByTestId("hosted-card");
+			const sheet = screen.getByTestId("mock-chat-area").closest("[data-mobile-sheet]");
+			expect(card).toBeVisible();
+			expect(sheet).toHaveAttribute("data-mobile-sheet", "collapsed");
+
+			const context = { type: "charcard", data: { character: "Tinker" } };
+			act(() => useAppStore.getState().setActiveAppContext(context, CHARCARD_APP_ID));
+			if (portrait) {
+				expect(card).not.toBeVisible();
+				expect(sheet).toHaveAttribute("data-mobile-sheet", "half");
+				fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+				fireEvent.click(screen.getByTestId("web-character-card-mobile-btn"));
+				expect(card).toBeVisible();
+				expect(screen.getByTestId("hosted-card")).toBe(card);
+			} else {
+				expect(card).toBeVisible();
+			}
+			expect(useAppStore.getState().activeAppContext).toBe(context);
+		} finally {
+			cleanup();
+			useAppStore.setState(useAppStore.getInitialState());
+			appRegistry.unregister(CHARCARD_APP_ID);
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("clamps drag height to preserve the input and viewport bounds", () => {

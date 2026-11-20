@@ -15,6 +15,7 @@ import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
+import { CHARCARD_APP_ID, useCharcardChatStart } from "../../lib/charcard-chat-start";
 import {
 	fetchAgentSkills,
 	isNewCore,
@@ -338,6 +339,36 @@ describe("ChatArea", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		render(<ChatArea />);
 		expect(screen.queryByRole("button", { name: "처음으로" })).toBeNull();
+	});
+
+	it("R12: starting a character card from history switches to chat and focuses the reply", async () => {
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		useAppStore.getState().setActiveApp(CHARCARD_APP_ID);
+		const openChat = vi.fn();
+		function ChatWithCharacterCards() {
+			useCharcardChatStart(openChat);
+			return <ChatArea />;
+		}
+		const { container, unmount } = render(<ChatWithCharacterCards />);
+		try {
+			fireEvent.click(container.querySelector('[data-chat-tab="history"]')!);
+			const input = container.querySelector(".chat-input");
+			expect(input).not.toBeVisible();
+			const greeting = "Welcome. I'm Tinker.";
+			const roleplay = `[Opening Greeting — You have already started the conversation with this message]\n${greeting}`;
+			act(() => useAppStore.getState().setActiveAppContext({
+				type: "charcard",
+				data: { character: "Tinker", roleplay },
+			}, CHARCARD_APP_ID));
+			expect(openChat).toHaveBeenCalledOnce();
+			expect(screen.getByText(greeting)).toBeVisible();
+			expect(container.querySelector('[data-chat-tab="chat"]')).toHaveClass("active");
+			await waitFor(() => expect(input).toHaveFocus());
+		} finally {
+			unmount();
+			useAppStore.getState().setActiveApp(null);
+		}
 	});
 
 	it("S5: kiosk demo greeting respects config ttsProvider (nextain gateway) in web mode", async () => {
