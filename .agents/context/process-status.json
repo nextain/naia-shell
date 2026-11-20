@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T01:39:00Z",
+  "last_updated": "2026-11-20T02:15:00Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_credit_context_r21_3_20261120": {
+      "requirement_id": "R21-3",
+      "title": "웹판 무료 크레딧 가입 안내와 대화 전 차감·무료 안내 연결",
+      "branch": "alpha/webgpu-p8-credit-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CREDIT-CONTEXT",
+      "requirements": "docs/requirements.md FR-WEB-CREDIT-CONTEXT.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "vitest_only",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/__tests__/credits.test.ts, packages/shell/src/lib/web-runtime/__tests__/web-stage1-features.test.tsx, packages/shell/src/components/__tests__/ChatArea.test.tsx",
+      "last_updated": "2026-11-20T02:15:00Z",
+      "verification": "표적 Vitest(credits, web-stage1-features, ChatArea, i18n-web-strings, i18n-user-facing) 통과 확인. 비로그인 로그인 단추 근처 무료 200 Cr 및 답 길이에 따른 비용 안내, 클라우드 첫 전송 직전 Cr 차감·남은 Cr 1회 안내 및 브라우저 기억, 내 기기 모델 무료 안내를 한·영 14개 로케일에서 검증. 실 브라우저 화면은 미확인."
+    },
     "web_app_catalog_unify_r3_20261120": {
       "requirement_id": "R3",
       "title": "웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합",

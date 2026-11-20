@@ -5145,6 +5145,14 @@ export function SettingsTab() {
 										</button>
 									)}
 								</div>
+								{!webAuthLoggedIn && !isKioskDemo() && (
+									<div
+										className="settings-hint"
+										data-testid="web-account-credit-hint"
+									>
+										{t("webCredit.signupHint")}
+									</div>
+								)}
 								{webAuthError && (
 									<div
 										role="alert"

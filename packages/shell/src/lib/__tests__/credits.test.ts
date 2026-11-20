@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+	WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY,
 	formatCredits,
 	formatCreditsExact,
 	formatCreditsFromUsd,
 	formatWebCredits,
 	formatWebCreditsFromUsd,
 	isNaiaAccountProvider,
+	isWebCloudCreditNoticeDismissed,
+	markWebCloudCreditNoticeDismissed,
 	usdToCredits,
 } from "../credits";
 import {
@@ -146,5 +149,19 @@ describe("R42 web credit display", () => {
 			setWebAssetsModeForTests(null);
 			await setLocale("en");
 		}
+	});
+
+	it("R21-3 remembers cloud pre-send credit notice dismissal in browser storage", () => {
+		const map = new Map<string, string>();
+		const fakeStorage = {
+			getItem: (k: string) => map.get(k) ?? null,
+			setItem: (k: string, v: string) => {
+				map.set(k, v);
+			},
+		};
+		expect(isWebCloudCreditNoticeDismissed(fakeStorage)).toBe(false);
+		markWebCloudCreditNoticeDismissed(fakeStorage);
+		expect(map.get(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY)).toBe("1");
+		expect(isWebCloudCreditNoticeDismissed(fakeStorage)).toBe(true);
 	});
 });

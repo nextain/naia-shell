@@ -5,7 +5,7 @@ import { appRegistry } from "../lib/app-registry";
 import { getPlatformAppStoreAdapter } from "../lib/app-store-adapter";
 import { CHARCARD_APP_ID } from "../lib/charcard-chat-start";
 import { loadConfig } from "../lib/config";
-import { getLocale } from "../lib/i18n";
+import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { isWebMode } from "../lib/web-runtime/web-assets";
@@ -204,19 +204,36 @@ export function WebRuntimeHarnessBar() {
 			</button>
 
 			{!authenticated && (
-				<button
-					type="button"
-					data-testid="web-login-free-credits-btn"
-					style={pillStyle(false, true)}
-					title={
-						isKo
-							? "로그인하고 무료 200 Cr로 클라우드 두뇌·드래곤 14개국어 음성 쓰기"
-							: "Sign in for 200 Cr, Cloud Brain & 14-language Dragon voices"
-					}
-					onClick={() => openWebLoginPrompt("account")}
+				<span
+					className="web-login-free-credits-wrap"
+					style={{
+						position: "relative",
+						display: "inline-flex",
+						alignItems: "center",
+					}}
 				>
-					{isKo ? "로그인 · 무료 200 Cr" : "Sign in · 200 Cr"}
-				</button>
+					<button
+						type="button"
+						data-testid="web-login-free-credits-btn"
+						style={pillStyle(false, true)}
+						title={t("webCredit.signupHint")}
+						aria-describedby={
+							activeApp === null ? "web-login-credit-hint" : undefined
+						}
+						onClick={() => openWebLoginPrompt("account")}
+					>
+						{isKo ? "로그인 · 무료 200 Cr" : "Sign in · 200 Cr"}
+					</button>
+					{activeApp === null && (
+						<span
+							id="web-login-credit-hint"
+							className="web-login-credit-hint"
+							data-testid="web-login-credit-hint"
+						>
+							{t("webCredit.signupHint")}
+						</span>
+					)}
+				</span>
 			)}
 		</div>
 	);

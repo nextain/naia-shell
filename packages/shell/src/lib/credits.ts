@@ -98,3 +98,33 @@ export function formatCreditsFromUsd(usd: number): string {
 export function formatWebCreditsFromUsd(usd: number): string {
 	return formatWebCredits(roundCreditAmount(usdToCredits(usd)));
 }
+
+/** Browser storage key remembering that the pre-send cloud credit notice was shown/dismissed (R21-3). */
+export const WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY =
+	"naia-web-cloud-credit-notice-dismissed";
+
+export function isWebCloudCreditNoticeDismissed(
+	storage: Pick<Storage, "getItem"> | null | undefined = typeof localStorage !==
+	"undefined"
+		? localStorage
+		: null,
+): boolean {
+	try {
+		return storage?.getItem(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+export function markWebCloudCreditNoticeDismissed(
+	storage: Pick<Storage, "setItem"> | null | undefined = typeof localStorage !==
+	"undefined"
+		? localStorage
+		: null,
+): void {
+	try {
+		storage?.setItem(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY, "1");
+	} catch {
+		// Ignore browser storage quota / privacy mode errors.
+	}
+}
