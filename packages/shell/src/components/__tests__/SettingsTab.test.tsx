@@ -248,6 +248,39 @@ describe("web provider switch persistence", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it.each(["ollama", "vllm", "codex", "claude-code-cli", "grok"])(
+		"R1 hides a saved desktop small-model provider on the web (%s)",
+		async (provider) => {
+			const smallRole = { provider, model: "saved-desktop-model" };
+			localStorage.setItem("naia-config", JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				llmRoles: { sub: smallRole },
+			}));
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+
+			const main = document.getElementById("provider-select") as HTMLSelectElement;
+			const small = screen.getByTestId<HTMLSelectElement>("small-model-select");
+			expect([...main.options].map((option) => option.value).sort()).toEqual(["nextain", "webllm"]);
+			expect(small).toHaveValue("__inherit__");
+			expect(screen.getByTestId("small-model-selected-label")).toHaveTextContent(t("settings.smallModelInherit"));
+			expect([...small.options].map((option) => option.value)).not.toContain(JSON.stringify([provider, smallRole.model]));
+			expect(small).not.toHaveTextContent(t("settings.smallModelDesktopSelected"));
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles.sub).toEqual(smallRole);
+
+			await waitFor(() => {
+				expect([...small.options].some((option) => option.value.startsWith('["nextain",'))).toBe(true);
+			});
+			const next = [...small.options].find((option) => option.value.startsWith('["nextain",'))!;
+			fireEvent.change(small, { target: { value: next.value } });
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles.sub).toMatchObject({
+				provider: "nextain",
+				model: JSON.parse(next.value)[1],
+			});
+		},
+	);
+
 	it("R33 starts the saved local model after the workspace write", async () => {
 		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
 		localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, WEB_LLM_FALLBACK_F32);
@@ -301,6 +334,45 @@ describe("web provider switch persistence", () => {
 		});
 		expect(startWebModelSpy).not.toHaveBeenCalled();
 		expect(agentBridgeStart).not.toHaveBeenCalled();
+	});
+
+	it.each(["espresso", "sakura"])("R2 keeps the Apply button legible in %s", (theme) => {
+		const root = document.documentElement;
+		const previousTheme = root.getAttribute("data-theme");
+		const stylesheet = document.createElement("style");
+		const css = readFileSync(resolve(__dirname, "../../styles/global.css"), "utf8");
+		// Restrict jsdom to the theme and button rules under test.
+		stylesheet.textContent = css.match(
+			/^(?:.*\.settings-save-btn,\n)?(?:\[data-theme="(?:espresso|sakura)"\](?: \.settings-save-btn)?|\.settings-save-btn)\s*\{[^}]*\}/gm,
+		)?.join("\n") ?? "";
+		document.head.appendChild(stylesheet);
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			root.setAttribute("data-theme", theme);
+			const button = screen.getByRole("button", { name: t("settings.save") });
+			const style = getComputedStyle(button);
+			const luminance = (channels: number[]) => {
+				const [r, g, b] = channels.map((channel) => {
+					const value = channel / 255;
+					return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+				});
+				return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+			};
+			const foreground = luminance(style.color.match(/\d+/g)!.map(Number));
+			// jsdom retains the background's var() expression without resolving its color.
+			expect(style.background).toBe("var(--wood)");
+			const accent = getComputedStyle(root).getPropertyValue("--wood").trim();
+			const background = luminance([1, 3, 5].map((start) => Number.parseInt(accent.slice(start, start + 2), 16)));
+			expect((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)).toBeGreaterThanOrEqual(4.5);
+			expect(style.whiteSpace).toBe("nowrap");
+			expect(style.borderRadius).toBe("8px");
+			expect(style.minHeight).toBe("36px");
+		} finally {
+			stylesheet.remove();
+			if (previousTheme === null) root.removeAttribute("data-theme");
+			else root.setAttribute("data-theme", previousTheme);
+		}
 	});
 
 	it.each([

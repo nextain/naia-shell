@@ -626,7 +626,7 @@ describe("AppBar — edit mode (#295)", () => {
 		}
 	});
 
-	it("R8: web mode places the BGM player after the web status pills and before settings", async () => {
+	it("R8: web mode places the BGM player at the end of the app bar", async () => {
 		vi.stubEnv("MODE", "web");
 		try {
 			const { container } = render(<AppBar />);
@@ -634,24 +634,30 @@ describe("AppBar — edit mode (#295)", () => {
 			await waitFor(() =>
 				expect(container.querySelector(".bgm-player")).not.toBeNull(),
 			);
-			const harness = container.querySelector('[data-testid="web-runtime-harness-bar"]');
 			const bgm = container.querySelector(".bgm-player")!;
-			const settings = container.querySelector(".app-bar-settings")!;
-			expect(harness).not.toBeNull();
-			expect(
-				harness!.compareDocumentPosition(bgm) & Node.DOCUMENT_POSITION_FOLLOWING,
-			).toBeTruthy();
-			expect(
-				bgm.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
-			).toBeTruthy();
+			const controls = [
+				screen.getByTestId("web-brain-status-badge"),
+				screen.getByTestId("web-open-harness-btn"),
+				screen.getByTestId("web-character-card-quick-btn"),
+				screen.getByTestId("web-login-free-credits-btn"),
+				container.querySelector(".app-bar-settings")!,
+				bgm,
+			];
+			for (const [index, control] of controls.slice(1).entries()) {
+				expect(controls[index].compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+			}
+			expect(container.querySelector(".app-bar")?.lastElementChild).toBe(bgm);
 		} finally {
 			vi.unstubAllEnvs();
 		}
 	});
 
-	it("renders BgmPlayer in desktop mode", async () => {
+	it("R8: desktop mode keeps the BGM player before settings", async () => {
 		const { container } = render(<AppBar />);
 		await act(async () => {});
 		await waitFor(() => expect(container.querySelector(".bgm-player")).not.toBeNull());
+		expect(container.querySelector(".bgm-player")?.nextElementSibling).toBe(
+			container.querySelector(".app-bar-settings"),
+		);
 	});
 });

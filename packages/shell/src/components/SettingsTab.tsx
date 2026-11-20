@@ -224,6 +224,7 @@ import {
 	readConfiguredLlmRoles,
 	writeConfiguredLlmRole,
 } from "../lib/llm/roles";
+import { WEB_SUPPORTED_LLM_PROVIDER_IDS } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
@@ -831,7 +832,16 @@ export function SettingsTab() {
 	const existing = loadConfig();
 	const displaySmallRole = (config: AppConfig): LlmRoleConfig => {
 		const roles = readConfiguredLlmRoles(config);
-		return roles.sub?.inherit === "memory" ? roles.memory ?? { inherit: "main" } : roles.sub ?? { inherit: "main" };
+		const role = roles.sub?.inherit === "memory" ? roles.memory : roles.sub;
+		if (
+			isWebMode() &&
+			role?.provider &&
+			!WEB_SUPPORTED_LLM_PROVIDER_IDS.some((id) => id === role.provider)
+		) {
+			Logger.debug("SettingsTab", "Using main model in web picker", { provider: role.provider });
+			return { inherit: "main" };
+		}
+		return role ?? { inherit: "main" };
 	};
 	const catalogModels = useRef<readonly LlmModelMeta[] | undefined>(undefined);
 	const lastSyncedWorkspace = useRef(getAdkPath());
@@ -6963,10 +6973,9 @@ export function SettingsTab() {
 									<option value="performance">{t("settings.modelSortPerformance")}</option>
 								</select>
 								<select id="small-model-select" data-testid="small-model-select"
-									value={smallRole.inherit ? "__inherit__" : isWebMode() && smallRole.provider === "ollama" ? "__desktop_local__" : smallRole.provider && smallRole.model ? JSON.stringify([smallRole.provider, smallRole.model]) : "__inherit__"}
+									value={!smallRole.inherit && smallRole.provider && smallRole.model ? JSON.stringify([smallRole.provider, smallRole.model]) : "__inherit__"}
 									onChange={(event) => {
 										const selected = event.target.value;
-										if (selected === "__desktop_local__") return;
 										const [selectedProvider, selectedModel] = selected === "__inherit__" ? ["", ""] : JSON.parse(selected) as [ProviderId, string];
 										const choice: LlmRoleConfig = selected === "__inherit__" ? { inherit: "main" } : {
 											provider: selectedProvider, model: selectedModel,
@@ -6983,8 +6992,7 @@ export function SettingsTab() {
 										}
 									}}>
 									<option value="__inherit__">{t("settings.smallModelInherit")}</option>
-									{isWebMode() && smallRole.provider === "ollama" && <option value="__desktop_local__" disabled>{t("settings.smallModelDesktopSelected")}</option>}
-									{!smallRole.inherit && smallRole.provider && smallRole.model && !(isWebMode() && smallRole.provider === "ollama") && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
+									{!smallRole.inherit && smallRole.provider && smallRole.model && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
 									{Object.entries(dynamicModels).filter(([id]) => id === "nextain" || (!isWebMode() && ["ollama", "vllm", "codex", "grok", "claude-code-cli"].includes(id))).map(([id, models]) => <optgroup key={id} label={getLlmProvider(id)?.name ?? id}>
 										{sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
 									</optgroup>)}
@@ -6993,7 +7001,7 @@ export function SettingsTab() {
 							</>
 						)}
 						<div className="settings-hint settings-model-selected-label" data-testid="small-model-selected-label">
-							{smallRole.inherit ? t("settings.smallModelInherit") : isWebMode() && smallRole.provider === "ollama" ? t("settings.smallModelDesktopSelected") : (() => {
+							{smallRole.inherit ? t("settings.smallModelInherit") : (() => {
 								const meta = (dynamicModels[smallRole.provider ?? ""] ?? []).find((item) => item.id === smallRole.model);
 								return meta ? formatModelLabel(meta, t) : `${smallRole.provider ?? ""}: ${smallRole.model ?? ""}`;
 							})()}

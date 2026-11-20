@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T01:17:56Z",
+  "last_updated": "2026-11-20T01:27:37Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -55,6 +55,24 @@
       "evidence": "packages/shell/src/lib/web-runtime/__tests__/web-studio-voice.test.ts, packages/shell/src/components/__tests__/SettingsTab.test.tsx",
       "verification": "표적 Vitest 173통과·0실패·8제외. 이미 열린 음성 설정과 빠른 읽기 토글 갱신을 확인. 실제 게이트웨이 합성과 두 화면 크기 미확인.",
       "last_updated": "2026-11-20T01:17:10Z"
+    },
+    "web_ui_p1_20261120": {
+      "requirement_id": "R1, R2, R5, R6, R8, R12",
+      "title": "웹판 두뇌 목록·적용 단추·앱 표시·플레이어·캐릭터 대화",
+      "branch": "alpha/webgpu-p1-ui-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-A-R1/R2/R5/R6/R8/R12",
+      "requirements": "docs/requirements.md FR-WEB-A-R1/R2/R5/R6/R8/R12",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "implemented",
+      "verification": "표적 Vitest 최종 26통과·0실패. R5 셸 제목 막대와 R6 패키지 SVG는 기준 커밋에 구현돼 있었다. 1280×720·390×844 분기를 검토하고 캐릭터 대화 전환을 컴포넌트에서 확인했다. 두 폭의 실 브라우저·운영 검증은 미실행.",
+      "evidence": "packages/shell/e2e/web-gpu-a-ui.spec.ts, 작업 묶음 보고서 bundle-runs/p1-ui.report.md",
+      "last_updated": "2026-11-20T01:27:37Z"
     },
     "web_avatar_clip_r48_20261120": {
       "requirement_id": "R48",

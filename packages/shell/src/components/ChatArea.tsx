@@ -113,6 +113,7 @@ import {
 	setCurrentSpeechActivityId,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
+import { getWebCharcardContext } from "../lib/charcard-chat-start";
 import {
 	type AppConfig,
 	DEFAULT_NAIA_LOCAL_URL,
@@ -646,6 +647,7 @@ export function ChatArea({
 	// UC-compaction: agent 가 예산 압박으로 이전 대화를 요약했을 때 표시할 알림(흡수된 메시지 수). null=숨김.
 	const [compactionNotice, setCompactionNotice] = useState<number | null>(null);
 	const [activeTab, setActiveTab] = useState<TabId>("chat");
+	const charcardContext = useAppStore(getWebCharcardContext);
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
@@ -1010,6 +1012,13 @@ export function ChatArea({
 	}, [streamingContent]);
 
 	const setEmotion = useAvatarStore((s) => s.setEmotion);
+
+	useEffect(() => {
+		if (!charcardContext) return;
+		setActiveTab("chat");
+		const frame = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+		return () => cancelAnimationFrame(frame);
+	}, [charcardContext]);
 
 	// The agent owns the local transcript. On mount, restore the current conversation
 	// from the local session transcript if one exists, or keep the fresh key.

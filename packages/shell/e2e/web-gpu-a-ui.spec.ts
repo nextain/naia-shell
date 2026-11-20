@@ -119,20 +119,25 @@ for (const viewport of [
 				const q = (s: string) => document.querySelector(s);
 				const pos = (a: Element | null, b: Element | null) =>
 					a && b ? Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) : null;
-				const credit = q(".app-bar .web-credit") ?? q("#web-login-free-credits-btn");
+				const credit = q(".app-bar .web-credit") ?? q("[data-testid='web-login-free-credits-btn']");
 				return {
 					harnessBeforeBgm: pos(q("[data-testid='web-runtime-harness-bar']"), q(".app-bar .bgm-player")),
-					creditBeforeBgm: credit ? pos(credit, q(".app-bar .bgm-player")) : true,
-					bgmBeforeSettings: pos(q(".app-bar .bgm-player"), q(".app-bar-settings")),
+					creditBeforeBgm: pos(credit, q(".app-bar .bgm-player")),
+					settingsBeforeBgm: pos(q(".app-bar-settings"), q(".app-bar .bgm-player")),
 				};
 			});
-			expect(order).toEqual({ harnessBeforeBgm: true, creditBeforeBgm: true, bgmBeforeSettings: true });
-			const h = await harness.boundingBox();
-			const b = await bgm.boundingBox();
-			const s = await settings.boundingBox();
-			if (h && b && s && (await bgm.isVisible()) && Math.abs(h.y - b.y) < 8) {
-				expect(b.x).toBeGreaterThanOrEqual(h.x + h.width - 1);
-				expect(s.x).toBeGreaterThanOrEqual(b.x + b.width - 1);
+			expect(order).toEqual({ harnessBeforeBgm: true, creditBeforeBgm: true, settingsBeforeBgm: true });
+			if (isPortrait(page)) {
+				await expect(bgm).toBeHidden();
+				await expect(page.locator(".web-mobile-menu-trigger")).toBeVisible();
+			} else {
+				const h = await harness.boundingBox();
+				const b = await bgm.boundingBox();
+				const s = await settings.boundingBox();
+				if (!h || !b || !s) throw new Error("missing app bar geometry");
+				expect(s.x).toBeGreaterThanOrEqual(h.x + h.width - 1);
+				expect(b.x).toBeGreaterThanOrEqual(s.x + s.width - 1);
+				expect(b.x + b.width).toBeLessThanOrEqual(viewport.width);
 			}
 			await shot(page, "R8", viewport.width);
 		});
@@ -175,7 +180,7 @@ for (const viewport of [
 			const save = page.locator(".settings-save-btn:visible").first();
 			await save.scrollIntoViewIfNeeded();
 			await expect(save).toBeVisible();
-			const style = await save.evaluate((el) => {
+			const measureStyle = () => save.evaluate((el) => {
 				const cs = getComputedStyle(el);
 				const parse = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
 				const lum = ([r, g, b]: number[]) => {
@@ -193,16 +198,31 @@ for (const viewport of [
 					height: r.height,
 					radius: Number.parseFloat(cs.borderTopLeftRadius),
 					shadow: cs.boxShadow,
+					whiteSpace: cs.whiteSpace,
 					wraps: el.scrollHeight > el.clientHeight + 2,
 					insideViewport: r.left >= 0 && r.right <= window.innerWidth,
 				};
 			});
-			expect(style.contrast).toBeGreaterThanOrEqual(4.5);
-			expect(style.height).toBeGreaterThanOrEqual(36);
-			expect(style.radius).toBeLessThanOrEqual(10);
-			expect(style.shadow).toBe("none");
-			expect(style.wraps).toBe(false);
-			expect(style.insideViewport).toBe(true);
+			const styles = [await measureStyle()];
+			const previousTheme = await page.locator("html").getAttribute("data-theme");
+			try {
+				await page.evaluate(() => document.documentElement.setAttribute("data-theme", "sakura"));
+				styles.push(await measureStyle());
+			} finally {
+				await page.evaluate((theme) => {
+					if (theme === null) document.documentElement.removeAttribute("data-theme");
+					else document.documentElement.setAttribute("data-theme", theme);
+				}, previousTheme);
+			}
+			for (const style of styles) {
+				expect(style.contrast).toBeGreaterThanOrEqual(4.5);
+				expect(style.height).toBeGreaterThanOrEqual(36);
+				expect(style.radius).toBe(8);
+				expect(style.shadow).toBe("none");
+				expect(style.whiteSpace).toBe("nowrap");
+				expect(style.wraps).toBe(false);
+				expect(style.insideViewport).toBe(true);
+			}
 			await save.focus();
 			await shot(page, "R2", viewport.width);
 			await closeSettings(page);
@@ -234,24 +254,39 @@ for (const viewport of [
 
 		test(`R12: starting a character card opens chat with the card greeting (${viewport.width})`, async () => {
 			test.setTimeout(180_000);
-			await openInstalledApp(page, "land.naia.charcard");
-			const frame = page.frameLocator('iframe[src*="/hosted-apps/naia-charcard/"]');
+			if (isPortrait(page)) {
+				await page.locator(".web-mobile-menu-trigger").click();
+				await page.getByTestId("web-character-card-mobile-btn").click();
+			} else {
+				await page.getByTestId("web-character-card-quick-btn").click();
+			}
+			const frameSelector = 'iframe[src*="/hosted-apps/naia-charcard/"]';
+			const frame = page.frameLocator(frameSelector);
 			const start = frame.locator("#start");
 			const first = page.locator(".chat-message").first();
 			// The fixture button exists as soon as the frame parses, which can be a
 			// moment before the shell attaches its context listener on load; press
 			// again until the shell reacts (repeats of the same card are ignored).
 			await expect(async () => {
-				if (isPortrait(page)) await start.evaluate((el) => (el as HTMLButtonElement).click());
-				else await start.click();
+				if (await start.isVisible()) await start.click();
 				await expect(first).toContainText("어서 와요! 저는 시계공 틴커예요.", { timeout: 5_000 });
 			}).toPass({ timeout: 90_000 });
 			const wrapper = page.locator(".naia-chat-wrapper");
 			await expect(wrapper).not.toHaveClass(/naia-chat-wrapper--hidden/);
+			await expect(first).toBeVisible();
 			await expect(first).toContainText("오늘은 어떤 이야기를 해 볼까요?");
 			await expect(page.locator(".chat-message")).toHaveCount(1);
 			await expect(page.locator(".naia-chat-area .chat-input")).toBeFocused();
+			const cardFrame = page.locator(frameSelector);
+			if (isPortrait(page)) await expect(cardFrame).toBeHidden();
+			else await expect(cardFrame).toBeVisible();
 			await shot(page, "R12", viewport.width);
+			if (isPortrait(page)) {
+				await page.locator(".web-mobile-menu-trigger").click();
+				await page.getByTestId("web-character-card-mobile-btn").click();
+				await expect(cardFrame).toBeVisible();
+				await expect(first).toContainText("오늘은 어떤 이야기를 해 볼까요?");
+			}
 		});
 	});
 }

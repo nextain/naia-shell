@@ -110,7 +110,7 @@ interface ChatState {
 	setProvider: (provider: ProviderId) => void;
 	setPendingApproval: (approval: PendingApproval) => void;
 	clearPendingApproval: () => void;
-	newConversation: () => void;
+	newConversation: (greeting?: string | null) => void;
 	enqueueMessage: (text: string) => void;
 	dequeueMessage: () => string | undefined;
 }
@@ -544,7 +544,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set({ pendingApproval: null });
 	},
 
-	newConversation: () => {
+	newConversation: (greeting = cardGreeting(loadConfig())) => {
 		// If approval was pending and browser is active, re-show WebView2 before clearing
 		if (
 			get().pendingApproval &&
@@ -554,7 +554,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		}
 		const nextSessionId = generateLocalSessionId();
 		setStoredLocalSessionId(nextSessionId);
-		const greeting = cardGreeting(loadConfig());
 		set({
 			sessionId: null,
 			localSessionId: nextSessionId,

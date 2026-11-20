@@ -96,6 +96,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const [removeError, setRemoveError] = useState("");
 	// WO-03 / 지시서 #3: 웹판은 브라우저 탭·바로가기·설치 앱이 꺼져 있어 해당 메뉴와 진입점을 완전히 막는다.
 	const isWeb = isWebMode();
+	const musicAtEnd = isWeb && !isKioskDemo();
+	const musicPlayer = (
+		<Suspense fallback={null}>
+			<BgmPlayer naia={bgmBridge} />
+		</Suspense>
+	);
 
 	// Hide browser native webview while any dialog is open (webview renders above HTML z-index).
 	// Use a single boolean so transitioning between dialogs (addUrlDialog→urlInputDialog)
@@ -834,8 +840,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				)}
 			<WebRuntimeHarnessBar />
 			<WebCreditChip />
-			{/* ── BGM (right end, before settings; R8: web keeps it after the status pills and credit) ─── */}
-			<Suspense fallback={null}><BgmPlayer naia={bgmBridge} /></Suspense>
+			{!musicAtEnd && musicPlayer}
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}
@@ -860,6 +865,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					/>
 				</svg>
 			</button>
+			{musicAtEnd && musicPlayer}
 		</div>
 	);
 }

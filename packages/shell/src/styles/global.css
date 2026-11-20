@@ -3631,6 +3631,7 @@ body.resizing-row {
 	font-size: 14px;
 	font-weight: 600;
 	line-height: 1.2;
+	white-space: nowrap;
 	cursor: pointer;
 	transition: filter 0.15s;
 }
@@ -3638,6 +3639,10 @@ body.resizing-row {
 :root:not([data-theme]) .settings-save-btn,
 [data-theme="espresso"] .settings-save-btn {
 	color: #fff;
+}
+
+[data-theme="sakura"] .settings-save-btn {
+	color: #000;
 }
 
 .settings-save-btn:hover {
