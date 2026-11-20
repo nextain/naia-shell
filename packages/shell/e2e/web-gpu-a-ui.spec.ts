@@ -180,7 +180,7 @@ for (const viewport of [
 			const save = page.locator(".settings-save-btn:visible").first();
 			await save.scrollIntoViewIfNeeded();
 			await expect(save).toBeVisible();
-			const style = await save.evaluate((el) => {
+			const measureStyle = () => save.evaluate((el) => {
 				const cs = getComputedStyle(el);
 				const parse = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
 				const lum = ([r, g, b]: number[]) => {
@@ -198,16 +198,31 @@ for (const viewport of [
 					height: r.height,
 					radius: Number.parseFloat(cs.borderTopLeftRadius),
 					shadow: cs.boxShadow,
+					whiteSpace: cs.whiteSpace,
 					wraps: el.scrollHeight > el.clientHeight + 2,
 					insideViewport: r.left >= 0 && r.right <= window.innerWidth,
 				};
 			});
-			expect(style.contrast).toBeGreaterThanOrEqual(4.5);
-			expect(style.height).toBeGreaterThanOrEqual(36);
-			expect(style.radius).toBeLessThanOrEqual(10);
-			expect(style.shadow).toBe("none");
-			expect(style.wraps).toBe(false);
-			expect(style.insideViewport).toBe(true);
+			const styles = [await measureStyle()];
+			const previousTheme = await page.locator("html").getAttribute("data-theme");
+			try {
+				await page.evaluate(() => document.documentElement.setAttribute("data-theme", "sakura"));
+				styles.push(await measureStyle());
+			} finally {
+				await page.evaluate((theme) => {
+					if (theme === null) document.documentElement.removeAttribute("data-theme");
+					else document.documentElement.setAttribute("data-theme", theme);
+				}, previousTheme);
+			}
+			for (const style of styles) {
+				expect(style.contrast).toBeGreaterThanOrEqual(4.5);
+				expect(style.height).toBeGreaterThanOrEqual(36);
+				expect(style.radius).toBe(8);
+				expect(style.shadow).toBe("none");
+				expect(style.whiteSpace).toBe("nowrap");
+				expect(style.wraps).toBe(false);
+				expect(style.insideViewport).toBe(true);
+			}
 			await save.focus();
 			await shot(page, "R2", viewport.width);
 			await closeSettings(page);
