@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T01:10:19Z",
+  "last_updated": "2026-11-20T01:17:56Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,18 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_bgm_playback_r7_20261120": {
+      "requirement_id": "R7",
+      "title": "웹 음악 재생 준비·확인과 시간 초과 복구",
+      "branch": "alpha/webgpu-p2-voice-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-BGM-CATALOG-TRUTH",
+      "requirements": "docs/requirements.md FR-WEB-BGM-PLAY.3, .5",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "vitest_only", "P05": "done" },
+      "status": "implemented",
+      "evidence": "packages/shell/src/components/__tests__/BgmPlayer.test.tsx",
+      "verification": "기준 코드에서 새 회귀 시험 3건 실패 재현. 표적 Vitest 56통과·0실패. 실제 YouTube 소리와 두 화면 크기 미확인.",
+      "last_updated": "2026-11-20T01:14:51Z"
+    },
     "web_voice_mic_r26_20261120": {
       "requirement_id": "R26",
       "title": "웹 음성 대화 시작과 재개 시 마이크 예외 처리",

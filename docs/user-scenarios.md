@@ -3338,6 +3338,8 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 
 경로: 웹(브라우저) 빌드(`vite --mode web`). 웹판 사용자가 음악 앱(♫)을 열고 장르(예: 지브리)를 고른 뒤 목록의 한 곡을 누릅니다. 목록에 보인 제목·채널의 영상이 배경 재생기에 실리고, 재생 중 카드와 AI 가 말하는 곡명도 같은 제목입니다. 웹판에는 검색 서버(사이드카)가 없으므로 정적 목록만 쓰며, 목록에 없는 장르(제이팝·시티팝·클래식 등)를 다른 영상에 억지로 붙이지 않습니다. 실시간 방송은 길이 대신 `LIVE` 로 보입니다.
 
+곡을 누르면 재생기의 준비 이벤트에 맞춰 재생 명령을 보냅니다. 플레이어가 재생을 확인하면 재생 중 카드와 AI 안내가 켜집니다. 시작을 확인하지 못하면 정지 표시가 내려가고 오류 안내가 나타납니다. 같은 곡을 다시 골라 재시도할 수 있습니다.
+
 ### Test Coverage Map — UC-WEB-BGM-CATALOG-TRUTH
 
 | 상태 | 판정 | 시험 |
@@ -3345,6 +3347,8 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | 기본·성공 | 지브리 장르 첫 줄 제목 = 재생 영상 id(3jWRrafhO7M)·재생 카드 제목 | `e2e/web-bgm-r7.spec.ts` R7 (1280×720, 390×844) |
 | 오류(지어낸 제목) | 예전 지어낸 곡명이 웹 목록에 없음, 주제어 검색이 실제 영상만 고름 | `e2e/web-bgm-r7.spec.ts` R7, `src/lib/__tests__/bgm-skill.test.ts` |
 | 좁은 폭 | 390×844 에서 재생기 안 목록·재생이 동작(세로 모바일 진입점은 앱 바 몫) | `e2e/web-bgm-r7.spec.ts` R7 390 |
+| 대기·성공 | 곡 대기 중에는 AI와 재생 중 카드가 재생을 알리지 않습니다. 준비 이벤트에서 `playVideo`를 보내고, 현재 곡의 재생이 확인되면 알립니다. | `src/components/__tests__/BgmPlayer.test.tsx` R7 |
+| 오류·복구 | 재생 응답이 없으면 시간 초과를 기록하고 안내합니다. 같은 곡을 새로 요청할 수 있고 늦게 도착한 현재 곡의 재생 확인도 반영합니다. | `BgmPlayer.test.tsx` R7, `e2e/web-bgm-r31.spec.ts` (1280×720, 390×844) |
 
 ## UC-WEB-BGM-TOPBAR-PLAY. 웹판 상단 음악 바의 ▶ 로 유튜브 곡을 듣는다 (R31)
 
