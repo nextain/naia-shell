@@ -874,7 +874,7 @@ describe("ChatArea", () => {
 			expect(notice).toHaveAttribute("role", "alert");
 			expect(useChatStore.getState().messages).toEqual([]);
 			fireEvent.click(screen.getByRole("button", { name: "Try microphone again" }));
-			expect(screen.getByRole("status")).toHaveTextContent("Connecting...");
+			expect(screen.getByText("Connecting...")).toHaveAttribute("role", "status");
 			expect(screen.queryByRole("alert")).toBeNull();
 		} else {
 			expect(useChatStore.getState().messages.at(-1)?.content).toContain(guidance);
