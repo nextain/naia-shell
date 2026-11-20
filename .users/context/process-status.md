@@ -18,6 +18,20 @@
 - R1·R2·R8·R12를 수정했습니다. R5 셸 제목 막대와 R6 패키지 SVG 연결은 기준 커밋에서 확인했습니다. 최종 표적 Vitest 26통과·0실패이며 1280×720·390×844 실 브라우저 검증은 남아 있습니다.
 - `UC-WEB-A-R1/R2/R5/R6/R8/R12` · `packages/shell/e2e/web-gpu-a-ui.spec.ts` · 작업 묶음 보고서 `bundle-runs/p1-ui.report.md`
 
+<!-- src-sha: r17nva20261120 -->
+
+## 웹판 파일 탐색기 파일 올리기 및 NVA 아바타 재생 경로 보강 (R17) — 2026-11-20
+
+- `5e4ead30`·`277dfcdc` 포함을 확인하고, `work/`에 올린 `.nva`·`.vrm` 바이너리 안내·원본 내려받기, `FileSystemFileHandle.move()` 미지원 브라우저 OPFS 쓰기 폴백, `naia-settings/nva-files`에 올린 `.nva` ZIP의 설정 목록 반영(`listNaiaAssets`) 및 1280×720·390×844 `VideoAvatarCanvas` 직접 재생 경로를 연결했습니다. 표적 Vitest 4파일 41통과·0실패. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-WORKSPACE-IMPORT` · `FR-WEB-WORKSPACE-IMPORT.1~4` · `web-nva-archive.test.ts` · `web-workspace-path.test.tsx` · `VideoAvatarCanvas.test.tsx`
+
+<!-- src-sha: r3unify20261120 -->
+
+## 웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합 (R3) — 2026-11-20
+
+- 셸 안의 내장 앱 정의·게이트웨이 상품 정규화·포털 공개 목록(`GET /api/apps`) 병합·다국어 이름/설명 폴백·가격 표기(`무료` / `Cr`)를 `app-catalog.ts` 한 코드로 통합하고 어댑터와 `WebAppStoreModal`(14개국어·`Escape` 닫기·오류 재시도·1280×720/390×844 줄바꿈)에 연결했습니다. `/app/` 경로에서도 포털 `/hosted-apps/` 주소를 정규화하고 유료 스토어 상품의 가격·권한 검사를 보존합니다. 표적 Vitest 6파일 34통과·0실패. 실서버 화면은 미확인입니다.
+- `UC-WEB-APP-CATALOG` · `FR-WEB-APP-CATALOG.1~5` · `app-catalog.test.ts` · `WebAppStoreModal.test.tsx`
+
 <!-- src-sha: 7c3b648621572e1f -->
 
 ## 웹판 아바타 영상 다운로드와 재시도 (R48) — 2026-11-20

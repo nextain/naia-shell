@@ -47,8 +47,9 @@ describe("i18n web strings", () => {
 		const enMod = await import("../locales/en");
 
 		const webKeys = Object.keys(enWebMod.default);
-		expect(webKeys.length).toBe(111);
+		expect(webKeys.length).toBe(120);
 		expect(webKeys.filter((key) => key.startsWith("webVisualAgent."))).toHaveLength(14);
+		expect(webKeys.filter((key) => key.startsWith("webAppStore."))).toHaveLength(9);
 
 		for (const [key, value] of Object.entries(enWebMod.default)) {
 			expect(key in enMod.default).toBe(true);

@@ -50,16 +50,28 @@ The two lists differ and an admin had no way to add an app to either.
 
 ### After (one catalog)
 
-`packages/shell/src/lib/app-catalog.ts` + `WebHttpAppStoreAdapter.listCatalog()`
-build one list, in this order; earlier sources win on an id collision:
+`packages/shell/src/lib/app-catalog.ts` owns the canonical built-in specs
+(`STAGE1_HOSTED_MINI_APPS`), gateway/portal normalization, unified catalog merge
+(`buildUnifiedAppCatalog`), and localized card copy/price helpers
+(`localizeStoreProduct`, `formatStoreProductPrice`). Both
+`WebHttpAppStoreAdapter`/`DesktopTauriAppStoreAdapter` and `WebAppStoreModal`
+share this module, building one list in this order (earlier sources win on an id
+collision):
 
 1. built-in Stage-1 apps (`STAGE1_HOSTED_MINI_APPS`) — always shown;
 2. gateway products (`GET /v1/apps/products`);
-3. admin-registered apps from the portal public catalog `GET {NAIA_WEB_BASE_URL}/api/apps`.
+3. public catalog items from `GET {NAIA_WEB_BASE_URL}/api/apps` (both
+   admin-registered `registry` apps and `store` product records).
 
 A failure of 2 or 3 (offline, timeout 4 s, non-2xx, malformed body) is silent:
-the store then shows the built-in list only. Installing any catalog item uses
-the same `installedWebApps` list and the same iframe sandbox checks.
+the store then shows the built-in list only. Site-relative `/hosted-apps/…` or
+portal-root `${portal}/hosted-apps/…` URLs are normalized onto the shell's
+hosted-apps prefix (e.g. `/app/hosted-apps/…` when `BASE_URL` is `/app/`), while
+portal storefront page links (`/apps/<slug>`) fall back to the default hosted
+bundle path. Paid store records (`source: "store"` or `creditPrice > 0`) keep
+their price and entitlement checks; free admin-registered apps launch without
+login. Installing any catalog item uses the same `installedWebApps` list and the
+same iframe sandbox checks.
 
 ### Built-in hosted app bundles (R35)
 

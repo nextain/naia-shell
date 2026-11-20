@@ -893,6 +893,14 @@
       "uc": ["UC-WEB-VISUAL-AGENT-SLUG"],
       "contract": "docs/requirements.md#웹판-비주얼-에이전트-공개-주소-r39-2026-11-20"
     },
+    "packages/shell/src/lib/web-runtime/web-nva-archive.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-WORKSPACE-IMPORT",
+        "UC-WEB-SETTINGS-FILES"
+      ],
+      "contract": "docs/requirements.md#작업-파일nva-아바타를-브라우저-탐색기로-가져오기-r17"
+    },
     "packages/shell/src/lib/web-runtime/web-settings-catalog.ts": {
       "layer": "adapters",
       "uc": ["UC-WEB-SETTINGS-FILES"],

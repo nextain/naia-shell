@@ -1989,15 +1989,16 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 
 Web startup must select the web runtime using the build mode, even after the web Tauri-compatibility shim has installed `__TAURI_INTERNALS__`. It must neither invoke native workspace bootstrap nor install the native coding-worker adapter. Native Tauri builds retain both native paths and fail visibly when native workspace restoration fails. Verification: `UC-WEB-BOOT-RUNTIME-SEPARATION`.
 
-## 작업 파일을 브라우저 탐색기로 가져오기
+## 작업 파일·NVA 아바타를 브라우저 탐색기로 가져오기 (R17)
 
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
-| FR-WEB-WORKSPACE-IMPORT.1 | 정식 웹의 탐색기는 사용자가 고른 `work/` 또는 그 아래 작업 폴더를 표시합니다. 파일 선택을 시작하면 해당 폴더의 경로와 동일성이 작업에 연결됩니다. | Done (local) |
-| FR-WEB-WORKSPACE-IMPORT.2 | 파일 한 개를 동일 출처의 브라우저 저장소에 원래 바이트대로 보관합니다. 동명 항목과 동시에 선택한 파일은 구별된 이름으로 남습니다. 완료된 항목은 기존 탐색기, 열기, 내려받기에서 사용합니다. | Done (local) |
-| FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존됩니다. 저장소 미지원과 용량 부족은 사용자에게 알려 줍니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.1 | 정식 웹의 탐색기는 사용자가 고른 `work/`(및 하위 폴더) 또는 `naia-settings/{background,vrm-files,nva-files}`를 가져오기 대상으로 표시하며, 파일 선택 시 해당 폴더 경로와 동일성을 검증합니다. (UC-WEB-WORKSPACE-IMPORT) | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.2 | 파일 한 개를 동일 출처 브라우저 저장소(OPFS)에 원래 바이트대로 보관하고(`move()` 지원 시 스테이징 이동, 미지원 시 새 목적지 이름에 직접 기록 후 실패 시 정리), 동명 항목은 접미 번호로 구별합니다. `work/`·`naia-settings/` 어디에서든 `.nva`·`.vrm` 파일을 열면 텍스트 편집기 대신 바이너리 안내와 원본 내려받기를 제공합니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.3 | 취소·대상 교체·저장 실패 뒤에도 기존 파일이 보존되며, 저장소 미지원·형식 불일치·용량 부족을 구분해 알립니다. | Done (local) |
+| FR-WEB-WORKSPACE-IMPORT.4 | 웹판에서 `naia-settings/nva-files`에 올린 `.nva` 묶음은 `listNaiaAssets("nva-files")` 및 설정 비디오 아바타 목록에 즉시 반영되고, 선택 시 `VideoAvatarCanvas`가 OPFS의 `.nva` ZIP 아카이브에서 `manifest.json`·클립·발화 자산을 검증해 재생합니다. 손상되거나 경로 탈출이 포함된 `.nva`는 거부하고 기존 아바타 오류 안내를 유지합니다. | Done (local) |
 
-로컬 후보 검증은 2026-11-19 03:53 UTC Chromium 탐색기 실동작과 탐색기 회귀 시험 7건입니다. 시스템 기본 작업 공간 준비는 별도 진입 시험에서 확인합니다.
+검증: `UC-WEB-WORKSPACE-IMPORT` (`web-workspace-path.test.tsx`, `web-nva-archive.test.ts`, `VideoAvatarCanvas.test.tsx`).
 
 ## 웹판 화면 묶음 A (2026-11-19)
 
@@ -2083,16 +2084,17 @@ Web startup must select the web runtime using the build mode, even after the web
 | FR-WEB-VOICE-MIC.3 | 웹 음성 인식의 시작이나 자동 재개 호출이 마이크 권한·장치 예외를 던지면, 같은 복구 안내를 한 번 보이고 인식기를 해제합니다. 음성 대화 단추로 다시 시작할 수 있습니다. | Done (local) |
 
 검증: `UC-WEB-VOICE-MIC-ERROR`. 남은 문제: 실제 마이크와 Chrome 구글 음성 서버를 쓴 사람 귀 확인은 하지 못했습니다(샌드박스 헤드리스 Chrome 은 가짜 마이크에서도 `audio-capture` 로 끝남). 대표님이 겪은 오류의 원래 코드는 미확인입니다.
-## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-19)
+## 웹판 앱스토어 단일 목록과 어드민 등록 앱 (R3·R4, 2026-11-20)
 
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
-| FR-WEB-APP-CATALOG.1 | 정식 웹판의 셸 안 미니앱 스토어는 내장 Stage-1 앱 → 게이트웨이 `GET /v1/apps/products` → 포털 `GET {NAIA_WEB_BASE_URL}/api/apps` 순서로 합친 한 목록을 보여 줍니다. 같은 id 는 앞 출처가 이깁니다. (UC-WEB-APP-CATALOG) | Done (local) |
-| FR-WEB-APP-CATALOG.2 | 포털 목록은 4초 안에 응답이 없거나 실패·형식 오류면 빈 목록으로 처리하고, 스토어는 오류 없이 내장 목록만 보입니다. | Done (local) |
-| FR-WEB-APP-CATALOG.3 | 어드민 앱은 `docs/app-store-protocol.md` 계약을 따르고, 공개(`visibility`)·제공 언어(`locales`)·허용 출처(`url`) 검사를 통과한 것만 보입니다. 어드민 앱은 무료 호스팅 앱으로 로그인·구매 없이 설치·실행합니다. 유료 앱은 게이트웨이 상품으로만 등록합니다. | Done (local) |
+| FR-WEB-APP-CATALOG.1 | 셸의 앱스토어 카탈로그 생성·정규화·표시 규칙은 `packages/shell/src/lib/app-catalog.ts` 한 모듈에 통합하고 데스크톱·웹 어댑터(`app-store-adapter.ts`)와 웹 스토어 모달(`WebAppStoreModal.tsx`)이 공유합니다. 정식 웹판은 내장 Stage-1 앱 → 게이트웨이 `GET /v1/apps/products` → 포털 `GET {NAIA_WEB_BASE_URL}/api/apps` 순서로 합친 한 목록을 보여 주며 같은 id 는 앞 출처가 이깁니다. (UC-WEB-APP-CATALOG) | Done (local) |
+| FR-WEB-APP-CATALOG.2 | 포털 목록은 4초 안에 응답이 없거나 실패·형식 오류면 빈 목록으로 처리하고, 스토어는 오류 없이 내장 목록만 보입니다. 모달에서 조회·실행 오류가 발생하면 재시도 단추로 복구할 수 있고 `Escape`로 닫을 수 있습니다. | Done (local) |
+| FR-WEB-APP-CATALOG.3 | 어드민 앱은 `docs/app-store-protocol.md` 계약을 따르고 공개(`visibility`)·제공 언어(`locales`)·허용 출처(`url`) 검사를 통과한 것만 보입니다. `/app/` 아래에 마운트된 웹 셸은 포털의 `/hosted-apps/…` 상대·절대 주소를 `${shellOrigin}${shellBasePath}hosted-apps/…`로 정규화하며, 포털 상점 상세 주소(`/apps/<slug>`)는 기본 호스팅 번들 주소로 대체합니다. 포털 목록의 유료 스토어 항목(`source: "store"` 또는 `creditPrice > 0`)은 가격과 구매·권한 검사를 유지하고, 무료 어드민 앱만 로그인·구매 없이 설치·실행합니다. | Done (local) |
+| FR-WEB-APP-CATALOG.5 | `WebAppStoreModal`은 14개 로케일 번역과 포털 상점과 같은 다국어 이름·설명 폴백(`names[locale]` → 한국어는 `ko`, 그 외는 `en` → 기본 이름) 및 가격 표기(`무료` 또는 `formatWebCredits` `1,234 Cr`)를 사용하며, 1280×720과 390×844에서 가로 넘침 없이 동작합니다. | Done (local) |
 | FR-WEB-APP-CATALOG.4 | 포털 상점 화면 `/{locale}/apps` 도 같은 `/api/apps` 목록으로 그립니다. | 포털 작업(이 저장소 밖), 미착수 |
 
-로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`, Playwright `e2e/web-app-store-catalog.spec.ts`(NAIA_E2E_WEB=1, `vite --mode web`, 1280×720·390×844). 실제 포털 서버 응답은 미확인.
+로컬 검증: vitest `app-catalog.test.ts`·`app-store-adapter.test.ts`·`WebAppStoreModal.test.tsx`·`i18n-web-strings.test.ts`·`i18n-user-facing.test.ts`, 기존 Playwright `e2e/web-app-store-catalog.spec.ts`(1280×720·390×844). 실제 포털 서버 응답은 미확인.
 
 ## 웹판 슬라이드 PPTX 열기 (R27, 2026-11-19)
 

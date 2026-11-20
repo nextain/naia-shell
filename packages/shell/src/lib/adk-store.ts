@@ -24,6 +24,7 @@ import {
 	readWebBgmMusicBlob,
 	webBgmFileName,
 } from "./web-runtime/web-bgm-music";
+import { listWebNvaAssets } from "./web-runtime/web-nva-archive";
 import {
 	type SlotsManifest,
 	buildSlotsManifest,
@@ -180,7 +181,8 @@ export async function listNaiaAssets(
 			return WEB_VRM_ASSETS.map((asset) => asset.url);
 		if (subdir === "background")
 			return WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
-		if (subdir === "nva-files") return [...WEB_NVA_ASSETS];
+		if (subdir === "nva-files")
+			return listWebNvaAssets().catch(() => [...WEB_NVA_ASSETS]);
 		// R10: 사용자가 이 브라우저에 올린 음악(OPFS).
 		if (subdir === "bgm-musics") return listWebBgmMusicPaths().catch(() => []);
 		return [];
