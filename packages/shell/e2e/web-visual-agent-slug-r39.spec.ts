@@ -53,7 +53,7 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 		await openWebShellWithBgm(page, { openBgm: false });
 		await openProfile(page, viewport.width);
 
-		const slug = page.getByRole("textbox", { name: "비주얼 에이전트 슬러그" });
+		const slug = page.getByRole("textbox", { name: "공유 주소 이름" });
 		const panel = page.locator(".visual-agent-slug-settings");
 		const preview = panel.getByTestId("visual-agent-public-url");
 		const save = panel.getByRole("button", { name: "주소 저장" });
@@ -87,7 +87,7 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 
 		await slug.fill("taken-r39");
 		await save.click();
-		await expect(panel.getByRole("alert")).toContainText("이미 사용 중인 주소예요");
+		await expect(panel.getByRole("alert")).toHaveText("이미 사용 중인 주소예요. 다른 이름을 입력해 주세요.");
 		await slug.fill(SLUG);
 		await expect(preview).toHaveText(PUBLIC_URL);
 		await expect(copy).toBeDisabled();

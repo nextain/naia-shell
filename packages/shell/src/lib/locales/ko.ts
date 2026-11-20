@@ -8,11 +8,11 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
-	"webVisualAgent.slugLabel": "비주얼 에이전트 슬러그",
+	"webVisualAgent.slugLabel": "공유 주소 이름",
 	"webVisualAgent.hint": "영문 소문자, 숫자, 하이픈(-) 3~32자를 입력하세요.",
 	"webVisualAgent.publicAddress": "공개 주소",
 	"webVisualAgent.invalid": "영문 소문자, 숫자, 하이픈(-) 3~32자를 입력해 주세요.",
-	"webVisualAgent.taken": "이미 사용 중인 주소예요. 다른 슬러그를 입력해 주세요.",
+	"webVisualAgent.taken": "이미 사용 중인 주소예요. 다른 이름을 입력해 주세요.",
 	"webVisualAgent.readError": "주소를 불러오지 못했어요. 다시 시도해 주세요.",
 	"webVisualAgent.saveError": "주소를 저장하지 못했어요. 다시 시도해 주세요.",
 	"webVisualAgent.copyError": "주소를 복사하지 못했어요. 주소를 선택해 직접 복사할 수 있어요.",

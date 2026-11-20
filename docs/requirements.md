@@ -2162,7 +2162,7 @@ Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-ru
 
 | 요구사항 | 계약 | 상태 |
 |---|---|---|
-| FR-WEB-VISUAL-AGENT-SLUG.1 | 웹판(브라우저) 프로필 설정은 기본 슬러그 `naia`와 `https://naia.land/visual-agent/{slug}` 형태의 공개 주소를 보여 줍니다. 기존 개인 공간 경로 `/u/{slug}` 및 오래된 링크의 소유자 확인은 유지합니다. (UC-WEB-VISUAL-AGENT-SLUG) | Done |
+| FR-WEB-VISUAL-AGENT-SLUG.1 | 웹판(브라우저) 프로필 설정은 ‘공유 주소 이름’의 기본값 `naia`와 `https://naia.land/visual-agent/{slug}` 형태의 공개 주소를 보여 줍니다. 기존 개인 공간 경로 `/u/{slug}` 및 오래된 링크의 소유자 확인은 유지합니다. (UC-WEB-VISUAL-AGENT-SLUG) | Done |
 | FR-WEB-VISUAL-AGENT-SLUG.2 | 영문 소문자·숫자·하이픈 3~32자를 검증합니다. 유효한 주소를 미리 보고 로그인한 계정의 포털 설정에 이름을 저장합니다. 저장한 주소를 복사하고, 입력이나 저장 오류를 수정하거나 재시도할 수 있습니다. | Done |
 | FR-WEB-VISUAL-AGENT-SLUG.3 | 웹 셸은 포털에서 넘긴 `/app/?visualAgent={slug}`의 슬러그를 확인해 브라우저 제목에 표시합니다. 공개 주소를 열면 방문자의 브라우저 설정으로 기존 비주얼 에이전트 화면을 엽니다. | Done |
 
@@ -2173,6 +2173,7 @@ Playwright 1280×720·390×844와 화면 캡처는 미확인입니다. `heavy-ru
 | FR-WEB-CHARCARD.1 | 웹판 상단과 모바일 메뉴의 캐릭터 카드는 같은 셸 앱의 목록과 상세를 엽니다. 카드 선택은 그 상세를 앱 안에서 갱신합니다. (UC-WEB-CHARCARD) | Done (local) |
 | FR-WEB-CHARCARD.2 | 같은 줄에서 캐릭터 카드를 만들거나 실리태번 V2/V3 PNG·JSON을 추가할 수 있습니다. 목록과 상세에 원본 카드 그림 또는 아바타 그림을 표시합니다. (UC-WEB-CHARCARD) | Done (local) |
 | FR-WEB-CHARCARD.3 | 선택된 카드를 적용하는 버튼을 파일 추가 바로 옆에 두고 390×844 첫 화면에서도 접근할 수 있게 합니다. 적용하면 해당 카드로 대화를 시작합니다. (UC-WEB-CHARCARD) | Done (local) |
+| FR-WEB-CHARCARD.4 | 웹 설정의 페르소나 탭에서 카드 목록 그림은 48×48픽셀, 선택 카드의 상세 그림은 88×88픽셀 영역에 표시합니다. 상세는 원본 비율을 유지하고 그림이 잘리지 않습니다. 390×844에서 그림과 추가·적용 단추가 설정 영역 안에 들어옵니다. (UC-WEB-CHARCARD) | Done (local) |
 
 기준 재현. 상단 버튼 `WebRuntimeHarnessBar.tsx:191`에서 `land.naia.charcard`를 열면 iframe이 `/hosted-apps/naia-charcard/index.html`을 요청했습니다. `git log -S`로 추적한 최초 URL은 `e0033299`의 `app-store-adapter.ts:449`에 있습니다. `96ba5bf7`은 기본 URL에 `/app/`을 붙였습니다. 로컬 Vite에서는 기본 경로로도 카드 HTML이 제공되지 않아 셸 HTML이 HTTP 200으로 반환됐습니다. 새 웹판은 같은 카드 소스로 개발·빌드 경로를 제공하며 기존 카탈로그 URL보다 셸에 포함된 카드 경로를 사용합니다.
 

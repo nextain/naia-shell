@@ -408,7 +408,7 @@ export function CharacterThemeSettings({
 											event.currentTarget.src = fallbackAvatar;
 									}}
 								/>
-								{item.name}
+								<span>{item.name}</span>
 							</button>
 						</li>
 					))}
@@ -502,7 +502,14 @@ export function CharacterThemeSettings({
 							gap: 8,
 						}}
 					>
-						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								minWidth: webCards ? 0 : undefined,
+							}}
+						>
 							{avatarImageUrl && (
 								<img
 									src={avatarImageUrl}
@@ -513,15 +520,18 @@ export function CharacterThemeSettings({
 											event.currentTarget.src = fallbackAvatar;
 									}}
 									style={{
-										width: 44,
-										height: 44,
+										width: webCards ? 88 : 44,
+										height: webCards ? 88 : 44,
+										flexShrink: webCards ? 0 : undefined,
 										borderRadius: 8,
-										objectFit: "cover",
+										objectFit: webCards ? "contain" : "cover",
 										border: "1px solid rgba(255,255,255,0.18)",
 									}}
 								/>
 							)}
-							<div>
+							<div
+								style={webCards ? { minWidth: 0, overflowWrap: "anywhere" } : undefined}
+							>
 								<strong>{card.name}</strong>
 								{modifiedFields.size > 0 && (
 									<span

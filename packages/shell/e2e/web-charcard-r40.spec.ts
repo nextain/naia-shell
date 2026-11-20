@@ -156,4 +156,45 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 		await expect(personaRow).toHaveAttribute("aria-pressed", "true");
 		await expectImage(personaRow.locator("img"), /^data:image\/png;base64,/);
 	});
+
+	test(`R40 shows larger Persona card pictures at ${viewport.width}px`, async ({ page }) => {
+		await page.setViewportSize(viewport);
+		await openWebShellWithBgm(page, { openBgm: false });
+		await openWebSettings(page);
+		await page.locator('[data-settings-tab="persona"]').click();
+		const persona = page.locator(".character-theme-settings");
+		const actions = [
+			persona.getByRole("button", { name: "만들기", exact: true }),
+			persona.getByRole("button", { name: "파일 추가", exact: true }),
+			persona.getByTestId("charcard-apply-btn"),
+		];
+		await persona.locator("#character-card-file").setInputFiles(samplePng);
+		const personaPreview = persona.getByTestId("charcard-preview-image");
+		await expectImage(personaPreview, /^data:image\/png;base64,/);
+		await expect(personaPreview).toHaveCSS("width", "88px");
+		await expect(personaPreview).toHaveCSS("height", "88px");
+		await expect(personaPreview).toHaveCSS("object-fit", "contain");
+		await expectActionRow(actions);
+		await actions[2].click();
+		const personaThumbnail = persona.locator(".character-card-library")
+			.getByRole("button", { name: "한도윤", pressed: true }).locator("img");
+		await expectImage(personaThumbnail, /^data:image\/png;base64,/);
+		await expect(personaThumbnail).toHaveCSS("width", "48px");
+		await expect(personaThumbnail).toHaveCSS("height", "48px");
+		for (const image of [personaPreview, personaThumbnail]) {
+			const bounds = await image.boundingBox();
+			expect(bounds!.x).toBeGreaterThanOrEqual(0);
+			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+		}
+		expect(await persona.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+		await captureWebRequirement(page, "R40-Persona");
+
+		const longName = "character_card_export_".repeat(4);
+		await persona.getByTestId("charcard-field-name").fill(longName);
+		await actions[2].click();
+		const longRow = persona.locator(".character-card-library")
+			.getByRole("button", { name: longName, pressed: true });
+		await expect(longRow.locator("img")).toHaveCSS("width", "48px");
+		expect(await persona.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+	});
 }

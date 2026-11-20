@@ -1,11 +1,11 @@
 // 웹 모드 전용 영어 문구.
 // 데스크톱 운영 빌드에는 싣지 않는다.
 export default {
-	"webVisualAgent.slugLabel": "Visual agent slug",
+	"webVisualAgent.slugLabel": "Share address name",
 	"webVisualAgent.hint": "Use 3–32 lowercase letters, numbers or hyphens (-).",
 	"webVisualAgent.publicAddress": "Public address",
 	"webVisualAgent.invalid": "Enter 3–32 lowercase letters, numbers or hyphens (-).",
-	"webVisualAgent.taken": "This address is already in use. Try another slug.",
+	"webVisualAgent.taken": "This address is already in use. Try a different name.",
 	"webVisualAgent.readError": "Could not load the address. Try again.",
 	"webVisualAgent.saveError": "Could not save the address. Try again.",
 	"webVisualAgent.copyError": "Could not copy the address. Select the address to copy it manually.",

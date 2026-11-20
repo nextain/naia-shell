@@ -18,7 +18,8 @@ describe("i18n web strings", () => {
 		expect(t("webModel.retry")).toBe("Retry");
 		expect(t("webModel.useCloud")).toBe("Switch to cloud chat");
 		expect(t("webModel.fallbackActive")).toBe("On-device model · Compatibility mode");
-		expect(t("webVisualAgent.slugLabel")).toBe("Visual agent slug");
+		expect(t("webVisualAgent.slugLabel")).toBe("Share address name");
+		expect(t("webVisualAgent.taken")).toBe("This address is already in use. Try a different name.");
 
 		const enMod = await import("../locales/en");
 		const koMod = await import("../locales/ko");

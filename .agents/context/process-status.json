@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T02:24:00Z",
+  "last_updated": "2026-11-20T16:10:00Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_persona_card_preview_r40_20261121": {
+      "requirement_id": "FR-WEB-CHARCARD.4",
+      "status": "verified_locally",
+      "scenario": "docs/user-scenarios.md UC-WEB-CHARCARD",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done_locally", "P05": "done_locally" },
+      "evidence": "packages/shell/e2e/web-charcard-r40.spec.ts",
+      "verification": "Chromium 1280×720 and 390×844 passed isolated Persona settings tests for picture sizing, the uncropped portrait, the action row, and a long unbroken card name."
+    },
+    "web_share_address_copy_r39_20261121": {
+      "requirement_id": "FR-WEB-VISUAL-AGENT-SLUG.1",
+      "status": "verified_locally",
+      "scenario": "docs/user-scenarios.md UC-WEB-VISUAL-AGENT-SLUG",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done_locally", "P05": "done_locally" },
+      "evidence": "packages/shell/e2e/web-visual-agent-slug-r39.spec.ts, packages/shell/src/lib/__tests__/i18n-web-strings.test.ts",
+      "verification": "Chromium 1280×720 and 390×844 passed label, existing-name error, save, copy and reopen against local fixtures. The locale-parity check has the same three missing Japanese Safari keys on the base and changed trees."
+    },
     "web_mic_recovery_r21_4_20261120": {
       "requirement_id": "R21-4",
       "title": "웹판 마이크 권한 재시도와 글로 대화",
