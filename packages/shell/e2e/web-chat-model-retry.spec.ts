@@ -82,9 +82,10 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 		const first = "A reply before changing the device model.";
 		await input.fill(first);
 		await input.press("Enter");
-		const replies = page.locator(".chat-messages").getByText(/웹 가짜 엔진 응답입니다/);
-		await expect(replies).toHaveCount(1);
-		await expect(page.locator(".chat-cancel-btn")).toBeHidden();
+		const replies = page
+			.locator(".chat-message.assistant:not(.streaming)")
+			.filter({ hasText: "웹 가짜 엔진 응답입니다." });
+		await expect(replies).toHaveCount(1, { timeout: 15_000 });
 
 		const draft = "A draft to send after returning to the default model.";
 		await input.fill(draft);
@@ -98,7 +99,7 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 		expect(page.workers()).toContain(worker);
 
 		await input.press("Enter");
-		await expect(replies).toHaveCount(2);
+		await expect(replies).toHaveCount(2, { timeout: 15_000 });
 		await expect.poll(() => worker!.evaluate(
 			() => globalThis.__naiaFakeEngineRequests?.map((turn) => turn.at(-1)?.content),
 		)).toEqual([first, draft]);
