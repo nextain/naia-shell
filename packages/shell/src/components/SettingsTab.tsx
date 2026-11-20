@@ -5145,6 +5145,14 @@ export function SettingsTab() {
 										</button>
 									)}
 								</div>
+								{!webAuthLoggedIn && !isKioskDemo() && (
+									<div
+										className="settings-hint"
+										data-testid="web-account-credit-hint"
+									>
+										{t("webCredit.signupHint")}
+									</div>
+								)}
 								{webAuthError && (
 									<div
 										role="alert"
@@ -7216,7 +7224,9 @@ export function SettingsTab() {
 													? t("settings.thinkingLevelOff")
 													: level === "low"
 														? t("settings.thinkingLevelLow")
-														: level === "xhigh" ? "xhigh" : t("settings.thinkingLevelHigh");
+														: level === "xhigh"
+															? t("settings.thinkingLevelXhigh")
+															: t("settings.thinkingLevelHigh");
 											return (
 												<button
 													key={level}

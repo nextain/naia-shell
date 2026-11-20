@@ -41,7 +41,40 @@ describe("CharCardApp UI", () => {
 			expect(notice).toHaveAttribute("role", "status");
 			expect(notice).toHaveTextContent(expected);
 			expect(notice).not.toHaveTextContent("IndexedDB");
+			expect(
+				screen.getByTestId("charcard-storage-hint").textContent,
+			).not.toContain("IndexedDB");
+			expect(
+				screen.getByTestId("charcard-storage-hint").textContent,
+			).not.toMatch(/이 브라우저에 저장돼요|Saved in this browser/);
 			expect(screen.getByTestId("charcard-import-button")).toBeEnabled();
+		},
+	);
+
+	it.each([
+		["ko", "이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요."],
+		["en", "Saved in this browser; clearing browsing data removes them."],
+	])(
+		"R21-6 explains plain browser storage and clearing browsing data in %s when storage persists",
+		async (locale, expected) => {
+			render(
+				<CharCardApp
+					storage={{
+						...createMemoryCardStorage(),
+						mode: "host",
+					}}
+					localeOverride={locale}
+				/>,
+			);
+			await waitFor(() =>
+				expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
+			);
+			const hint = screen.getByTestId("charcard-storage-hint");
+			expect(hint).toHaveTextContent(expected);
+			expect(hint).not.toHaveTextContent("IndexedDB");
+			expect(
+				screen.queryByTestId("charcard-memory-banner"),
+			).not.toBeInTheDocument();
 		},
 	);
 

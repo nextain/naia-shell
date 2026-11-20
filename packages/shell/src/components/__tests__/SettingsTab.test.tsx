@@ -1820,7 +1820,7 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 		expect(screen.getByTestId("thinking-level-xhigh")).toHaveAttribute("aria-checked", "true");
-		expect(screen.getByTestId("thinking-level-xhigh")).toHaveTextContent("xhigh");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveTextContent(/매우 높음|Very High/);
 		fireEvent.change(document.getElementById("model-select")!, { target: { value: "solar-pro4" } });
 		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main).toMatchObject({ model: "solar-pro4" });
 		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBeUndefined();
@@ -6718,6 +6718,76 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			setWebFsForTests(null);
 			setWebAssetsModeForTests(null);
 			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R21-8 localizes xhigh thinking level in Korean and English without raw xhigh text and wraps narrow mobile settings tabs without clipping", async () => {
+		const { setLocale } = await import("../../lib/i18n");
+		const { readFileSync } = await import("node:fs");
+		const { resolve } = await import("node:path");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				apiKey: "",
+				naiaKey: "test-key",
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6.1-terra",
+						thinkingLevel: "xhigh",
+					},
+					sub: { inherit: "main" },
+				},
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: async () => [],
+		} as unknown as Response);
+
+		try {
+			await setLocale("ko");
+			const koView = render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			expect(screen.getByTestId("thinking-level-off")).toHaveTextContent("끔");
+			expect(screen.getByTestId("thinking-level-low")).toHaveTextContent("낮음");
+			expect(screen.getByTestId("thinking-level-high")).toHaveTextContent("높음");
+			expect(screen.getByTestId("thinking-level-xhigh")).toHaveTextContent(
+				"매우 높음",
+			);
+			expect(
+				screen.getByTestId("thinking-level-section").textContent,
+			).not.toContain("xhigh");
+			koView.unmount();
+
+			await setLocale("en");
+			const enView = render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			expect(screen.getByTestId("thinking-level-xhigh")).toHaveTextContent(
+				"Very High",
+			);
+			expect(
+				screen.getByTestId("thinking-level-section").textContent,
+			).not.toContain("xhigh");
+			enView.unmount();
+
+			const webModeCss = readFileSync(
+				resolve(__dirname, "../../styles/web-mode.css"),
+				"utf8",
+			);
+			expect(webModeCss).toMatch(
+				/\[data-layout-orientation="portrait"\]\s*\.settings-tab-bar\s*\{[^}]*margin-right:\s*44px;[^}]*flex-wrap:\s*wrap;/s,
+			);
+			expect(webModeCss).toMatch(
+				/\[data-layout-orientation="portrait"\]\s*\.settings-tab-btn\s*\{[^}]*padding:\s*8px 6px;[^}]*font-size:\s*12px;/s,
+			);
+		} finally {
+			fetchSpy.mockRestore();
+			await setLocale("ko");
 		}
 	});
 });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	getWebLoginBaseUrl,
 	startWebLoginRedirect,
@@ -117,6 +118,19 @@ export function WebLoginScreen({
 				>
 					{t("settings.labConnect")}
 				</button>
+				{!isKioskDemo() && (
+					<p
+						data-testid="web-login-screen-credit-hint"
+						style={{
+							margin: 0,
+							fontSize: "0.82rem",
+							lineHeight: 1.45,
+							color: "var(--text-secondary, #cbd5e1)",
+						}}
+					>
+						{t("webCredit.signupHint")}
+					</p>
+				)}
 				<div
 					data-testid="web-login-base-url"
 					style={{

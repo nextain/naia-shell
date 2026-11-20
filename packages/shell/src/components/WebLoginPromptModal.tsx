@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
-import { getLocale } from "../lib/i18n";
+import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import { startWebModel } from "../lib/web-runtime/model-start";
@@ -179,13 +179,28 @@ export function WebLoginPromptModal() {
 				</p>
 				<p
 					style={{
-						margin: "0 0 18px",
+						margin: "0 0 12px",
 						fontSize: 13,
 						lineHeight: 1.55,
 						color: "#94a3b8",
 					}}
 				>
 					{copy.body}
+				</p>
+				<p
+					data-testid="web-login-prompt-credit-hint"
+					style={{
+						margin: "0 0 14px",
+						padding: "7px 10px",
+						borderRadius: 8,
+						background: "rgba(99, 102, 241, 0.12)",
+						border: "1px solid rgba(129, 140, 248, 0.28)",
+						fontSize: 12,
+						lineHeight: 1.45,
+						color: "#c7d2fe",
+					}}
+				>
+					{t("webCredit.signupHint")}
 				</p>
 				<div
 					style={{

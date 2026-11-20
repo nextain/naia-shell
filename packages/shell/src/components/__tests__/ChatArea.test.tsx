@@ -5128,4 +5128,88 @@ describe("ChatArea", () => {
 			vi.unstubAllEnvs();
 		}
 	});
+
+	it("R21-3 shows pre-send cloud credit notice with remaining Cr once until dismissed, and shows Free for on-device WebLLM", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebAssetsModeForTests(true);
+		setWebAdkStatus({ phase: "ready" });
+		setWebModelStatus({
+			phase: "ready",
+			model: "Qwen3-4B-q4f32_1-MLC",
+			progress: 1,
+		});
+		const { primeLabCredits, clearCachedLabCredits } = await import(
+			"../../lib/lab-balance"
+		);
+		const { setLocale } = await import("../../lib/i18n");
+		const { WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY } = await import(
+			"../../lib/credits"
+		);
+
+		try {
+			await setLocale("ko");
+			localStorage.removeItem(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY);
+
+			// 1) On-device WebLLM model -> shows Free notice above composer
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({ provider: "webllm", model: "Qwen3-4B-q4f32_1-MLC" }),
+			);
+			const localRender = render(<ChatArea />);
+			const localNotice = screen.getByTestId("web-chat-billing-notice");
+			expect(localNotice).toHaveAttribute("data-billing-mode", "local");
+			expect(localNotice).toHaveTextContent("무료");
+			expect(
+				screen.getByPlaceholderText(/메시지|message/i).closest(".chat-input-bar")
+					?.previousElementSibling,
+			).toBe(localNotice);
+			localRender.unmount();
+
+			// 2) Cloud model with cached balance 123 Cr -> shows per-reply Cr deduction & remaining Cr 123
+			primeLabCredits(123);
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+					naiaKey: "test-naia-key",
+				}),
+			);
+			const cloudRender = render(<ChatArea />);
+			const cloudNotice = await screen.findByTestId("web-chat-billing-notice");
+			expect(cloudNotice).toHaveAttribute("data-billing-mode", "cloud");
+			expect(cloudNotice).toHaveTextContent(
+				"이 대화는 클라우드 모델이라 답마다 Cr 이 차감돼요 · 남은 Cr 123",
+			);
+
+			// Dismissing hides the notice and persists in localStorage across re-mounts
+			fireEvent.click(screen.getByTestId("web-chat-billing-notice-dismiss"));
+			expect(screen.queryByTestId("web-chat-billing-notice")).toBeNull();
+			expect(localStorage.getItem(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY)).toBe(
+				"1",
+			);
+			cloudRender.unmount();
+
+			const remounted = render(<ChatArea />);
+			expect(screen.queryByTestId("web-chat-billing-notice")).toBeNull();
+			remounted.unmount();
+
+			// 3) English locale verification when notice has not been dismissed yet
+			localStorage.removeItem(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY);
+			primeLabCredits(200);
+			await setLocale("en");
+			const enRender = render(<ChatArea />);
+			expect(await screen.findByTestId("web-chat-billing-notice")).toHaveTextContent(
+				"This chat uses a cloud model and deducts Cr per reply · 200 Cr left",
+			);
+			enRender.unmount();
+		} finally {
+			clearCachedLabCredits();
+			localStorage.removeItem(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY);
+			localStorage.removeItem("naia-config");
+			setWebAssetsModeForTests(null);
+			await setLocale("ko");
+			vi.unstubAllEnvs();
+		}
+	});
 });

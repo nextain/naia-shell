@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-20T02:23:03Z",
+  "last_updated": "2026-11-20T02:24:00Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -43,6 +43,60 @@
       "evidence": "packages/shell/src/components/__tests__/ChatArea.test.tsx, packages/shell/src/components/__tests__/NvaGestureActions.test.tsx, packages/shell/src/lib/__tests__/i18n-user-facing.test.ts",
       "verification": "표적 Vitest 116통과·0실패. 셸 타입 검사는 기준 오류 1건과 동일. 1280×720·390×844 오프라인 CSS 미리보기에서 첫 말·아바타 동작·입력란의 배치를 확인했습니다. 웹 앱 실기 미확인.",
       "last_updated": "2026-11-20T02:12:21Z"
+    },
+    "web_charcard_storage_copy_r21_6_20261120": {
+      "requirement_id": "R21-6",
+      "title": "웹판 캐릭터 카드 저장·임시 보관 쉬운 안내 문구",
+      "branch": "alpha/webgpu-p8-credit-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CHARCARD-STORAGE-COPY",
+      "requirements": "docs/requirements.md FR-WEB-CHARCARD-STORAGE-COPY.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "vitest_only",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx",
+      "last_updated": "2026-11-20T02:24:00Z",
+      "verification": "표적 Vitest(CharCardApp, card-store) 통과 및 tsc 타입 검사 새 오류 0건 확인. 정상 보관 시 이 브라우저 저장·브라우저 기록 삭제 시 소멸 안내, 임시 보관 시 창을 닫으면 사라짐 안내 및 IndexedDB 미노출을 한·영에서 검증. 실 브라우저 화면은 미확인."
+    },
+    "web_settings_tabs_thinking_r21_8_20261120": {
+      "requirement_id": "R21-8",
+      "title": "웹판 좁은 설정 탭 잘림 방지와 생각 세기 쉬운 이름 표기",
+      "branch": "alpha/webgpu-p8-credit-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-SETTINGS-TABS-THINKING",
+      "requirements": "docs/requirements.md FR-WEB-SETTINGS-TABS-THINKING.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "vitest_only",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/components/__tests__/SettingsTab.test.tsx, packages/shell/src/lib/__tests__/i18n-user-facing.test.ts",
+      "last_updated": "2026-11-20T02:19:00Z",
+      "verification": "표적 Vitest(SettingsTab, i18n-web-strings, i18n-user-facing) 통과 확인. 390px 세로 설정 탭 막대 여백 축소 및 줄바꿈 허용으로 마지막 탭 잘림 방지, 생각 세기 xhigh를 매우 높음/Very High 등 14개 로케일로 표시하고 원시 xhigh 미노출 검증. 실 브라우저 화면은 미확인."
+    },
+    "web_credit_context_r21_3_20261120": {
+      "requirement_id": "R21-3",
+      "title": "웹판 무료 크레딧 가입 안내와 대화 전 차감·무료 안내 연결",
+      "branch": "alpha/webgpu-p8-credit-20261120",
+      "scenario": "docs/user-scenarios.md UC-WEB-CREDIT-CONTEXT",
+      "requirements": "docs/requirements.md FR-WEB-CREDIT-CONTEXT.1~2",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "vitest_only",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "evidence": "packages/shell/src/lib/__tests__/credits.test.ts, packages/shell/src/lib/web-runtime/__tests__/web-stage1-features.test.tsx, packages/shell/src/components/__tests__/ChatArea.test.tsx",
+      "last_updated": "2026-11-20T02:15:00Z",
+      "verification": "표적 Vitest(credits, web-stage1-features, ChatArea, i18n-web-strings, i18n-user-facing) 통과 확인. 비로그인 로그인 단추 근처 무료 200 Cr 및 답 길이에 따른 비용 안내, 클라우드 첫 전송 직전 Cr 차감·남은 Cr 1회 안내 및 브라우저 기억, 내 기기 모델 무료 안내를 한·영 14개 로케일에서 검증. 실 브라우저 화면은 미확인."
     },
     "web_app_catalog_unify_r3_20261120": {
       "requirement_id": "R3",

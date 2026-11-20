@@ -398,8 +398,8 @@
 .web-mobile-workspace-close { display: none; }
 
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .web-mobile-workspace-close { display: block; position: fixed; right: 8px; top: 8px; z-index: 110; width: 40px; height: 40px; border: 0; border-radius: 10px; color: white; background: #172136; font-size: 20px; }
-	[data-naia-mobile="true"] .settings-tab-bar { margin-right: 52px; padding-right: 8px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
-	[data-naia-mobile="true"] .settings-tab-btn { padding: 10px 10px; font-size: 12.5px; }
+	[data-naia-mobile="true"] .settings-tab-bar { margin-right: 44px; padding: 4px 4px 0 8px; flex-wrap: wrap; overflow-x: visible; overflow-y: visible; row-gap: 2px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
+	[data-naia-mobile="true"] .settings-tab-btn { padding: 8px 6px; font-size: 12px; }
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout[data-web-hosted-app] .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has(.app-bar-settings--active) .app-bar,
 	[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar,
@@ -629,8 +629,8 @@
 }
 @media (max-width: 600px) and (orientation: portrait) {
 	:root:not([data-layout-orientation="landscape"]) .web-mobile-workspace-close { display: block; position: fixed; right: 8px; top: 8px; z-index: 110; width: 40px; height: 40px; border: 0; border-radius: 10px; color: white; background: #172136; font-size: 20px; }
-	.settings-tab-bar { min-width: 0; overflow-x: auto; margin-right: 52px; padding-right: 8px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
-	.settings-tab-btn { flex: 0 0 auto; white-space: nowrap; padding: 10px 10px; font-size: 12.5px; }
+	.settings-tab-bar { min-width: 0; margin-right: 44px; padding: 4px 4px 0 8px; flex-wrap: wrap; overflow-x: visible; overflow-y: visible; row-gap: 2px; box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1)); }
+	.settings-tab-btn { flex: 0 0 auto; white-space: nowrap; padding: 8px 6px; font-size: 12px; }
 	.settings-tab,
 	.settings-model-roles,
 	.skills-list { grid-template-columns: minmax(0, 1fr); }
@@ -900,16 +900,19 @@
 }
 [data-layout-orientation="portrait"] .settings-tab-bar {
 	min-width: 0;
-	overflow-x: auto;
-	margin-right: 52px;
-	padding-right: 8px;
+	margin-right: 44px;
+	padding: 4px 4px 0 8px;
+	flex-wrap: wrap;
+	overflow-x: visible;
+	overflow-y: visible;
+	row-gap: 2px;
 	box-shadow: 56px 0 0 var(--espresso, #181c26), 56px 1px 0 var(--border-color, rgba(255, 255, 255, 0.1));
 }
 [data-layout-orientation="portrait"] .settings-tab-btn {
 	flex: 0 0 auto;
 	white-space: nowrap;
-	padding: 10px 10px;
-	font-size: 12.5px;
+	padding: 8px 6px;
+	font-size: 12px;
 }
 [data-layout-orientation="portrait"] .settings-tab,
 [data-layout-orientation="portrait"] .settings-model-roles,
@@ -1478,7 +1481,7 @@
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"] [data-testid="slot-main"] .settings-summary-value,
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"] [data-testid="slot-sub"] .settings-summary-value,
 [data-naia-web="true"] .app-root[data-kiosk-demo="true"] [data-testid="slot-embedding"] .settings-summary-value { display: none; }
-[data-naia-mobile="true"] .settings-tab-bar { min-width: 0; overflow-x: auto; }
+[data-naia-mobile="true"] .settings-tab-bar { min-width: 0; flex-wrap: wrap; overflow-x: visible; overflow-y: visible; }
 [data-naia-mobile="true"] .settings-tab-btn { flex: 0 0 auto; white-space: nowrap; }
 
 [data-naia-mobile="true"] .settings-tab,
@@ -1768,4 +1771,88 @@
 	[data-naia-web="true"]:not([data-layout-orientation="portrait"]) .app-root:not([data-kiosk-demo="true"]):not([data-ui-mode="workspace"]) .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):not([data-chat-user-sized="true"]) {
 		min-height: min(360px, calc(100dvh - 48px));
 	}
+}
+
+/* R21-3: Free 200 Cr sign-up hint near login controls & pre-send chat billing notice */
+.web-login-credit-hint {
+	position: absolute;
+	top: calc(100% + 5px);
+	right: 0;
+	z-index: 15;
+	padding: 4px 9px;
+	border-radius: 8px;
+	background: rgba(15, 23, 42, 0.92);
+	border: 1px solid rgba(129, 140, 248, 0.34);
+	color: #cbd5e1;
+	font-size: 11px;
+	line-height: 1.35;
+	white-space: nowrap;
+	max-width: calc(100vw - 340px);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	pointer-events: none;
+}
+
+@media (max-width: 900px) {
+	.web-login-credit-hint {
+		white-space: normal;
+		width: max-content;
+		max-width: min(320px, calc(100vw - 24px));
+	}
+}
+
+.web-mobile-menu-login {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-bottom: 4px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.web-mobile-menu-login__hint {
+	padding: 0 12px 2px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: #cbd5e1;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+[data-naia-web="true"] .web-chat-billing-notice {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px 10px;
+	font-size: 11.5px;
+	line-height: 1.35;
+	color: #cbd5e1;
+	background: rgba(15, 23, 42, 0.72);
+	border-top: 1px solid rgba(148, 163, 184, 0.16);
+	flex-shrink: 0;
+}
+
+[data-naia-web="true"] .web-chat-billing-notice > span {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+[data-naia-web="true"] .web-chat-billing-notice__dismiss {
+	flex-shrink: 0;
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: 6px;
+	background: rgba(148, 163, 184, 0.16);
+	color: #e2e8f0;
+	font-size: 13px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+[data-naia-web="true"][data-layout-orientation="portrait"] [data-mobile-sheet="collapsed"] .naia-chat-wrapper:not(.naia-chat-wrapper--hidden):has(> .chat-app > .web-chat-billing-notice) {
+	height: auto !important;
+	min-height: calc(var(--mobile-sheet-drag-height, 104px) - 24px);
 }

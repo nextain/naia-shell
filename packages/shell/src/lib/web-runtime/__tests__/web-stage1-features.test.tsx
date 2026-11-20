@@ -345,12 +345,54 @@ describe("Stage-1 Unified Web Shell Features", () => {
 			expect(
 				screen.getByTestId("web-login-free-credits-btn"),
 			).toBeInTheDocument();
+			expect(screen.getByTestId("web-login-credit-hint")).toHaveTextContent(
+				/200 Cr/,
+			);
 
 			fireEvent.click(screen.getByTestId("web-open-harness-btn"));
 			expect(useAppStore.getState().activeApp).toBe("workspace");
+			expect(screen.queryByTestId("web-login-credit-hint")).toBeNull();
 			expect(openedPaths).toEqual(["opfs://naia-adk/AGENTS.md"]);
 		} finally {
 			window.removeEventListener(WEB_WORKSPACE_OPEN_FILE_EVENT, onOpenFile);
+		}
+	});
+
+	it("R21-3 renders Korean and English 200 Cr sign-up cost hints near login buttons", async () => {
+		const { setLocale } = await import("../../i18n");
+		try {
+			await setLocale("ko");
+			const koHarness = render(
+				<>
+					<WebRuntimeHarnessBar />
+					<WebLoginPromptModal />
+				</>,
+			);
+			expect(screen.getByTestId("web-login-credit-hint")).toHaveTextContent(
+				"가입하면 200 Cr 무료 · 클라우드 대화 비용은 답 길이에 따라 달라요",
+			);
+			act(() => {
+				openWebLoginPrompt("account");
+			});
+			expect(
+				await screen.findByTestId("web-login-prompt-credit-hint"),
+			).toHaveTextContent(
+				"가입하면 200 Cr 무료 · 클라우드 대화 비용은 답 길이에 따라 달라요",
+			);
+			koHarness.unmount();
+
+			await setLocale("en");
+			render(
+				<>
+					<WebRuntimeHarnessBar />
+					<WebLoginPromptModal />
+				</>,
+			);
+			expect(screen.getByTestId("web-login-credit-hint")).toHaveTextContent(
+				"200 Cr free on sign-up · Cloud chat cost varies by reply length",
+			);
+		} finally {
+			await setLocale("en");
 		}
 	});
 });

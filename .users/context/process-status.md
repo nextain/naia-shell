@@ -8,6 +8,21 @@
 - 빈 대화에서 현재 캐릭터 이름과 첫 말 두 개를 표시합니다. 표적 Vitest 116통과·0실패, 셸 타입 검사 신규 오류 0건. 1280×720·390×844 오프라인 미리보기에서 배치 확인. 웹 앱 실기 미확인.
 - `UC-WEB-CHAT-START` · `FR-WEB-CHAT-START.1~2` · `ChatArea.test.tsx` · `NvaGestureActions.test.tsx` · `i18n-user-facing.test.ts`
 
+## 웹판 캐릭터 카드 저장·임시 보관 쉬운 안내 문구 (R21-6) — 2026-11-20
+
+- 캐릭터 카드 화면에서 `IndexedDB` 같은 개발 낱말 없이 정상 보관 상태에서는 이 브라우저에 저장되며 브라우저 기록을 지우면 사라진다고 안내하고, 임시 보관 상태에서는 창을 닫으면 사라진다는 상태 배너만 표시하도록 정리했습니다. 표적 Vitest 통과. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-CHARCARD-STORAGE-COPY` · `FR-WEB-CHARCARD-STORAGE-COPY.1~2` · `CharCardApp.test.tsx`
+
+## 웹판 좁은 설정 탭 잘림 방지와 생각 세기 쉬운 이름 표기 (R21-8) — 2026-11-20
+
+- 좁은 모바일·세로 화면에서 설정 탭 막대의 여백·글자 크기를 줄이고 줄바꿈(`flex-wrap: wrap`)을 허용해 마지막 탭 이름이 잘리지 않게 하고, 두뇌 설정의 생각 세기 `xhigh`를 한국어 `매우 높음`·영어 `Very High` 등 14개 로케일로 표시했습니다. 표적 Vitest 통과. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-SETTINGS-TABS-THINKING` · `FR-WEB-SETTINGS-TABS-THINKING.1~2` · `SettingsTab.test.tsx` · `i18n-user-facing.test.ts`
+
+## 웹판 무료 크레딧 가입 안내와 대화 전 차감·무료 안내 연결 (R21-3) — 2026-11-20
+
+- 비로그인 상태의 로그인 단추 근처에 무료 200 Cr 지급과 답 길이에 따라 달라지는 클라우드 비용 안내를 표시하고, 대화 입력칸 위에 클라우드 첫 메시지 직전 1회 Cr 차감·남은 Cr 안내(닫거나 첫 전송 시 브라우저 기억) 및 내 기기 모델 무료 안내를 연결했습니다. 표적 Vitest 통과. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-CREDIT-CONTEXT` · `FR-WEB-CREDIT-CONTEXT.1~2` · `credits.test.ts` · `web-stage1-features.test.tsx` · `ChatArea.test.tsx`
+
 ## 웹 음악 재생 준비·확인과 시간 초과 복구 (R7) — 2026-11-20
 
 - YouTube 준비 이벤트에서 재생을 요청하고, 현재 재생기 확인 뒤 재생 중 카드와 AI 안내를 표시합니다. 표적 Vitest 56통과·0실패. 실제 YouTube 소리와 화면 미확인.

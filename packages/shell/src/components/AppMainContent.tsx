@@ -30,6 +30,8 @@ import {
 	isWebMode,
 	syncWebModeRootAttribute,
 } from "../lib/web-runtime/web-assets";
+import { isWebAuthenticated } from "../lib/web-runtime/web-auth";
+import { openWebLoginPrompt } from "../lib/web-runtime/web-login-prompt";
 import { getWebAdkStatus, subscribeWebAdkStatus } from "../lib/web-runtime/web-adk-status";
 import { useAppStore } from "../stores/app";
 import { useChatStore } from "../stores/chat";
@@ -404,6 +406,29 @@ export function AppMainContent(props: AppMainContentProps) {
 							</button>
 							{mobileMenu && (
 								<div className="web-mobile-menu-list">
+									{webMode && !kioskDemo && !isWebAuthenticated() && (
+										<div className="web-mobile-menu-login">
+											<button
+												type="button"
+												data-testid="web-mobile-login-btn"
+												onClick={() => {
+													setMobileMenu(false);
+													openWebLoginPrompt("account");
+												}}
+											>
+												⚡{" "}
+												{getLocale() === "ko"
+													? "로그인 · 무료 200 Cr"
+													: "Sign in · 200 Cr"}
+											</button>
+											<div
+												className="web-mobile-menu-login__hint"
+												data-testid="web-mobile-login-credit-hint"
+											>
+												{t("webCredit.signupHint")}
+											</div>
+										</div>
+									)}
 									<button
 										type="button"
 										onClick={() => {

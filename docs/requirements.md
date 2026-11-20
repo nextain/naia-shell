@@ -2259,3 +2259,24 @@ R21-2 검증. 표적 Vitest에서 로그인 진입과 복귀, 잔액에 따른 �
 | 요구 | 내용 | 상태 |
 |---|---|---|
 | FR-WEB-AVATAR-CLIP.1 | 브라우저는 대기 클립을 개별적으로 먼저 요청하고 같은 URL의 바이트를 영상 재생과 발화 스테이지에서 공유합니다. 다운로드 또는 디코더 실패 시 300ms 뒤 한 번 재시도하며, 받은 Blob이 있으면 재사용합니다. 재시도까지 실패하면 기존 오류 처리로 이어집니다. (UC-WEB-AVATAR-CLIP) | Done (local) |
+
+## 웹판 무료 크레딧 가입 안내와 대화 전 차감·무료 안내 연결 (R21-3)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-CREDIT-CONTEXT.1 | 정식 웹판 비로그인 상태에서 로그인 단추 근처(상단 하네스 바 기본 화면·모바일 메뉴·로그인 안내 모달·설정 웹 계정·웹 로그인 화면)에 가입 시 무료 200 Cr 지급과 클라우드 대화 비용이 답 길이에 따라 달라진다는 한 줄 안내를 한국어·영어 등 다국어로 표시합니다. 코드에 정적 클라우드 단가를 두지 않으며 금액·차감 규칙은 바꾸지 않습니다. (UC-WEB-CREDIT-CONTEXT) | Done (local) |
+| FR-WEB-CREDIT-CONTEXT.2 | 정식 웹판 대화 입력칸 바로 위에 클라우드 모델(`nextain`) 첫 메시지 전송 직전 한 번만 답마다 Cr 차감 및 남은 Cr(`남은 Cr N`, 잔액 미확정 시 차감 안내만) 한 줄을 표시하고, 닫거나 첫 클라우드 전송 시 브라우저 저장소에 기억해 다시 보이지 않습니다. 내 기기 모델(`webllm`) 준비·대화 중(오류·초기 설치 제외)에는 `무료` 안내를 표시합니다. (UC-WEB-CREDIT-CONTEXT) | Done (local) |
+
+## 웹판 좁은 설정 탭 잘림 방지와 생각 세기 쉬운 이름 표기 (R21-8)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-SETTINGS-TABS-THINKING.1 | 모바일 및 좁은 세로 화면(390×844 포함)의 `.settings-tab-bar`는 우측 닫기 단추 영역(`margin-right: 44px`)을 침범하지 않으면서 탭 여백·글자 크기를 줄이고 `flex-wrap: wrap`을 허용하여 마지막 탭(`일반`/`General`) 이름이 잘리지 않게 표시합니다. (UC-WEB-SETTINGS-TABS-THINKING) | Done (local) |
+| FR-WEB-SETTINGS-TABS-THINKING.2 | 두뇌 설정의 생각 세기 선택기에서 `"xhigh"` 단계는 개발 식별자 원문 대신 `settings.thinkingLevelXhigh`(한국어 `매우 높음`, 영어 `Very High` 등 14개 로케일)로 표시하며 저장·전송 값은 기존 `"xhigh"`를 유지합니다. (UC-WEB-SETTINGS-TABS-THINKING) | Done (local) |
+
+## 웹판 캐릭터 카드 저장·임시 보관 쉬운 안내 문구 (R21-6)
+
+| 요구 | 내용 | 상태 |
+|---|---|---|
+| FR-WEB-CHARCARD-STORAGE-COPY.1 | 캐릭터 카드 앱(`CharCardApp`)과 패키지 설명은 `IndexedDB` 등 개발 용어를 노출하지 않고, 정상 보관(`indexeddb`·`host`) 상태에서는 브라우저에 저장되며 브라우저 기록을 지우면 사라진다는 문구를 한국어·영어로 안내합니다. (UC-WEB-CHARCARD-STORAGE-COPY) | Done (local) |
+| FR-WEB-CHARCARD-STORAGE-COPY.2 | 캐릭터 카드 보관함을 쓸 수 없는 임시 보관(`memory`) 상태에서는 상단의 브라우저 영구 저장 문구를 표시하지 않고, 작업 단추 아래 상태 배너(`role="status"`)에서 새로 고침하거나 창을 닫으면 사라진다는 점을 분명히 알립니다. (UC-WEB-CHARCARD-STORAGE-COPY) | Done (local) |

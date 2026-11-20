@@ -127,6 +127,7 @@ import {
 	LAB_GATEWAY_URL,
 	addAllowedTool,
 	getNaiaInstanceId,
+	getNaiaKeySecure,
 	isToolAllowed,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -136,6 +137,11 @@ import {
 	saveConfig,
 } from "../lib/config";
 import { getConversationHistory } from "../lib/conversation-store";
+import {
+	formatCreditsExact,
+	isWebCloudCreditNoticeDismissed,
+	markWebCloudCreditNoticeDismissed,
+} from "../lib/credits";
 import {
 	formatApproxCredits,
 	formatSavedVoiceCostSummary,
@@ -156,8 +162,12 @@ import {
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
 import {
+	fetchLabBalancePayload,
 	markNaiaKeyUnauthorized,
+	onWebCreditRefresh,
+	parseLabCredits,
 	primeLabCredits,
+	readCachedLabCredits,
 	requestWebCreditRefresh,
 } from "../lib/lab-balance";
 import {
@@ -688,6 +698,69 @@ export function ChatArea({
 	const [compactionNotice, setCompactionNotice] = useState<number | null>(null);
 	const [activeTab, setActiveTab] = useState<TabId>("chat");
 	const charcardContext = useAppStore(getWebCharcardContext);
+	const [cloudCreditNoticeDismissed, setCloudCreditNoticeDismissed] = useState(
+		() => isWebCloudCreditNoticeDismissed(),
+	);
+	const [webCreditBalance, setWebCreditBalance] = useState<number | null>(
+		() => readCachedLabCredits(Number.MAX_SAFE_INTEGER)?.value ?? null,
+	);
+	const [, setWebConfigRevision] = useState(0);
+	useEffect(() => {
+		if (!isWebMode() || isKioskDemo()) return;
+		let cancelled = false;
+		const syncWebBillingState = async () => {
+			if (cancelled) return;
+			setWebConfigRevision((v) => v + 1);
+			setCloudCreditNoticeDismissed(isWebCloudCreditNoticeDismissed());
+			const cached = readCachedLabCredits(60_000);
+			if (cached) {
+				setWebCreditBalance(cached.value);
+				return;
+			}
+			const cfg = loadConfig();
+			const mainProvider =
+				(cfg ? effectiveMainRole(cfg).provider : undefined) ?? cfg?.provider;
+			if (mainProvider !== "nextain") return;
+			let key: string | null | undefined;
+			try {
+				key = await getNaiaKeySecure();
+			} catch {
+				key = null;
+			}
+			if (cancelled || !key) return;
+			try {
+				const parsed = parseLabCredits(
+					await fetchLabBalancePayload(LAB_GATEWAY_URL, key),
+				);
+				if (!cancelled && parsed !== null) {
+					primeLabCredits(parsed);
+					setWebCreditBalance(parsed);
+				}
+			} catch {
+				// Keep fallback notice without balance when balance endpoint fails.
+			}
+		};
+		void syncWebBillingState();
+		const onConfigOrAuth = () => {
+			void syncWebBillingState();
+		};
+		window.addEventListener("naia-config-changed", onConfigOrAuth);
+		window.addEventListener("naia-web-auth-changed", onConfigOrAuth);
+		const offRefresh = onWebCreditRefresh(() => {
+			const latest = readCachedLabCredits(Number.MAX_SAFE_INTEGER);
+			if (latest) {
+				setWebCreditBalance(latest.value);
+			} else {
+				void syncWebBillingState();
+			}
+		});
+		return () => {
+			cancelled = true;
+			window.removeEventListener("naia-config-changed", onConfigOrAuth);
+			window.removeEventListener("naia-web-auth-changed", onConfigOrAuth);
+			offRefresh();
+		};
+	}, []);
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
@@ -2872,6 +2945,10 @@ export function ChatArea({
 			}
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
+			if (isWebMode() && !isKioskDemo()) {
+				markWebCloudCreditNoticeDismissed();
+				setCloudCreditNoticeDismissed(true);
+			}
 			await handleVoiceToggle();
 			setEmotion("think");
 			voiceSessionRef.current?.sendText(text);
@@ -3069,6 +3146,19 @@ export function ChatArea({
 					}
 					ollamaNumCtx = policy.contextDefaultTokens;
 				}
+			}
+			if (
+				isWebMode() &&
+				!isKioskDemo() &&
+				activeProvider === "nextain" &&
+				!cloudCreditNoticeDismissed
+			) {
+				Logger.debug(
+					"ChatArea",
+					"marking pre-send cloud credit notice shown on first cloud turn",
+				);
+				markWebCloudCreditNoticeDismissed();
+				setCloudCreditNoticeDismissed(true);
 			}
 			await sendChatMessage({
 				...(appName !== undefined ? { appName } : {}),
@@ -6082,6 +6172,68 @@ export function ChatArea({
 				{(characterTransitionPending || greetingPreparing) && (
 					<output role="status">{t("chat.cardPreparing")}</output>
 				)}
+				{isWebMode() &&
+					!isKioskDemo() &&
+					activeTab === "chat" &&
+					(() => {
+						const activeWebProvider = installedAppProvider || "webllm";
+						if (activeWebProvider === "nextain") {
+							const hasCloudTurn = messages.some(
+								(m) => m.role === "assistant" && m.cost?.provider === "nextain",
+							);
+							if (cloudCreditNoticeDismissed || hasCloudTurn) return null;
+							const noticeText =
+								webCreditBalance !== null
+									? t("webCredit.cloudPreSendWithBalance", {
+											balance: formatCreditsExact(webCreditBalance),
+										})
+									: t("webCredit.cloudPreSend");
+							return (
+								<div
+									className="web-chat-billing-notice"
+									data-testid="web-chat-billing-notice"
+									data-billing-mode="cloud"
+									role="status"
+								>
+									<span>{noticeText}</span>
+									<button
+										type="button"
+										className="web-chat-billing-notice__dismiss"
+										data-testid="web-chat-billing-notice-dismiss"
+										aria-label={t("webCredit.dismiss")}
+										title={t("webCredit.dismiss")}
+										onClick={() => {
+											Logger.debug(
+												"ChatArea",
+												"dismissed pre-send cloud credit notice",
+											);
+											markWebCloudCreditNoticeDismissed();
+											setCloudCreditNoticeDismissed(true);
+										}}
+									>
+										×
+									</button>
+								</div>
+							);
+						}
+						if (
+							activeWebProvider === "webllm" &&
+							!webWorkspacePending &&
+							webModelStatus.phase !== "error"
+						) {
+							return (
+								<div
+									className="web-chat-billing-notice web-chat-billing-notice--local"
+									data-testid="web-chat-billing-notice"
+									data-billing-mode="local"
+									role="status"
+								>
+									<span>{t("webCredit.localFree")}</span>
+								</div>
+							);
+						}
+						return null;
+					})()}
 				{activeTab === "chat" && micPermissionBlocked && (
 					<div className="web-chat-mic-notice">
 						<p role="alert">{t("chat.webSpeechErrorNotAllowed")}</p>
