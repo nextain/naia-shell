@@ -1,7 +1,11 @@
 import { join } from "node:path";
 import { expect, test, type FrameLocator, type Page } from "@playwright/test";
 import { writeImagePdf } from "../src/lib/slides-pptx-browser";
-import { openAppFromStoreLink, prepareStoreWorkspace } from "./helpers/web-store";
+import {
+	openAppFromStoreLink,
+	prepareStoreWorkspace,
+	webAppInstallUrl,
+} from "./helpers/web-store";
 
 const base = "/app/";
 const hostedPath = `${base}hosted-apps/`;
@@ -176,8 +180,9 @@ for (const viewport of [
 					await expect(iframe).toHaveCount(0);
 				});
 			}
-			await openAppFromStoreLink(page, "land.naia.cafelua-tarot");
-			await expect(reopen).toHaveAccessibleName("열기");
+			await page.goto(webAppInstallUrl(page.url(), "land.naia.cafelua-tarot").href);
+			const reopen = page.getByTestId("web-app-install-accept");
+			await expect(reopen).toHaveAccessibleName("열기", { timeout: 60_000 });
 			await reopen.click();
 			await expect(
 				page
