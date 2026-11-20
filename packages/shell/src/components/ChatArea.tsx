@@ -6229,7 +6229,6 @@ export function ChatArea({
 							scrollDuringSetup={webWorkspacePending}
 							offerCloudRecovery={!isKioskDemo()}
 							cloudRecoveryOnly={webCloudRecovery}
-							localModelUnavailable={webLocalModelError}
 							onRetry={canStartLocalModel ? startLocalModel : undefined}
 							onSwitchModel={canStartLocalModel ? startLocalModel : undefined}
 						/>

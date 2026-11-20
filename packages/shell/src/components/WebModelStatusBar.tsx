@@ -50,13 +50,6 @@ export const useWebModelStatus: () => WebModelStatus =
 		: () => DESKTOP_MODEL_STATUS;
 
 const READY_NOTICE_MS = 4000;
-const NO_LOCAL_MODEL_STATUS: WebModelStatus = {
-	phase: "error",
-	model: WEB_LLM_MODEL_ID,
-	progress: 0,
-	errorKind: "no-webgpu",
-};
-
 type CloudCreditsStatus = "login" | "checking" | "available" | "empty" | "unavailable" | "expired";
 
 function WebCloudChatRecovery({ provider }: { provider: "webllm" | "nextain" }) {
@@ -214,13 +207,12 @@ function WebCloudChatRecovery({ provider }: { provider: "webllm" | "nextain" }) 
 export function WebModelStatusBar(props: {
 	scrollDuringSetup?: boolean;
 	offerCloudRecovery?: boolean;
-	localModelUnavailable?: boolean;
 	cloudRecoveryOnly?: boolean;
 	onSwitchModel?: (model: WebLlmModelId) => void;
 	onRetry?: () => void;
 }) {
 	const runtimeStatus = useWebModelStatus();
-	const status = props.localModelUnavailable ? NO_LOCAL_MODEL_STATUS : runtimeStatus;
+	const status = runtimeStatus;
 	const [detailsOpen, setDetailsOpen] = useState(false);
 	useEffect(() => {
 		setDetailsOpen(false);
@@ -313,7 +305,7 @@ export function WebModelStatusBar(props: {
 			>
 				<p className="chat-error-notice__lead">{t("webModel.localChatUnavailable")}</p>
 				{props.offerCloudRecovery && !props.scrollDuringSetup ? (
-					<WebCloudChatRecovery provider={props.localModelUnavailable ? "nextain" : "webllm"} />
+					<WebCloudChatRecovery provider="webllm" />
 				) : (
 					<p className="web-model-recovery">{t(props.scrollDuringSetup
 						? "webModel.workspacePreparing"
