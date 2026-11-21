@@ -367,8 +367,13 @@ describe("web-settings-assets review fixes (fx1)", () => {
 				"nva-files",
 				new File([buildNvaZipBytes()], "garbage-clip.nva"),
 			);
+			// 거부 핸들러를 타이머 전진보다 먼저 붙인다. 늦게 붙이면
+			// 타이머 만료 시점에 미처리 거부가 기록돼 묶음 종료 코드가 1이 된다.
+			const assertion = expect(promise).rejects.toMatchObject({
+				code: "invalid_nva",
+			});
 			await vi.advanceTimersByTimeAsync(6000);
-			await expect(promise).rejects.toMatchObject({ code: "invalid_nva" });
+			await assertion;
 		} finally {
 			vi.useRealTimers();
 			vi.unstubAllGlobals();
