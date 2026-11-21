@@ -6865,3 +6865,222 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		}
 	});
 });
+
+describe("web background selection races and persistence (fx1 review fixes)", () => {
+	class MemDir {
+		readonly kind = "directory";
+		dirs = new Map<string, MemDir>();
+		files = new Map<string, Blob>();
+		gates = new Map<string, () => Promise<Blob>>();
+		failWrite: DOMException | null = null;
+		constructor(readonly name: string) {}
+		async getDirectoryHandle(name: string, opts?: { create?: boolean }) {
+			let dir = this.dirs.get(name);
+			if (!dir) {
+				if (!opts?.create) {
+					throw new DOMException("missing", "NotFoundError");
+				}
+				dir = new MemDir(name);
+				this.dirs.set(name, dir);
+			}
+			return dir;
+		}
+		async getFileHandle(name: string, opts?: { create?: boolean }) {
+			if (!this.files.has(name) && !this.gates.has(name)) {
+				if (!opts?.create) {
+					throw new DOMException("missing", "NotFoundError");
+				}
+				this.files.set(name, new Blob([]));
+			}
+			const self = this;
+			return {
+				kind: "file",
+				name,
+				getFile: async () => {
+					const gate = self.gates.get(name);
+					const blob = gate ? await gate() : (self.files.get(name) ?? new Blob([]));
+					return new File([blob], name);
+				},
+				createWritable: async () => {
+					let data: Blob = new Blob([]);
+					return {
+						write: async (blob: Blob) => {
+							if (self.failWrite) throw self.failWrite;
+							data = blob;
+						},
+						close: async () => {
+							self.files.set(name, data);
+						},
+						abort: async () => {},
+					};
+				},
+			};
+		}
+		async removeEntry(name: string) {
+			if (!this.files.delete(name) && !this.dirs.delete(name)) {
+				throw new DOMException("missing", "NotFoundError");
+			}
+		}
+		async *values() {
+			for (const name of this.files.keys()) yield { kind: "file", name };
+			for (const dir of this.dirs.values()) yield dir;
+		}
+	}
+
+	function stubOpfs(root: MemDir) {
+		vi.stubGlobal("navigator", {
+			storage: { getDirectory: async () => root },
+			locks: { request: async (_name: string, fn: () => unknown) => fn() },
+		});
+	}
+
+	function stubObjectUrls() {
+		const urls = new Map<string, Blob>();
+		let seq = 0;
+		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(
+			(blob: Blob) => {
+				seq += 1;
+				const url = `blob:fx1-bg-${seq}`;
+				urls.set(url, blob);
+				return url;
+			},
+		);
+		(URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn();
+	}
+
+	beforeEach(async () => {
+		await setLocale("ko");
+		mockInvoke.mockReset().mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+		);
+	});
+
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		setWebAssetsModeForTests(null);
+		vi.clearAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	async function bgSelectWithUserFiles(userFiles: string[]) {
+		const root = new MemDir("");
+		const bg = await root
+			.getDirectoryHandle("naia-adk", { create: true })
+			.then((d) => d.getDirectoryHandle("naia-settings", { create: true }))
+			.then((d) => d.getDirectoryHandle("background", { create: true }));
+		for (const name of userFiles) bg.files.set(name, new Blob(["img"]));
+		stubOpfs(root);
+		stubObjectUrls();
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const select = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() => {
+			expect(select.options.length).toBe(11 + userFiles.length);
+		});
+		return { root, bg, select };
+	}
+
+	it("keeps the latest background when an earlier selection resolves late", async () => {
+		const { bg, select } = await bgSelectWithUserFiles(["slow-a.png", "fast-b.png"]);
+		const { useAvatarStore } = await import("../../stores/avatar");
+		let releaseA!: (blob: Blob) => void;
+		const gateA = new Promise<Blob>((resolve) => {
+			releaseA = resolve;
+		});
+		bg.gates.set("slow-a.png", () => gateA);
+		const userA = "opfs://naia-adk/naia-settings/background/slow-a.png";
+		const userB = "opfs://naia-adk/naia-settings/background/fast-b.png";
+		fireEvent.change(select, { target: { value: userA } });
+		fireEvent.change(select, { target: { value: userB } });
+		await waitFor(() => {
+			expect(useAvatarStore.getState().backgroundVideoUrl).toBe("blob:fx1-bg-1");
+		});
+		releaseA(new Blob(["late-a"]));
+		await act(async () => {
+			await Promise.resolve();
+		});
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe("blob:fx1-bg-1");
+		expect(select.value).toBe(userB);
+	});
+
+	it("labels a user background differently from a bundled file with the same name", async () => {
+		const { select } = await bgSelectWithUserFiles(["naia-dawn-city-uhd.webp"]);
+		const userValue =
+			"opfs://naia-adk/naia-settings/background/naia-dawn-city-uhd.webp";
+		const bundledOption = Array.from(select.options).find((opt) =>
+			opt.value.endsWith("/naia-dawn-city-uhd.webp"),
+		);
+		const userOption = Array.from(select.options).find(
+			(opt) => opt.value === userValue,
+		);
+		expect(bundledOption).toBeTruthy();
+		expect(userOption).toBeTruthy();
+		expect(userOption?.textContent).not.toBe(bundledOption?.textContent);
+	});
+
+	it("deletes a user background from the list and keeps the bundled entry", async () => {
+		vi.stubGlobal("confirm", () => true);
+		const { select } = await bgSelectWithUserFiles(["mine.png"]);
+		const user = "opfs://naia-adk/naia-settings/background/mine.png";
+		fireEvent.change(select, { target: { value: user } });
+		const del = await screen.findByTestId("settings-bg-web-delete");
+		fireEvent.click(del);
+		await waitFor(() => {
+			expect(select.options.length).toBe(11);
+		});
+		expect(
+			Array.from(select.options).some((opt) => opt.value === user),
+		).toBe(false);
+	});
+
+	it("shows no delete control for a bundled background", async () => {
+		await bgSelectWithUserFiles(["mine.png"]);
+		expect(screen.queryByTestId("settings-bg-web-delete")).toBeNull();
+	});
+
+	it("shows an error and keeps the previous selection when the desktop config write fails", async () => {
+		setWebAssetsModeForTests(false);
+		localStorage.setItem("naia-adk-path", "/bg");
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "list_naia_assets") {
+				return Promise.resolve(["bg-a.webp"]);
+			}
+			if (command === "read_local_binary") {
+				return Promise.resolve("");
+			}
+			return Promise.reject(new Error("disk full"));
+		});
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const select = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() => {
+			expect(select.options.length).toBe(2);
+		});
+		fireEvent.change(select, {
+			target: { value: "/bg/naia-settings/background/bg-a.webp" },
+		});
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).not.toBe("");
+		expect(select.value).toBe("");
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") ?? "{}"),
+		).not.toHaveProperty(
+			"backgroundVideo",
+			"/bg/naia-settings/background/bg-a.webp",
+		);
+	});
+});

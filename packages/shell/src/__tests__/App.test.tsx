@@ -686,6 +686,45 @@ describe("App startup background video restoration (r8)", () => {
 		expect(onFallback.mock.calls[0]![0]).toMatchObject({ requested: gone });
 	});
 
+	it("surfaces the real storage failure instead of a generic missing-file message", async () => {
+		setWebAssetsModeForTests(true);
+		const quota = new DOMException("full", "QuotaExceededError");
+		mockListNaiaAssets.mockRejectedValue(quota);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ onboardingComplete: true, backgroundVideo: "a.webp" }),
+		);
+		const onFallback = vi.fn();
+		const setBackgroundVideoUrl = vi.fn();
+		await restoreStartupBackground({
+			setBackgroundMediaType: vi.fn(),
+			setBackgroundVideoUrl,
+			onFallback,
+		});
+		expect(setBackgroundVideoUrl).not.toHaveBeenCalled();
+		expect(onFallback).toHaveBeenCalledOnce();
+		expect(onFallback.mock.calls[0]![0]).toMatchObject({
+			reason: expect.stringContaining("QuotaExceededError"),
+		});
+	});
+
+	it("resolves desktop backgrounds by exact basename without suffix confusion", async () => {
+		const mod = (await import("../App")) as Record<string, unknown>;
+		expect(typeof mod.resolveDesktopBackgroundSelection).toBe("function");
+		const resolveDesktop = mod.resolveDesktopBackgroundSelection as (
+			saved: string | undefined,
+			paths: readonly string[],
+		) => string | null;
+		const desktop = "C:\\adk\\naia-settings\\background\\my-photo.webp";
+		expect(resolveDesktop("my-photo.webp", [desktop])).toBe(desktop);
+		expect(
+			resolveDesktop("my-photo.webp", [
+				"C:\\adk\\naia-settings\\background\\xmy-photo.webp",
+			]),
+		).toBeNull();
+		expect(resolveDesktop("..\\evil.webp", [desktop])).toBeNull();
+	});
+
 	it("regenerates the temporary blob URL on every startup restore", async () => {
 		setWebAssetsModeForTests(true);
 		mockListNaiaAssets.mockResolvedValue([

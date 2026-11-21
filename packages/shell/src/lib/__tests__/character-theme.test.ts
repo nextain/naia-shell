@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseCharacterCardJsonText } from "../../apps/charcard/card-parser";
 import {
 	type CharacterTheme,
@@ -431,5 +431,89 @@ describe("FR-WEB-KIOSK-FIX7B.6 Jina card, NVA theme binding, field editing, and 
 		} finally {
 			warnSpy.mockRestore();
 		}
+	});
+});
+
+describe("loadWebThemeBackgroundUrl (fx1 review fix 8)", () => {
+	function stubOpfsWithUserFile(name: string, bytes: BlobPart) {
+		const files = new Map<string, Blob>([[name, new Blob([bytes])]]);
+		const bg = {
+			kind: "directory",
+			name: "background",
+			getFileHandle: async (fileName: string) => {
+				const blob = files.get(fileName);
+				if (!blob) {
+					throw new DOMException("missing", "NotFoundError");
+				}
+				return {
+					kind: "file",
+					name: fileName,
+					getFile: async () => new File([blob], fileName),
+				};
+			},
+		};
+		const settings = {
+			kind: "directory",
+			name: "naia-settings",
+			getDirectoryHandle: async (part: string) => {
+				if (part !== "background") {
+					throw new DOMException("missing", "NotFoundError");
+				}
+				return bg;
+			},
+		};
+		const root = {
+			kind: "directory",
+			name: "",
+			getDirectoryHandle: async (part: string, _opts?: unknown) => {
+				if (part === "naia-adk") {
+					return {
+						kind: "directory",
+						name: "naia-adk",
+						getDirectoryHandle: async (sub: string) => {
+							if (sub !== "naia-settings") {
+								throw new DOMException("missing", "NotFoundError");
+							}
+							return settings;
+						},
+					};
+				}
+				throw new DOMException("missing", "NotFoundError");
+			},
+		};
+		vi.stubGlobal("navigator", {
+			storage: { getDirectory: async () => root },
+		});
+		vi.stubGlobal("URL", class extends URL {
+			static override createObjectURL = vi.fn(() => "blob:theme-user-bg");
+			static override revokeObjectURL = vi.fn();
+		});
+	}
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("converts a user OPFS theme background to a blob URL for the renderer", async () => {
+		const mod = (await import("../character-theme")) as Record<string, unknown>;
+		expect(typeof mod.loadWebThemeBackgroundUrl).toBe("function");
+		stubOpfsWithUserFile("mine.png", "png-bytes");
+		const load = mod.loadWebThemeBackgroundUrl as (
+			requested: string | undefined,
+			extra: readonly string[],
+		) => Promise<string>;
+		const user = "opfs://naia-adk/naia-settings/background/mine.png";
+		await expect(load(user, [user])).resolves.toBe("blob:theme-user-bg");
+	});
+
+	it("leaves bundled theme backgrounds as public URLs", async () => {
+		const mod = (await import("../character-theme")) as Record<string, unknown>;
+		const load = mod.loadWebThemeBackgroundUrl as (
+			requested: string | undefined,
+			extra: readonly string[],
+		) => Promise<string>;
+		await expect(load("/backgrounds/naia-dawn-city-uhd.webp", [])).resolves.toBe(
+			"/backgrounds/naia-dawn-city-uhd.webp",
+		);
 	});
 });

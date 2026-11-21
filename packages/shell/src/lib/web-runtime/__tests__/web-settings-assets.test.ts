@@ -13,6 +13,7 @@ import {
 	WebSettingsAssetImportError,
 	importWebSettingsAsset,
 	listWebBackgroundPaths,
+	readWebSettingsAssetBlob,
 	removeWebSettingsAsset,
 	resolveWebBackgroundSelection,
 	resolveWebNvaSelection,
@@ -314,6 +315,166 @@ describe("web-settings-assets import", () => {
 		expect(second).toBe(`${WEB_NVA_FILES_DIR}/custom (2).nva`);
 		expect(events).toEqual(["changed", "changed"]);
 	});
+
+describe("web-settings-assets review fixes (fx1)", () => {
+	it("rejects an NVA archive whose manifest clip is missing from the ZIP", async () => {
+		stubOpfs();
+		const manifest = {
+			nva_version: "0.2",
+			canvas: { width: 720, height: 1280 },
+			animations: {
+				idle: { clip: "clips/idle.webm", loop: true, can_talk: false },
+			},
+		};
+		const bytes = new Uint8Array(
+			zipSync({ "manifest.json": strToU8(JSON.stringify(manifest)) }),
+		);
+		await expect(
+			importWebSettingsAsset(
+				"nva-files",
+				new File([bytes], "missing-clip.nva"),
+			),
+		).rejects.toMatchObject({ code: "invalid_nva" });
+		expect(await listWebBackgroundPaths()).toEqual([]);
+	});
+
+	it("rejects an NVA clip that the browser cannot decode", async () => {
+		stubOpfs();
+		vi.useFakeTimers();
+		const createObjectURL = vi.fn(() => "blob:nva-clip");
+		vi.stubGlobal("URL", class extends URL {
+			static override createObjectURL = createObjectURL;
+			static override revokeObjectURL = vi.fn();
+		});
+		try {
+			const video = document.createElement("video");
+			vi.spyOn(video, "canPlayType").mockReturnValue("probably");
+			vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+				if (tag === "video") return video;
+				return document.createElement(tag);
+			}) as typeof document.createElement);
+			const promise = importWebSettingsAsset(
+				"nva-files",
+				new File([buildNvaZipBytes()], "garbage-clip.nva"),
+			);
+			await vi.advanceTimersByTimeAsync(6000);
+			await expect(promise).rejects.toMatchObject({ code: "invalid_nva" });
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+			vi.restoreAllMocks();
+		}
+	});
+
+	it("rejects an image whose bytes do not match its extension", async () => {
+		stubOpfs();
+		await expect(
+			importWebSettingsAsset(
+				"background",
+				new File(["not-an-image"], "fake.png", { type: "image/png" }),
+			),
+		).rejects.toMatchObject({ code: "unplayable" });
+		expect(await listWebBackgroundPaths()).toEqual([]);
+	});
+
+	it("rejects a video the browser reports as unsupported", async () => {
+		stubOpfs();
+		vi.spyOn(
+			HTMLVideoElement.prototype,
+			"canPlayType",
+		).mockReturnValue("");
+		try {
+			await expect(
+				importWebSettingsAsset(
+					"background",
+					new File(["mp4"], "movie.mp4", { type: "video/mp4" }),
+				),
+			).rejects.toMatchObject({ code: "unplayable" });
+		} finally {
+			vi.restoreAllMocks();
+		}
+		expect(await listWebBackgroundPaths()).toEqual([]);
+	});
+
+	it("returns null for a missing full identifier even when a bundled file shares the name", () => {
+		const bundled = "/backgrounds/shared.webp";
+		const user = `${WEB_SETTINGS_BACKGROUND_DIR}/shared.webp`;
+		expect(resolveWebBackgroundSelection(user, [bundled])).toBeNull();
+	});
+
+	it("reads no bundled bytes for a missing user file that shares a bundled name", async () => {
+		const root = stubOpfs();
+		const bg = await root
+			.getDirectoryHandle("naia-adk", { create: true })
+			.then((d) => d.getDirectoryHandle("naia-settings", { create: true }))
+			.then((d) => d.getDirectoryHandle("background", { create: true }));
+		bg.files.set("other.png", new Blob(["i"]));
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("bundled-bytes")),
+		);
+		try {
+			await expect(
+				readWebSettingsAssetBlob(
+					`${WEB_SETTINGS_BACKGROUND_DIR}/naia-dawn-city-uhd.webp`,
+				),
+			).rejects.toThrow();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("resolves full identifiers that contain double dots in the file name", () => {
+		const user = `${WEB_SETTINGS_BACKGROUND_DIR}/photo..png`;
+		expect(resolveWebBackgroundSelection(user, [user])).toBe(user);
+		expect(resolveWebBackgroundSelection("photo..png", [user])).toBe(user);
+	});
+
+	it("shares one background media-type contract that includes BMP", async () => {
+		const mod = (await import("../web-settings-assets")) as Record<
+			string,
+			unknown
+		>;
+		expect(typeof mod.getWebBackgroundMediaType).toBe("function");
+		const classify = mod.getWebBackgroundMediaType as (
+			path: string,
+		) => string;
+		expect(classify("photo.bmp")).toBe("image");
+		expect(classify("clip.mp4")).toBe("video");
+		expect(classify("note.txt")).toBe("");
+	});
+
+	it("exposes a deletability guard that refuses bundled assets", async () => {
+		const mod = (await import("../web-settings-assets")) as Record<
+			string,
+			unknown
+		>;
+		expect(typeof mod.canDeleteWebSettingsAsset).toBe("function");
+		const canDelete = mod.canDeleteWebSettingsAsset as (
+			kind: string,
+			stored: string,
+			uploadedNvas: readonly string[],
+		) => boolean;
+		expect(canDelete("background", "/backgrounds/x.webp", [])).toBe(false);
+		expect(
+			canDelete("background", `${WEB_SETTINGS_BACKGROUND_DIR}/mine.png`, []),
+		).toBe(true);
+		expect(canDelete("nva-files", "naia", [])).toBe(false);
+		expect(canDelete("nva-files", "custom.nva", ["custom.nva"])).toBe(true);
+	});
+
+	it("still rejects real parent-directory segments", () => {
+		expect(
+			resolveWebBackgroundSelection(`${BG}/../a.webp`, [`${BG}/a.webp`]),
+		).toBeNull();
+		expect(
+			resolveWebNvaSelection(
+				`${WEB_NVA_FILES_DIR}/../evil.nva`,
+				["evil.nva"],
+			),
+		).toBeNull();
+	});
+});
 
 	it("removes a user asset and ignores a missing one", async () => {
 		stubOpfs();

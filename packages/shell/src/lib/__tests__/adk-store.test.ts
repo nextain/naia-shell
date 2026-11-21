@@ -480,6 +480,41 @@ describe("web bundled assets (WO-03)", () => {
 		);
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
+
+	it("propagates storage errors from the web background list instead of hiding them", async () => {
+		setWebAssetsModeForTests(true);
+		const quota = new DOMException("full", "QuotaExceededError");
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => {
+					throw quota;
+				},
+			},
+		});
+		try {
+			await expect(listNaiaAssets("background")).rejects.toBe(quota);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("keeps the bundled list when the web background folder is simply absent", async () => {
+		setWebAssetsModeForTests(true);
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => {
+					throw new DOMException("missing", "NotFoundError");
+				},
+			},
+		});
+		try {
+			await expect(listNaiaAssets("background")).resolves.toEqual(
+				WEB_BACKGROUND_ASSETS.map((asset) => asset.url),
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
 });
 
 // ── readNaiaConfig / writeNaiaConfig ──────────────────────────────────────────
