@@ -286,6 +286,7 @@ import { RefAudioSection } from "./RefAudioSection";
 import { useWebModelStatus } from "./WebModelStatusBar";
 import { WEB_SETTINGS_ASSETS_CHANGED_EVENT } from "../lib/web-runtime/web-nva-archive";
 import { WEB_ADK_PATH } from "../lib/web-runtime/web-adk-path";
+import { isNotFoundError } from "../lib/web-runtime/web-adk-policy";
 import {
 	WebSettingsAssetImportError,
 	canDeleteWebSettingsAsset,
@@ -972,6 +973,7 @@ export function SettingsTab() {
 	);
 	const [nvaModel, setNvaModel] = useState(existing?.nvaModel ?? "");
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
+	const [pendingBgPath, setPendingBgPath] = useState<string | null>(null);
 	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
 		string | undefined
 	>(existing?.backgroundVideo);
@@ -3270,163 +3272,79 @@ export function SettingsTab() {
 		}
 	}
 
-	// 배경 선택은 비동기 읽기·쓰기와 겹친다. 늦게 끝난 이전 선택이 최신
-	// 선택을 덮지 않도록 세대 번호로 가드한다.
+	// Only the newest read may enqueue a write. UI-config writes themselves are
+	// serialized by adk-store, so the last successful write determines the UI.
 	const bgSelectRevision = useRef(0);
+	const nvaSelectRevision = useRef(0);
 
-	async function handleNaiaBgSelect(path: string) {
-		const revision = ++bgSelectRevision.current;
+	async function persistAssetSelection(patch: Partial<AppConfig>) {
+		const workspace = getAdkPath();
+		if (
+			workspace &&
+			(!(await writeNaiaUiConfig(patch, workspace)) || getAdkPath() !== workspace)
+		) {
+			throw new Error("asset selection was not saved");
+		}
+		const current = loadConfig();
+		const committed = current ? { ...current, ...patch } : null;
+		if (committed) saveConfig(committed);
+		return committed;
+	}
+
+	async function handleNaiaBgSelect(path: string, revision = ++bgSelectRevision.current) {
 		const isLatest = () => revision === bgSelectRevision.current;
-		const filename = path.split(/[/\\]/).pop() ?? "";
-		// 사용자 파일은 전체 식별자(`opfs://…`)를 저장해야 동명 번들과 겹치지
-		// 않고 새로고침 뒤에도 같은 파일을 다시 찾는다. 번들은 기존처럼 bare
-		// 파일명을 저장한다(이전 저장값·데스크톱 계약 유지).
-		const stored = path.startsWith(`${WEB_ADK_PATH}/`) ? path : filename;
-		// 영속 실패 시 되돌릴 이전 선택.
-		const storeState = useAvatarStore.getState();
-		const previous = {
-			path: activeBgPath,
-			filename: backgroundVideoFilename,
-			mediaType: storeState.backgroundMediaType,
-			url: storeState.backgroundVideoUrl,
-			config: loadConfig(),
-		};
-		setActiveBgPath(path);
-		setBackgroundVideoFilename(stored || undefined);
-		setBackgroundMediaType(getBackgroundMediaType(path));
-		void toLocalBlobUrl(path).then(
-			(url) => {
-				if (!isLatest()) return;
-				setBackgroundVideoUrl(url);
-			},
-			(error: unknown) => {
-				if (!isLatest()) return;
-				if (!isWebMode()) {
-					Logger.warn("SettingsTab", "[background] local media read failed", {
-						error: String(error),
-					});
-					return;
+		if (!isLatest()) return;
+		setError("");
+		setPendingBgPath(path);
+		let selectedPath = path;
+		let url = "";
+		let missing = false;
+		try {
+			if (path) {
+				try {
+					url = await toLocalBlobUrl(path);
+				} catch (error) {
+					if (!isLatest()) return;
+					if (!isWebMode() || !isNotFoundError(error)) throw error;
+					missing = true;
+					const paths = await listNaiaAssets("background");
+					if (!isLatest()) return;
+					selectedPath = resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ?? "";
+					url = selectedPath ? await toLocalBlobUrl(selectedPath) : "";
+					if (!isLatest()) return;
+					setNaiaBgs(paths);
 				}
-				// 저장 후 파일이 사라지면 기본 배경과 기존 목록으로 복구하고
-				// 실패 원인을 보여 준다. 깨진 선택은 저장하지 않는다.
-				Logger.warn("SettingsTab", "[background] saved file unreadable", {
+			}
+			if (!isLatest()) return;
+			const filename = selectedPath.startsWith(`${WEB_ADK_PATH}/`)
+				? selectedPath
+				: selectedPath.split(/[/\\]/).pop() || undefined;
+			try {
+				await persistAssetSelection({ backgroundVideo: filename });
+			} catch (error) {
+				Logger.warn("SettingsTab", "[background] selection write failed", {
 					error: String(error),
 				});
-				void listNaiaAssets("background")
-					.then((paths) => {
-						if (!isLatest()) return;
-						setNaiaBgs(paths);
-					const fallback =
-						resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
-						"";
-					if (fallback) {
-						setActiveBgPath(fallback);
-						setBackgroundVideoFilename(
-							fallback.split(/[/\\]/).pop() || undefined,
-						);
-						setBackgroundMediaType(getBackgroundMediaType(fallback));
-						void toLocalBlobUrl(fallback).then((url) => {
-							if (isLatest()) setBackgroundVideoUrl(url);
-						});
-						const current = loadConfig();
-						if (current) {
-							const next = {
-								...current,
-								backgroundVideo:
-									fallback.split(/[/\\]/).pop() || undefined,
-							};
-							saveConfig(next);
-							void writeNaiaUiConfig({
-								backgroundVideo: next.backgroundVideo,
-							}).catch((writeError: unknown) =>
-								Logger.warn("SettingsTab", "[background] ui-config write failed", {
-									error: String(writeError),
-								}),
-							);
-						}
-					} else {
-						void handleClearNaiaBg();
-					}
-				})
-				.catch((listError: unknown) => {
-					// 목록 조회 자체가 실패하면 기존 목록·선택을 보존하고
-					// 원인만 표시한다.
-					if (!isLatest()) return;
-					Logger.warn("SettingsTab", "[background] list failed", {
-						error: String(listError),
-					});
-				});
-				setError(t("settings.webAssetMissing"));
-			},
-		);
-		const cfg = loadConfig();
-		if (cfg) {
-			const next = { ...cfg, backgroundVideo: stored || undefined };
-			saveConfig(next);
-			if (!isWebMode()) {
-				// 데스크톱은 파일 영속을 확인한 뒤 적용한다. 실패하면 화면과
-				// 저장을 이전 선택으로 되돌리고 원인을 표시한다.
-				const ok = await writeNaiaUiConfig({
-					backgroundVideo: next.backgroundVideo,
-				});
-				if (!ok && isLatest()) {
-					if (previous.config) saveConfig(previous.config);
-					setActiveBgPath(previous.path);
-					setBackgroundVideoFilename(previous.filename);
-					setBackgroundMediaType(previous.mediaType);
-					setBackgroundVideoUrl(previous.url);
-					setError(t("settings.saveFailed"));
-				}
-			} else {
-				// 웹판 정본은 localStorage다. 파일 쓰기는 최선형으로 두고
-				// 실패를 기록만 한다(호출자가 없는 브라우저에서도 동작).
-				void writeNaiaUiConfig({
-					backgroundVideo: next.backgroundVideo,
-				}).catch((writeError: unknown) =>
-					Logger.warn("SettingsTab", "[background] ui-config write failed", {
-						error: String(writeError),
-					}),
-				);
+				if (isLatest()) setError(t("settings.saveFailed"));
+				return;
 			}
+			setActiveBgPath(selectedPath);
+			setBackgroundVideoFilename(filename);
+			setBackgroundMediaType(selectedPath ? getBackgroundMediaType(selectedPath) : "");
+			setBackgroundVideoUrl(url);
+			if (missing && isLatest()) setError(t("settings.webAssetMissing"));
+		} catch (error) {
+			Logger.warn("SettingsTab", "[background] media or list read failed", {
+				error: String(error),
+			});
+			if (isLatest()) setError(t("settings.webAssetFailed"));
+		} finally {
+			if (isLatest()) setPendingBgPath(null);
 		}
 	}
 
-	async function handleClearNaiaBg() {
-		const storeState = useAvatarStore.getState();
-		const previous = {
-			path: activeBgPath,
-			filename: backgroundVideoFilename,
-			mediaType: storeState.backgroundMediaType,
-			url: storeState.backgroundVideoUrl,
-			config: loadConfig(),
-		};
-		setActiveBgPath("");
-		setBackgroundVideoFilename(undefined);
-		setBackgroundMediaType("");
-		setBackgroundVideoUrl("");
-		const cfg = loadConfig();
-		if (cfg) {
-			const next = { ...cfg, backgroundVideo: undefined };
-			saveConfig(next);
-			if (!isWebMode()) {
-				const ok = await writeNaiaUiConfig({ backgroundVideo: undefined });
-				if (!ok) {
-					if (previous.config) saveConfig(previous.config);
-					setActiveBgPath(previous.path);
-					setBackgroundVideoFilename(previous.filename);
-					setBackgroundMediaType(previous.mediaType);
-					setBackgroundVideoUrl(previous.url);
-					setError(t("settings.saveFailed"));
-				}
-			} else {
-				void writeNaiaUiConfig({ backgroundVideo: undefined }).catch(
-					(writeError: unknown) =>
-						Logger.warn("SettingsTab", "[background] ui-config write failed", {
-							error: String(writeError),
-						}),
-				);
-			}
-		}
+	function handleClearNaiaBg(revision?: number) {
+		return handleNaiaBgSelect("", revision);
 	}
 
 	// #12: Import file (Downloads → naia-settings/{subdir}/)
@@ -3540,6 +3458,10 @@ export function SettingsTab() {
 		file: File | null,
 	) {
 		if (!file || webAssetBusy) return;
+		const revision = kind === "background"
+			? ++bgSelectRevision.current
+			: ++nvaSelectRevision.current;
+		if (kind === "background") setPendingBgPath(null);
 		setError("");
 		setWebAssetBusy(kind);
 		try {
@@ -3547,16 +3469,19 @@ export function SettingsTab() {
 			if (kind === "background") {
 				const paths = await listNaiaAssets("background");
 				setNaiaBgs(paths);
-				void handleNaiaBgSelect(storedPath);
+				await handleNaiaBgSelect(storedPath, revision);
 			} else {
-				const paths = await listNaiaAssets("nva-files");
+				const [paths, uploaded] = await Promise.all([
+					listNaiaAssets("nva-files"),
+					listWebUploadedNvaModels(),
+				]);
 				setNaiaNvas(paths);
-				setWebUploadedNvas(await listWebUploadedNvaModels().catch(() => []));
+				setWebUploadedNvas(uploaded);
 				const entry =
 					resolveWebNvaSelection(storedPath, paths) ??
 					storedPath.split(/[/\\]/).filter(Boolean).pop() ??
 					storedPath;
-				void persistVideoAvatarSelection(entry);
+				await persistVideoAvatarSelection(entry, revision);
 			}
 		} catch (error) {
 			const code =
@@ -3585,6 +3510,10 @@ export function SettingsTab() {
 			setError(t("settings.webAssetFailed"));
 			return;
 		}
+		const revision = kind === "background"
+			? ++bgSelectRevision.current
+			: ++nvaSelectRevision.current;
+		if (kind === "background") setPendingBgPath(null);
 		try {
 			const target =
 				kind === "background"
@@ -3598,13 +3527,18 @@ export function SettingsTab() {
 			if (kind === "background") {
 				const paths = await listNaiaAssets("background");
 				setNaiaBgs(paths);
-				void handleClearNaiaBg();
+				if (activeBgPath === storedIdentifier) await handleClearNaiaBg(revision);
 			} else {
-				const paths = await listNaiaAssets("nva-files");
+				const [paths, uploaded] = await Promise.all([
+					listNaiaAssets("nva-files"),
+					listWebUploadedNvaModels(),
+				]);
 				setNaiaNvas(paths);
-				setWebUploadedNvas(await listWebUploadedNvaModels().catch(() => []));
-				setNvaModel("");
-				persistConfig({ nvaModel: "" });
+				setWebUploadedNvas(uploaded);
+				if (revision === nvaSelectRevision.current && !resolveWebNvaSelection(nvaModel, paths)) {
+					await persistAssetSelection({ nvaModel: "" });
+					setNvaModel("");
+				}
 			}
 		} catch (error) {
 			Logger.warn("SettingsTab", "[web-delete-asset] failed", {
@@ -3678,6 +3612,11 @@ export function SettingsTab() {
 		selected: CharacterTheme,
 		extra: Partial<AppConfig> = {},
 	) {
+		const bgRevision = ++bgSelectRevision.current;
+		const nvaRevision = ++nvaSelectRevision.current;
+		const isCurrent = () =>
+			bgRevision === bgSelectRevision.current && nvaRevision === nvaSelectRevision.current;
+		setPendingBgPath(null);
 		if (isWebMode()) {
 			const nvaInstalled =
 				WEB_NVA_ASSETS.includes(selected.nvaModel) ||
@@ -3693,11 +3632,19 @@ export function SettingsTab() {
 			const storedThemeBg = resolvedBg.url.startsWith(`${WEB_ADK_PATH}/`)
 				? resolvedBg.url
 				: resolvedBg.filename;
-			await persistCharacterSettings({
-				...themePatch(selected),
-				backgroundVideo: storedThemeBg,
-				...extra,
-			});
+			const bgUrl = await loadWebThemeBackgroundUrl(selected.backgroundVideo, naiaBgs);
+			try {
+				if (!isCurrent()) throw new Error("asset selection changed");
+				await persistCharacterSettings({
+					...themePatch(selected),
+					backgroundVideo: storedThemeBg,
+					...extra,
+				});
+				if (!isCurrent()) throw new Error("asset selection changed");
+			} catch (error) {
+				if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+				throw error;
+			}
 			setAvatarProvider("naia-video-avatar");
 			setNvaModel(selected.nvaModel);
 			setTtsProvider(selected.ttsProvider);
@@ -3707,9 +3654,7 @@ export function SettingsTab() {
 			setBackgroundMediaType(getBackgroundMediaType(resolvedBg.url));
 			// 영속 식별자와 렌더링 URL을 구분한다. 사용자 OPFS 식별자는
 			// Blob URL로 변환해야 렌더러가 표시한다.
-			setBackgroundVideoUrl(
-				await loadWebThemeBackgroundUrl(selected.backgroundVideo, naiaBgs),
-			);
+			setBackgroundVideoUrl(bgUrl);
 			return;
 		}
 		const sourceAdk = getAdkPath();
@@ -3767,8 +3712,9 @@ export function SettingsTab() {
 			throw error;
 		}
 		try {
-			if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+			if (getAdkPath() !== sourceAdk || !isCurrent()) throw new Error("asset selection changed");
 			await persistCharacterSettings({ ...themePatch(selected), ...extra });
+			if (getAdkPath() !== sourceAdk || !isCurrent()) throw new Error("asset selection changed");
 		} catch (error) {
 			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
 			throw error;
@@ -3827,45 +3773,40 @@ export function SettingsTab() {
 		}
 	}
 
-	async function persistVideoAvatarSelection(nextNva?: string) {
+	async function persistVideoAvatarSelection(
+		nextNva?: string,
+		revision = ++nvaSelectRevision.current,
+	) {
+		if (revision !== nvaSelectRevision.current) return;
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
-		const previousNva = nvaModel;
-		const previousProvider = avatarProvider;
-		setAvatarProvider("naia-video-avatar");
-		setNvaModel(selectedNva);
-		const cfg = loadConfig();
-		if (cfg) {
-			const previousConfig = { ...cfg };
-			const next = {
-				...cfg,
-				avatarProvider: "naia-video-avatar" as const,
+		try {
+			const workspace = getAdkPath();
+			const committed = await persistAssetSelection({
+				avatarProvider: "naia-video-avatar",
 				nvaModel: selectedNva,
-			};
-			saveConfig(next);
-			// 에이전트 설정 쓰기는 기존처럼 최선형으로 둔다(선택 식별자는
-			// UI 전용이라 에이전트가 소비하지 않는다).
-			void writeNaiaConfig({
-				...next,
-				...(naiaKey ? { naiaKey } : {}),
-			} as unknown as Record<string, unknown>);
-			if (!isWebMode()) {
-				// 데스크톱은 선택 식별자 영속(ui-config)을 확인한 뒤 적용한다.
-				const ok = await writeNaiaUiConfig({ nvaModel: selectedNva });
-				if (!ok) {
-					saveConfig(previousConfig);
-					setNvaModel(previousNva);
-					setAvatarProvider(previousProvider);
-					setError(t("settings.saveFailed"));
-				}
-			} else {
-				// 웹판 정본은 localStorage다. 파일 쓰기는 최선형으로 둔다.
-				void writeNaiaUiConfig({ nvaModel: selectedNva }).catch(
-					(writeError: unknown) =>
-						Logger.warn("SettingsTab", "[nva] ui-config write failed", {
-							error: String(writeError),
+			});
+			if (revision !== nvaSelectRevision.current) return;
+			setAvatarProvider("naia-video-avatar");
+			setNvaModel(selectedNva);
+			if (workspace && committed) {
+				if (!isWebMode()) {
+					void writeSlotsManifest(
+						{ ...committed, ...(naiaKey ? { naiaKey } : {}) },
+						detectedVramGb ?? undefined,
+						workspace,
+					).catch((error: unknown) =>
+						Logger.warn("SettingsTab", "[nva] slots manifest write failed", {
+							error: String(error),
 						}),
-				);
+					);
+				}
+				void reloadPersistedAgentSettings().catch(() => {
+					if (revision === nvaSelectRevision.current) setError(t("settings.saveFailed"));
+				});
 			}
+		} catch (error) {
+			Logger.warn("SettingsTab", "[nva] selection write failed", { error: String(error) });
+			if (revision === nvaSelectRevision.current) setError(t("settings.saveFailed"));
 		}
 	}
 
@@ -5262,7 +5203,7 @@ export function SettingsTab() {
 						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
 							<select
 								data-testid="settings-bg-select"
-								value={activeBgPath ?? ""}
+								value={pendingBgPath ?? activeBgPath}
 								onChange={(e) => {
 									const v = e.target.value;
 									if (!v) void handleClearNaiaBg();
@@ -5559,18 +5500,17 @@ export function SettingsTab() {
 							onChange={(e) => {
 								const next = e.target.value as "vrm" | "naia-video-avatar";
 								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
-								setAvatarProvider(next);
 								// R6: 비디오 아바타인데 NVA 미지정이면 기본 번들로 채운다(빈 상태 방지).
 								const nextNva =
 									next === "naia-video-avatar"
 										? nvaModel || DEFAULT_NVA_MODEL
 										: nvaModel;
-								if (next === "naia-video-avatar" && !nvaModel)
-									setNvaModel(DEFAULT_NVA_MODEL);
 								// #auto-apply: 적용 버튼 없이 즉시 반영(saveConfig → naia-config-changed → App).
 								if (next === "naia-video-avatar") {
 									void persistVideoAvatarSelection(nextNva);
 								} else {
+									nvaSelectRevision.current++;
+									setAvatarProvider(next);
 									const nextVrm =
 										vrmModel ||
 										(isWebMode() ? WEB_DEFAULT_VRM : (naiaVrms[0] ?? ""));

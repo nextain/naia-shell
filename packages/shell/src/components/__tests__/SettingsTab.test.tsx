@@ -6159,11 +6159,10 @@ describe("web mode backgrounds and NVA (r7)", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "jina-anime" }));
 
-		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
-		expect(saved.avatarProvider).toBe("naia-video-avatar");
-		expect(saved.nvaModel).toBe("jina-anime");
-
 		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.avatarProvider).toBe("naia-video-avatar");
+			expect(saved.nvaModel).toBe("jina-anime");
 			expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
 		});
 
@@ -7029,6 +7028,7 @@ describe("web background selection races and persistence (fx1 review fixes)", ()
 
 	it("keeps the displayed background and cache when the web UI file cannot be written", async () => {
 		const { select } = await bgSelectWithUserFiles(["unwritable.png"]);
+		const previous = select.value;
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "write_naia_ui_config") return Promise.reject(new Error("OPFS write failed"));
 			if (command === "read_naia_ui_config" || command === "read_naia_config") return Promise.resolve("{}");
@@ -7036,7 +7036,7 @@ describe("web background selection races and persistence (fx1 review fixes)", ()
 		});
 		fireEvent.change(select, { target: { value: "opfs://naia-adk/naia-settings/background/unwritable.png" } });
 		expect(await screen.findByText(t("settings.saveFailed"))).toBeTruthy();
-		expect(select.value).toBe("");
+		expect(select.value).toBe(previous);
 		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").backgroundVideo).toBeUndefined();
 	});
 
