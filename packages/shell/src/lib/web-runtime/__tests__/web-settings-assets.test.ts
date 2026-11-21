@@ -1,0 +1,335 @@
+// @vitest-environment jsdom
+import { strToU8, zipSync } from "fflate";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setWebAssetsModeForTests } from "../web-assets";
+import { WEB_NVA_FILES_DIR } from "../web-nva-archive";
+import { WEB_SETTINGS_ROOT } from "../web-settings-catalog";
+import {
+	WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+	WEB_SETTINGS_BACKGROUND_DIR,
+	WEB_SETTINGS_BACKGROUND_MAX_BYTES,
+	WebSettingsAssetImportError,
+	importWebSettingsAsset,
+	listWebBackgroundPaths,
+	removeWebSettingsAsset,
+	resolveWebBackgroundSelection,
+	resolveWebNvaSelection,
+} from "../web-settings-assets";
+
+afterEach(() => {
+	setWebAssetsModeForTests(null);
+	vi.unstubAllGlobals();
+	vi.resetModules();
+});
+
+function notFound(): DOMException {
+	return new DOMException("missing", "NotFoundError");
+}
+
+type Writer = {
+	write(data: Blob): Promise<void>;
+	close(): Promise<void>;
+	abort(): Promise<void>;
+};
+
+/** 메모리 OPFS (web-bgm-music.test.ts의 MemDir와 같은 계약). */
+class MemDir {
+	readonly kind = "directory";
+	dirs = new Map<string, MemDir>();
+	files = new Map<string, Blob>();
+	failWrite: DOMException | null = null;
+	constructor(readonly name: string) {}
+	isSameEntry(other: unknown): boolean {
+		return this === other;
+	}
+	async getDirectoryHandle(name: string, opts?: { create?: boolean }) {
+		let dir = this.dirs.get(name);
+		if (!dir) {
+			if (!opts?.create) throw notFound();
+			dir = new MemDir(name);
+			dir.failWrite = this.failWrite;
+			this.dirs.set(name, dir);
+		}
+		return dir;
+	}
+	async getFileHandle(name: string, opts?: { create?: boolean }) {
+		if (!this.files.has(name)) {
+			if (!opts?.create) throw notFound();
+			this.files.set(name, new Blob([]));
+		}
+		return {
+			kind: "file",
+			name,
+			getFile: async () => new File([this.files.get(name) ?? new Blob([])], name),
+			createWritable: async (): Promise<Writer> => {
+				let data: Blob = new Blob([]);
+				return {
+					write: async (blob: Blob) => {
+						if (this.failWrite) throw this.failWrite;
+						data = blob;
+					},
+					close: async () => {
+						this.files.set(name, data);
+					},
+					abort: async () => {},
+				};
+			},
+		};
+	}
+	async removeEntry(name: string) {
+		if (!this.files.delete(name) && !this.dirs.delete(name)) throw notFound();
+	}
+	async *values() {
+		for (const name of this.files.keys()) yield { kind: "file", name };
+		for (const dir of this.dirs.values()) yield dir;
+	}
+}
+
+function stubOpfs(root = new MemDir("")) {
+	vi.stubGlobal("navigator", {
+		storage: { getDirectory: async () => root },
+		locks: { request: async (_name: string, fn: () => unknown) => fn() },
+	});
+	return root;
+}
+
+function buildNvaZipBytes(clipPrefix = ""): Uint8Array {
+	const manifest = {
+		tva_version: undefined,
+		nva_version: "0.2",
+		canvas: { width: 720, height: 1280 },
+		animations: {
+			idle: { clip: `${clipPrefix}clips/idle.webm`, loop: true, can_talk: false },
+		},
+	};
+	const entries: Record<string, Uint8Array> = {
+		"manifest.json": strToU8(JSON.stringify(manifest)),
+		[`${clipPrefix}clips/idle.webm`]: strToU8("webm-idle-bytes"),
+	};
+	return zipSync(entries);
+}
+
+const BG = `${WEB_SETTINGS_ROOT}/background`;
+
+describe("web-settings-assets background selection", () => {
+	it("prefers the exact stored identifier over basename suffix matching", () => {
+		const bundled = "/backgrounds/my-photo.webp";
+		const user = `${BG}/my-photo.webp`;
+		expect(resolveWebBackgroundSelection(user, [bundled, user])).toBe(user);
+		expect(resolveWebBackgroundSelection(bundled, [bundled, user])).toBe(bundled);
+	});
+
+	it("resolves a legacy bare filename to the bundled file, never a longer name", () => {
+		const bundled = "/backgrounds/my-photo.webp";
+		const user = `${BG}/my-photo.webp`;
+		const longer = "/backgrounds/xmy-photo.webp";
+		// bare 이름은 안정적인 번들 카탈로그가 이긴다. 사용자 파일은 전체 식별자로 고른다.
+		expect(resolveWebBackgroundSelection("my-photo.webp", [bundled, user])).toBe(
+			bundled,
+		);
+		// 끝부분 일치 fashion (endsWith) would match xmy-photo.webp; exact basename must not.
+		expect(
+			resolveWebBackgroundSelection("my-photo.webp", [longer]),
+		).toBeNull();
+		expect(
+			resolveWebBackgroundSelection("my-photo.webp", [bundled]),
+		).toBe(bundled);
+	});
+
+	it("returns null for empty, unknown, or directory-traversal identifiers", () => {
+		expect(resolveWebBackgroundSelection("", ["/backgrounds/a.webp"])).toBeNull();
+		expect(
+			resolveWebBackgroundSelection(undefined, ["/backgrounds/a.webp"]),
+		).toBeNull();
+		expect(
+			resolveWebBackgroundSelection("missing.webp", ["/backgrounds/a.webp"]),
+		).toBeNull();
+		expect(
+			resolveWebBackgroundSelection("../a.webp", [`${BG}/a.webp`]),
+		).toBeNull();
+	});
+});
+
+describe("web-settings-assets NVA selection", () => {
+	it("resolves bare names, leaves, and full OPFS identifiers to the list entry", () => {
+		expect(resolveWebNvaSelection("naia", ["naia", "custom.nva"])).toBe("naia");
+		expect(
+			resolveWebNvaSelection("custom.nva", ["naia", "custom.nva"]),
+		).toBe("custom.nva");
+		expect(
+			resolveWebNvaSelection(`${WEB_NVA_FILES_DIR}/custom.nva`, [
+				"naia",
+				"custom.nva",
+			]),
+		).toBe("custom.nva");
+	});
+
+	it("keeps same-name user and built-in NVA files distinct", () => {
+		expect(resolveWebNvaSelection("naia", ["naia", "naia.nva"])).toBe("naia");
+		expect(resolveWebNvaSelection("naia.nva", ["naia", "naia.nva"])).toBe(
+			"naia.nva",
+		);
+		expect(resolveWebNvaSelection("nope", ["naia"])).toBeNull();
+	});
+});
+
+describe("web-settings-assets background OPFS list", () => {
+	it("lists user background files with full identifiers newest-name order", async () => {
+		const root = stubOpfs();
+		const bg = await root
+			.getDirectoryHandle("naia-adk", { create: true })
+			.then((d) => d.getDirectoryHandle("naia-settings", { create: true }))
+			.then((d) => d.getDirectoryHandle("background", { create: true }));
+		await (await bg.getFileHandle("b.MP4", { create: true })).createWritable()
+			.then((w) => w.write(new Blob(["v"])))
+			.catch(() => {});
+		bg.files.set("a.png", new Blob(["i"]));
+		bg.files.set("b.MP4", new Blob(["v"]));
+		bg.files.set("note.txt", new Blob(["t"]));
+		bg.files.set(".hidden.png", new Blob(["h"]));
+		expect(await listWebBackgroundPaths()).toEqual([
+			`${WEB_SETTINGS_BACKGROUND_DIR}/a.png`,
+			`${WEB_SETTINGS_BACKGROUND_DIR}/b.MP4`,
+		]);
+	});
+
+	it("lists nothing when the background folder is absent", async () => {
+		stubOpfs();
+		expect(await listWebBackgroundPaths()).toEqual([]);
+	});
+});
+
+describe("web-settings-assets import", () => {
+	it("rejects a wrong file type for background without saving", async () => {
+		stubOpfs();
+		const events: string[] = [];
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>
+			events.push("changed"),
+		);
+		await expect(
+			importWebSettingsAsset(
+				"background",
+				new File(["x"], "avatar.vrm", { type: "model/vrm" }),
+			),
+		).rejects.toMatchObject({ code: "unsupported" });
+		expect(events).toEqual([]);
+		expect(await listWebBackgroundPaths()).toEqual([]);
+	});
+
+	it("rejects an oversized background without saving", async () => {
+		stubOpfs();
+		const big = new File(["x"], "big.png", { type: "image/png" });
+		Object.defineProperty(big, "size", {
+			value: WEB_SETTINGS_BACKGROUND_MAX_BYTES + 1,
+		});
+		await expect(importWebSettingsAsset("background", big)).rejects.toMatchObject(
+			{ code: "too_large" },
+		);
+		expect(await listWebBackgroundPaths()).toEqual([]);
+	});
+
+	it("saves a PNG background and reports the stored identifier", async () => {
+		stubOpfs();
+		const events: string[] = [];
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>
+			events.push("changed"),
+		);
+		const stored = await importWebSettingsAsset(
+			"background",
+			new File(["img"], "my-photo.png", { type: "image/png" }),
+		);
+		expect(stored).toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/my-photo.png`);
+		expect(events).toEqual(["changed"]);
+		expect(await listWebBackgroundPaths()).toEqual([stored]);
+	});
+
+	it("keeps both files when the same background name is imported twice", async () => {
+		stubOpfs();
+		const first = await importWebSettingsAsset(
+			"background",
+			new File(["1"], "a.png", { type: "image/png" }),
+		);
+		const second = await importWebSettingsAsset(
+			"background",
+			new File(["2"], "a.png", { type: "image/png" }),
+		);
+		expect(first).toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/a.png`);
+		expect(second).toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/a (2).png`);
+		expect(await listWebBackgroundPaths()).toHaveLength(2);
+	});
+
+	it("maps OPFS quota exhaustion to a quota error and keeps the old list", async () => {
+		const root = stubOpfs();
+		root.failWrite = new DOMException("full", "QuotaExceededError");
+		await expect(
+			importWebSettingsAsset(
+				"background",
+				new File(["img"], "q.png", { type: "image/png" }),
+			),
+		).rejects.toMatchObject({ code: "quota" });
+		expect(await listWebBackgroundPaths()).toEqual([]);
+		await expect(
+			importWebSettingsAsset(
+				"nva-files",
+				new File([buildNvaZipBytes()], "a.nva"),
+			),
+		).rejects.toMatchObject({ code: "quota" });
+	});
+
+	it("rejects a non-NVA file and a corrupt NVA archive without saving", async () => {
+		stubOpfs();
+		await expect(
+			importWebSettingsAsset("nva-files", new File(["x"], "a.png")),
+		).rejects.toMatchObject({ code: "unsupported" });
+		await expect(
+			importWebSettingsAsset(
+				"nva-files",
+				new File(["not-a-zip"], "broken.nva"),
+			),
+		).rejects.toMatchObject({ code: "invalid_nva" });
+		const events: string[] = [];
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>
+			events.push("changed"),
+		);
+		expect(events).toEqual([]);
+	});
+
+	it("saves a valid NVA archive and keeps same-name uploads distinct", async () => {
+		stubOpfs();
+		const events: string[] = [];
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>
+			events.push("changed"),
+		);
+		const first = await importWebSettingsAsset(
+			"nva-files",
+			new File([buildNvaZipBytes()], "custom.nva"),
+		);
+		expect(first).toBe(`${WEB_NVA_FILES_DIR}/custom.nva`);
+		const second = await importWebSettingsAsset(
+			"nva-files",
+			new File([buildNvaZipBytes()], "custom.nva"),
+		);
+		expect(second).toBe(`${WEB_NVA_FILES_DIR}/custom (2).nva`);
+		expect(events).toEqual(["changed", "changed"]);
+	});
+
+	it("removes a user asset and ignores a missing one", async () => {
+		const root = stubOpfs();
+		const stored = await importWebSettingsAsset(
+			"background",
+			new File(["img"], "gone.png", { type: "image/png" }),
+		);
+		const events: string[] = [];
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>
+			events.push("changed"),
+		);
+		await removeWebSettingsAsset(stored);
+		expect(await listWebBackgroundPaths()).toEqual([]);
+		expect(events).toEqual(["changed"]);
+		await expect(removeWebSettingsAsset(stored)).resolves.toBeUndefined();
+		await expect(
+			removeWebSettingsAsset("/backgrounds/naia-dawn-city-uhd.webp"),
+		).rejects.toThrow();
+		expect(WebSettingsAssetImportError).toBeDefined();
+	});
+});

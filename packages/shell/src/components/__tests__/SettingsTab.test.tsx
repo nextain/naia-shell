@@ -6790,4 +6790,45 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			await setLocale("ko");
 		}
 	});
+
+	it("shows the web background upload control in the general tab instead of the desktop-only dialog", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+		);
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("general");
+			expect(
+				await screen.findByTestId("settings-bg-web-upload"),
+			).toBeInTheDocument();
+		} finally {
+			setWebAssetsModeForTests(null);
+		}
+	});
+
+	it("shows the web NVA upload control in the avatar tab instead of the desktop-only dialog", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "naia",
+			}),
+		);
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("avatar");
+			expect(
+				await screen.findByTestId("settings-nva-web-upload"),
+			).toBeInTheDocument();
+		} finally {
+			setWebAssetsModeForTests(null);
+		}
+	});
 });

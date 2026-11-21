@@ -603,4 +603,112 @@ describe("App startup background video restoration (r8)", () => {
 			"/backgrounds/naia-starlight-lake-live.mp4",
 		);
 	});
+
+	it("resolves a full user identifier to the user file beside a same-name bundle", async () => {
+		setWebAssetsModeForTests(true);
+		const bundled = "/backgrounds/my-photo.webp";
+		const user = "opfs://naia-adk/naia-settings/background/my-photo.webp";
+		mockListNaiaAssets.mockResolvedValue([bundled, user]);
+		mockToLocalBlobUrl.mockImplementation(async (p: string) => `blob:${p}`);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ onboardingComplete: true, backgroundVideo: user }),
+		);
+		await restoreStartupBackground({
+			setBackgroundMediaType: useAvatarStore.getState().setBackgroundMediaType,
+			setBackgroundVideoUrl: useAvatarStore.getState().setBackgroundVideoUrl,
+		});
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(`blob:${user}`);
+	});
+
+	it("resolves a legacy bare filename to the bundled file when a same-name user file exists", async () => {
+		setWebAssetsModeForTests(true);
+		const bundled = "/backgrounds/my-photo.webp";
+		const user = "opfs://naia-adk/naia-settings/background/my-photo.webp";
+		mockListNaiaAssets.mockResolvedValue([user, bundled]);
+		mockToLocalBlobUrl.mockImplementation(async (p: string) => `blob:${p}`);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ onboardingComplete: true, backgroundVideo: "my-photo.webp" }),
+		);
+		await restoreStartupBackground({
+			setBackgroundMediaType: useAvatarStore.getState().setBackgroundMediaType,
+			setBackgroundVideoUrl: useAvatarStore.getState().setBackgroundVideoUrl,
+		});
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(`blob:${bundled}`);
+	});
+
+	it("never matches a longer filename by suffix when resolving the saved background", async () => {
+		setWebAssetsModeForTests(true);
+		mockListNaiaAssets.mockResolvedValue([
+			"/backgrounds/xmy-photo.webp",
+			"/backgrounds/naia-autumn-office-live.mp4",
+		]);
+		mockToLocalBlobUrl.mockImplementation(async (p: string) => `blob:${p}`);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ onboardingComplete: true, backgroundVideo: "my-photo.webp" }),
+		);
+		await restoreStartupBackground({
+			setBackgroundMediaType: useAvatarStore.getState().setBackgroundMediaType,
+			setBackgroundVideoUrl: useAvatarStore.getState().setBackgroundVideoUrl,
+		});
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+			"blob:/backgrounds/naia-autumn-office-live.mp4",
+		);
+	});
+
+	it("falls back to the default background and reports the cause when the saved file is gone", async () => {
+		setWebAssetsModeForTests(true);
+		const gone = "opfs://naia-adk/naia-settings/background/gone.png";
+		mockListNaiaAssets.mockResolvedValue([
+			gone,
+			"/backgrounds/naia-autumn-office-live.mp4",
+		]);
+		mockToLocalBlobUrl.mockImplementation(async (p: string) => {
+			if (p === gone) throw new Error("web_workspace_bundled_404");
+			return `blob:${p}`;
+		});
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ onboardingComplete: true, backgroundVideo: gone }),
+		);
+		const onFallback = vi.fn();
+		await restoreStartupBackground({
+			setBackgroundMediaType: useAvatarStore.getState().setBackgroundMediaType,
+			setBackgroundVideoUrl: useAvatarStore.getState().setBackgroundVideoUrl,
+			onFallback,
+		});
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+			"blob:/backgrounds/naia-autumn-office-live.mp4",
+		);
+		expect(onFallback).toHaveBeenCalledOnce();
+		expect(onFallback.mock.calls[0]![0]).toMatchObject({ requested: gone });
+	});
+
+	it("regenerates the temporary blob URL on every startup restore", async () => {
+		setWebAssetsModeForTests(true);
+		mockListNaiaAssets.mockResolvedValue([
+			"/backgrounds/naia-autumn-office-live.mp4",
+		]);
+		let next = 0;
+		mockToLocalBlobUrl.mockImplementation(async () => `blob:boot-${(next += 1)}`);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				onboardingComplete: true,
+				backgroundVideo: "naia-autumn-office-live.mp4",
+			}),
+		);
+		const options = {
+			setBackgroundMediaType: useAvatarStore.getState().setBackgroundMediaType,
+			setBackgroundVideoUrl: useAvatarStore.getState().setBackgroundVideoUrl,
+		};
+		await restoreStartupBackground(options);
+		const first = useAvatarStore.getState().backgroundVideoUrl;
+		await restoreStartupBackground(options);
+		const second = useAvatarStore.getState().backgroundVideoUrl;
+		expect(first).toBe("blob:boot-1");
+		expect(second).toBe("blob:boot-2");
+	});
 });
