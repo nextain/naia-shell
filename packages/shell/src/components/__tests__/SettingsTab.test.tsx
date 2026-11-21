@@ -6809,6 +6809,39 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		}
 	});
 
+	it("keeps the existing background selection when the web file dialog is cancelled", async () => {
+		await setLocale("ko");
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+		);
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("general");
+			const select = (await screen.findByTestId(
+				"settings-bg-select",
+			)) as HTMLSelectElement;
+			fireEvent.change(select, {
+				target: { value: "/backgrounds/naia-dawn-city-uhd.webp" },
+			});
+			const savedBefore = localStorage.getItem("naia-config");
+			const input = screen.getByTestId(
+				"settings-bg-web-file-input",
+			) as HTMLInputElement;
+			Object.defineProperty(input, "files", { value: [], configurable: true });
+			fireEvent.change(input);
+			expect(localStorage.getItem("naia-config")).toBe(savedBefore);
+			expect(
+				(screen.getByTestId("settings-bg-select") as HTMLSelectElement).value,
+			).toBe("/backgrounds/naia-dawn-city-uhd.webp");
+			expect(screen.queryByRole("alert")).toBeNull();
+		} finally {
+			setWebAssetsModeForTests(null);
+		}
+	});
+
 	it("shows the web NVA upload control in the avatar tab instead of the desktop-only dialog", async () => {
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
