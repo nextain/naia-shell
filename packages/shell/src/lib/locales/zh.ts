@@ -301,6 +301,7 @@ export default {
 	"settings.webAssetUnplayable": "This file cannot be played in this browser.",
 	"settings.webAssetQuota": "Browser storage is full.",
 	"settings.webAssetFailed": "Could not upload the file.",
+	"settings.webAssetUserFile": "My file",
 	"settings.webAssetMissing": "The saved file is missing, so the default background was restored.",
 	"settings.agentReloadFailed": "设置已保存，但未能将新语言应用到正在运行的智能体。请重试。",
 	"settings.cancel": "取消",

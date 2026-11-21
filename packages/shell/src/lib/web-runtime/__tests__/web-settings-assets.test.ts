@@ -96,6 +96,16 @@ function stubOpfs(root = new MemDir("")) {
 	return root;
 }
 
+/** 1x1 빨강 PNG. 가져오기 형식 검사를 통과하는 실제 이미지 바이트. */
+function tinyPngBytes(): Uint8Array<ArrayBuffer> {
+	return new Uint8Array(
+		Buffer.from(
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+			"base64",
+		),
+	);
+}
+
 function buildNvaZipBytes(clipPrefix = ""): Uint8Array<ArrayBuffer> {
 	const manifest = {
 		tva_version: undefined,
@@ -239,7 +249,7 @@ describe("web-settings-assets import", () => {
 		);
 		const stored = await importWebSettingsAsset(
 			"background",
-			new File(["img"], "my-photo.png", { type: "image/png" }),
+			new File([tinyPngBytes()], "my-photo.png", { type: "image/png" }),
 		);
 		expect(stored).toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/my-photo.png`);
 		expect(events).toEqual(["changed"]);
@@ -250,11 +260,11 @@ describe("web-settings-assets import", () => {
 		stubOpfs();
 		const first = await importWebSettingsAsset(
 			"background",
-			new File(["1"], "a.png", { type: "image/png" }),
+			new File([tinyPngBytes()], "a.png", { type: "image/png" }),
 		);
 		const second = await importWebSettingsAsset(
 			"background",
-			new File(["2"], "a.png", { type: "image/png" }),
+			new File([tinyPngBytes()], "a.png", { type: "image/png" }),
 		);
 		expect(first).toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/a.png`);
 		expect(second).toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/a (2).png`);
@@ -267,7 +277,7 @@ describe("web-settings-assets import", () => {
 		await expect(
 			importWebSettingsAsset(
 				"background",
-				new File(["img"], "q.png", { type: "image/png" }),
+				new File([tinyPngBytes()], "q.png", { type: "image/png" }),
 			),
 		).rejects.toMatchObject({ code: "quota" });
 		expect(await listWebBackgroundPaths()).toEqual([]);
@@ -480,7 +490,7 @@ describe("web-settings-assets review fixes (fx1)", () => {
 		stubOpfs();
 		const stored = await importWebSettingsAsset(
 			"background",
-			new File(["img"], "gone.png", { type: "image/png" }),
+			new File([tinyPngBytes()], "gone.png", { type: "image/png" }),
 		);
 		const events: string[] = [];
 		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>

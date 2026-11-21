@@ -34,7 +34,10 @@ vi.mock("../../lib/adk-store", () => ({
 	getAdkPath: mocks.getAdkPath,
 	writeNaiaConfigAtPath: mocks.writeNaiaConfigAtPath,
 }));
-vi.mock("../../lib/web-runtime/web-assets", () => ({ isWebMode: mocks.isWebMode }));
+vi.mock("../../lib/web-runtime/web-assets", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/web-runtime/web-assets")>()),
+	isWebMode: mocks.isWebMode,
+}));
 vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: mocks.sendAuthUpdate,
 	sendCredsUpdate: mocks.sendCredsUpdate,

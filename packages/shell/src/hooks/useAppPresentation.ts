@@ -4,19 +4,24 @@ import type { ThemeId } from "../lib/config";
 import { Logger } from "../lib/logger";
 import { useAvatarStore } from "../stores/avatar";
 
-const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
+import {
+	WEB_BACKGROUND_IMAGE_EXTS,
+	WEB_BACKGROUND_VIDEO_EXTS,
+	getWebBackgroundMediaType,
+} from "../lib/web-runtime/web-settings-assets";
 
 function hasExtension(url: string, extensions: Set<string>): boolean {
 	const extension = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
 	return extensions.has(extension);
 }
 
+/** 배경 미디어 종류 판정은 단일 계약(getWebBackgroundMediaType)을 쓴다. */
 export function getBackgroundMediaType(path: string): "image" | "video" | "" {
-	if (hasExtension(path, VIDEO_EXTENSIONS)) return "video";
-	if (hasExtension(path, IMAGE_EXTENSIONS)) return "image";
-	return "";
+	return getWebBackgroundMediaType(path);
 }
+
+export const PRESENTATION_VIDEO_EXTENSIONS = WEB_BACKGROUND_VIDEO_EXTS;
+export const PRESENTATION_IMAGE_EXTENSIONS = WEB_BACKGROUND_IMAGE_EXTS;
 
 export function applyTheme(theme: ThemeId) {
 	const resolved =
@@ -91,7 +96,7 @@ export function useBackgroundFallback(
 	useEffect(() => {
 		if (!url || mediaType === "iframe") return;
 		const type =
-			mediaType === "video" || hasExtension(url, VIDEO_EXTENSIONS)
+			mediaType === "video" || hasExtension(url, PRESENTATION_VIDEO_EXTENSIONS)
 				? "video"
 				: "image";
 		setFallback({ url, type });

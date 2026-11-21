@@ -295,6 +295,7 @@ const englishCore = {
 	"settings.webAssetUnplayable": "This file cannot be played in this browser.",
 	"settings.webAssetQuota": "Browser storage is full.",
 	"settings.webAssetFailed": "Could not upload the file.",
+	"settings.webAssetUserFile": "My file",
 	"settings.webAssetMissing": "The saved file is missing, so the default background was restored.",
 	"settings.agentReloadFailed": "Settings were saved, but the running agent did not apply the new language. Retry to apply it.",
 	"settings.cancel": "Cancel",

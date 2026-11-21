@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 
-// 웹판 설정 NVA·배경 가져오기의 실제 브라우저 검증. 앱 전체가 아니라 탐색기
-// 함수와 설정 자산 모듈을 dev 서버에서 직접 읽어 실제 OPFS·미디어 스택으로
-// 파일 선택相当→검사→브라우저 저장→목록 갱신→읽기→삭제까지 확인한다.
+// 웹판 설정 NVA·배경 가져오기의 실제 브라우저 검증. 실제 파일 input 선택→
+// 생산 파이프(검사→브라우저 저장→목록 갱신→선택 해석→복원→Blob 재생성)→
+// 새로고침 뒤 복원→저장 파일 소실 시 기본 배경 복구를 실제 OPFS·미디어
+// 스택으로 확인한다. 데스크톱 계약은 단위 시험(정확 basename 해석)이 맡는다.
 // Web runtime only: NAIA_E2E_WEB=1 and a local dev server
 // (`vite --port 1430 --cors`), reached through PLAYWRIGHT_BASE_URL.
 test.skip(
@@ -21,6 +22,20 @@ function tinyPng(): Buffer {
 	return Buffer.from(
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
 		"base64",
+	);
+}
+
+/** 매니페스트는 있으나 클립이 빠진 불량 NVA. */
+function missingClipNva(): Buffer {
+	const manifest = {
+		nva_version: "0.2",
+		canvas: { width: 720, height: 1280 },
+		animations: {
+			idle: { clip: "clips/idle.webm", loop: true },
+		},
+	};
+	return Buffer.from(
+		zipSync({ "manifest.json": strToU8(JSON.stringify(manifest)) }),
 	);
 }
 
@@ -76,11 +91,12 @@ interface FlowReport {
 	events: number;
 	restoredBlobReadable: boolean;
 	videoReadyState: number;
+	nvaVideoReadyState: number;
 	nvaClipBytes: number;
 }
 
 const FLOW = `(async () => {
-const { assets, nvaArchive, adkStore } = globalThis.__webImportHarness;
+const { assets, nvaArchive, webAssets, adkStore } = globalThis.__webImportHarness;
 const failures = [];
 const log = [];
 const check = (name, cond) => { log.push((cond ? "ok " : "FAIL ") + name); if (!cond) failures.push(name); };
@@ -90,9 +106,23 @@ globalThis.addEventListener(nvaArchive.WEB_SETTINGS_ASSETS_CHANGED_EVENT, () => 
 const pngBytes = new Uint8Array(${JSON.stringify(Array.from(tinyPng()))});
 const mp4Bytes = new Uint8Array(${JSON.stringify(Array.from(readFileSync(join(PUBLIC, "backgrounds", "naia-autumn-office-live.mp4"))))});
 const nvaBytes = new Uint8Array(${JSON.stringify(Array.from(syntheticNva()))});
+const missingClipNvaBytes = new Uint8Array(${JSON.stringify(Array.from(missingClipNva()))});
+
+// 실제 파일 input을 통한 선택. File 객체를 직접 만들지 않고 브라우저의
+// 파일 선택 계약(DataTransfer→input.files)을 거쳐 생산 파이프에 넣는다.
+const fileInput = document.createElement("input");
+fileInput.type = "file";
+document.body.appendChild(fileInput);
+const pickFile = (bytes, name, type) => {
+	const transfer = new DataTransfer();
+	transfer.items.add(new File([bytes], name, { type }));
+	fileInput.files = transfer.files;
+	return fileInput.files[0];
+};
 
 // 1. PNG 배경: 검사→저장→목록→읽기→Blob URL 판독→재생 가능 판정.
-const pngFile = new File([pngBytes], "e2e-photo.png", { type: "image/png" });
+const pngFile = pickFile(pngBytes, "e2e-photo.png", "image/png");
+check("real file input selection", pngFile instanceof File && pngFile.size === pngBytes.length && pngFile.name === "e2e-photo.png");
 const userPng = await assets.importWebSettingsAsset("background", pngFile);
 check("png stored identifier", userPng === "opfs://naia-adk/naia-settings/background/e2e-photo.png");
 const bgList = await assets.listWebBackgroundPaths();
@@ -106,12 +136,12 @@ check("png blob readable", pngFetched.length === pngBytes.length);
 check("png probe playable", await assets.probeWebBackgroundPlayable(pngFile));
 
 // 2. 동일 파일명: 덮어쓰지 않고 (2)로 둔다.
-const userPngSecond = await assets.importWebSettingsAsset("background", new File([pngBytes], "e2e-photo.png", { type: "image/png" }));
+const userPngSecond = await assets.importWebSettingsAsset("background", pickFile(pngBytes, "e2e-photo.png", "image/png"));
 check("same name kept distinct", userPngSecond.endsWith("e2e-photo (2).png"));
 check("two entries listed", (await assets.listWebBackgroundPaths()).length === 2);
 
 // 3. MP4 배경: 부분 바이트로도 재생 가능 판정과 저장이 된다.
-const mp4File = new File([mp4Bytes], "e2e-user-bg.mp4", { type: "video/mp4" });
+const mp4File = pickFile(mp4Bytes, "e2e-user-bg.mp4", "video/mp4");
 const userMp4 = await assets.importWebSettingsAsset("background", mp4File);
 check("mp4 stored", userMp4.endsWith("e2e-user-bg.mp4"));
 check("mp4 probe playable", await assets.probeWebBackgroundPlayable(mp4File));
@@ -129,7 +159,7 @@ check("mp4 loads metadata", videoReadyState >= 1);
 // 4. 재생 불가 영상: 저장하지 않고 unplayable을 돌려준다.
 let unplayableCode = "";
 try {
-	await assets.importWebSettingsAsset("background", new File(["not a video"], "bogus.mp4", { type: "video/mp4" }));
+	await assets.importWebSettingsAsset("background", pickFile(new Uint8Array([0, 1, 2, 3]), "bogus.mp4", "video/mp4"));
 } catch (error) {
 	unplayableCode = error?.code ?? String(error);
 }
@@ -138,14 +168,23 @@ check("bogus mp4 rejected as unplayable", unplayableCode === "unplayable");
 // 5. 형식 불일치: 배경 폴더에 .vrm 불가.
 let unsupportedCode = "";
 try {
-	await assets.importWebSettingsAsset("background", new File(["x"], "avatar.vrm"));
+	await assets.importWebSettingsAsset("background", pickFile(new Uint8Array([120]), "avatar.vrm", "model/vrm"));
 } catch (error) {
 	unsupportedCode = error?.code ?? String(error);
 }
 check("wrong extension rejected", unsupportedCode === "unsupported");
 
-// 6. 합성 NVA: 검사(ZIP·매니페스트)→저장→목록→아카이브 재생.
-const nvaFile = new File([nvaBytes], "e2e-nva.nva", { type: "application/zip" });
+// 5b. 형식 불일치 이미지: PNG 이름을 달고 내용은 텍스트.
+let mismatchCode = "";
+try {
+	await assets.importWebSettingsAsset("background", pickFile(new TextEncoder().encode("not an image"), "fake.png", "image/png"));
+} catch (error) {
+	mismatchCode = error?.code ?? String(error);
+}
+check("mismatched png rejected as unplayable", mismatchCode === "unplayable");
+
+// 6. 합성 NVA: 검사(ZIP·매니페스트·클립 존재·디코드)→저장→목록→아카이브 재생.
+const nvaFile = pickFile(nvaBytes, "e2e-nva.nva", "application/zip");
 const userNva = await assets.importWebSettingsAsset("nva-files", nvaFile);
 check("nva stored", userNva === "opfs://naia-adk/naia-settings/nva-files/e2e-nva.nva");
 const uploaded = await nvaArchive.listWebUploadedNvaModels();
@@ -155,13 +194,33 @@ check("nva archive parses", !!loaded && loaded.manifest.canvas.width === 720);
 const clipBlob = await loaded.loadAssetBlob("clips/idle.webm", false);
 const nvaClipBytes = clipBlob.size;
 check("nva clip readable", nvaClipBytes > 1000);
+// NVA 클립을 실제 <video>에서 디코드한다. 렌더러가 재생할 수 있는 바이트인지 확인.
+const nvaVideoReadyState = await new Promise((resolve) => {
+	const url = URL.createObjectURL(clipBlob);
+	const video = document.createElement("video");
+	video.muted = true;
+	const timer = setTimeout(() => { URL.revokeObjectURL(url); resolve(video.readyState); }, 8000);
+	video.onloadeddata = () => { clearTimeout(timer); URL.revokeObjectURL(url); resolve(video.readyState); };
+	video.onerror = () => { clearTimeout(timer); URL.revokeObjectURL(url); resolve(-1); };
+	video.src = url;
+});
+check("nva clip decodes in video element", nvaVideoReadyState >= 1);
 const resolved = assets.resolveWebNvaSelection(userNva, ["naia", "e2e-nva.nva"]);
 check("nva full identifier resolves to entry", resolved === "e2e-nva.nva");
+
+// 6b. 매니페스트 클립이 빠진 NVA: 저장 없이 invalid_nva.
+let missingClipCode = "";
+try {
+	await assets.importWebSettingsAsset("nva-files", pickFile(missingClipNvaBytes, "missing-clip.nva", "application/zip"));
+} catch (error) {
+	missingClipCode = error?.code ?? String(error);
+}
+check("nva with missing clip rejected", missingClipCode === "invalid_nva");
 
 // 7. 손상 NVA·취소 상당: 저장 없이 invalid_nva, null相当 함수는 호출하지 않음.
 let invalidCode = "";
 try {
-	await assets.importWebSettingsAsset("nva-files", new File(["not a zip"], "broken.nva"));
+	await assets.importWebSettingsAsset("nva-files", pickFile(new TextEncoder().encode("not a zip"), "broken.nva", "application/zip"));
 } catch (error) {
 	invalidCode = error?.code ?? String(error);
 }
@@ -177,10 +236,27 @@ check("no suffix confusion", assets.resolveWebBackgroundSelection("my-photo.webp
 await assets.removeWebSettingsAsset(userPngSecond);
 check("removed file unlisted", !(await assets.listWebBackgroundPaths()).includes(userPngSecond));
 
-// 10. 새로고침相当: 같은 식별자로 Blob URL을 다시 만든다.
-const againUrl = await adkStore.toLocalBlobUrl(userPng);
-const restoredBlobReadable = (await (await fetch(againUrl)).arrayBuffer()).byteLength === pngBytes.length;
-check("blob url regenerated and readable", restoredBlobReadable);
+// 10. 저장 파일 소실: 사용자 PNG를 OPFS에서 직접 지우면 식별자 해석이
+// null이 되고, 번들 기본 배경으로 복구·원인 확인이 된다(동명 번들로 위장 금지).
+const opfsRoot = await navigator.storage.getDirectory();
+const goneDir = await (await (await opfsRoot.getDirectoryHandle("naia-adk")).getDirectoryHandle("naia-settings")).getDirectoryHandle("background");
+await goneDir.removeEntry("e2e-photo.png");
+const afterDeleteList = await assets.listWebBackgroundPaths();
+check("deleted user file unlisted", !afterDeleteList.includes(userPng));
+const goneResolved = assets.resolveWebBackgroundSelection(userPng, [...webAssets.WEB_BACKGROUND_ASSETS.map((a) => a.url), ...afterDeleteList]);
+check("missing full identifier resolves to null, never a same-name bundle", goneResolved === null);
+let goneReadError = "";
+try {
+	await adkStore.toLocalBlobUrl(userPng);
+} catch (error) {
+	goneReadError = error instanceof Error ? error.message : String(error);
+}
+check("missing user file read fails (no bundled masquerade)", goneReadError.length > 0);
+const defaultCandidate = assets.resolveWebBackgroundSelection(webAssets.WEB_DEFAULT_BACKGROUND, [...webAssets.WEB_BACKGROUND_ASSETS.map((a) => a.url), ...afterDeleteList]);
+check("default background still resolves", typeof defaultCandidate === "string" && defaultCandidate.length > 0);
+const defaultUrl = await adkStore.toLocalBlobUrl(defaultCandidate);
+const defaultReadable = (await (await fetch(defaultUrl)).arrayBuffer()).byteLength > 0;
+check("default background blob readable after fallback", defaultReadable);
 
 return {
 	failures,
@@ -190,8 +266,9 @@ return {
 	userMp4,
 	userNva,
 	events: events.length,
-	restoredBlobReadable,
+	restoredBlobReadable: defaultReadable,
 	videoReadyState,
+	nvaVideoReadyState,
 	nvaClipBytes,
 };
 })();`;
@@ -219,5 +296,37 @@ test("web settings NVA/background import runs on real OPFS and media stack", asy
 	expect(report.events).toBeGreaterThanOrEqual(5);
 	expect(report.restoredBlobReadable).toBe(true);
 	expect(report.videoReadyState).toBeGreaterThanOrEqual(1);
+	expect(report.nvaVideoReadyState).toBeGreaterThanOrEqual(1);
 	expect(report.nvaClipBytes).toBeGreaterThan(1000);
+
+	// 새로고침: 같은 식별자로 Blob URL을 다시 만들고 읽을 수 있다.
+	// (FLOW 10단계에서 지운 e2e-photo.png는 사라진 채로, MP4는 남는다.)
+	await page.reload();
+	const RELOAD = `(async () => {
+const origin = ${JSON.stringify(ORIGIN)};
+const userMp4 = ${JSON.stringify(report.userMp4)};
+const webAssets = await import(origin + "/src/lib/web-runtime/web-assets.ts");
+webAssets.setWebAssetsModeForTests(true);
+const assets = await import(origin + "/src/lib/web-runtime/web-settings-assets.ts?reloaded=1");
+const adkStore = await import(origin + "/src/lib/adk-store.ts?reloaded=1");
+const failed = [];
+const list = await assets.listWebBackgroundPaths();
+if (!list.includes(userMp4)) failed.push("mp4 survived reload");
+const allPaths = [...webAssets.WEB_BACKGROUND_ASSETS.map((a) => a.url), ...list];
+if (assets.resolveWebBackgroundSelection(userMp4, allPaths) !== userMp4) failed.push("identifier resolves after reload");
+const url = await adkStore.toLocalBlobUrl(userMp4);
+if (typeof url !== "string" || !url.startsWith("blob:")) failed.push("blob url regenerated after reload");
+const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+if (bytes.length === 0) failed.push("regenerated blob readable");
+return { failed, list };
+})();`;
+	const reloaded = (await page.evaluate(RELOAD)) as {
+		failed: string[];
+		list: string[];
+	};
+	if (reloaded.failed.length > 0) {
+		throw new Error(`reload failures:\n${reloaded.failed.join("\n")}`);
+	}
+	expect(reloaded.failed).toEqual([]);
+	expect(reloaded.list).toContain(report.userMp4);
 });

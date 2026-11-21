@@ -512,8 +512,10 @@ describe("loadWebThemeBackgroundUrl (fx1 review fix 8)", () => {
 			requested: string | undefined,
 			extra: readonly string[],
 		) => Promise<string>;
-		await expect(load("/backgrounds/naia-dawn-city-uhd.webp", [])).resolves.toBe(
-			"/backgrounds/naia-dawn-city-uhd.webp",
-		);
+		await expect(
+			load("/backgrounds/naia-dawn-city-uhd.webp", [
+				"/backgrounds/naia-dawn-city-uhd.webp",
+			]),
+		).resolves.toBe("/backgrounds/naia-dawn-city-uhd.webp");
 	});
 });

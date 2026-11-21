@@ -135,6 +135,31 @@ export interface StartupBackgroundFallback {
 	reason: string;
 }
 
+/**
+ * 데스크톱 저장 배경 식별자를 현재 목록에서 정확히 푼다. 파일명 끝부분
+ * 일치(`endsWith`)가 아니라 끝 이름 완전 일치로만 판정하므로
+ * `xmy-photo.webp` 가 `my-photo.webp` 로 잘못 골라지지 않는다. 실제 상위
+ * 구간(`..`)이 있으면 거부한다. 파일명 안의 점(`photo..png`)은 통과한다.
+ */
+export function resolveDesktopBackgroundSelection(
+	saved: string | undefined,
+	paths: readonly string[],
+): string | null {
+	const trimmed = typeof saved === "string" ? saved.trim() : "";
+	if (
+		!trimmed ||
+		trimmed.split(/[/\\]/).some((part) => part === "..")
+	) {
+		return null;
+	}
+	const leaf = trimmed.split(/[/\\]/).filter(Boolean).pop() ?? trimmed;
+	if (!leaf || leaf === "." || leaf === ".." || leaf.includes("\0")) return null;
+	return (
+		paths.find((path) => (path.split(/[/\\]/).filter(Boolean).pop() ?? path) === leaf) ??
+		null
+	);
+}
+
 export async function restoreStartupBackground(options: {
 	isCancelled?: () => boolean;
 	setBackgroundMediaType: (type: "iframe" | "image" | "video" | "") => void;
@@ -144,23 +169,34 @@ export async function restoreStartupBackground(options: {
 	const seq = ++startupBackgroundRestoreSeq;
 	const isStale = () =>
 		(options.isCancelled?.() ?? false) || seq !== startupBackgroundRestoreSeq;
-	const paths = await listNaiaAssets("background");
-	if (isStale() || paths.length === 0) return;
-	const config = loadConfig();
 	// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
+	const config = loadConfig();
 	const saved =
 		(config?.backgroundVideo as string | undefined) ??
 		(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
+	let paths: string[];
+	try {
+		paths = await listNaiaAssets("background");
+	} catch (error) {
+		// 목록 조회 자체가 실패하면 기존 선택을 보존하고 원인을 알린다.
+		// 빈 목록으로 접어 소실 복구로 위장하지 않는다.
+		if (isStale()) return;
+		const reason = error instanceof Error ? error.message : String(error);
+		Logger.warn("App", "background list failed; keeping current selection", {
+			requestedBackground: saved,
+			reason,
+		});
+		options.onFallback?.({ requested: saved, fallback: "", reason });
+		return;
+	}
+	if (isStale() || paths.length === 0) return;
 	// 파일명 끝부분 일치(endsWith)로는 `xmy-photo.webp` 가 `my-photo.webp` 로
-	// 잘못 골라진다. 전체 식별자→번들 bare 이름→사용자 bare 이름 순으로 정확히 푼다.
+	// 잘못 골라진다. 양쪽 모두 정확한 식별자로만 푼다.
 	let match: string | undefined;
 	if (isWebMode()) {
 		match = resolveWebBackgroundSelection(saved, paths) ?? undefined;
 	} else {
-		const leaf = saved.split(/[/\\]/).filter(Boolean).pop() ?? saved;
-		match = paths.find(
-			(path) => (path.split(/[/\\]/).filter(Boolean).pop() ?? path) === leaf,
-		);
+		match = resolveDesktopBackgroundSelection(saved, paths) ?? undefined;
 	}
 	if (!match) {
 		if (isStale() || !isWebMode()) return;
@@ -174,7 +210,7 @@ export async function restoreStartupBackground(options: {
 		);
 		match =
 			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
-			paths.find((path) => path.endsWith(WEB_DEFAULT_BACKGROUND));
+			undefined;
 		if (!match || isStale()) return;
 		options.onFallback?.({
 			requested: saved,
@@ -201,8 +237,7 @@ export async function restoreStartupBackground(options: {
 			},
 		);
 		const fallbackMatch =
-			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
-			paths.find((path) => path.endsWith(WEB_DEFAULT_BACKGROUND));
+			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ?? undefined;
 		if (!fallbackMatch || isStale()) return;
 		let fallbackUrl: string;
 		try {
@@ -764,7 +799,12 @@ export function App() {
 			isCancelled: () => cancelled,
 			setBackgroundMediaType,
 			setBackgroundVideoUrl,
-			onFallback: () => showGlobalToast(t("settings.webAssetMissing")),
+			onFallback: (info) =>
+				showGlobalToast(
+					info.reason && info.reason !== "not-found"
+						? `${t("settings.webAssetMissing")} (${info.reason})`
+						: t("settings.webAssetMissing"),
+				),
 		});
 		return () => {
 			cancelled = true;
@@ -970,7 +1010,12 @@ export function App() {
 							getAdkPath() !== adkPathAtRead,
 						setBackgroundMediaType,
 						setBackgroundVideoUrl,
-						onFallback: () => showGlobalToast(t("settings.webAssetMissing")),
+						onFallback: (info) =>
+							showGlobalToast(
+								info.reason && info.reason !== "not-found"
+									? `${t("settings.webAssetMissing")} (${info.reason})`
+									: t("settings.webAssetMissing"),
+							),
 					});
 				}
 			});

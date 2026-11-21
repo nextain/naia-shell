@@ -37,6 +37,7 @@ import {
 	type LoadedWebNvaArchive,
 	loadWebUploadedNvaArchive,
 } from "../lib/web-runtime/web-nva-archive";
+import { hasParentDirectorySegment } from "../lib/web-runtime/web-adk-policy";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -211,7 +212,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		if (isWebMode()) {
 			const trimmedModel = nvaModel?.trim() ?? "";
 			const isTrustedStudioRemoteDir =
-				!trimmedModel.includes("..") &&
+				!hasParentDirectorySegment(trimmedModel) &&
 				(trimmedModel.startsWith("/api/nva-preview/") ||
 					/^https:\/\/([a-z0-9-]+\.)?naia\.land\/[A-Za-z0-9/_-]+$/i.test(
 						trimmedModel,

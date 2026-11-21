@@ -11,7 +11,12 @@ import { buildRoleplayPrompt } from "../apps/charcard/prompt-builder";
 import type { AppConfig } from "./config";
 import { Logger } from "./logger";
 import { KIOSK_DEMO_GREETING } from "./persona";
-import { resolveWebBackgroundSelection } from "./web-runtime/web-settings-assets";
+import {
+	readWebSettingsAssetBlob,
+	resolveWebBackgroundSelection,
+} from "./web-runtime/web-settings-assets";
+import { WEB_ADK_PATH } from "./web-runtime/web-adk-path";
+import { hasParentDirectorySegment } from "./web-runtime/web-adk-policy";
 
 export const KIOSK_JINA_DEFAULT_BACKGROUND =
 	"naia-autumn-office-live.mp4" as const;
@@ -416,7 +421,7 @@ export function resolveWebThemeBackground(
 	});
 	const trimmed =
 		typeof requestedBackground === "string" ? requestedBackground.trim() : "";
-	if (trimmed && !trimmed.includes("..")) {
+	if (trimmed && !hasParentDirectorySegment(trimmed)) {
 		// basename 끝부분 일치가 아니라 정확한 식별자로 푼다. 사용자 파일은
 		// 전체 OPFS 식별자로만 고르고, bare 이름은 번들 카탈로그가 이긴다.
 		const exact = resolveWebBackgroundSelection(trimmed, extraAssetPaths);
@@ -445,6 +450,26 @@ export function resolveWebThemeBackground(
 		url: `/backgrounds/${KIOSK_JINA_DEFAULT_BACKGROUND}`,
 		fallbackUsed: true,
 	};
+}
+
+/**
+ * 테마 배경의 렌더링용 URL. 번들·원격·blob/data URL은 그대로 두고, 사용자
+ * OPFS 식별자는 Blob URL로 변환한다. 브라우저 렌더러는 `opfs://` 를 src로
+ * 읽지 못하므로 변환 없이 넣으면 테마 적용 직후 배경이 표시되지 않는다.
+ */
+export async function loadWebThemeBackgroundUrl(
+	requestedBackground: string | undefined,
+	extraAssetPaths: readonly string[] = [],
+): Promise<string> {
+	const resolved = resolveWebThemeBackground(
+		requestedBackground,
+		extraAssetPaths,
+	);
+	if (resolved.url.startsWith(`${WEB_ADK_PATH}/`)) {
+		const blob = await readWebSettingsAssetBlob(resolved.url);
+		return URL.createObjectURL(blob);
+	}
+	return resolved.url;
 }
 
 /** Revalidate persisted shell preferences; never turn arbitrary JSON into config. */

@@ -33,8 +33,16 @@ async function workspaceDirectory(
 	return directory;
 }
 
-/** Resolve only files inside this browser's ADK directory. */
-export async function getWebWorkspaceFile(path: string): Promise<File> {
+/**
+ * Resolve only files inside this browser's ADK directory. R32: naia-settings 의
+ * 앱 기본 파일은 OPFS 에 복사하지 않고 정적 자산을 그대로 읽는다.
+ * `allowBundledFallback: false` 면 OPFS 실파일만 읽는다. 사용자 자산 복원
+ * (소실 판정)은 번들 대체를 허용하지 않는다.
+ */
+export async function getWebWorkspaceFile(
+	path: string,
+	options?: { allowBundledFallback?: boolean },
+): Promise<File> {
 	if (!path.startsWith(`${WEB_ADK_PATH}/`))
 		throw new Error("web_workspace_invalid_path");
 	const parts = splitWebAdkPath(path);
@@ -45,8 +53,10 @@ export async function getWebWorkspaceFile(path: string): Promise<File> {
 		const dir = await workspaceDirectory(parts.slice(0, -1));
 		return await (await dir.getFileHandle(parts[parts.length - 1])).getFile();
 	} catch (error) {
-		// R32: naia-settings 의 앱 기본 파일은 OPFS 에 복사하지 않고 정적 자산을 그대로 읽는다.
-		const url = isKioskDemo() ? null : webBundledSettingsFileUrl(path);
+		const url =
+			options?.allowBundledFallback === false || isKioskDemo()
+				? null
+				: webBundledSettingsFileUrl(path);
 		if (!url || !(error instanceof DOMException) || error.name !== "NotFoundError")
 			throw error;
 		Logger.debug("WebWorkspace", "Reading bundled settings asset", { url });

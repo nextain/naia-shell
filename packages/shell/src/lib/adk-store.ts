@@ -19,6 +19,7 @@ import {
 	isWebMode,
 	resolveWebPublicAssetUrl,
 } from "./web-runtime/web-assets";
+import { isBenignWebSettingsListError } from "./web-runtime/web-adk-policy";
 import {
 	listWebBgmMusicPaths,
 	readWebBgmMusicBlob,
@@ -184,17 +185,39 @@ export async function listNaiaAssets(
 	if (isWebMode()) {
 		if (subdir === "vrm-files")
 			return WEB_VRM_ASSETS.map((asset) => asset.url);
+		// 폴더가 없거나 저장소 API가 없을 때만 빈 사용자 목록으로 접는다.
+		// 권한·용량 등 나머지 오류는 호출자가 목록·기존 선택을 보존하고
+		// 원인을 표시할 수 있도록 그대로 던진다.
 		if (subdir === "background") {
 			// 번들 카탈로그 뒤에 사용자가 올린 브라우저 저장소 파일을 붙인다.
 			// 동명 파일도 각각 살린다(선택 식별자가 전체 경로라 겹치지 않음).
 			const bundled = WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
-			const uploaded = await listWebBackgroundPaths().catch(() => []);
+			let uploaded: string[];
+			try {
+				uploaded = await listWebBackgroundPaths();
+			} catch (error) {
+				if (!isBenignWebSettingsListError(error)) throw error;
+				uploaded = [];
+			}
 			return [...bundled, ...uploaded];
 		}
-		if (subdir === "nva-files")
-			return listWebNvaAssets().catch(() => [...WEB_NVA_ASSETS]);
+		if (subdir === "nva-files") {
+			try {
+				return await listWebNvaAssets();
+			} catch (error) {
+				if (!isBenignWebSettingsListError(error)) throw error;
+				return [...WEB_NVA_ASSETS];
+			}
+		}
 		// R10: 사용자가 이 브라우저에 올린 음악(OPFS).
-		if (subdir === "bgm-musics") return listWebBgmMusicPaths().catch(() => []);
+		if (subdir === "bgm-musics") {
+			try {
+				return await listWebBgmMusicPaths();
+			} catch (error) {
+				if (!isBenignWebSettingsListError(error)) throw error;
+				return [];
+			}
+		}
 		return [];
 	}
 	const adkPath = getAdkPath();

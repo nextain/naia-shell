@@ -18,7 +18,12 @@ import {
 	resolveNvaAssetPath,
 } from "../nva";
 import { WEB_ADK_OPFS_DIR, WEB_ADK_PATH } from "./web-adk-path";
-import { splitWebAdkPath } from "./web-adk-policy";
+import {
+	hasParentDirectorySegment,
+	isBenignWebSettingsListError,
+	isNotFoundError,
+	splitWebAdkPath,
+} from "./web-adk-policy";
 import { WEB_NVA_ASSETS } from "./web-assets";
 
 export const WEB_NVA_FILES_DIR = `${WEB_ADK_PATH}/naia-settings/nva-files`;
@@ -32,6 +37,8 @@ const MAX_WEB_NVA_UNZIPPED_BYTES = 512 * 1024 * 1024;
 export interface LoadedWebNvaArchive {
 	readonly bundleDir: string;
 	readonly manifest: NvaManifest;
+	/** ZIP 안의 정규화 경로별 원본 바이트. 가져오기 검증을 노출한다. */
+	readonly files: ReadonlyMap<string, Uint8Array>;
 	resolveAssetUrl(
 		relativePath: string,
 		useStackedAlpha: boolean,
@@ -40,13 +47,6 @@ export interface LoadedWebNvaArchive {
 		relativePath: string,
 		useStackedAlpha: boolean,
 	): Promise<Blob>;
-}
-
-function isNotFoundError(error: unknown): boolean {
-	return (
-		error instanceof DOMException &&
-		(error.name === "NotFoundError" || error.name === "TypeMismatchError")
-	);
 }
 
 function nvaAssetMimeType(path: string): string {
@@ -91,8 +91,10 @@ async function openOpfsDirectory(
 		}
 		return dir;
 	} catch (error) {
-		if (isNotFoundError(error)) return null;
-		return null;
+		// 폴더가 없을 때만 null. 권한·용량 오류는 호출자가 목록·선택을
+		// 보존하고 원인을 표시할 수 있도록 그대로 던진다.
+		if (isBenignWebSettingsListError(error)) return null;
+		throw error;
 	}
 }
 
@@ -105,7 +107,8 @@ async function readBlobBytes(blob: Blob): Promise<Uint8Array> {
 
 /**
  * List user-imported `.nva` archives (and extracted directories, if any) under
- * `opfs://naia-adk/naia-settings/nva-files`. Never throws.
+ * `opfs://naia-adk/naia-settings/nva-files`. 폴더가 없거나 저장소 API가 없을
+ * 때만 빈 목록을 돌려준다. 나머지 저장소 오류는 그대로 던진다.
  */
 export async function listWebUploadedNvaModels(): Promise<string[]> {
 	if (isKioskDemo()) return [];
@@ -124,8 +127,9 @@ export async function listWebUploadedNvaModels(): Promise<string[]> {
 				found.push(entry.name);
 			}
 		}
-	} catch {
-		return [];
+	} catch (error) {
+		if (isBenignWebSettingsListError(error)) return [];
+		throw error;
 	}
 	found.sort((a, b) => a.localeCompare(b));
 	return found;
@@ -246,8 +250,20 @@ export function parseWebNvaZipBytes(
 	if (!isPrebakedNvaManifest(manifest)) {
 		throw new Error("NVA requires vrm_slots prebaked WebM assets");
 	}
+	const stackedAlternates = new Set(
+		Object.values(manifest.stacked_alpha?.clips ?? {}).filter(
+			(value): value is string => typeof value === "string",
+		),
+	);
 	for (const clipPath of collectNvaManifestClipPaths(manifest)) {
 		resolveNvaAssetPath(bundleDir, clipPath);
+		// stacked_alpha 대체본은 없어도 된다. 나머지 필수 클립은 ZIP 안에
+		// 있어야 한다. 없으면 저장·선택 전에 실패한다(재생 시점이 아님).
+		if (stackedAlternates.has(clipPath)) continue;
+		const normalizedClip = normalizeArchiveEntryPath(clipPath);
+		if (!normalizedClip || !files.has(normalizedClip)) {
+			throw new Error(`nva_missing_clip:${clipPath}`);
+		}
 	}
 
 	const pickArchiveRelativePath = (
@@ -276,6 +292,7 @@ export function parseWebNvaZipBytes(
 	return {
 		bundleDir: normalizedBundleDir,
 		manifest,
+		files,
 		async resolveAssetUrl(relativePath, useStackedAlpha) {
 			const chosen = pickArchiveRelativePath(relativePath, useStackedAlpha);
 			return `${normalizedBundleDir}/${chosen}`;
@@ -291,11 +308,70 @@ export function parseWebNvaZipBytes(
 	};
 }
 
+/**
+ * 아카이브 대표 클립이 이 브라우저에서 실제로 디코드되는가를 확인한다.
+ * true(디코드 성공)·false(디코드 실패)·null(여기서 판정 불가: DOM·미디어
+ * 스택이 없거나 브라우저가 지원 여부를 알리지 않을 때)을 돌려준다. null은
+ * 존재 검사가 끝난 뒤 건너뛰라는 뜻이지 통과가 아니다.
+ */
+export async function probeWebNvaArchiveDecodable(
+	archive: LoadedWebNvaArchive,
+): Promise<boolean | null> {
+	const stackedAlternates = new Set(
+		Object.values(archive.manifest.stacked_alpha?.clips ?? {}).filter(
+			(value): value is string => typeof value === "string",
+		),
+	);
+	const first = collectNvaManifestClipPaths(archive.manifest)
+		.filter((clip) => !stackedAlternates.has(clip))
+		.map((clip) => normalizeArchiveEntryPath(clip))
+		.find((clip): clip is string => !!clip);
+	if (!first) return null;
+	const bytes = archive.files.get(first);
+	if (!bytes) return false;
+	if (typeof document === "undefined") return null;
+	let support = "";
+	try {
+		support = document.createElement("video").canPlayType(
+			nvaAssetMimeType(first),
+		);
+	} catch {
+		return null;
+	}
+	if (!support) return null;
+	let objectUrl: string;
+	try {
+		objectUrl = URL.createObjectURL(
+			new Blob([bytes as BlobPart], { type: nvaAssetMimeType(first) }),
+		);
+	} catch {
+		return null;
+	}
+	return new Promise((resolve) => {
+		const video = document.createElement("video");
+		const done = (ok: boolean) => {
+			URL.revokeObjectURL(objectUrl);
+			resolve(ok);
+		};
+		const timer = setTimeout(() => done(false), 5000);
+		video.onloadeddata = () => {
+			clearTimeout(timer);
+			done(true);
+		};
+		video.onerror = () => {
+			clearTimeout(timer);
+			done(false);
+		};
+		video.preload = "metadata";
+		video.src = objectUrl;
+	});
+}
+
 async function findUploadedNvaFile(
 	nvaModel: string,
 ): Promise<{ file: File; bundleDir: string } | null> {
 	const trimmed = nvaModel.trim();
-	if (!trimmed || trimmed.includes("..")) return null;
+	if (!trimmed || hasParentDirectorySegment(trimmed)) return null;
 
 	if (trimmed.startsWith(`${WEB_ADK_PATH}/`)) {
 		const parts = splitWebAdkPath(trimmed);

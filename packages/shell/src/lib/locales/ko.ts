@@ -301,6 +301,7 @@ export default {
 	"settings.webAssetUnplayable": "이 브라우저에서 재생할 수 없는 파일입니다.",
 	"settings.webAssetQuota": "브라우저 저장 공간이 부족합니다.",
 	"settings.webAssetFailed": "파일을 올리지 못했습니다.",
+	"settings.webAssetUserFile": "내 파일",
 	"settings.webAssetMissing": "저장된 파일을 찾을 수 없어 기본 배경으로 되돌렸습니다.",
 	"settings.agentReloadFailed": "설정은 저장했지만 실행 중인 에이전트에 새 언어를 적용하지 못했습니다. 다시 시도해 주세요.",
 	"settings.cancel": "취소",
