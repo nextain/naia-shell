@@ -3503,6 +3503,19 @@ export function SettingsTab() {
 	) {
 		if (!storedIdentifier) return;
 		if (!globalThis.confirm(t("settings.deleteAssetConfirm"))) return;
+		// 번들은 지우지 않는다: 배경은 사용자 식별자만, NVA는 업로드 목록에만
+		// 있는 항목만 대상으로 한다.
+		if (kind === "background" && !storedIdentifier.startsWith(`${WEB_ADK_PATH}/`)) {
+			setError(t("settings.webAssetFailed"));
+			return;
+		}
+		if (
+			kind === "nva-files" &&
+			!resolveWebNvaSelection(storedIdentifier, webUploadedNvas)
+		) {
+			setError(t("settings.webAssetFailed"));
+			return;
+		}
 		try {
 			const target =
 				kind === "background"
