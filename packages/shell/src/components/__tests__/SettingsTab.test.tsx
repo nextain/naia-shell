@@ -7011,6 +7011,35 @@ describe("web background selection races and persistence (fx1 review fixes)", ()
 		expect(select.value).toBe(userB);
 	});
 
+	it("keeps a background clear when an earlier file read resolves late", async () => {
+		const { bg, select } = await bgSelectWithUserFiles(["slow.png"]);
+		const { useAvatarStore } = await import("../../stores/avatar");
+		let release!: (blob: Blob) => void;
+		const reading = new Promise<Blob>((resolve) => { release = resolve; });
+		bg.gates.set("slow.png", () => reading);
+		fireEvent.change(select, { target: { value: "opfs://naia-adk/naia-settings/background/slow.png" } });
+		fireEvent.change(select, { target: { value: "" } });
+		await act(async () => {
+			release(new Blob(["late"]));
+			await reading;
+		});
+		await waitFor(() => expect(select.value).toBe(""));
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe("");
+	});
+
+	it("keeps the displayed background and cache when the web UI file cannot be written", async () => {
+		const { select } = await bgSelectWithUserFiles(["unwritable.png"]);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "write_naia_ui_config") return Promise.reject(new Error("OPFS write failed"));
+			if (command === "read_naia_ui_config" || command === "read_naia_config") return Promise.resolve("{}");
+			return Promise.resolve([]);
+		});
+		fireEvent.change(select, { target: { value: "opfs://naia-adk/naia-settings/background/unwritable.png" } });
+		expect(await screen.findByText(t("settings.saveFailed"))).toBeTruthy();
+		expect(select.value).toBe("");
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").backgroundVideo).toBeUndefined();
+	});
+
 	it("labels a user background differently from a bundled file with the same name", async () => {
 		const { select } = await bgSelectWithUserFiles(["naia-dawn-city-uhd.webp"]);
 		const userValue =
