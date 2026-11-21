@@ -11,6 +11,7 @@ import { buildRoleplayPrompt } from "../apps/charcard/prompt-builder";
 import type { AppConfig } from "./config";
 import { Logger } from "./logger";
 import { KIOSK_DEMO_GREETING } from "./persona";
+import { resolveWebBackgroundSelection } from "./web-runtime/web-settings-assets";
 
 export const KIOSK_JINA_DEFAULT_BACKGROUND =
 	"naia-autumn-office-live.mp4" as const;
@@ -415,21 +416,18 @@ export function resolveWebThemeBackground(
 	});
 	const trimmed =
 		typeof requestedBackground === "string" ? requestedBackground.trim() : "";
-	if (trimmed) {
+	if (trimmed && !trimmed.includes("..")) {
+		// basename 끝부분 일치가 아니라 정확한 식별자로 푼다. 사용자 파일은
+		// 전체 OPFS 식별자로만 고르고, bare 이름은 번들 카탈로그가 이긴다.
+		const exact = resolveWebBackgroundSelection(trimmed, extraAssetPaths);
+		if (exact) {
+			const filename = exact.split(/[/\\]/).filter(Boolean).pop() ?? exact;
+			return { filename, url: exact, fallbackUsed: false };
+		}
 		if (BUNDLED_WEB_BACKGROUND_FILENAMES.includes(trimmed)) {
 			return {
 				filename: trimmed,
 				url: `/backgrounds/${trimmed}`,
-				fallbackUsed: false,
-			};
-		}
-		const pathMatch = extraAssetPaths.find(
-			(p) => p.split(/[/\\]/).pop() === trimmed,
-		);
-		if (pathMatch) {
-			return {
-				filename: trimmed,
-				url: pathMatch,
 				fallbackUsed: false,
 			};
 		}

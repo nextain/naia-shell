@@ -25,6 +25,11 @@ import {
 	webBgmFileName,
 } from "./web-runtime/web-bgm-music";
 import { listWebNvaAssets } from "./web-runtime/web-nva-archive";
+import { WEB_ADK_PATH } from "./web-runtime/web-adk-path";
+import {
+	listWebBackgroundPaths,
+	readWebSettingsAssetBlob,
+} from "./web-runtime/web-settings-assets";
 import {
 	type SlotsManifest,
 	buildSlotsManifest,
@@ -179,8 +184,13 @@ export async function listNaiaAssets(
 	if (isWebMode()) {
 		if (subdir === "vrm-files")
 			return WEB_VRM_ASSETS.map((asset) => asset.url);
-		if (subdir === "background")
-			return WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
+		if (subdir === "background") {
+			// 번들 카탈로그 뒤에 사용자가 올린 브라우저 저장소 파일을 붙인다.
+			// 동명 파일도 각각 살린다(선택 식별자가 전체 경로라 겹치지 않음).
+			const bundled = WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
+			const uploaded = await listWebBackgroundPaths().catch(() => []);
+			return [...bundled, ...uploaded];
+		}
 		if (subdir === "nva-files")
 			return listWebNvaAssets().catch(() => [...WEB_NVA_ASSETS]);
 		// R10: 사용자가 이 브라우저에 올린 음악(OPFS).
@@ -270,6 +280,12 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 	// R10: 웹판에 올린 음악은 OPFS 에서 읽어 blob: URL 로 재생한다.
 	if (isWebMode() && webBgmFileName(filePath)) {
 		return createLocalMediaUrl(await readWebBgmMusicBlob(filePath));
+	}
+	// 설정에서 올린 배경·NVA 사용자 파일은 브라우저 저장소에서 읽어 그때마다
+	// 임시 Blob URL을 만든다(새로고침 뒤에도 같은 식별자로 다시 만든다).
+	// 파일이 사라지면 호출자가 기본 배경으로 복구하도록 실패를 그대로 둔다.
+	if (isWebMode() && filePath.startsWith(`${WEB_ADK_PATH}/`)) {
+		return createLocalMediaUrl(await readWebSettingsAssetBlob(filePath));
 	}
 	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
 	if (!BLOB_URL_EXTS.has(ext)) {

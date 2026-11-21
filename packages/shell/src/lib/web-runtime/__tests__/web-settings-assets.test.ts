@@ -2,10 +2,12 @@
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setWebAssetsModeForTests } from "../web-assets";
-import { WEB_NVA_FILES_DIR } from "../web-nva-archive";
+import {
+	WEB_NVA_FILES_DIR,
+	WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+} from "../web-nva-archive";
 import { WEB_SETTINGS_ROOT } from "../web-settings-catalog";
 import {
-	WEB_SETTINGS_ASSETS_CHANGED_EVENT,
 	WEB_SETTINGS_BACKGROUND_DIR,
 	WEB_SETTINGS_BACKGROUND_MAX_BYTES,
 	WebSettingsAssetImportError,
@@ -93,7 +95,7 @@ function stubOpfs(root = new MemDir("")) {
 	return root;
 }
 
-function buildNvaZipBytes(clipPrefix = ""): Uint8Array {
+function buildNvaZipBytes(clipPrefix = ""): Uint8Array<ArrayBuffer> {
 	const manifest = {
 		tva_version: undefined,
 		nva_version: "0.2",
@@ -106,7 +108,7 @@ function buildNvaZipBytes(clipPrefix = ""): Uint8Array {
 		"manifest.json": strToU8(JSON.stringify(manifest)),
 		[`${clipPrefix}clips/idle.webm`]: strToU8("webm-idle-bytes"),
 	};
-	return zipSync(entries);
+	return new Uint8Array(zipSync(entries));
 }
 
 const BG = `${WEB_SETTINGS_ROOT}/background`;
@@ -314,7 +316,7 @@ describe("web-settings-assets import", () => {
 	});
 
 	it("removes a user asset and ignores a missing one", async () => {
-		const root = stubOpfs();
+		stubOpfs();
 		const stored = await importWebSettingsAsset(
 			"background",
 			new File(["img"], "gone.png", { type: "image/png" }),

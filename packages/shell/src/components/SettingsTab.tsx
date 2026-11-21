@@ -284,6 +284,15 @@ import {
 import { RefAudioSection } from "./RefAudioSection";
 import { useWebModelStatus } from "./WebModelStatusBar";
 import { WEB_SETTINGS_ASSETS_CHANGED_EVENT } from "../lib/web-runtime/web-nva-archive";
+import { WEB_ADK_PATH } from "../lib/web-runtime/web-adk-path";
+import {
+	WebSettingsAssetImportError,
+	importWebSettingsAsset,
+	removeWebSettingsAsset,
+	resolveWebBackgroundSelection,
+	resolveWebNvaSelection,
+} from "../lib/web-runtime/web-settings-assets";
+import { listWebUploadedNvaModels } from "../lib/web-runtime/web-nva-archive";
 
 const WebVisualAgentSlugSettings = lazy(() => import("./WebVisualAgentSlugSettings"));
 
@@ -2107,6 +2116,14 @@ export function SettingsTab() {
 	const labSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const labBrowserVisibleRef = useRef(false);
 
+	// 웹판 설정 자산 가져오기: 파일 선택→검사→브라우저 저장→목록 갱신→선택 적용.
+	const bgFileInputRef = useRef<HTMLInputElement>(null);
+	const nvaFileInputRef = useRef<HTMLInputElement>(null);
+	const [webAssetBusy, setWebAssetBusy] = useState<
+		"background" | "nva-files" | null
+	>(null);
+	const [webUploadedNvas, setWebUploadedNvas] = useState<string[]>([]);
+
 	// A profile can have been saved before its automatic slot wiring was
 	// available (or while the app was being restarted). Reconcile it once after
 	// login so an already-selected local profile does not silently keep an old
@@ -3259,15 +3276,65 @@ export function SettingsTab() {
 
 	function handleNaiaBgSelect(path: string) {
 		const filename = path.split(/[/\\]/).pop() ?? "";
+		// 사용자 파일은 전체 식별자(`opfs://…`)를 저장해야 동명 번들과 겹치지
+		// 않고 새로고침 뒤에도 같은 파일을 다시 찾는다. 번들은 기존처럼 bare
+		// 파일명을 저장한다(이전 저장값·데스크톱 계약 유지).
+		const stored = path.startsWith(`${WEB_ADK_PATH}/`) ? path : filename;
 		setActiveBgPath(path);
-		setBackgroundVideoFilename(filename || undefined);
+		setBackgroundVideoFilename(stored || undefined);
 		setBackgroundMediaType(getBackgroundMediaType(path));
-		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
+		void toLocalBlobUrl(path).then(
+			(url) => {
+				setBackgroundVideoUrl(url);
+			},
+			(error: unknown) => {
+				if (!isWebMode()) {
+					Logger.warn("SettingsTab", "[background] local media read failed", {
+						error: String(error),
+					});
+					return;
+				}
+				// 저장 후 파일이 사라지면 기본 배경과 기존 목록으로 복구하고
+				// 실패 원인을 보여 준다. 깨진 선택은 저장하지 않는다.
+				Logger.warn("SettingsTab", "[background] saved file unreadable", {
+					error: String(error),
+				});
+				void listNaiaAssets("background").then((paths) => {
+					setNaiaBgs(paths);
+					const fallback =
+						resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
+						"";
+					if (fallback) {
+						setActiveBgPath(fallback);
+						setBackgroundVideoFilename(
+							fallback.split(/[/\\]/).pop() || undefined,
+						);
+						setBackgroundMediaType(getBackgroundMediaType(fallback));
+						void toLocalBlobUrl(fallback).then(setBackgroundVideoUrl);
+						const current = loadConfig();
+						if (current) {
+							const next = {
+								...current,
+								backgroundVideo:
+									fallback.split(/[/\\]/).pop() || undefined,
+							};
+							saveConfig(next);
+							void writeNaiaUiConfig({
+								backgroundVideo: next.backgroundVideo,
+							});
+						}
+					} else {
+						handleClearNaiaBg();
+					}
+				});
+				setError(t("settings.webAssetMissing"));
+			},
+		);
 		const cfg = loadConfig();
 		if (cfg) {
-			saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+			saveConfig({ ...cfg, backgroundVideo: stored || undefined });
 			if (isWebMode()) {
-				void writeNaiaUiConfig({ backgroundVideo: filename || undefined });
+				void writeNaiaUiConfig({ backgroundVideo: stored || undefined });
 			}
 		}
 	}
@@ -3363,6 +3430,109 @@ export function SettingsTab() {
 		}
 	}
 
+	function webAssetErrorKey(
+		code: string,
+	):
+		| "settings.webAssetUnsupported"
+		| "settings.webAssetTooLarge"
+		| "settings.webAssetInvalidNva"
+		| "settings.webAssetUnplayable"
+		| "settings.webAssetQuota"
+		| "settings.webAssetFailed" {
+		switch (code) {
+			case "unsupported":
+			case "unsupported_browser":
+				return "settings.webAssetUnsupported";
+			case "too_large":
+				return "settings.webAssetTooLarge";
+			case "invalid_nva":
+				return "settings.webAssetInvalidNva";
+			case "unplayable":
+				return "settings.webAssetUnplayable";
+			case "quota":
+				return "settings.webAssetQuota";
+			default:
+				return "settings.webAssetFailed";
+		}
+	}
+
+	// 웹판 설정 자산 가져오기: 파일 선택→검사→브라우저 저장→목록 갱신→선택
+	// 적용→다시 열기. 저장이 끝나기 전에는 적용 성공을 표시하지 않는다. 파일
+	// 대화상자를 취소하면(file == null) 기존 선택을 그대로 둔다.
+	async function handleWebImportAsset(
+		kind: "background" | "nva-files",
+		file: File | null,
+	) {
+		if (!file || webAssetBusy) return;
+		setError("");
+		setWebAssetBusy(kind);
+		try {
+			const storedPath = await importWebSettingsAsset(kind, file);
+			if (kind === "background") {
+				const paths = await listNaiaAssets("background");
+				setNaiaBgs(paths);
+				handleNaiaBgSelect(storedPath);
+			} else {
+				const paths = await listNaiaAssets("nva-files");
+				setNaiaNvas(paths);
+				setWebUploadedNvas(await listWebUploadedNvaModels().catch(() => []));
+				const entry =
+					resolveWebNvaSelection(storedPath, paths) ??
+					storedPath.split(/[/\\]/).filter(Boolean).pop() ??
+					storedPath;
+				persistVideoAvatarSelection(entry);
+			}
+		} catch (error) {
+			const code =
+				error instanceof WebSettingsAssetImportError ? error.code : "write_failed";
+			Logger.warn("SettingsTab", "[web-import-asset] failed", {
+				kind,
+				name: file.name,
+				code,
+			});
+			setError(t(webAssetErrorKey(code)));
+		} finally {
+			setWebAssetBusy(null);
+		}
+	}
+
+	// 웹판 사용자 자산 삭제. 번들은 목록에 남아 있으므로 지우지 않는다.
+	async function handleWebDeleteAsset(
+		kind: "background" | "nva-files",
+		storedIdentifier: string,
+	) {
+		if (!storedIdentifier) return;
+		if (!globalThis.confirm(t("settings.deleteAssetConfirm"))) return;
+		try {
+			const target =
+				kind === "background"
+					? storedIdentifier
+					: `${WEB_ADK_PATH}/naia-settings/nva-files/${
+							resolveWebNvaSelection(storedIdentifier, naiaNvas) ??
+							storedIdentifier.split(/[/\\]/).filter(Boolean).pop() ??
+							storedIdentifier
+						}`;
+			await removeWebSettingsAsset(target);
+			if (kind === "background") {
+				const paths = await listNaiaAssets("background");
+				setNaiaBgs(paths);
+				handleClearNaiaBg();
+			} else {
+				const paths = await listNaiaAssets("nva-files");
+				setNaiaNvas(paths);
+				setWebUploadedNvas(await listWebUploadedNvaModels().catch(() => []));
+				setNvaModel("");
+				persistConfig({ nvaModel: "" });
+			}
+		} catch (error) {
+			Logger.warn("SettingsTab", "[web-delete-asset] failed", {
+				kind,
+				error: String(error),
+			});
+			setError(t("settings.webAssetFailed"));
+		}
+	}
+
 	// Revert-on-unmount 제거 (2026-06-29): handleVrmSelect / handleNaiaBgSelect 가
 	// saveConfig 로 즉시 영속하므로 "미리보기 되돌림" 계약이 폐기됨. stale closure 로 인해
 	// 아바타 전환 시 두 번 클릭해야 하는 버그의 원인이었음.
@@ -3437,9 +3607,13 @@ export function SettingsTab() {
 				selected.backgroundVideo,
 				naiaBgs,
 			);
+			// 사용자 배경은 전체 식별자로 저장해야 동명 번들과 겹치지 않는다.
+			const storedThemeBg = resolvedBg.url.startsWith(`${WEB_ADK_PATH}/`)
+				? resolvedBg.url
+				: resolvedBg.filename;
 			await persistCharacterSettings({
 				...themePatch(selected),
-				backgroundVideo: resolvedBg.filename,
+				backgroundVideo: storedThemeBg,
 				...extra,
 			});
 			setAvatarProvider("naia-video-avatar");
@@ -3447,7 +3621,7 @@ export function SettingsTab() {
 			setTtsProvider(selected.ttsProvider);
 			setTtsVoice(selected.ttsVoice);
 			setActiveBgPath(resolvedBg.url);
-			setBackgroundVideoFilename(resolvedBg.filename);
+			setBackgroundVideoFilename(storedThemeBg);
 			setBackgroundMediaType(getBackgroundMediaType(resolvedBg.url));
 			setBackgroundVideoUrl(resolvedBg.url);
 			return;
@@ -3884,7 +4058,7 @@ export function SettingsTab() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Load background list from naia-settings
+	// Load background list from naia-settings (and refresh when web OPFS assets change)
 	useEffect(() => {
 		const rawSavedFilename = existing?.backgroundVideo as string | undefined;
 		const savedFilename =
@@ -3892,23 +4066,35 @@ export function SettingsTab() {
 				? WEB_DEFAULT_BACKGROUND
 				: (rawSavedFilename ??
 					(isWebMode() ? WEB_DEFAULT_BACKGROUND : undefined));
-		listNaiaAssets("background").then((paths) => {
-			setNaiaBgs(paths);
-			if (savedFilename) {
-				const match =
-					paths.find((p) => p.endsWith(savedFilename)) ??
-					(isWebMode()
-						? paths.find((p) => p.endsWith(WEB_DEFAULT_BACKGROUND))
-						: undefined);
-				if (match) setActiveBgPath(match);
-			}
-		});
+		const refreshBgs = () => {
+			void listNaiaAssets("background").then((paths) => {
+				setNaiaBgs(paths);
+				if (savedFilename) {
+					// 끝부분 일치(endsWith)로는 동명 파일을 잘못 고른다.
+					const match =
+						resolveWebBackgroundSelection(savedFilename, paths) ??
+						(isWebMode()
+							? resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths)
+							: undefined);
+					if (match) setActiveBgPath(match);
+				}
+			});
+		};
+		refreshBgs();
+		if (!isWebMode() || typeof window === "undefined") return;
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, refreshBgs);
+		return () => {
+			window.removeEventListener(
+				WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+				refreshBgs,
+			);
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	useEffect(() => {
 		if (!backgroundVideoFilename || naiaBgs.length === 0) return;
-		const match = naiaBgs.find((p) => p.endsWith(backgroundVideoFilename));
+		const match = resolveWebBackgroundSelection(backgroundVideoFilename, naiaBgs);
 		if (match) setActiveBgPath(match);
 	}, [backgroundVideoFilename, naiaBgs]);
 
@@ -3918,6 +4104,13 @@ export function SettingsTab() {
 			void listNaiaAssets("nva-files").then((paths) => {
 				setNaiaNvas(paths);
 			});
+			if (isWebMode()) {
+				void listWebUploadedNvaModels()
+					.then((uploaded) => {
+						setWebUploadedNvas(uploaded);
+					})
+					.catch(() => {});
+			}
 		};
 		refreshNvas();
 		if (!isWebMode() || typeof window === "undefined") return;
@@ -4967,31 +5160,73 @@ export function SettingsTab() {
 									);
 								})}
 							</select>
-							{/* WO-03: Hide import/delete controls without native file dialogs or copying. */}
-							{import.meta.env.MODE !== "web" && (
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => handleImportAsset("background")}
-								>
-									{t("settings.assetImport")}
-								</button>
-							)}
-							{import.meta.env.MODE !== "web" &&
-								activeBgPath &&
-								(() => {
-									const fn = activeBgPath.split(/[/\\]/).pop();
-									return fn ? (
+							{/* WO-03: 데스크톱은 네이티브 대화상자+IPC, 웹은 파일 선택+브라우저 저장. */}
+							{!isWebMode() ? (
+								<>
+									<button
+										type="button"
+										className="voice-preview-btn"
+										onClick={() => handleImportAsset("background")}
+									>
+										{t("settings.assetImport")}
+									</button>
+									{activeBgPath &&
+										(() => {
+											const fn = activeBgPath.split(/[/\\]/).pop();
+											return fn ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													style={{ color: "var(--error-color, #f44)" }}
+													onClick={() => handleDeleteAsset("background", fn)}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+								</>
+							) : (
+								!isKioskDemo() && (
+									<>
+										<input
+											ref={bgFileInputRef}
+											type="file"
+											accept="image/*,video/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.mp4"
+											hidden
+											data-testid="settings-bg-web-file-input"
+											onChange={(event) => {
+												const input = event.currentTarget;
+												const picked = input.files?.[0] ?? null;
+												input.value = "";
+												void handleWebImportAsset("background", picked);
+											}}
+										/>
 										<button
 											type="button"
 											className="voice-preview-btn"
-											style={{ color: "var(--error-color, #f44)" }}
-											onClick={() => handleDeleteAsset("background", fn)}
+											data-testid="settings-bg-web-upload"
+											disabled={webAssetBusy !== null}
+											onClick={() => bgFileInputRef.current?.click()}
 										>
-											{t("settings.assetDelete")}
+											{t("settings.assetImport")}
 										</button>
-									) : null;
-								})()}
+										{activeBgPath.startsWith(`${WEB_ADK_PATH}/`) && (
+											<button
+												type="button"
+												className="voice-preview-btn"
+												data-testid="settings-bg-web-delete"
+												style={{ color: "var(--error-color, #f44)" }}
+												disabled={webAssetBusy !== null}
+												onClick={() =>
+													void handleWebDeleteAsset("background", activeBgPath)
+												}
+											>
+												{t("settings.assetDelete")}
+											</button>
+										)}
+									</>
+								)
+							)}
 						</div>
 					</div>
 
@@ -5338,7 +5573,7 @@ export function SettingsTab() {
 									<button
 										key={name}
 										type="button"
-										className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
+										className={`vrm-list-item${resolveWebNvaSelection(nvaModel, [name]) === name ? " vrm-list-item--active" : ""}`}
 										onClick={() => {
 											persistVideoAvatarSelection(name);
 											// #auto-apply: 즉시 반영. bare 이름 저장(절대경로 금지 — 뷰어가 경로 결합).
@@ -5348,8 +5583,8 @@ export function SettingsTab() {
 									</button>
 								))}
 							</div>
-							{/* WO-03: Web mode uses bundled assets without native file dialogs. */}
-							{!isWebMode() && (
+							{/* WO-03: 데스크톱은 네이티브 대화상자+IPC, 웹은 파일 선택+브라우저 저장. */}
+							{!isWebMode() ? (
 								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
 										type="button"
@@ -5369,6 +5604,52 @@ export function SettingsTab() {
 										</button>
 									)}
 								</div>
+							) : (
+								!isKioskDemo() && (
+									<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+										<input
+											ref={nvaFileInputRef}
+											type="file"
+											accept=".nva"
+											hidden
+											data-testid="settings-nva-web-file-input"
+											onChange={(event) => {
+												const input = event.currentTarget;
+												const picked = input.files?.[0] ?? null;
+												input.value = "";
+												void handleWebImportAsset("nva-files", picked);
+											}}
+										/>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="settings-nva-web-upload"
+											disabled={webAssetBusy !== null}
+											onClick={() => nvaFileInputRef.current?.click()}
+										>
+											{t("settings.folderImport")}
+										</button>
+										{(() => {
+											const selected = nvaModel
+												? resolveWebNvaSelection(nvaModel, webUploadedNvas)
+												: null;
+											return selected ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													data-testid="settings-nva-web-delete"
+													style={{ color: "var(--error-color, #f44)" }}
+													disabled={webAssetBusy !== null}
+													onClick={() =>
+														void handleWebDeleteAsset("nva-files", selected)
+													}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+									</div>
+								)
 							)}
 						</div>
 					)}

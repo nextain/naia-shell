@@ -56,6 +56,7 @@ import {
 	WEB_DEFAULT_VRM,
 	isWebMode,
 } from "./lib/web-runtime/web-assets";
+import { resolveWebBackgroundSelection } from "./lib/web-runtime/web-settings-assets";
 import {
 	readWebAppInstallId,
 	WEB_APP_INSTALL_PARAM,
@@ -128,10 +129,17 @@ const NAIA_WIDTH_MAX = 1200;
 const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
 let startupBackgroundRestoreSeq = 0;
 
+export interface StartupBackgroundFallback {
+	requested: string;
+	fallback: string;
+	reason: string;
+}
+
 export async function restoreStartupBackground(options: {
 	isCancelled?: () => boolean;
 	setBackgroundMediaType: (type: "iframe" | "image" | "video" | "") => void;
 	setBackgroundVideoUrl: (url: string) => void;
+	onFallback?: (info: StartupBackgroundFallback) => void;
 }): Promise<void> {
 	const seq = ++startupBackgroundRestoreSeq;
 	const isStale = () =>
@@ -143,8 +151,19 @@ export async function restoreStartupBackground(options: {
 	const saved =
 		(config?.backgroundVideo as string | undefined) ??
 		(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
-	let match = paths.find((p) => p.endsWith(saved));
-	if (!match && isWebMode()) {
+	// 파일명 끝부분 일치(endsWith)로는 `xmy-photo.webp` 가 `my-photo.webp` 로
+	// 잘못 골라진다. 전체 식별자→번들 bare 이름→사용자 bare 이름 순으로 정확히 푼다.
+	let match: string | undefined;
+	if (isWebMode()) {
+		match = resolveWebBackgroundSelection(saved, paths) ?? undefined;
+	} else {
+		const leaf = saved.split(/[/\\]/).filter(Boolean).pop() ?? saved;
+		match = paths.find(
+			(path) => (path.split(/[/\\]/).filter(Boolean).pop() ?? path) === leaf,
+		);
+	}
+	if (!match) {
+		if (isStale() || !isWebMode()) return;
 		Logger.warn(
 			"App",
 			"saved background not found in web assets; falling back to default background",
@@ -153,10 +172,50 @@ export async function restoreStartupBackground(options: {
 				fallbackBackground: WEB_DEFAULT_BACKGROUND,
 			},
 		);
-		match = paths.find((p) => p.endsWith(WEB_DEFAULT_BACKGROUND));
+		match =
+			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
+			paths.find((path) => path.endsWith(WEB_DEFAULT_BACKGROUND));
+		if (!match || isStale()) return;
+		options.onFallback?.({
+			requested: saved,
+			fallback: match,
+			reason: "not-found",
+		});
 	}
-	if (!match || isStale()) return;
-	const blobUrl = await toLocalBlobUrl(match);
+	if (isStale()) return;
+	let blobUrl: string;
+	try {
+		blobUrl = await toLocalBlobUrl(match);
+	} catch (error) {
+		// 데스크톱은 기존 동작(호출자 책임)을 유지한다.
+		if (!isWebMode()) throw error;
+		if (isStale()) return;
+		const reason = error instanceof Error ? error.message : String(error);
+		Logger.warn(
+			"App",
+			"saved background unreadable; falling back to default background",
+			{
+				requestedBackground: match,
+				fallbackBackground: WEB_DEFAULT_BACKGROUND,
+				reason,
+			},
+		);
+		const fallbackMatch =
+			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
+			paths.find((path) => path.endsWith(WEB_DEFAULT_BACKGROUND));
+		if (!fallbackMatch || isStale()) return;
+		let fallbackUrl: string;
+		try {
+			fallbackUrl = await toLocalBlobUrl(fallbackMatch);
+		} catch {
+			return;
+		}
+		if (isStale()) return;
+		options.setBackgroundMediaType(getBackgroundMediaType(fallbackMatch));
+		options.setBackgroundVideoUrl(fallbackUrl);
+		options.onFallback?.({ requested: match, fallback: fallbackMatch, reason });
+		return;
+	}
 	if (isStale()) return;
 	options.setBackgroundMediaType(getBackgroundMediaType(match));
 	options.setBackgroundVideoUrl(blobUrl);
@@ -705,6 +764,7 @@ export function App() {
 			isCancelled: () => cancelled,
 			setBackgroundMediaType,
 			setBackgroundVideoUrl,
+			onFallback: () => showGlobalToast(t("settings.webAssetMissing")),
 		});
 		return () => {
 			cancelled = true;
@@ -714,6 +774,7 @@ export function App() {
 		showAdkSetup,
 		setBackgroundMediaType,
 		setBackgroundVideoUrl,
+		showGlobalToast,
 	]);
 
 	// Hydrate localStorage FROM naia-settings files on startup — files are SoT,
@@ -909,13 +970,14 @@ export function App() {
 							getAdkPath() !== adkPathAtRead,
 						setBackgroundMediaType,
 						setBackgroundVideoUrl,
+						onFallback: () => showGlobalToast(t("settings.webAssetMissing")),
 					});
 				}
 			});
 		return () => {
 			cancelled = true;
 		};
-	}, [showAdkSetup]);
+	}, [showAdkSetup, showGlobalToast]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
 	// Same pattern as BrowserCenterArea auto-allowing browser tools on mount.
