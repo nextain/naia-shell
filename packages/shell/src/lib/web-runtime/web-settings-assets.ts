@@ -288,11 +288,35 @@ function matchesImageMagic(header: Uint8Array, extension: string): boolean {
 	}
 }
 
+async function probeWebImageElement(file: File): Promise<boolean> {
+	if (typeof document === "undefined") return false;
+	let url: string;
+	try {
+		url = URL.createObjectURL(file);
+	} catch {
+		return false;
+	}
+	const image = document.createElement("img");
+	return new Promise((resolve) => {
+		const finish = (ok: boolean) => {
+			clearTimeout(timer);
+			image.onload = null;
+			image.onerror = null;
+			image.removeAttribute("src");
+			URL.revokeObjectURL(url);
+			resolve(ok);
+		};
+		const timer = setTimeout(() => finish(false), 5000);
+		image.onload = () => finish(image.naturalWidth > 0);
+		image.onerror = () => finish(false);
+		image.src = url;
+	});
+}
+
 /**
  * 이미지·영상이 이 브라우저에서 실제로 재생되는가.
  *
- * - 이미지: 앞 바이트 형식 검사를 항상 한다. `createImageBitmap` 이 있으면
- *   전체 디코드까지 확인한다. 형식이 다르면 저장하지 않는다.
+ * - 이미지: 앞 바이트 형식 검사 후 브라우저에서 전체 이미지를 디코드한다.
  * - 영상: `canPlayType` 이 빈 문자열을 돌려주거나 예외를 던지면(지원하지
  *   않는다고 알리면) 가져오지 않고 실패를 돌려준다. 지원한다고 하면 실제
  *   로드로 확인한다. DOM이 없는 비브라우저 런타임은 확장자 검사까지만 한다.
@@ -317,7 +341,7 @@ export async function probeWebBackgroundPlayable(file: File): Promise<boolean> {
 				return false;
 			}
 		}
-		return true;
+		return probeWebImageElement(file);
 	}
 	if (WEB_BACKGROUND_VIDEO_EXTS.has(extension)) {
 		if (typeof document === "undefined") return true;
@@ -400,8 +424,7 @@ export async function importWebSettingsAsset(
 		// 손상·누락 클립은 저장·선택 전에 여기서 실패하고 이전 선택을 유지한다.
 		try {
 			const archive = parseWebNvaZipBytes(bytes, `${directory}/${name}`);
-			const decodable = await probeWebNvaArchiveDecodable(archive);
-			if (decodable === false) {
+			if (!(await probeWebNvaArchiveDecodable(archive))) {
 				throw new Error("nva_clip_unplayable");
 			}
 		} catch (error) {

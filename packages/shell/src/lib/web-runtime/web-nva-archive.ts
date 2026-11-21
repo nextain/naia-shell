@@ -308,61 +308,52 @@ export function parseWebNvaZipBytes(
 	};
 }
 
-/**
- * 아카이브 대표 클립이 이 브라우저에서 실제로 디코드되는가를 확인한다.
- * true(디코드 성공)·false(디코드 실패)·null(여기서 판정 불가: DOM·미디어
- * 스택이 없거나 브라우저가 지원 여부를 알리지 않을 때)을 돌려준다. null은
- * 존재 검사가 끝난 뒤 건너뛰라는 뜻이지 통과가 아니다.
- */
+/** Validate every clip the renderer can select before accepting the archive. */
 export async function probeWebNvaArchiveDecodable(
 	archive: LoadedWebNvaArchive,
-): Promise<boolean | null> {
-	const stackedAlternates = new Set(
-		Object.values(archive.manifest.stacked_alpha?.clips ?? {}).filter(
-			(value): value is string => typeof value === "string",
-		),
-	);
-	const first = collectNvaManifestClipPaths(archive.manifest)
-		.filter((clip) => !stackedAlternates.has(clip))
-		.map((clip) => normalizeArchiveEntryPath(clip))
-		.find((clip): clip is string => !!clip);
-	if (!first) return null;
-	const bytes = archive.files.get(first);
-	if (!bytes) return false;
-	if (typeof document === "undefined") return null;
-	let support = "";
-	try {
-		support = document.createElement("video").canPlayType(
-			nvaAssetMimeType(first),
-		);
-	} catch {
-		return null;
+): Promise<boolean> {
+	if (typeof document === "undefined") return false;
+	const required = collectNvaManifestClipPaths({
+		...archive.manifest,
+		stacked_alpha: undefined,
+	});
+	const optional = Object.values(archive.manifest.stacked_alpha?.clips ?? {})
+		.filter((path) => {
+			const normalized = normalizeArchiveEntryPath(path);
+			return normalized !== null && archive.files.has(normalized);
+		});
+	const clips = new Set([...required, ...optional].map(normalizeArchiveEntryPath));
+	if (clips.size === 0) return false;
+	for (const path of clips) {
+		if (!path) return false;
+		const bytes = archive.files.get(path);
+		if (!bytes || !(await probeNvaClip(bytes, nvaAssetMimeType(path)))) return false;
 	}
-	if (!support) return null;
+	return true;
+}
+
+async function probeNvaClip(bytes: Uint8Array, mime: string): Promise<boolean> {
+	const video = document.createElement("video");
 	let objectUrl: string;
 	try {
-		objectUrl = URL.createObjectURL(
-			new Blob([bytes as BlobPart], { type: nvaAssetMimeType(first) }),
-		);
+		if (!video.canPlayType(mime)) return false;
+		objectUrl = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
 	} catch {
-		return null;
+		return false;
 	}
 	return new Promise((resolve) => {
-		const video = document.createElement("video");
-		const done = (ok: boolean) => {
+		const finish = (ok: boolean) => {
+			clearTimeout(timer);
+			video.onloadeddata = null;
+			video.onerror = null;
+			video.removeAttribute("src");
 			URL.revokeObjectURL(objectUrl);
 			resolve(ok);
 		};
-		const timer = setTimeout(() => done(false), 5000);
-		video.onloadeddata = () => {
-			clearTimeout(timer);
-			done(true);
-		};
-		video.onerror = () => {
-			clearTimeout(timer);
-			done(false);
-		};
-		video.preload = "metadata";
+		const timer = setTimeout(() => finish(false), 5000);
+		video.onloadeddata = () => finish(true);
+		video.onerror = () => finish(false);
+		video.preload = "auto";
 		video.src = objectUrl;
 	});
 }
