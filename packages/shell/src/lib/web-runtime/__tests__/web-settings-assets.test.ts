@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { strToU8, zipSync } from "fflate";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setWebAssetsModeForTests } from "../web-assets";
 import {
 	WEB_NVA_FILES_DIR,
@@ -19,7 +19,12 @@ import {
 	resolveWebNvaSelection,
 } from "../web-settings-assets";
 
+beforeEach(() => {
+	vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ close: vi.fn() })));
+});
+
 afterEach(() => {
+	vi.restoreAllMocks();
 	setWebAssetsModeForTests(null);
 	vi.unstubAllGlobals();
 	vi.resetModules();
@@ -106,20 +111,39 @@ function tinyPngBytes(): Uint8Array<ArrayBuffer> {
 	);
 }
 
-function buildNvaZipBytes(clipPrefix = ""): Uint8Array<ArrayBuffer> {
+function buildNvaZipBytes(
+	clipPrefix = "",
+	secondClip?: string,
+): Uint8Array<ArrayBuffer> {
 	const manifest = {
 		tva_version: undefined,
 		nva_version: "0.2",
 		canvas: { width: 720, height: 1280 },
 		animations: {
 			idle: { clip: `${clipPrefix}clips/idle.webm`, loop: true, can_talk: false },
+			...(secondClip ? { talk: { clip: "clips/talk.webm", loop: true } } : {}),
 		},
 	};
 	const entries: Record<string, Uint8Array> = {
 		"manifest.json": strToU8(JSON.stringify(manifest)),
 		[`${clipPrefix}clips/idle.webm`]: strToU8("webm-idle-bytes"),
 	};
+	if (secondClip) entries["clips/talk.webm"] = strToU8(secondClip);
 	return new Uint8Array(zipSync(entries));
+}
+
+function stubVideoDecoder(outcomes: Array<"loadeddata" | "error"> = []) {
+	vi.stubGlobal("URL", class extends URL {
+		static override createObjectURL = vi.fn(() => "blob:settings-test");
+		static override revokeObjectURL = vi.fn();
+	});
+	vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("probably");
+	vi.spyOn(HTMLMediaElement.prototype, "src", "set").mockImplementation(
+		function (this: HTMLMediaElement) {
+			const type = outcomes.shift() ?? "loadeddata";
+			queueMicrotask(() => this.dispatchEvent(new Event(type)));
+		},
+	);
 }
 
 const BG = `${WEB_SETTINGS_ROOT}/background`;
@@ -273,6 +297,7 @@ describe("web-settings-assets import", () => {
 
 	it("maps OPFS quota exhaustion to a quota error and keeps the old list", async () => {
 		const root = stubOpfs();
+		stubVideoDecoder();
 		root.failWrite = new DOMException("full", "QuotaExceededError");
 		await expect(
 			importWebSettingsAsset(
@@ -309,6 +334,7 @@ describe("web-settings-assets import", () => {
 
 	it("saves a valid NVA archive and keeps same-name uploads distinct", async () => {
 		stubOpfs();
+		stubVideoDecoder();
 		const events: string[] = [];
 		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, () =>
 			events.push("changed"),
@@ -379,6 +405,48 @@ describe("web-settings-assets review fixes (fx1)", () => {
 			vi.unstubAllGlobals();
 			vi.restoreAllMocks();
 		}
+	});
+
+	it("rejects an NVA before saving when a later required clip cannot decode", async () => {
+		const root = stubOpfs();
+		stubVideoDecoder(["loadeddata", "error"]);
+		await expect(
+			importWebSettingsAsset("nva-files", new File([
+				buildNvaZipBytes("", "damaged"),
+			], "second-clip.nva")),
+		).rejects.toMatchObject({ code: "invalid_nva" });
+		expect(root.dirs.has("naia-adk")).toBe(false);
+	});
+
+	it("rejects an NVA before saving when the codec is unsupported", async () => {
+		const root = stubOpfs();
+		vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("");
+		await expect(
+			importWebSettingsAsset("nva-files", new File([buildNvaZipBytes()], "unsupported.nva")),
+		).rejects.toMatchObject({ code: "invalid_nva" });
+		expect(root.dirs.has("naia-adk")).toBe(false);
+	});
+
+	it("uses the browser image decoder when createImageBitmap is absent", async () => {
+		const root = stubOpfs();
+		stubVideoDecoder();
+		vi.stubGlobal("createImageBitmap", undefined);
+		let decodes = 0;
+		vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(1);
+		vi.spyOn(HTMLImageElement.prototype, "src", "set").mockImplementation(
+			function (this: HTMLImageElement) {
+				const type = decodes++ === 0 ? "error" : "load";
+				queueMicrotask(() => this.dispatchEvent(new Event(type)));
+			},
+		);
+		await expect(importWebSettingsAsset("background", new File([
+			tinyPngBytes().slice(0, 8),
+		], "truncated.png"))).rejects.toMatchObject({ code: "unplayable" });
+		expect(root.dirs.has("naia-adk")).toBe(false);
+		await expect(importWebSettingsAsset("background", new File([
+			tinyPngBytes(),
+		], "valid.png"))).resolves.toBe(`${WEB_SETTINGS_BACKGROUND_DIR}/valid.png`);
+		expect(decodes).toBe(2);
 	});
 
 	it("rejects an image whose bytes do not match its extension", async () => {
