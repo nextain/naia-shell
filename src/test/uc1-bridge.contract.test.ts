@@ -77,6 +77,9 @@ describe("ChatBridge (outbound driving adapter)", () => {
 
     bridge.submit({ ...input, thinking: { level: "xhigh" }, enableThinking: true }, () => {});
     expect(chat.started[3]?.thinking).toEqual({ level: "xhigh" });
+
+    bridge.submit({ ...input, thinking: { level: "max" }, enableThinking: true }, () => {});
+    expect(chat.started[4]?.thinking).toEqual({ level: "max" });
   });
 });
 

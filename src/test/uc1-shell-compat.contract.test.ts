@@ -141,6 +141,8 @@ describe("makeShellChatService (drop-in seam)", () => {
     expect("thinking" in msgInvalid).toBe(false);
     await svc.sendChatMessage({ message: "hi", provider: { provider: "gemini", model: "flash" }, history: [], onChunk: () => {}, requestId: "r-xhigh", thinking: { level: "xhigh" }, enableThinking: true });
     expect(JSON.parse(invokes[3]!.args["message"] as string).thinking).toEqual({ level: "xhigh" });
+    await svc.sendChatMessage({ message: "hi", provider: { provider: "gemini", model: "flash" }, history: [], onChunk: () => {}, requestId: "r-max", thinking: { level: "max" }, enableThinking: true });
+    expect(JSON.parse(invokes[4]!.args["message"] as string).thinking).toEqual({ level: "max" });
   });
 });
 

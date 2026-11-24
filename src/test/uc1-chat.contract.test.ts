@@ -134,6 +134,9 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
 
     const xhigh = toAgentOutbound(req({ thinking: { level: "xhigh" }, enableThinking: true })) as Record<string, unknown>;
     expect(xhigh["thinking"]).toEqual({ level: "xhigh" });
+
+    const max = toAgentOutbound(req({ thinking: { level: "max" }, enableThinking: true })) as Record<string, unknown>;
+    expect(max["thinking"]).toEqual({ level: "max" });
   });
   it("S4: environmentSegments 운반(아바타 감정·앱) + 미지정 시 필드 부재", () => {
     // 송신 시: 셸 환경고유 세그먼트가 chat_request wire 에 그대로 실린다(Rust json_to_chat_request → proto environment_segments_json).
