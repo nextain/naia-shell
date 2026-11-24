@@ -3633,6 +3633,9 @@ body.resizing-row {
 .settings-field.visual-agent-slug-settings > label {
 	color: var(--cream);
 	font-size: calc(14px * var(--ui-font-scale, 1));
+	font-weight: 600;
+}
+
 .settings-save-btn {
 	pointer-events: auto;
 	padding: 10px 28px;
