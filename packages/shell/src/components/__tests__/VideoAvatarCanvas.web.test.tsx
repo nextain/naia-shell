@@ -211,6 +211,8 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 	});
 
 	it("clamps, saves, and resets zoom together with pan via canvas buffer sizing instead of CSS scale", async () => {
+		setWebAssetsModeForTests(true);
+		mockWebAvatarAssets(atob(manifest));
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
 			expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
@@ -841,6 +843,8 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 	});
 
 	it("keeps the default full-body canvas transform during Slides presentation", async () => {
+		setWebAssetsModeForTests(true);
+		mockWebAvatarAssets();
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
 			expect(container.querySelector("[data-video-avatar-loaded='true']")).toBeTruthy(),
