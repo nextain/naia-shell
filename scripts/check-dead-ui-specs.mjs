@@ -74,6 +74,11 @@ const ALLOWED_ABSENT = new Map([
 	// 않는지 **없음**을 단언한다 — 기다리는 것이 아니라 부재가 기대값이다.
 	['gateway-skill-card', "#605 — 지운 설치 표면의 부재를 단언한다"],
 	['skills-install-btn', "#605 — 지운 설치 표면의 부재를 단언한다"],
+	// web-hosted-apps-r35.spec.ts:160-161 이 외부 호스티드 앱(ieumoffice 번들)
+	// iframe 안에서 집는 표지다. 번들은 빌드 때 외부 저장소에서 들여오므로
+	// 셸 소스에는 없고, e2e 가 그 번들을 상대로 검증한다.
+	["format-xlsx", "외부 ieumoffice 번들 iframe 안의 표지 — 셸 소스 대상 아님"],
+	["editor-xlsx", "외부 ieumoffice 번들 iframe 안의 표지 — 셸 소스 대상 아님"],
 ]);
 
 function tracked(dir, extension) {

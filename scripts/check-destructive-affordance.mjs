@@ -230,6 +230,10 @@ const ACKNOWLEDGED = new Map([
 		"packages/shell/src/apps/projects/project-catalog.ts:project_class_reset",
 		"수업 초기화. ProjectsApp 의 \"수업 초기화\" 단추는 setShowResetDialog(true) 로 role=dialog 확인 창만 띄우고, 확인 창의 \"초기화\" 단추를 눌러야 resetProjectClass 가 돈다. Rust 쪽은 되돌리기 전에 학생 작업을 class-backups/<이름>-<시각>/files/ 로 모두 백업하고 하나라도 실패하면 체크아웃을 건드리지 않는다. 확인 상태와 실행 함수가 서로 다른 함수에 있고 감싼 함수를 거쳐 이 검사기가 못 따라간다",
 	],
+	[
+		"packages/shell/src/lib/app-store-adapter.ts:app_remove_installed",
+		"AppBar 의 handleRemoveApp·handleCtxRemoveApp 가 source 가 installed 인 앱에 한해 globalThis.confirm(t(\"apps.removeConfirm\")) 확인 뒤에만 removeInstalledApp 을 부른다. 확인이 AppBar 에, 실행이 app-loader·어댑터를 거친 invoke 에 있어 이 검사기의 추적 범위를 벗어난다",
+	],
 ]);
 
 function tracked(dir, extension) {
