@@ -864,6 +864,11 @@
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-assets.md"
     },
+    "packages/shell/src/lib/web-runtime/web-app-install-link.ts": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-APP-CATALOG"],
+      "contract": "docs/requirements.md#웹판-공식-앱스토어와-관리자-등록-앱-r3r4-2026-11-20"
+    },
     "packages/shell/src/lib/web-runtime/web-auth.ts": {
       "layer": "adapters",
       "uc": [
@@ -879,6 +884,11 @@
         "UC-WEB-KIOSK-FIX"
       ],
       "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-fs.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-login-prompt.ts": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-APP-CATALOG"],
+      "contract": "docs/requirements.md#웹판-공식-앱스토어와-관리자-등록-앱-r3r4-2026-11-20"
     },
     "packages/shell/src/lib/web-runtime/web-model-status.ts": {
       "layer": "adapters",
@@ -901,10 +911,25 @@
       ],
       "contract": "docs/requirements.md#작업-파일nva-아바타를-브라우저-탐색기로-가져오기-r17"
     },
+    "packages/shell/src/lib/web-runtime/web-settings-assets.ts": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-SETTINGS-FILES"],
+      "contract": "docs/requirements.md#웹판-adk-파일-목록의-naia-settings-r32-2026-11-20"
+    },
     "packages/shell/src/lib/web-runtime/web-settings-catalog.ts": {
       "layer": "adapters",
       "uc": ["UC-WEB-SETTINGS-FILES"],
       "contract": "docs/requirements.md#웹판-adk-파일-목록의-naia-settings-r32-2026-11-20"
+    },
+    "packages/shell/src/lib/web-runtime/web-slug-guard.ts": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-VISUAL-AGENT-SLUG"],
+      "contract": "docs/requirements.md#웹판-비주얼-에이전트-공개-주소-r39-2026-11-20"
+    },
+    "packages/shell/src/lib/web-runtime/__tests__/web-stage1-features.test.tsx": {
+      "layer": "adapters",
+      "uc": ["UC-WEB-VISUAL-AGENT-SLUG"],
+      "contract": "docs/requirements.md#웹판-비주얼-에이전트-공개-주소-r39-2026-11-20"
     },
     "packages/shell/src/lib/web-runtime/web-storage-persist.ts": {
       "layer": "adapters",
