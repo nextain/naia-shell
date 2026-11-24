@@ -427,6 +427,9 @@ function isVoxCpm2InstallationStatus(
 type ModelThinkingConfig = AppConfig & { mainModelThinkingLevels?: Record<string, ThinkingLevel> };
 const modelThinkingKey = (provider: string, model: string) => JSON.stringify([provider, model]);
 
+/** 웹GPU 메인 모델 4종 고정 순서 (서브 2종 목록과는 무관). */
+const WEB_MAIN_NEXTAIN_MODEL_IDS = ["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna", "solar-pro4"] as const;
+
 function writeMainModelSelection(config: AppConfig, role: LlmRoleConfig, previous: AppConfig = config): AppConfig {
 	const levels = { ...(previous as ModelThinkingConfig).mainModelThinkingLevels };
 	const prior = readConfiguredLlmRoles(previous).main;
@@ -4822,10 +4825,10 @@ export function SettingsTab() {
 	const displayedProviderModels = useMemo(
 		() =>
 			provider === "nextain" && isWebMode()
-				? ["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"]
+				? [...WEB_MAIN_NEXTAIN_MODEL_IDS]
 					.map((id) => availableProviderModels.find((candidate) => candidate.id === id))
 					.filter((candidate): candidate is LlmModelMeta => Boolean(candidate))
-					.concat(availableProviderModels.filter((candidate) => !["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"].includes(candidate.id) && candidate.id === activeBrainModel))
+					.concat(availableProviderModels.filter((candidate) => !(WEB_MAIN_NEXTAIN_MODEL_IDS as readonly string[]).includes(candidate.id) && candidate.id === activeBrainModel))
 				: provider === "nextain"
 					? sortModels(availableProviderModels, modelSortMode)
 				: availableProviderModels,
