@@ -37,7 +37,8 @@ function adapterWith(
 			url.startsWith(prefix),
 		);
 		if (!route) throw new TypeError(`network down: ${url}`);
-		return route[1]();
+		const [, handleRoute] = route;
+		return handleRoute();
 	}) as unknown as typeof fetch;
 	return {
 		fetchImpl,

@@ -918,7 +918,8 @@ describe("PrebakedAvatarRenderer", () => {
 
 			renderer.setZoom(2);
 			renderer.start(video, canvas);
-			rafCallbacks[0]?.(100);
+			const firstFrame = rafCallbacks[0];
+			firstFrame?.(100);
 
 			expect(mockCtx.scale).toHaveBeenCalledWith(2, 2);
 			expect(mockCtx.translate.mock.calls).toEqual([
