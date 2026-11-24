@@ -57,6 +57,7 @@ import {
 	keepsProviderWhenLoggedOut,
 	resolveLoggedOutLlm,
 } from "../lib/llm/logged-out-default";
+import { fetchGatewayModelCatalog } from "../lib/llm/registry";
 import { writeConfiguredLlmRole } from "../lib/llm/roles";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import {
@@ -1204,7 +1205,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		const completedFlat: Record<string, unknown> = {
 			...base,
 			provider: auth ? (base.provider ?? "") : (loggedOutLlm?.provider ?? base.provider),
-			model: auth ? (base.model ?? "") : (loggedOutLlm?.model ?? base.model),
+			model: auth ? (base.model || NAIA_SLOT_DEFAULTS.main.model) : (loggedOutLlm?.model ?? base.model),
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,

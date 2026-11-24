@@ -1882,6 +1882,7 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved).toMatchObject({ provider: "ollama", model: "local-explicit", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model" });
 		expect(saved.subLlmModel).toBeUndefined();
+	});
 	it("records a successful settings login after balance lookup without a browser failure", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		mockInvoke.mockResolvedValue([]);

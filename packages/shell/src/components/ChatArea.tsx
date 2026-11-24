@@ -2708,6 +2708,7 @@ export function ChatArea({
 		);
 	}
 
+	const usageUserTurn = useRef<string | null>(null);
 	async function handleSend(
 		overrideText?: string,
 		installedAppTurn = false,

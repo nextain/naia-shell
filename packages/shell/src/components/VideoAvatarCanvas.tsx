@@ -39,13 +39,6 @@ import {
 	useUiPreference,
 } from "../lib/ui-preferences";
 import {
-	type NvaManifest,
-	collectNvaManifestClipPaths,
-	isPrebakedNvaManifest,
-	parseNvaManifest,
-	resolveNvaAssetPath,
-} from "../lib/nva";
-import {
 	isNarrowPortraitScreen,
 	isWebMode,
 	resolveWebPublicAssetUrl,
@@ -488,6 +481,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				);
 				urls.set(relativePath, url);
 				return url;
+			},
 			resolveClipCandidates: async (
 				relativePath: string,
 			): Promise<ResolvedNvaClipSource[]> => {

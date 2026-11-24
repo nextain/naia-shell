@@ -68,7 +68,6 @@ import {
 	webCatalogStartTrack,
 	youtubeNeverStarted,
 } from "../lib/bgm-embed";
-import { computeBgmAppPosition } from "../lib/bgm-app-position";
 import { Logger } from "../lib/logger";
 import { UI_FONT_SCALE_EVENT } from "../lib/ui-font-scale";
 import type { NaiaContextBridge } from "../lib/app-registry";
@@ -389,6 +388,10 @@ export function BgmPlayer({ naia }: Props) {
 	const setBgmTrackUrl = useAvatarStore((s) => s.setBgmTrackUrl);
 	const bgmVideoUrl = useAvatarStore((s) => s.bgmVideoUrl);
 	const setBgmVideoUrl = useAvatarStore((s) => s.setBgmVideoUrl);
+	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+	const setBackgroundMediaType = useAvatarStore(
+		(s) => s.setBackgroundMediaType,
+	);
 	const [localTracks, setLocalTracks] = useState<string[]>([]);
 	const [localPaths, setLocalPaths] = useState<string[]>([]);
 	const [localNames, setLocalNames] = useState<string[]>([]);
@@ -2153,7 +2156,6 @@ export function BgmPlayer({ naia }: Props) {
 					pending.playbackId,
 					captionsRef.current,
 				),
-			);
 			);
 			return;
 		}

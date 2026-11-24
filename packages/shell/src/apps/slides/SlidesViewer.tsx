@@ -114,6 +114,14 @@ export function SlidesViewer({
 							const content = await pdfPage.getTextContent();
 							texts.push(pdfTextFromItems(content.items));
 						}
+						onReady(file, document.numPages, texts);
+					}}
+					onLoadError={(error) => onError(file, error)}
+						loading={
+							slideCard ? null : (
+								<div className="slides-app__empty">{t("slides.loading")}</div>
+							)
+						}
 						error={
 							slideCard ? null : (
 								<div className="slides-app__empty slides-app__empty--error">

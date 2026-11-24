@@ -386,7 +386,8 @@ export function SmallLlmSection({
 						<div className="settings-hint">
 							{t("settings.surfacingLevelHint")}
 						</div>
-					)}
+					</div>
+				)}
 				{(activeChoice === "ollama" || activeChoice === "vllm") && (
 					<div
 						style={{

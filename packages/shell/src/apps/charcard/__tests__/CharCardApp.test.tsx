@@ -340,6 +340,10 @@ describe("CharCardApp UI", () => {
 		expect(screen.queryByTestId("charcard-error-panel")).toBeNull();
 	});
 
+	it.each([
+		["ko", "새로 고침하거나 창을 닫으면 사라집니다"],
+		["en", "disappear when you refresh or close this window"],
+	])(
 		"R11 describes temporary cards in %s when storage falls back to memory",
 		async (locale, expected) => {
 			render(

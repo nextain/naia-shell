@@ -25,7 +25,6 @@ import type {
 import { takePrewarmedSpeechAsset } from "./nva-speech/speech-asset-prewarm";
 import {
 	isStackedAlphaClipUrl,
-	isStackedAlphaVideoElement,
 	isWebKitWithoutVp9Alpha,
 	markVideoStackedAlpha,
 	resolveNvaClipKeyColor,
@@ -476,7 +475,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			}
 			return;
 		}
-		this.generation++;
+		const generation = ++this.generation;
 		if (active) {
 			const needsFallbackClip =
 				Boolean(this.speechStage) &&
@@ -510,6 +509,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			this.speechStage?.stop();
 			void this.playIdle();
 		}
+	}
 	}
 
 	/** Play one aligned or browser-timed plan through the canonical player. */
@@ -689,6 +689,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			this.config.manifest.chroma_key ??
 			(canCarryAlpha(path) ? undefined : this.config.manifest.background?.color)
 		);
+	}
 	private reportPlaybackFailure(reason: unknown): void {
 		if (this.disposed || this.mediaFailed) return;
 		this.mediaFailed = true;
@@ -787,11 +788,6 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				resumePosition,
 				started: false,
 			};
-			if (!this.useWebClipBlobs) {
-				const url = await this.config.resolveAssetUrl(path);
-				await this.playResolvedClip(url, url, playback);
-				return;
-			}
 	
 			this.removeWebLoopErrorListener?.();
 			const request = {};
@@ -844,7 +840,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				}
 			};
 			await play();
-		}
+			return;
 		}
 		const normalizedRel = path.replace(/\\/g, "/").replace(/^\/+/, "");
 		const mappedStacked = shouldUseStackedAlpha()
@@ -1203,83 +1199,6 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		return element;
 	}
 
-
-	private reportPlaybackFailure(reason: unknown): void {
-		if (this.disposed || this.mediaFailed) return;
-		this.mediaFailed = true;
-		const message =
-			reason instanceof Error
-				? reason.message
-				: String(reason || "NVA clip playback failed");
-		Logger.warn("PrebakedAvatarRenderer", "NVA playback failed", {
-			reason: message,
-		});
-		this.config.onPlaybackFailure?.(message);
-	}
-
-	private async resolveSourcesForClip(
-		path: string,
-	): Promise<ResolvedNvaClipSource[]> {
-		if (this.config.resolveClipCandidates) {
-			const resolved = await this.config.resolveClipCandidates(path);
-			if (resolved.length > 0) return resolved;
-		}
-		const normalizedRel = path.replace(/\\/g, "/").replace(/^\/+/, "");
-		const mappedStacked = shouldUseStackedAlpha()
-			? (this.config.manifest.stacked_alpha?.clips?.[normalizedRel] ??
-				this.config.manifest.stacked_alpha?.clips?.[path])
-			: undefined;
-
-		if (mappedStacked && mappedStacked !== path) {
-			const sources: ResolvedNvaClipSource[] = [];
-			try {
-				const stackedUrl = await this.config.resolveAssetUrl(mappedStacked);
-				sources.push({
-					url: stackedUrl,
-					stackedAlpha: true,
-					resolvedPath: mappedStacked,
-				});
-			} catch {
-				// Fall through to primary clip path when stacked asset cannot be resolved.
-			}
-			try {
-				const fallbackUrl = await this.config.resolveAssetUrl(path);
-				sources.push({
-					url: fallbackUrl,
-					stackedAlpha: isStackedAlphaClipUrl(path),
-					resolvedPath: path,
-				});
-			} catch (err) {
-				if (sources.length === 0) throw err;
-			}
-			return sources;
-		}
-
-		const url = await this.config.resolveAssetUrl(path);
-		return [
-			{
-				url,
-				stackedAlpha: isStackedAlphaClipUrl(path) || isStackedAlphaClipUrl(url),
-				resolvedPath: path,
-			},
-		];
-	}
-
-	private evictFailedPooledVideo(url: string, video: HTMLVideoElement): void {
-		if (this.clipVideos.get(url) === video) {
-			this.clipVideos.delete(url);
-		}
-		video.pause();
-		if (video !== this.mountedVideo) {
-			video.remove();
-		} else {
-			video.removeAttribute("src");
-			delete video.dataset.naiaClipUrl;
-			delete video.dataset.naiaStackedAlpha;
-			delete video.dataset.naiaResolvedPath;
-		}
-	}
-
 	private async playLoopFallbackFrom(
 		path: string,
 		sources: ResolvedNvaClipSource[],
@@ -1474,11 +1393,6 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				sourceWidth > 0 &&
 				sourceHeight > 0
 			) {
-				const isStacked = isStackedAlphaVideoElement(video);
-				const sourceWidth = video.videoWidth;
-				const sourceHeight = isStacked
-					? Math.max(1, Math.floor(video.videoHeight / 2))
-					: video.videoHeight;
 				const rect = containRect(
 					canvas.width,
 					canvas.height,
@@ -1572,17 +1486,6 @@ if (isStacked && video) {
 								rect.dy,
 								rect.dw,
 								rect.dh,
-							);
-							drew = true;
-						}
-					} else if (keyColor && !this.keyerFailed) {
-						try {
-							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
-							else this.keyer.setParams({ keyColor });
-							const keyed = this.keyer.process(
-								video,
-								sourceWidth,
-								sourceHeight,
 							);
 							drew = true;
 						}
