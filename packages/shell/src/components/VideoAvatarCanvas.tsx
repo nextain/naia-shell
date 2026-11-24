@@ -60,8 +60,8 @@ interface NvaPan {
 	y: number;
 }
 const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
-function videoTransform(pan: NvaPan): string {
-	return `translate(calc(var(--nva-center-offset, var(--naia-width, 320px) / 2 - calc(var(--naia-vw, 1vw) * 50)) + ${pan.x}px), ${pan.y}px)`;
+function videoTransform(pan: NvaPan, zoom = 1): string {
+	return `translate(calc(var(--nva-center-offset, var(--naia-width, 320px) / 2 - calc(var(--naia-vw, 1vw) * 50)) + ${pan.x}px), ${pan.y}px) scale(${zoom})`;
 }
 const MIN_NVA_ZOOM = 0.5;
 const MAX_NVA_ZOOM = 3;
@@ -618,7 +618,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					aspectRatio: manifest
 						? `${manifest.canvas.width} / ${manifest.canvas.height}`
 						: undefined,
-					transform: videoTransform(pan),
+					transform: videoTransform(pan, zoom),
 					visibility: mode === "error" ? "hidden" : "visible",
 				}}
 			/>

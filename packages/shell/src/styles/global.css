@@ -3632,7 +3632,7 @@ body.resizing-row {
 
 .settings-field.visual-agent-slug-settings > label {
 	color: var(--cream);
-	font-size: 14px;
+	font-size: calc(14px * var(--ui-font-scale, 1));
 .settings-save-btn {
 	pointer-events: auto;
 	padding: 10px 28px;
@@ -3649,7 +3649,7 @@ body.resizing-row {
 }
 
 .visual-agent-slug-settings .settings-hint {
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	line-height: 1.4;
 }
 
@@ -3667,7 +3667,7 @@ body.resizing-row {
 
 .visual-agent-slug-preview > p {
 	color: var(--cream);
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-font-scale, 1));
 	user-select: text;
 }
 
@@ -3729,7 +3729,7 @@ body.resizing-row {
 	border-radius: 6px;
 	background: transparent;
 	color: var(--cream);
-	font-size: 14px;
+	font-size: calc(14px * var(--ui-font-scale, 1));
 	cursor: pointer;
 }
 .character-theme-settings button:disabled {
@@ -3741,7 +3741,7 @@ body.resizing-row {
 	padding: 8px;
 	border-radius: 6px;
 	background: var(--espresso-light);
-	font-size: 14px;
+	font-size: calc(14px * var(--ui-font-scale, 1));
 }
 
 .character-card-actions {
@@ -3814,7 +3814,7 @@ body.resizing-row {
 	border-radius: 8px;
 	background: var(--wood);
 	color: #0b1220;
-	font-size: 14px;
+	font-size: calc(14px * var(--ui-font-scale, 1));
 	font-weight: 600;
 	line-height: 1.2;
 	white-space: nowrap;
@@ -6671,7 +6671,7 @@ body.resizing-row {
 	padding: 8px 10px;
 	background: rgba(8, 14, 28, 0.92);
 	color: #f2f4f8;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	line-height: 1.45;
 	border: 1px solid rgba(255, 196, 90, 0.55);
 	border-radius: 8px;
@@ -6684,7 +6684,7 @@ body.resizing-row {
 	background: none;
 	border: none;
 	color: inherit;
-	font-size: 14px;
+	font-size: calc(14px * var(--ui-font-scale, 1));
 	line-height: 1;
 	cursor: pointer;
 	padding: 0 2px;
@@ -6895,7 +6895,7 @@ body.resizing-row {
 	border-radius: 6px;
 	background: rgba(130, 180, 255, 0.15);
 	color: rgba(255, 255, 255, 0.92);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	cursor: pointer;
 }
 
@@ -13129,7 +13129,7 @@ body.resizing-col * {
 .settings-model-roles .settings-field { min-width: 0; }
 @media (max-width: 600px) { .settings-model-roles { grid-template-columns: minmax(0, 1fr); } }
 
-.settings-model-selected-label { overflow-wrap: anywhere; white-space: normal; font-size: 12px; opacity: 1; }
+.settings-model-selected-label { overflow-wrap: anywhere; white-space: normal; font-size: calc(12px * var(--ui-font-scale, 1)); opacity: 1; }
 
 /* Character/theme settings need usable space beside the companion on narrow
    windows. Only the active Settings surface takes the full available width. */
@@ -13169,7 +13169,7 @@ body.resizing-col * {
 	border-radius: 14px;
 	background: transparent;
 	color: var(--cream);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	font-variant-numeric: tabular-nums;
 	cursor: pointer;
 }
@@ -13206,7 +13206,7 @@ body.resizing-col * {
 	background: var(--bg-surface);
 	color: var(--cream);
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-font-scale, 1));
 }
 
 .web-credit__empty {
@@ -13237,7 +13237,7 @@ body.resizing-col * {
 	border-radius: 6px;
 	background: transparent;
 	color: var(--cream);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	cursor: pointer;
 }
 

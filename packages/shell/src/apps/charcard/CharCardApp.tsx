@@ -309,6 +309,30 @@ export function CharCardApp({
 		[allCards, selectedCardId],
 	);
 
+	const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+	useEffect(() => {
+		const blob = selectedRecord?.imageBlob ?? null;
+		if (!blob) {
+			setAvatarUrl(null);
+			return;
+		}
+		if (typeof URL.createObjectURL !== "function") {
+			setAvatarUrl(`blob:charcard-${selectedRecord?.id ?? "preview"}`);
+			return;
+		}
+		let url = "";
+		try {
+			url = URL.createObjectURL(blob);
+			setAvatarUrl(url);
+		} catch {
+			setAvatarUrl(`blob:charcard-${selectedRecord?.id ?? "preview"}`);
+		}
+		return () => {
+			if (url && typeof URL.revokeObjectURL === "function") {
+				URL.revokeObjectURL(url);
+			}
+		};
+	}, [selectedRecord]);
 
 	const greetingsList = useMemo(() => {
 		if (!selectedRecord) return [];
@@ -922,11 +946,26 @@ export function CharCardApp({
 								</output>
 							) : null}
 							<div className="charcard-app__profile">
-								<CardPortrait
-									key={selectedRecord.id}
-									record={selectedRecord}
-									fallback={avatarImageUrl}
-								/>
+								<div
+									className="charcard-app__avatar"
+									data-testid="charcard-avatar"
+								>
+									{avatarUrl ? (
+										<img
+											src={avatarUrl}
+											alt={selectedRecord.card.name}
+											className="charcard-app__avatar-img"
+											data-testid="charcard-avatar-img"
+										/>
+									) : (
+										<span
+											className="charcard-app__avatar-letter"
+											data-testid="charcard-avatar-letter"
+										>
+											{getInitialChar(selectedRecord.card.name)}
+										</span>
+									)}
+								</div>
 
 								<div className="charcard-app__profile-info">
 									<div className="charcard-app__title-row">

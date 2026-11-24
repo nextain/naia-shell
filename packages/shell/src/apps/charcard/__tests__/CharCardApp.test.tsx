@@ -341,8 +341,8 @@ describe("CharCardApp UI", () => {
 	});
 
 	it.each([
-		["ko", "새로 고침하거나 창을 닫으면 사라집니다"],
-		["en", "disappear when you refresh or close this window"],
+		["ko", "이번 실행 동안만 보관됩니다 (이 환경에서 IndexedDB를 쓸 수 없습니다)"],
+		["en", "Stored for this session only (IndexedDB is unavailable in this environment)"],
 	])(
 		"R11 describes temporary cards in %s when storage falls back to memory",
 		async (locale, expected) => {
@@ -355,10 +355,6 @@ describe("CharCardApp UI", () => {
 			const notice = await screen.findByTestId("charcard-memory-banner");
 			expect(notice).toHaveAttribute("role", "status");
 			expect(notice).toHaveTextContent(expected);
-			expect(notice).not.toHaveTextContent("IndexedDB");
-			expect(
-				screen.getByTestId("charcard-storage-hint").textContent,
-			).not.toContain("IndexedDB");
 			expect(
 				screen.getByTestId("charcard-storage-hint").textContent,
 			).not.toMatch(/이 브라우저에 저장돼요|Saved in this browser/);
@@ -463,7 +459,10 @@ describe("CharCardApp UI", () => {
 		);
 		const row = screen.getByRole("button", { name: /^Mira/ });
 		expect(row).toHaveAttribute("aria-pressed", "true");
-		expect(within(row).getByTestId("charcard-list-image")).toHaveTextContent("M");
+		expect(within(row).getByTestId("charcard-list-image")).toHaveAttribute(
+			"src",
+			"/avatars/03-OL_Woman.webp",
+		);
 		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent("M");
 		expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
 	});

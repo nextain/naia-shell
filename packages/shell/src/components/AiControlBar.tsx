@@ -198,6 +198,8 @@ export function AiControlBar({
 
 			<button
 				type="button"
+				data-testid="ai-bar-tts-btn"
+				data-control-state={ttsEnabled ? "on" : "off"}
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
 				data-usage-event="ai-control-bar.toggle-tts-enabled-2.click"
 				onClick={() => {
@@ -317,7 +319,7 @@ export function AiControlBar({
 					type="button"
 					data-testid="ai-bar-broadcast-btn"
 				data-broadcast-state={broadcastBridge.state}
-				className={`bgm-ai-toggle${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
 				disabled={!broadcastBridge.hasStreamKey && !broadcastActive}
 				aria-pressed={broadcastActive}
 				aria-label={

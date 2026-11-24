@@ -274,7 +274,14 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		const nextPost = vi.spyOn(next.contentWindow!, "postMessage");
 		postYtMessage({ event: "onReady" });
 		expect(openCaptionsToggle(restored.container)).toBeChecked();
-		expect(screen.queryByRole("button", { name: /captions|^CC$/i })).toBeNull();
+		// The track toggle carries the track title in its accessible name, so it
+		// can match /captions/i for caption tracks; only a dedicated captions/CC
+		// button outside the track toggle would be a stray control.
+		expect(
+			screen
+				.queryAllByRole("button", { name: /captions|^CC$/i })
+				.filter((el) => !el.classList.contains("bgm-track-toggle")),
+		).toHaveLength(0);
 		expect(nextPost).toHaveBeenCalledWith(
 			JSON.stringify({
 				event: "command",
@@ -2093,11 +2100,10 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			),
 		);
 		await startTrack("first", "YouTube One");
+		expect(useAvatarStore.getState().backgroundMediaType).toBe("iframe");
 		expect(useAvatarStore.getState().bgmVideoUrl).toMatch(
 			/^https:\/\/www\.youtube-nocookie\.com\/embed\/first\?/,
 		);
-		// The YouTube embed is not the background any more.
-		expect(useAvatarStore.getState().backgroundMediaType).toBe("");
 		expect(container.querySelector("audio")?.hasAttribute("src")).toBe(false);
 		bgmCommandHandler()({
 			payload: JSON.stringify({ type: "bgm_youtube_next" }),

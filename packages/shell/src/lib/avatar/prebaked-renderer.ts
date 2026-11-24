@@ -25,6 +25,7 @@ import type {
 import { takePrewarmedSpeechAsset } from "./nva-speech/speech-asset-prewarm";
 import {
 	isStackedAlphaClipUrl,
+	isStackedAlphaVideoElement,
 	isWebKitWithoutVp9Alpha,
 	markVideoStackedAlpha,
 	resolveNvaClipKeyColor,
@@ -1379,7 +1380,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					video?.getAttribute("src") ||
 					video?.src ||
 					"";
-			const isStacked = !stage && Boolean(video) && isStackedAlphaClipUrl(clipUrl);
+			const isStacked =
+				!stage &&
+				Boolean(video) &&
+				(video
+					? isStackedAlphaVideoElement(video, clipUrl)
+					: isStackedAlphaClipUrl(clipUrl));
 			const sourceWidth = stage ? stage.canvas.width : (video?.videoWidth ?? 0);
 			const rawHeight = stage ? stage.canvas.height : (video?.videoHeight ?? 0);
 			const sourceHeight = isStacked

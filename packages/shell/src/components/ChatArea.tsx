@@ -4185,7 +4185,7 @@ export function ChatArea({
 				}
 				flushThinkingStream();
 				flushGestureTriggerStream();
-				settleInstalledAppReply("", wireErrorMessage(chunk.code, chunk.message));
+				settleInstalledAppReply("", failureDetail);
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
