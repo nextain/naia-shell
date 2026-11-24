@@ -35,6 +35,10 @@ import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
 import { isNarrowPortraitScreen, isWebMode } from "../web-runtime/web-assets";
 
 const WEB_CLIP_RETRY_DELAY_MS = 300;
+// A decoder that never starts (play() neither resolves nor rejects) must not
+// hang the avatar in loading mode: fail the clip so the next source — or the
+// error fallback — takes over.
+const NVA_DECODER_START_TIMEOUT_MS = 8000;
 
 export interface StackedAlphaCompositorLike {
 	readonly canvas: HTMLCanvasElement;
@@ -920,7 +924,29 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 							this.cancelLoopErrorWatcher = null;
 						};
 					}
-					await video.play();
+					let stallTimer: ReturnType<typeof setTimeout> | null = null;
+					const stall = new Promise<never>((_, reject) => {
+						const timer = setTimeout(() => {
+							this.playbackTimers.delete(timer);
+							stallTimer = null;
+							reject(new Error(`NVA decoder stall (${effectivePath})`));
+						}, NVA_DECODER_START_TIMEOUT_MS);
+						stallTimer = timer;
+						this.playbackTimers.set(timer, () => {
+							clearTimeout(timer);
+							this.playbackTimers.delete(timer);
+							stallTimer = null;
+						});
+					});
+					try {
+						await Promise.race([video.play(), stall]);
+					} finally {
+						if (stallTimer) {
+							clearTimeout(stallTimer);
+							this.playbackTimers.delete(stallTimer);
+							stallTimer = null;
+						}
+					}
 					return;
 				}
 				await new Promise<void>((resolve, reject) => {

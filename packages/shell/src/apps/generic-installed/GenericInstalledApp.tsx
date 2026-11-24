@@ -101,7 +101,6 @@ export function createGenericInstalledApp(
 				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
-				disposeContextBridge();
 			};
 		}, [htmlEntry, frameSrc, appId, permissions]);
 

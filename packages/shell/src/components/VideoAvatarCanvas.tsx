@@ -391,7 +391,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		if (!video || !canvas || !manifest || !bundleDir) return;
 		syncAvatarCanvasBufferSize(canvas, manifest, zoomRef.current);
 		const urls = new Map<string, string>();
-		const adkPath = getAdkPath() ?? "";
+		// Web mode serves bundled /nva/... and OPFS archives over fetch/blob URLs:
+	// never touch the desktop ADK path (or its Tauri invoke) on that path.
+	const adkPath = isWebMode() ? "" : (getAdkPath() ?? "");
 		const bundleName =
 			bundleDir.split(/[/\\]/).filter(Boolean).pop() ??
 			nvaModel?.split(/[/\\]/).filter(Boolean).pop() ??
