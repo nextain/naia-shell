@@ -5,16 +5,16 @@ import { applyNaiaSlotDefaults } from "../../slots/model";
 import type { AppConfig } from "../../config";
 
 const config: AppConfig = { provider: "nextain", model: "main", apiKey: "" };
-const models = ["gpt-5.6-luna", "gpt-5.4-nano", "solar-mini"].map(id => ({ id, label: id, capabilities: ["llm"] as ("llm")[] }));
+const models = ["deepseek-v4.1-flash", "gpt-6-luna", "gpt-5.6-luna", "gpt-5.4-nano", "solar-mini"].map(id => ({ id, label: id, capabilities: ["llm"] as ("llm")[] }));
 const meta = (id: string) => ({ id, label: id, capabilities: ["llm"] as ("llm")[] });
 
 describe("UT-SM-01 small model selection", () => {
  it("chooses catalog Luna or inherits main", () => {
-  expect(defaultSmallModel(models)).toEqual({ provider: "nextain", model: "gpt-5.6-luna", thinkingLevel: "low" });
+   expect(defaultSmallModel(models)).toEqual({ provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "low" });
   expect(defaultSmallModel([])).toEqual({ inherit: "main" });
  });
  it("filters nano but retains solar and explicit selections", () => {
-  expect(smallModelChoices(models).map(m => m.id)).toEqual(["gpt-5.6-luna", "solar-mini"]);
+   expect(smallModelChoices(models).map(m => m.id)).toEqual(["deepseek-v4.1-flash", "gpt-6-luna", "gpt-5.6-luna", "solar-mini"]);
   const next = writeConfiguredLlmRole(config, "sub", { provider: "nextain", model: "explicit" });
   expect(readConfiguredLlmRoles(next).sub?.model).toBe("explicit");
   expect(next.subLlmModel).toBe("explicit");
@@ -49,12 +49,12 @@ describe("UT-SM-03 automatic slot defaults", () => {
 describe("UT-SM-04 Terra present", () => {
  it("chooses Terra xhigh and preserves an existing main", () => {
   const catalog = [meta("solar-pro4"), meta("gpt-6.1-terra")];
-  expect(defaultMainModel(catalog)).toEqual({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" });
+   expect(defaultMainModel(catalog)).toEqual({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" });
   expect(applyNaiaSlotDefaults(config, catalog).model).toBe("main");
  });
 });
 describe("UT-SM-05 Terra absent", () => {
  it("selects the next available recommendation", () => {
-  expect(defaultMainModel([meta("gpt-5.6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "solar-pro4" });
+   expect(defaultMainModel([meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "max" });
  });
 });

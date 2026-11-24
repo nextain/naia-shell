@@ -62,7 +62,7 @@ describe("선택기 숨김 규칙 · 나이아 계정 단일 모델 전환", () 
 
 	it("나이아 계정 기본 모델은 Terra이며 등록된 대화 모델이다", () => {
 		const nextain = getLlmProvider("nextain");
-		expect(nextain?.defaultModel).toBe("gpt-6.1-terra");
+		expect(nextain?.defaultModel).toBe("deepseek-v4.1-flash");
 		expect(
 			nextain?.models.some(
 				(item) =>

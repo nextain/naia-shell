@@ -90,7 +90,7 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 	it("Naia default model is deepseek-v4-flash", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		expect(naia!.defaultModel).toBe("gpt-6.1-terra");
+		expect(naia!.defaultModel).toBe("deepseek-v4.1-flash");
 	});
 
 	it("does not remove Codex ChatGPT models", async () => {
