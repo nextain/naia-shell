@@ -108,7 +108,7 @@ const devVoxCpm2Bundle = resolve(SHELL, "src-tauri", "voxcpm2-runtime");
 const hostVoxCpm2Profile = voxCpm2Profile();
 // Canonical pin is scripts/voxcpm2-download-manifest.json (git). The copy under
 // src-tauri/voxcpm2-runtime is a staging artifact and was preferred first, so
-// tauri:dev rejected the live zip (#640 luke-victus: 2494187310 vs 2496064260).
+// tauri:dev rejected the live zip (#640 win-rtx4060: 2494187310 vs 2496064260).
 const canonicalVoxCpm2DownloadManifest = resolve(
 	SHELL,
 	"scripts",

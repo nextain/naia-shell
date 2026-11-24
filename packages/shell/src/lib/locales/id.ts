@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "(tanpa nama file)",
 	"slides.videoLabel": "{position} / Video {name}",
 	"slides.videoIndicator": "{position} / Video",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "Menulis ke papan klip saat diklik",
+	"settings.fontScale": "Ukuran teks",
+	"settings.fontScaleSmall": "Kecil",
+	"settings.fontScaleNormal": "Normal",
+	"settings.fontScaleLarge": "Besar",
+	"settings.fontScaleXLarge": "Sangat besar",
+	"settings.fontScaleHint": "Mengubah ukuran teks obrolan, menu, pengaturan, subtitel, dan overlay siaran. Langsung diterapkan.",
+	"bgm.keyboardHelp": "Musik: Spasi atau K putar/hentikan; kiri/kanan 5 detik; atas/bawah volume; N berikutnya, P sebelumnya",
+	"bgm.showCaptions": "Tampilkan teks",
+	"ai.avatarControls": "Kontrol avatar",
 } as const;

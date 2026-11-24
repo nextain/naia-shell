@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "(कोई फ़ाइल नाम नहीं)",
 	"slides.videoLabel": "{position} / वीडियो {name}",
 	"slides.videoIndicator": "{position} / वीडियो",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "क्लिक करने पर क्लिपबोर्ड में लिखना",
+	"settings.fontScale": "अक्षर का आकार",
+	"settings.fontScaleSmall": "छोटा",
+	"settings.fontScaleNormal": "सामान्य",
+	"settings.fontScaleLarge": "बड़ा",
+	"settings.fontScaleXLarge": "बहुत बड़ा",
+	"settings.fontScaleHint": "चैट, मेनू, सेटिंग्स, उपशीर्षक और प्रसारण ओवरले के अक्षरों का आकार बदलता है। तुरंत लागू होता है।",
+	"bgm.keyboardHelp": "संगीत: स्पेस या K चलाएं/रोकें; बायां/दायां 5 सेकंड; ऊपर/नीचे आवाज़; N अगला, P पिछला",
+	"bgm.showCaptions": "उपशीर्षक दिखाएं",
+	"ai.avatarControls": "अवतार नियंत्रण",
 } as const;

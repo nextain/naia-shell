@@ -130,6 +130,7 @@ export function SlidesControls({
 			</label>
 			<button
 				type="button"
+				data-usage-event="slides-controls.on-action-1.click"
 				onClick={() => onAction("previous")}
 				disabled={
 					editing ||
@@ -143,6 +144,7 @@ export function SlidesControls({
 			<button
 				type="button"
 				className="slides-app__primary"
+				data-usage-event="slides-controls.on-action-2.click"
 				onClick={() =>
 					onAction(
 						state.mode === "presenting"
@@ -162,6 +164,7 @@ export function SlidesControls({
 			</button>
 			<button
 				type="button"
+				data-usage-event="slides-controls.on-action-3.click"
 				onClick={() => onAction("stop")}
 				disabled={editing || state.totalPages === 0}
 			>
@@ -172,12 +175,14 @@ export function SlidesControls({
 				aria-pressed={state.repeat}
 				className={state.repeat ? "slides-app__primary" : undefined}
 				disabled={editing || state.totalPages === 0}
+				data-usage-event="slides-controls.on-toggle-repeat-4.click"
 				onClick={onToggleRepeat}
 			>
 				{t("slides.repeat")}
 			</button>
 			<button
 				type="button"
+				data-usage-event="slides-controls.on-action-5.click"
 				onClick={() => onAction("next")}
 				disabled={
 					editing ||
@@ -201,6 +206,7 @@ export function SlidesControls({
 			</label>
 			<button
 				type="button"
+				data-usage-event="slides-controls.on-toggle-fullscreen-6.click"
 				onClick={onToggleFullscreen}
 				aria-pressed={fullscreen}
 				disabled={editing || state.totalPages === 0}
@@ -209,6 +215,7 @@ export function SlidesControls({
 			</button>
 			<button
 				type="button"
+				data-usage-event="slides-controls.on-toggle-recording-7.click"
 				onClick={onToggleRecording}
 				disabled={editing || state.totalPages === 0}
 				aria-label={

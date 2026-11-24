@@ -474,6 +474,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 				// Suppress the WebView's default (browser) context menu so a
 				// right-click reaches xterm's mouse reporting and Herdr shows its
 				// own right-click menu instead.
+				data-usage-event="terminal.div-1.context"
 				onContextMenu={(e) => e.preventDefault()}
 				onDragOverCapture={(e) => {
 					if (e.dataTransfer.types.includes("Files")) {
@@ -493,6 +494,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 					<div
 						className="workspace-app__idle-toast"
 						role="alert"
+						data-usage-event="terminal.set-toast-message-2.click"
 						onClick={() => setToastMessage(null)}
 					>
 						{toastMessage}

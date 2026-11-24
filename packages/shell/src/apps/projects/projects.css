@@ -29,7 +29,7 @@
 .projects-app__project-header h1,
 .projects-app__notice h2 {
 	margin: 2px 0 0;
-	font-size: 1.4rem;
+	font-size: calc(1.4rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__project-header {
@@ -37,14 +37,14 @@
 }
 
 .projects-app__project-header h1 {
-	font-size: 1.08rem;
+	font-size: calc(1.08rem * var(--ui-font-scale, 1));
 	font-weight: 650;
 }
 
 .projects-app__eyebrow {
 	margin: 0;
 	color: var(--text-secondary, #9ca3af);
-	font-size: 0.78rem;
+	font-size: calc(0.78rem * var(--ui-font-scale, 1));
 	font-weight: 700;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -53,7 +53,7 @@
 .projects-app__project-meta {
 	margin: 6px 0 0;
 	color: var(--text-secondary, #aab4c2);
-	font-size: 0.82rem;
+	font-size: calc(0.82rem * var(--ui-font-scale, 1));
 	overflow-wrap: anywhere;
 }
 
@@ -61,7 +61,7 @@
 	display: block;
 	margin-top: 5px;
 	color: var(--text-secondary, #aab4c2);
-	font-size: 0.78rem;
+	font-size: calc(0.78rem * var(--ui-font-scale, 1));
 	line-height: 1.45;
 	overflow-wrap: anywhere;
 }
@@ -127,7 +127,7 @@
 
 .projects-app__catalog-errors h2 {
 	margin: 0 0 8px;
-	font-size: 0.95rem;
+	font-size: calc(0.95rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__truncation {
@@ -140,7 +140,7 @@
 }
 
 .projects-app__truncation strong {
-	font-size: 1rem;
+	font-size: calc(1rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__truncation > span,
@@ -152,7 +152,7 @@
 .projects-app__truncation-files {
 	display: grid;
 	gap: 4px;
-	font-size: 0.82rem;
+	font-size: calc(0.82rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__truncation code {
@@ -169,7 +169,7 @@
 }
 
 .projects-app__search-label {
-	font-size: 0.9rem;
+	font-size: calc(0.9rem * var(--ui-font-scale, 1));
 	font-weight: 650;
 }
 
@@ -231,7 +231,7 @@
 	gap: 5px;
 	margin-top: 8px;
 	color: #ffd6c7;
-	font-size: 0.78rem;
+	font-size: calc(0.78rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__issues code {
@@ -301,7 +301,7 @@
 .projects-app__agent-option small {
 	grid-column: 2;
 	color: var(--text-secondary, #aab4c2);
-	font-size: 0.72rem;
+	font-size: calc(0.72rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__primary-button {
@@ -445,7 +445,7 @@
 .projects-app__docs-group-title {
 	margin: 0;
 	color: var(--text-secondary, #9ca3af);
-	font-size: 0.78rem;
+	font-size: calc(0.78rem * var(--ui-font-scale, 1));
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	overflow-wrap: anywhere;
@@ -469,7 +469,7 @@
 	background: transparent;
 	text-align: left;
 	font: inherit;
-	font-size: 0.86rem;
+	font-size: calc(0.86rem * var(--ui-font-scale, 1));
 	overflow-wrap: anywhere;
 	cursor: pointer;
 }
@@ -519,7 +519,7 @@
 
 .projects-app__dialog h2 {
 	margin: 0;
-	font-size: 1.12rem;
+	font-size: calc(1.12rem * var(--ui-font-scale, 1));
 }
 
 .projects-app__dialog-notes {
@@ -553,7 +553,7 @@
 
 	.projects-app__tab {
 		padding-inline: 8px;
-		font-size: 0.88rem;
+		font-size: calc(0.88rem * var(--ui-font-scale, 1));
 	}
 
 	.projects-app__agent-options {

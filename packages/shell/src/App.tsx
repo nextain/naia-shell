@@ -44,6 +44,7 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
+
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import {
@@ -110,6 +111,7 @@ import {
 	shouldShowStartupUpdatePrompt,
 } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
+import { applyUiFontScale } from "./lib/ui-font-scale";
 import {
 	UI_PREFERENCE_KEYS,
 	hydrateUiPreferences,
@@ -262,6 +264,7 @@ function applyPersistedPresentationConfig(
 	setWidth: (width: number) => void,
 ): void {
 	applyTheme(config?.theme ?? "midnight");
+	applyUiFontScale(config?.uiFontScale);
 	if (config?.deletedApps?.length) {
 		for (const id of config.deletedApps) appRegistry.unregister(id);
 	}
@@ -1343,7 +1346,11 @@ export function App() {
 				e.preventDefault();
 				toggleNaia();
 			}
-			if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "a") {
+			if (
+				(e.ctrlKey || e.metaKey) &&
+				e.altKey &&
+				(e.code === "KeyA" || e.key.toLowerCase() === "a")
+			) {
 				e.preventDefault();
 				toggleAiInterferenceEnabled();
 			}
@@ -1601,7 +1608,7 @@ export function App() {
 						zIndex: 99999,
 					}}
 					role="alert"
-					onClick={() => setGlobalToast(null)}
+					data-usage-event="shell.set-global-toast-1.click" onClick={() => setGlobalToast(null)}
 				>
 					{globalToast}
 				</div>

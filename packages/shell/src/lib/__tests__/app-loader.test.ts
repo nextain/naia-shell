@@ -282,7 +282,7 @@ describe("app-loader", () => {
 			);
 		});
 
-		it("revokes Store tool trust when Rust no longer verifies the installed receipt", async () => {
+		it("IT-06 revokes Store tool trust when Rust no longer verifies the installed receipt", async () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve([
@@ -726,7 +726,7 @@ describe("app-loader", () => {
 			dateNow.mockRestore();
 		});
 
-		it("blocks execution and downgrades the tool when entitlement is denied at dispatch", async () => {
+		it("IT-06 blocks execution and downgrades the tool when entitlement is denied at dispatch", async () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve([

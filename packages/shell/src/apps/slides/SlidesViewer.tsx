@@ -8,6 +8,7 @@ import {
 	type KioskIrSlide,
 	kioskIrSlideImageUrl,
 } from "../../lib/kiosk-demo/slides";
+import { pdfTextFromItems } from "../../lib/slides-pdf-text";
 
 type SlidesWorkerLocation = Pick<Location, "protocol" | "host" | "pathname">;
 
@@ -105,27 +106,13 @@ export function SlidesViewer({
 			{file ? (
 				<div className="slides-app__stage">
 					<Document
-						file={file}
-						onLoadSuccess={async (document) => {
-							const texts: string[] = [];
-							for (let page = 1; page <= document.numPages; page++) {
-								const pdfPage = await document.getPage(page);
-								const content = await pdfPage.getTextContent();
-								texts.push(
-									content.items
-										.map((item) => ("str" in item ? item.str : ""))
-										.join(" ")
-										.replace(/\s+/g, " ")
-										.trim(),
-								);
-							}
-							onReady(file, document.numPages, texts);
-						}}
-						onLoadError={(error) => onError(file, error)}
-						loading={
-							slideCard ? null : (
-								<div className="slides-app__empty">{t("slides.loading")}</div>
-							)
+					file={file}
+					onLoadSuccess={async (document) => {
+						const texts: string[] = [];
+						for (let page = 1; page <= document.numPages; page++) {
+							const pdfPage = await document.getPage(page);
+							const content = await pdfPage.getTextContent();
+							texts.push(pdfTextFromItems(content.items));
 						}
 						error={
 							slideCard ? null : (

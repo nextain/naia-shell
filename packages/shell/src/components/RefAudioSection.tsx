@@ -51,6 +51,7 @@ import {
 } from "../lib/voice/ref-recorder";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
+import { scaledFontSize } from "../lib/ui-font-scale";
 
 const TAG = "RefAudioSection";
 const MIN_DURATION_S = 5;
@@ -898,7 +899,7 @@ export function RefAudioSection({
 					}}
 				>
 					<div style={{ minWidth: 0 }}>
-						<div style={{ fontSize: 12, opacity: 0.7 }}>{S.currentTitle}</div>
+						<div style={{ fontSize: scaledFontSize(12), opacity: 0.7 }}>{S.currentTitle}</div>
 						<div style={{ marginTop: 2 }}>
 							{loading ? (
 								<span className="settings-hint">…</span>
@@ -932,6 +933,7 @@ export function RefAudioSection({
 								type="button"
 								className="voice-preview-btn"
 								disabled={previewState === "loading"}
+								data-usage-event="ref-audio-section.on-preview-active-1.click"
 								onClick={() => void onPreviewActive()}
 							>
 								{previewLabel}
@@ -940,6 +942,7 @@ export function RefAudioSection({
 								type="button"
 								className="voice-preview-btn"
 								disabled={busy}
+								data-usage-event="ref-audio-section.set-confirming-remove-2.click"
 								onClick={() => setConfirmingRemove(true)}
 							>
 								{S.removeBtn}
@@ -960,6 +963,7 @@ export function RefAudioSection({
 								type="button"
 								className="voice-preview-btn"
 								disabled={busy}
+								data-usage-event="ref-audio-section.on-remove-3.click"
 								onClick={() => void onRemove()}
 							>
 								{S.confirmYes}
@@ -967,6 +971,7 @@ export function RefAudioSection({
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-usage-event="ref-audio-section.set-confirming-remove-4.click"
 								onClick={() => setConfirmingRemove(false)}
 							>
 								{S.confirmNo}
@@ -979,7 +984,7 @@ export function RefAudioSection({
 				    the normalized reference WAV on-device and sends it directly to the
 				    host voice runtime, so this surface must remain visible in local mode. */}
 				<div style={{ marginTop: 12 }}>
-					<div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+					<div style={{ fontSize: scaledFontSize(12), opacity: 0.7, marginBottom: 6 }}>
 						{S.myVoiceTitle}
 					</div>
 					<div
@@ -995,6 +1000,7 @@ export function RefAudioSection({
 								<button
 									type="button"
 									className="voice-preview-btn active"
+									data-usage-event="ref-audio-section.button-5.click"
 									onClick={() => finishRecording()}
 								>
 									{S.recordStop}
@@ -1005,6 +1011,7 @@ export function RefAudioSection({
 								<button
 									type="button"
 									className="voice-preview-btn"
+									data-usage-event="ref-audio-section.button-6.click"
 									onClick={cancelRecording}
 								>
 									{S.recordCancel}
@@ -1018,6 +1025,7 @@ export function RefAudioSection({
 								<button
 									type="button"
 									className="voice-preview-btn"
+									data-usage-event="ref-audio-section.on-preview-take-7.click"
 									onClick={onPreviewTake}
 								>
 									{takePlaying ? S.previewStop : S.previewBtn}
@@ -1026,6 +1034,7 @@ export function RefAudioSection({
 									type="button"
 									className="voice-preview-btn"
 									disabled={busy}
+									data-usage-event="ref-audio-section.button-8.click"
 									onClick={() => void applyRecordedTake()}
 								>
 									{busy ? S.uploading : isLocal ? S.takeApplyFree : S.takeApply}
@@ -1034,6 +1043,7 @@ export function RefAudioSection({
 									type="button"
 									className="voice-preview-btn"
 									disabled={busy}
+									data-usage-event="ref-audio-section.button-9.click"
 									onClick={discardTake}
 								>
 									{S.takeDiscard}
@@ -1045,6 +1055,7 @@ export function RefAudioSection({
 									type="button"
 									className="voice-preview-btn"
 									disabled={busy}
+									data-usage-event="ref-audio-section.start-recording-10.click"
 									onClick={() => void startRecording()}
 								>
 									{busy ? S.uploading : S.recordBtn}
@@ -1079,13 +1090,14 @@ export function RefAudioSection({
 						if ((e.target as HTMLDetailsElement).open) void loadPresets();
 					}}
 				>
-					<summary style={{ cursor: "pointer", fontSize: 13 }}>
+					<summary style={{ cursor: "pointer", fontSize: scaledFontSize(13) }}>
 						{S.presetTitle}
 					</summary>
 					<div style={{ marginTop: 8 }}>
 						<div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
 							<select
 								value={genderFilter}
+								data-usage-event="ref-audio-section.set-gender-filter-11.select"
 								onChange={(e) => setGenderFilter(e.target.value)}
 								aria-label={S.presetFilterAll}
 							>
@@ -1132,6 +1144,7 @@ export function RefAudioSection({
 												<button
 													type="button"
 													className="voice-preview-btn"
+													data-usage-event="ref-audio-section.on-preview-preset-12.click"
 													onClick={() => void onPreviewPreset(p)}
 												>
 													{playingPresetId === p.id
@@ -1142,6 +1155,7 @@ export function RefAudioSection({
 													type="button"
 													className="voice-preview-btn"
 													disabled={busy || isActive}
+													data-usage-event="ref-audio-section.on-apply-preset-13.click"
 													onClick={() => void onApplyPreset(p)}
 												>
 													{S.presetApply}
@@ -1176,6 +1190,7 @@ export function RefAudioSection({
 										type="button"
 										className="voice-preview-btn"
 										data-testid="ref-audio-engine-start"
+										data-usage-event="ref-audio-section.set-local-engine-14.click"
 										onClick={async () => {
 											if (await ensureLocalVoiceReady()) {
 												setLocalEngine("ready");

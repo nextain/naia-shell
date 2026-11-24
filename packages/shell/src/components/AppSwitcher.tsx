@@ -14,6 +14,7 @@ export function AppSwitcher() {
 					key={app.id}
 					type="button"
 					className={`app-switcher-tab${activeApp === app.id ? " app-switcher-tab--active" : ""}`}
+					data-usage-event="app-switcher.set-active-app-1.click"
 					onClick={() =>
 						setActiveApp(activeApp === app.id ? null : app.id)
 					}

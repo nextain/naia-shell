@@ -8,14 +8,31 @@ import {
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
 import { resolveWebNvaAssetUrl } from "../lib/avatar/nva-speech/speech-asset-prewarm";
-import { shouldUseStackedAlpha } from "../lib/avatar/nva-stacked-alpha";
-import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
+import {
+	createDesktopNvaAssetBlobLoader,
+	isStackedAlphaClipUrl,
+	isWebKitWithoutVp9Alpha,
+	probeBundledPublicNvaUrl,
+	resolveNvaClipCandidates,
+	shouldUseStackedAlpha,
+} from "../lib/avatar/nva-stacked-alpha";
+import {
+	PrebakedAvatarRenderer,
+	type ResolvedNvaClipSource,
+} from "../lib/avatar/prebaked-renderer";
 import {
 	isBroadcastActive,
 	useBroadcastBridge,
 } from "../lib/broadcast-audio-bridge";
 import { getLocale, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	type NvaManifest,
+	collectNvaManifestClipPaths,
+	isPrebakedNvaManifest,
+	parseNvaManifest,
+	resolveNvaAssetPath,
+} from "../lib/nva";
 import {
 	UI_PREFERENCE_KEYS,
 	patchUiPreferences,
@@ -113,6 +130,15 @@ const VIDEO_STYLE = {
 	maxHeight: "92%",
 	objectFit: "contain" as const,
 };
+
+function base64ToBlobUrl(base64: string, mimeType: string): string {
+	const raw = atob(base64);
+	const bytes = new Uint8Array(raw.length);
+	for (let i = 0; i < raw.length; i++) {
+		bytes[i] = raw.charCodeAt(i);
+	}
+	return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
 
 /** GPU 없는 pre-baked NVA player. retired server-side avatar/cascade를 시작하지 않는다. */
 export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
@@ -306,6 +332,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				);
 				if (!isPrebakedNvaManifest(parsed))
 					throw new Error("NVA requires vrm_slots prebaked WebM assets");
+				for (const clipPath of collectNvaManifestClipPaths(parsed)) {
+					resolveNvaAssetPath(directory, clipPath);
+				}
 				if (!disposed) {
 					setBundleDir(directory);
 					setManifest(parsed);
@@ -367,6 +396,67 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		if (!video || !canvas || !manifest || !bundleDir) return;
 		syncAvatarCanvasBufferSize(canvas, manifest, zoomRef.current);
 		const urls = new Map<string, string>();
+		const adkPath = getAdkPath() ?? "";
+		const bundleName =
+			bundleDir.split(/[/\\]/).filter(Boolean).pop() ??
+			nvaModel?.split(/[/\\]/).filter(Boolean).pop() ??
+			"";
+		const preferStacked = shouldUseStackedAlpha();
+		const webmUnsupported = isWebKitWithoutVp9Alpha();
+
+		const resolveDirectLocalUrl = async (
+			relativePath: string,
+		): Promise<string> => {
+			const cached = urls.get(relativePath);
+			if (cached) return cached;
+			const url = await toLocalBlobUrl(
+				resolveNvaAssetPath(bundleDir, relativePath),
+			);
+			urls.set(relativePath, url);
+			return url;
+		};
+
+		const resolveOptionalMp4FallbackUrl = async (
+			relativePath: string,
+		): Promise<string | null> => {
+			const cached = urls.get(relativePath);
+			if (cached) return cached;
+			const localPath = resolveNvaAssetPath(bundleDir, relativePath);
+			if (adkPath) {
+				try {
+					const b64 = await invoke<string>("read_local_binary", {
+						path: localPath,
+						allowedBase: adkPath,
+					});
+					if (b64) {
+						const blobUrl = base64ToBlobUrl(b64, "video/mp4");
+						urls.set(relativePath, blobUrl);
+						return blobUrl;
+					}
+				} catch {
+					// Not in ADK workspace; probe bundled public fallback next.
+				}
+			}
+			const bundledUrl = await probeBundledPublicNvaUrl(
+				bundleName,
+				relativePath,
+			);
+			if (bundledUrl) {
+				urls.set(relativePath, bundledUrl);
+				return bundledUrl;
+			}
+			return null;
+		};
+
+		const loadAssetBlob = createDesktopNvaAssetBlobLoader({
+			manifest,
+			bundleName,
+			readLocalAssetBlob: (relativePath) =>
+				readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath), adkPath),
+			preferStackedAlpha: preferStacked,
+			webmUnsupported,
+		});
+
 		const renderer = new PrebakedAvatarRenderer({
 			modelId: nvaModel,
 			manifest,
@@ -398,6 +488,61 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				);
 				urls.set(relativePath, url);
 				return url;
+			resolveClipCandidates: async (
+				relativePath: string,
+			): Promise<ResolvedNvaClipSource[]> => {
+				const candidates = resolveNvaClipCandidates(manifest, relativePath, {
+					preferStackedAlpha: preferStacked,
+					webmUnsupported,
+				});
+				const resolved: ResolvedNvaClipSource[] = [];
+				for (const candidate of candidates) {
+					if (candidate.inferredFallback) {
+						// Only probe inferred `.stacked.mp4` / `.mp4` eagerly when VP9+Alpha WebM
+						// is unsupported (macOS WKWebView / Safari) or after primary failure.
+						if (!webmUnsupported) continue;
+						const fallbackUrl = await resolveOptionalMp4FallbackUrl(
+							candidate.path,
+						);
+						if (fallbackUrl) {
+							resolved.push({
+								url: fallbackUrl,
+								stackedAlpha: candidate.stackedAlpha,
+								resolvedPath: candidate.path,
+							});
+						}
+						continue;
+					}
+					// Declared in `manifest.stacked_alpha.clips` or primary clip path.
+					// If a declared `stacked_alpha` clip is missing from an un-synced ADK,
+					// also fall back to bundled `/nva/<bundle>/...` when running on WebKit.
+					if (
+						candidate.stackedAlpha &&
+						candidate.path !== relativePath &&
+						webmUnsupported &&
+						adkPath
+					) {
+						const fallbackUrl = await resolveOptionalMp4FallbackUrl(
+							candidate.path,
+						);
+						if (fallbackUrl) {
+							resolved.push({
+								url: fallbackUrl,
+								stackedAlpha: true,
+								resolvedPath: candidate.path,
+							});
+							continue;
+						}
+					}
+					const url = await resolveDirectLocalUrl(candidate.path);
+					resolved.push({
+						url,
+						stackedAlpha:
+							candidate.stackedAlpha || isStackedAlphaClipUrl(candidate.path),
+						resolvedPath: candidate.path,
+					});
+				}
+				return resolved;
 			},
 			// Read bytes directly: a Linux webm URL is MediaSource-backed and not fetch()able;
 			// OPFS-uploaded web `.nva` archives also supply clip and speech blobs from memory.
@@ -406,8 +551,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					? (relativePath) =>
 							webArchive.loadAssetBlob(relativePath, shouldUseStackedAlpha())
 					: undefined
-				: (relativePath) =>
-						readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath)),
+				: loadAssetBlob,
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
 			// 시연에서는 기다리는 동안 몸짓을 틀지 않는다(대표님 11/13 "대기중에 지나가 모션이 나오는데 이거 빼줘").
 			idleGestureIntervalMs: isKioskDemo() ? 0 : 18_000,
@@ -416,8 +560,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				setMode("error");
 				setLoaded(false);
 				useCascadeAvatarStore.getState().setNvaLoadError(reason);
-				if (useCascadeAvatarStore.getState().renderer === renderer)
+				if (useCascadeAvatarStore.getState().renderer === renderer) {
 					useCascadeAvatarStore.getState().setRenderer(null);
+				}
 			},
 		});
 		renderer.setIdleOverride(ambientIdleRef.current);
@@ -436,7 +581,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			for (const url of urls.values())
 				if (url.startsWith("blob:")) URL.revokeObjectURL(url);
 		};
-	}, [video, canvas, manifest, bundleDir, webArchive, setLoaded]);
+	}, [video, canvas, manifest, bundleDir, webArchive, nvaModel, setLoaded]);
 
 	return (
 		<div

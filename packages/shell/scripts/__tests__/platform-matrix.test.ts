@@ -189,6 +189,20 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(inst.windows.wix.componentRefs).toEqual(["NaiaCleanAppDataAnchor"]);
 	});
 
+	it("NSIS stops only installation-tree processes before install and uninstall", () => {
+		const hooks = readFileSync(resolve(SHELL, "src-tauri/windows/installer-hooks.nsh"), "utf8");
+		const stop = readFileSync(resolve(SHELL, "src-tauri/windows/stop-installed-processes.ps1"), "utf8");
+		for (const name of ["NSIS_HOOK_PREINSTALL", "NSIS_HOOK_PREUNINSTALL"]) {
+			const body = hooks.split(`!macro ${name}\n`)[1]?.split("!macroend")[0];
+			expect(body).toContain("!insertmacro StopInstalledProcesses");
+		}
+		expect(hooks).toContain('!define NAIA_HOOK_DIR "${__FILEDIR__}"');
+		expect(stop).toContain("TrimEnd('\\') + '\\'");
+		expect(stop).toContain("StartsWith($root, [StringComparison]::OrdinalIgnoreCase)");
+		expect(stop).toContain("$process.ProcessId -eq $installerPid");
+		expect(stop).toContain("Wait-Process");
+	});
+
 	it("createUpdaterArtifacts=false — 매트릭스 공통이 유일 소유", () => {
 		expect(matrix.common.createUpdaterArtifacts).toBe(false);
 		expect(matrix.os.win32.createUpdaterArtifacts).toBe(true);
@@ -753,6 +767,26 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 			"icons/icon.icns",
 		]);
 		expect(conf.bundle.resources["resources/node"]).toBe("node");
+		expect(conf.bundle.macOS).toEqual({
+			infoPlist: "Info.plist",
+			entitlements: "entitlements.app.plist",
+		});
+		const infoPlist = readFileSync(
+			resolve(SHELL, "src-tauri", conf.bundle.macOS.infoPlist),
+			"utf8",
+		);
+		expect(infoPlist).toContain("<key>NSMicrophoneUsageDescription</key>");
+		const appEntitlements = readFileSync(
+			resolve(SHELL, "src-tauri", conf.bundle.macOS.entitlements),
+			"utf8",
+		);
+		expect(appEntitlements).toContain(
+			"<key>com.apple.security.device.audio-input</key>",
+		);
+		expect(appEntitlements).not.toContain("com.apple.security.cs.allow-jit");
+		expect(appEntitlements).not.toContain(
+			"com.apple.security.cs.allow-unsigned-executable-memory",
+		);
 		const keys = Object.keys(conf.bundle.resources);
 		expect(keys.some((k) => k.includes("vosk"))).toBe(false);
 		expect(keys.some((k) => k.includes("vcruntime"))).toBe(false);

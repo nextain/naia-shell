@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
 import { bootstrapAdkPath } from "./lib/adk-store";
+import { UsageConsentGate } from "./components/UsageConsentGate";
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { isKioskDemo } from "./lib/kiosk-demo/flag";
@@ -82,9 +83,11 @@ async function bootstrap() {
 			// biome-ignore lint/style/noNonNullAssertion: root element always exists
 			createRoot(document.getElementById("root")!).render(
 				<StrictMode>
-					<KioskDemoGate>
-						<App />
-					</KioskDemoGate>
+					<UsageConsentGate>
+						<KioskDemoGate>
+							<App />
+						</KioskDemoGate>
+					</UsageConsentGate>
 				</StrictMode>,
 			);
 		},

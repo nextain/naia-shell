@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "(ফাইলের নাম নেই)",
 	"slides.videoLabel": "{position} / ভিডিও {name}",
 	"slides.videoIndicator": "{position} / ভিডিও",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "ক্লিক করলে ক্লিপবোর্ডে লেখা",
+	"settings.fontScale": "লেখার আকার",
+	"settings.fontScaleSmall": "ছোট",
+	"settings.fontScaleNormal": "স্বাভাবিক",
+	"settings.fontScaleLarge": "বড়",
+	"settings.fontScaleXLarge": "অনেক বড়",
+	"settings.fontScaleHint": "চ্যাট, মেনু, সেটিংস, সাবটাইটেল ও সম্প্রচার ওভারলের লেখার আকার বদলায়। সঙ্গে সঙ্গে প্রযোজ্য হয়।",
+	"bgm.keyboardHelp": "সংগীত: স্পেস বা K চালু/বন্ধ; বাঁ/ডানে ৫ সেকেন্ড; উপরে/নিচে শব্দ; N পরের, P আগের",
+	"bgm.showCaptions": "সাবটাইটেল দেখান",
+	"ai.avatarControls": "অবতার নিয়ন্ত্রণ",
 } as const;

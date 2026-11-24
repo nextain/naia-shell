@@ -25,94 +25,6 @@ afterEach(() => {
 });
 
 describe("CharCardApp UI", () => {
-	it.each([
-		["ko", "새로 고침하거나 창을 닫으면 사라집니다"],
-		["en", "disappear when you refresh or close this window"],
-	])(
-		"R11 describes temporary cards in %s when storage falls back to memory",
-		async (locale, expected) => {
-			render(
-				<CharCardApp
-					storage={createMemoryCardStorage()}
-					localeOverride={locale}
-				/>,
-			);
-			const notice = await screen.findByTestId("charcard-memory-banner");
-			expect(notice).toHaveAttribute("role", "status");
-			expect(notice).toHaveTextContent(expected);
-			expect(notice).not.toHaveTextContent("IndexedDB");
-			expect(
-				screen.getByTestId("charcard-storage-hint").textContent,
-			).not.toContain("IndexedDB");
-			expect(
-				screen.getByTestId("charcard-storage-hint").textContent,
-			).not.toMatch(/이 브라우저에 저장돼요|Saved in this browser/);
-			expect(screen.getByTestId("charcard-import-button")).toBeEnabled();
-		},
-	);
-
-	it.each([
-		["ko", "이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요."],
-		["en", "Saved in this browser; clearing browsing data removes them."],
-	])(
-		"R21-6 explains plain browser storage and clearing browsing data in %s when storage persists",
-		async (locale, expected) => {
-			render(
-				<CharCardApp
-					storage={{
-						...createMemoryCardStorage(),
-						mode: "host",
-					}}
-					localeOverride={locale}
-				/>,
-			);
-			await waitFor(() =>
-				expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
-			);
-			const hint = screen.getByTestId("charcard-storage-hint");
-			expect(hint).toHaveTextContent(expected);
-			expect(hint).not.toHaveTextContent("IndexedDB");
-			expect(
-				screen.queryByTestId("charcard-memory-banner"),
-			).not.toBeInTheDocument();
-		},
-	);
-
-	it("R11 tells users to choose a smaller file when the shell cannot fit a card", async () => {
-		render(
-			<CharCardApp
-				storage={{
-					...createMemoryCardStorage(),
-					mode: "host",
-					saveCard: async () => {
-						throw new CardStorageValueTooLargeError();
-					},
-				}}
-				localeOverride="ko"
-			/>,
-		);
-		await waitFor(() =>
-			expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
-		);
-		fireEvent.change(screen.getByTestId("charcard-file-input"), {
-			target: {
-				files: [
-					new File(['{"name":"큰 카드"}'], "large.json", {
-						type: "application/json",
-					}),
-				],
-			},
-		});
-
-		const alert = await screen.findByRole("alert");
-		expect(alert).toHaveTextContent("카드가 너무 큽니다");
-		expect(
-			within(alert).getByRole("button", { name: "다른 파일 고르기" }),
-		).toBeEnabled();
-		expect(screen.queryByTestId("charcard-memory-banner")).not.toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: /^큰 카드/ })).not.toBeInTheDocument();
-	});
-
 	it("hides unsafe images saved by an earlier version", async () => {
 		const storage = createMemoryCardStorage();
 		const parsed = parseCharacterCardJsonText(
@@ -138,10 +50,7 @@ describe("CharCardApp UI", () => {
 		expect(screen.getByTestId("charcard-image-warning")).toHaveTextContent(
 			"그림이 너무 커서 표시하지 않음",
 		);
-		expect(screen.getByTestId("charcard-avatar-img")).toHaveAttribute(
-			"src",
-			"/avatars/03-OL_Woman.webp",
-		);
+		expect(screen.queryByTestId("charcard-avatar-img")).not.toBeInTheDocument();
 	});
 
 	it("loads 4 bundled sample cards, imports JSON card, starts/stops roleplay, handles naia-app:context-cleared from parent, and moves focus after deletion", async () => {
@@ -166,28 +75,26 @@ describe("CharCardApp UI", () => {
 		expect(screen.getByText("백하진")).toBeInTheDocument();
 		expect(screen.getByText("서윤하")).toBeInTheDocument();
 
-		// A JSON sample without art uses the avatar picture in the list and detail.
+		// Selecting V3 JSON sample card (백하진) renders initial-letter avatar fallback
 		fireEvent.click(
 			screen.getByTestId("charcard-item-sample:clockwork-tinker-json-v3"),
 		);
 		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
 			"백하진",
 		);
-		expect(screen.getByTestId("charcard-avatar-img")).toHaveAttribute(
-			"src",
-			"/avatars/03-OL_Woman.webp",
+		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent(
+			"백",
 		);
 
-		// V2 JSON takes the same fallback.
+		// Selecting V2 JSON sample card (서윤하) renders initial-letter avatar fallback
 		fireEvent.click(
 			screen.getByTestId("charcard-item-sample:starlight-archivist-v2"),
 		);
 		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
 			"서윤하",
 		);
-		expect(screen.getByTestId("charcard-avatar-img")).toHaveAttribute(
-			"src",
-			"/avatars/03-OL_Woman.webp",
+		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent(
+			"서",
 		);
 
 		// Import a new JSON card
@@ -433,6 +340,90 @@ describe("CharCardApp UI", () => {
 		expect(screen.queryByTestId("charcard-error-panel")).toBeNull();
 	});
 
+		"R11 describes temporary cards in %s when storage falls back to memory",
+		async (locale, expected) => {
+			render(
+				<CharCardApp
+					storage={createMemoryCardStorage()}
+					localeOverride={locale}
+				/>,
+			);
+			const notice = await screen.findByTestId("charcard-memory-banner");
+			expect(notice).toHaveAttribute("role", "status");
+			expect(notice).toHaveTextContent(expected);
+			expect(notice).not.toHaveTextContent("IndexedDB");
+			expect(
+				screen.getByTestId("charcard-storage-hint").textContent,
+			).not.toContain("IndexedDB");
+			expect(
+				screen.getByTestId("charcard-storage-hint").textContent,
+			).not.toMatch(/이 브라우저에 저장돼요|Saved in this browser/);
+			expect(screen.getByTestId("charcard-import-button")).toBeEnabled();
+		},
+	);
+
+	it.each([
+		["ko", "이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요."],
+		["en", "Saved in this browser; clearing browsing data removes them."],
+	])(
+		"R21-6 explains plain browser storage and clearing browsing data in %s when storage persists",
+		async (locale, expected) => {
+			render(
+				<CharCardApp
+					storage={{
+						...createMemoryCardStorage(),
+						mode: "host",
+					}}
+					localeOverride={locale}
+				/>,
+			);
+			await waitFor(() =>
+				expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
+			);
+			const hint = screen.getByTestId("charcard-storage-hint");
+			expect(hint).toHaveTextContent(expected);
+			expect(hint).not.toHaveTextContent("IndexedDB");
+			expect(
+				screen.queryByTestId("charcard-memory-banner"),
+			).not.toBeInTheDocument();
+		},
+	);
+
+	it("R11 tells users to choose a smaller file when the shell cannot fit a card", async () => {
+		render(
+			<CharCardApp
+				storage={{
+					...createMemoryCardStorage(),
+					mode: "host",
+					saveCard: async () => {
+						throw new CardStorageValueTooLargeError();
+					},
+				}}
+				localeOverride="ko"
+			/>,
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
+		);
+		fireEvent.change(screen.getByTestId("charcard-file-input"), {
+			target: {
+				files: [
+					new File(['{"name":"큰 카드"}'], "large.json", {
+						type: "application/json",
+					}),
+				],
+			},
+		});
+
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("카드가 너무 큽니다");
+		expect(
+			within(alert).getByRole("button", { name: "다른 파일 고르기" }),
+		).toBeEnabled();
+		expect(screen.queryByTestId("charcard-memory-banner")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /^큰 카드/ })).not.toBeInTheDocument();
+	});
+
 	it("R40 creates and selects a card with an avatar while guarding concurrent writes", async () => {
 		const storage = createMemoryCardStorage();
 		let releaseSave!: () => void;
@@ -468,14 +459,8 @@ describe("CharCardApp UI", () => {
 		);
 		const row = screen.getByRole("button", { name: /^Mira/ });
 		expect(row).toHaveAttribute("aria-pressed", "true");
-		expect(within(row).getByTestId("charcard-list-image")).toHaveAttribute(
-			"src",
-			"/avatars/03-OL_Woman.webp",
-		);
-		expect(screen.getByTestId("charcard-avatar-img")).toHaveAttribute(
-			"src",
-			"/avatars/03-OL_Woman.webp",
-		);
+		expect(within(row).getByTestId("charcard-list-image")).toHaveTextContent("M");
+		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent("M");
 		expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
 	});
 

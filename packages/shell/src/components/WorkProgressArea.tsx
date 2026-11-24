@@ -91,6 +91,7 @@ export function WorkProgressArea() {
 				<button
 					type="button"
 					className="work-progress-refresh-btn"
+					data-usage-event="work-progress-area.handle-refresh-1.click"
 					onClick={handleRefresh}
 					title={t("progress.refresh")}
 				>
@@ -125,6 +126,7 @@ export function WorkProgressArea() {
 							<button
 								type="button"
 								className={`work-progress-stat clickable${errorFilterActive ? " active-filter" : ""}`}
+								data-usage-event="work-progress-area.set-error-filter-active-2.click"
 								onClick={() => setErrorFilterActive((v) => !v)}
 							>
 								<span className="stat-value">{errorCount}</span>
@@ -142,6 +144,7 @@ export function WorkProgressArea() {
 							<button
 								type="button"
 								className="error-filter-label"
+								data-usage-event="work-progress-area.set-error-filter-active-3.click"
 								onClick={() => setErrorFilterActive(false)}
 							>
 								{t("progress.showAll")}
@@ -152,6 +155,7 @@ export function WorkProgressArea() {
 								<button
 									type="button"
 									className="work-progress-event-header"
+									data-usage-event="work-progress-area.set-expanded-id-4.click"
 									onClick={() =>
 										setExpandedId(expandedId === ev.id ? null : ev.id)
 									}

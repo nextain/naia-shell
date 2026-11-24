@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { AppContext } from "../lib/app-registry";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { isWebMode } from "../lib/web-runtime/web-assets";
+import { usage, usageAppScreen } from "../lib/usage-runtime";
 
 function requestBrowserVisibilitySync() {
 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
@@ -86,6 +87,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 		}
 		const state = get();
 		const current = state.activeApp;
+		if (current !== id) usage.record("app.screen.view", usageAppScreen(id));
 		if (!isWebMode() && current === "browser" && id !== "browser") {
 			invoke("browser_wv_hide").catch(() => {});
 		}

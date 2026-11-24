@@ -38,6 +38,9 @@ The release is blocked unless all of these exist and are non-empty:
 the updater artifact that its Windows URL downloads. Renaming an artifact is
 allowed only when its bytes and matching signature remain unchanged.
 
+The updater manifest generator selects NSIS. The release contract also includes
+MSI; the process cleanup hook applies to NSIS only and has no MSI equivalent.
+
 ## Publishing and compatibility
 
 Publish the installers, signatures, checksum manifest, and `latest.json` in the

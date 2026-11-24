@@ -12,6 +12,20 @@ export default defineConfig({
 	workers: 1,
 	retries: 0,
 	use: {
+		storageState: {
+			cookies: [],
+			origins: [
+				{
+					origin: `http://localhost:${port}`,
+					localStorage: [
+						{
+							name: "naia-usage-consent-v1",
+							value: '{"enabled":false,"epoch":"e2e-opt-out"}',
+						},
+					],
+				},
+			],
+		},
 		baseURL: `http://localhost:${port}`,
 		trace: "on-first-retry",
 	},

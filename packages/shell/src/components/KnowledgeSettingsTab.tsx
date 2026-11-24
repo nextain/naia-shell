@@ -21,6 +21,7 @@ import {
 import { graphFromKbJson, type KnowledgeGraph } from "../lib/knowledge-result";
 import { Logger } from "../lib/logger";
 import { KnowledgeGraphOverlay } from "./KnowledgeGraphOverlay";
+import { scaledFontSize } from "../lib/ui-font-scale";
 
 /** 설정>지식 탭 — 지식 소스(다중 폴더)·스코프 관리 + 컴파일 트리거 (FR-KB-OS.5~9, UC-KB-MANAGE).
  *  설정 정본 = naia-settings/knowledge.json(셸 전용 write). 컴파일/답변 지능 = naia-agent(별 레포). */
@@ -398,6 +399,7 @@ export function KnowledgeSettingsTab() {
 						className="knowledge-compile"
 						data-testid="knowledge-compile"
 						disabled={compiling || config.sources.length === 0}
+						data-usage-event="knowledge-settings-tab.handle-compile-3.click"
 						onClick={handleCompile}
 					>
 						{compiling
@@ -423,6 +425,7 @@ export function KnowledgeSettingsTab() {
 						type="button"
 						className="knowledge-graph-open"
 						data-testid="knowledge-graph-open"
+						data-usage-event="knowledge-settings-tab.set-graph-open-4.click"
 						onClick={() => setGraphOpen(true)}
 						style={{
 							background: "rgba(76,139,245,0.12)",
@@ -430,7 +433,7 @@ export function KnowledgeSettingsTab() {
 							borderRadius: 8,
 							color: "var(--cream, #e8e0d0)",
 							padding: "6px 12px",
-							fontSize: 12,
+							fontSize: scaledFontSize(12),
 							cursor: "pointer",
 						}}
 					>

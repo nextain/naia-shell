@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "(kein Dateiname)",
 	"slides.videoLabel": "{position} / Video {name}",
 	"slides.videoIndicator": "{position} / Video",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "Bei einem Klick in die Zwischenablage schreiben",
+	"settings.fontScale": "Schriftgröße",
+	"settings.fontScaleSmall": "Klein",
+	"settings.fontScaleNormal": "Normal",
+	"settings.fontScaleLarge": "Groß",
+	"settings.fontScaleXLarge": "Sehr groß",
+	"settings.fontScaleHint": "Ändert die Textgröße von Chat, Menüs, Einstellungen, Untertiteln und Sendeeinblendungen. Wird sofort übernommen.",
+	"bgm.keyboardHelp": "Musik: Leertaste oder K Wiedergabe/Stopp; links/rechts 5 Sekunden; hoch/runter Lautstärke; N nächster, P vorheriger Titel",
+	"bgm.showCaptions": "Untertitel anzeigen",
+	"ai.avatarControls": "Avatarsteuerung",
 } as const;

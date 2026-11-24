@@ -19,6 +19,12 @@ import {
 	toggleLayoutOrientation,
 	useEffectiveLayoutOrientation,
 } from "../lib/ui-preferences";
+import { formatShortcutTextForPlatform } from "../lib/platform-shortcuts";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../lib/ui-preferences";
 import { useAppStore } from "../stores/app";
 
 function formatElapsedShort(seconds: number): string {
@@ -34,10 +40,20 @@ function formatElapsedShort(seconds: number): string {
  * Contains: AI interference toggle, TTS toggle, avatar joystick / pan / reset.
  */
 export function AiControlBar({
+	isNva = false,
 	showCameraControls = true,
 }: {
+	isNva?: boolean;
 	showCameraControls?: boolean;
-} = {}) {
+}) {
+	const controlsExpanded =
+		useUiPreference<boolean>(
+			UI_PREFERENCE_KEYS.avatarControlsExpanded,
+			false,
+		) === true;
+	const layoutOrientation = useEffectiveLayoutOrientation();
+	const manualOrientation = getStoredLayoutOrientation();
+	const kioskDemo = isKioskDemo();
 	const {
 		aiInterferenceEnabled,
 		toggleAiInterferenceEnabled,
@@ -55,8 +71,6 @@ export function AiControlBar({
 	});
 	const broadcastBridge = useBroadcastBridge();
 	const broadcastActive = isBroadcastActive(broadcastBridge.state);
-	const layoutOrientation = useEffectiveLayoutOrientation();
-	const manualOrientation = getStoredLayoutOrientation();
 
 	useEffect(() => {
 		let disposed = false;
@@ -119,61 +133,73 @@ export function AiControlBar({
 		})();
 	};
 
-	const aiLabel = aiInterferenceEnabled
-		? t("ai.interferenceOn")
-		: t("ai.interferenceOff");
-	const ttsLabel = ttsEnabled ? t("ai.ttsOn") : t("ai.ttsOff");
-	const broadcastLabel =
-		!broadcastBridge.hasStreamKey && !broadcastActive
-			? t("broadcast.keyRequiredHint")
-			: broadcastBridge.state === "live"
-				? `${t("broadcast.btnLabel")} ${formatElapsedShort(broadcastBridge.elapsedSeconds)}`
-				: broadcastBridge.state === "disconnected"
-					? `${t("broadcast.btnLabel")} · ${t("broadcast.disconnectedLabel")}`
-					: t("broadcast.btnLabel");
-	const kioskDemo = isKioskDemo();
-
-	return (
-		<div className="ai-control-bar">
-			{/* 시연판도 AI참견·능동발화를 보인다(대표님 11/13 "버튼 4개로 해줘"). */}
+	const zoomControls = (
+		<>
 			<button
 				type="button"
-				data-testid="ai-bar-interference-btn"
-				data-control-state={aiInterferenceEnabled ? "on" : "off"}
-				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : " bgm-ai-toggle--off"}`}
-				onClick={toggleAiInterferenceEnabled}
-				aria-pressed={aiInterferenceEnabled}
-				aria-label={aiLabel}
-				title={aiLabel}
+				className="bgm-ai-toggle ai-control-bar__zoom"
+				aria-label={t("ai.avatarZoomIn")}
+				data-usage-event="ai-control-bar.button-4.click"
+				title={t("ai.avatarZoomIn")}
+				onClick={() => {
+					const camera = getCameraActions();
+					camera.zoom(0.1);
+					camera.save();
+				}}
 			>
-				<span className="bgm-ai-toggle__dot" />
-				{aiInterferenceEnabled ? (
-					<svg
-						className="bgm-ai-toggle__icon"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<rect x="5" y="7" width="14" height="12" rx="3" />
-						<path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" />
-					</svg>
-				) : (
-					<svg
-						className="bgm-ai-toggle__icon"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<rect x="5" y="7" width="14" height="12" rx="3" />
-						<path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" />
-						<path data-off-slash="true" d="M3 3l18 18" />
-					</svg>
-				)}
+				<span className="bgm-ai-toggle__dot" />+
 			</button>
 
 			<button
 				type="button"
-				data-testid="ai-bar-tts-btn"
-				data-control-state={ttsEnabled ? "on" : "off"}
-				className={`bgm-ai-toggle bgm-ai-toggle--icon${ttsEnabled ? " bgm-ai-toggle--active" : " bgm-ai-toggle--off"}`}
+				className="bgm-ai-toggle ai-control-bar__zoom"
+				aria-label={t("ai.avatarZoomOut")}
+				data-usage-event="ai-control-bar.button-5.click"
+				title={t("ai.avatarZoomOut")}
+				onClick={() => {
+					const camera = getCameraActions();
+					camera.zoom(-0.1);
+					camera.save();
+				}}
+			>
+				<span className="bgm-ai-toggle__dot" />−
+			</button>
+		</>
+	);
+
+	const interferenceLabel = formatShortcutTextForPlatform(
+		aiInterferenceEnabled ? t("ai.interferenceOn") : t("ai.interferenceOff"),
+	);
+
+	return (
+		<div className="ai-control-bar">
+			<button
+				type="button"
+				data-testid="ai-bar-interference-btn"
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-ai-interference-enabled-1.click"
+				onClick={toggleAiInterferenceEnabled}
+				aria-label={interferenceLabel}
+				aria-pressed={aiInterferenceEnabled}
+				title={interferenceLabel}
+			>
+				<svg
+					className="bgm-ai-toggle__icon"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<rect x="5" y="7" width="14" height="12" rx="3" />
+					<path d="M12 3v4M8 12h.01M16 12h.01M9 16h6" />
+					{!aiInterferenceEnabled && (
+						<path data-off-slash="true" d="M3 3l18 18" />
+					)}
+				</svg>
+			</button>
+
+			<button
+				type="button"
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-tts-enabled-2.click"
 				onClick={() => {
 					const enabled = !ttsEnabled;
 					toggleTtsEnabled();
@@ -185,34 +211,19 @@ export function AiControlBar({
 						}),
 					);
 				}}
+				aria-label={ttsEnabled ? t("ai.ttsOn") : t("ai.ttsOff")}
 				aria-pressed={ttsEnabled}
-				aria-label={ttsLabel}
-				title={ttsLabel}
+				title={ttsEnabled ? t("ai.ttsOn") : t("ai.ttsOff")}
 			>
-				<span className="bgm-ai-toggle__dot" />
-				{ttsEnabled ? (
-					<svg
-						className="bgm-ai-toggle__icon"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-						<path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-						<path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-					</svg>
-				) : (
-					<svg
-						className="bgm-ai-toggle__icon"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-						<line x1="23" y1="9" x2="17" y2="15" />
-						<line x1="17" y1="9" x2="23" y2="15" />
-					</svg>
-				)}
+				<svg
+					className="bgm-ai-toggle__icon"
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+				>
+					<path d="M4 9v6h4l5 4V5L8 9H4zm12-1c2 2 2 6 0 8m2-11c4 4 4 10 0 14" />
+					{!ttsEnabled && <path data-off-slash="true" d="M3 3l18 18" />}
+				</svg>
 			</button>
-
 			<button
 				type="button"
 				data-testid="layout-orientation-toggle"
@@ -267,6 +278,7 @@ export function AiControlBar({
 				type="button"
 				data-testid="ai-bar-proactive-btn"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
+				data-usage-event="ai-control-bar.toggle-proactive-3.click"
 				onClick={toggleProactive}
 				aria-pressed={proactive.permitted}
 				aria-label={proactiveTitle}
@@ -304,49 +316,47 @@ export function AiControlBar({
 				<button
 					type="button"
 					data-testid="ai-bar-broadcast-btn"
-					data-broadcast-state={broadcastBridge.state}
-					data-control-state={broadcastActive ? "on" : "off"}
-					className={`bgm-ai-toggle bgm-ai-toggle--icon${broadcastActive ? " bgm-ai-toggle--active" : " bgm-ai-toggle--off"}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
-					disabled={!broadcastBridge.hasStreamKey && !broadcastActive}
-					aria-pressed={broadcastActive}
-					aria-label={broadcastLabel}
-					title={broadcastLabel}
-					onClick={() => {
-						void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
-							toggleBroadcast().catch(() => {}),
-						);
-					}}
-				>
-					<span
-						className="bgm-ai-toggle__dot"
-						style={
-							broadcastBridge.state === "live"
-								? { background: "#ef4444" }
-								: broadcastBridge.state === "disconnected"
-									? { background: "#f59e0b" }
-									: undefined
-						}
-					/>
-					{broadcastActive ? (
-						<svg
-							className="bgm-ai-toggle__icon"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<circle cx="12" cy="12" r="2" />
-							<path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
-						</svg>
-					) : (
-						<svg
-							className="bgm-ai-toggle__icon"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<circle cx="12" cy="12" r="2" />
-							<path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49" />
-							<line x1="4" y1="4" x2="20" y2="20" />
-						</svg>
-					)}
+				data-broadcast-state={broadcastBridge.state}
+				className={`bgm-ai-toggle${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
+				disabled={!broadcastBridge.hasStreamKey && !broadcastActive}
+				aria-pressed={broadcastActive}
+				aria-label={
+					!broadcastBridge.hasStreamKey && !broadcastActive
+						? t("broadcast.keyRequiredHint")
+						: broadcastBridge.state === "live"
+							? `${t("broadcast.btnLabel")} ${formatElapsedShort(broadcastBridge.elapsedSeconds)}`
+							: broadcastBridge.state === "disconnected"
+								? `${t("broadcast.btnLabel")} · ${t("broadcast.disconnectedLabel")}`
+								: t("broadcast.btnLabel")
+				}
+				title={
+					!broadcastBridge.hasStreamKey && !broadcastActive
+						? t("broadcast.keyRequiredHint")
+						: t("broadcast.btnLabel")
+				}
+				data-usage-event="ai-control-bar.main-merge-1.click"
+				onClick={() => {
+					void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
+						toggleBroadcast().catch(() => {}),
+					);
+				}}
+			>
+				<span
+					className="bgm-ai-toggle__dot"
+					style={
+						broadcastBridge.state === "live"
+							? { background: "#ef4444" }
+							: broadcastBridge.state === "disconnected"
+								? { background: "#f59e0b" }
+								: undefined
+					}
+				/>
+				{t("broadcast.btnLabel")}
+				{broadcastBridge.state === "live"
+					? ` ${formatElapsedShort(broadcastBridge.elapsedSeconds)}`
+					: broadcastBridge.state === "disconnected"
+						? ` · ${t("broadcast.disconnectedLabel")}`
+						: ""}
 				</button>
 			)}
 
@@ -354,39 +364,63 @@ export function AiControlBar({
 				<>
 					<div className="ai-control-bar__sep" />
 
-					<button
-						type="button"
-						className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
-						aria-label={t("ai.avatarRotate")}
-						title={t("ai.avatarRotate")}
-						style={{
-							cursor: joystickActive ? "grabbing" : "grab",
-							touchAction: "none",
-						}}
-						onPointerDown={(e) => {
-							e.currentTarget.setPointerCapture(e.pointerId);
-							joystickActiveRef.current = true;
-							setJoystickActive(true);
-						}}
-						onPointerMove={(e) => {
-							if (!joystickActiveRef.current) return;
-							getCameraActions().rotate(e.movementX, e.movementY);
-						}}
-						onPointerUp={(e) => {
-							e.currentTarget.releasePointerCapture(e.pointerId);
-							joystickActiveRef.current = false;
-							setJoystickActive(false);
-							getCameraActions().save();
-						}}
-						onPointerCancel={(e) => {
-							e.currentTarget.releasePointerCapture(e.pointerId);
-							joystickActiveRef.current = false;
-							setJoystickActive(false);
-						}}
-					>
-						<span className="bgm-ai-toggle__dot" />⊕
-					</button>
+			<button
+				type="button"
+				className="bgm-ai-toggle"
+				aria-label={t("ai.avatarControls")}
+				title={t("ai.avatarControls")}
+				aria-expanded={controlsExpanded}
+				aria-controls="avatar-camera-controls"
+				data-usage-event="ai-control-bar.main-merge-2.click"
+				onClick={() =>
+					void patchUiPreferences({
+						[UI_PREFERENCE_KEYS.avatarControlsExpanded]: !controlsExpanded,
+					})
+				}
+			>
+				⚙
+			</button>
+			{controlsExpanded && (
+				<div
+					id="avatar-camera-controls"
+					className={`ai-control-bar__camera${isNva ? " ai-control-bar__camera--nva" : ""}`}
+				>
+					{isNva && zoomControls}
 
+					{!isNva && (
+						<button
+							type="button"
+							className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
+							aria-label={t("ai.avatarRotate")}
+							title={t("ai.avatarRotate")}
+							style={{
+								cursor: joystickActive ? "grabbing" : "grab",
+								touchAction: "none",
+							}}
+							onPointerDown={(e) => {
+								e.currentTarget.setPointerCapture(e.pointerId);
+								joystickActiveRef.current = true;
+								setJoystickActive(true);
+							}}
+							onPointerMove={(e) => {
+								if (!joystickActiveRef.current) return;
+								getCameraActions().rotate(e.movementX, e.movementY);
+							}}
+							onPointerUp={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								joystickActiveRef.current = false;
+								setJoystickActive(false);
+								getCameraActions().save();
+							}}
+							onPointerCancel={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								joystickActiveRef.current = false;
+								setJoystickActive(false);
+							}}
+						>
+							<span className="bgm-ai-toggle__dot" />⊕
+						</button>
+					)}
 					<button
 						type="button"
 						className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
@@ -420,43 +454,19 @@ export function AiControlBar({
 						<span className="bgm-ai-toggle__dot" />✥
 					</button>
 
-					<button
-						type="button"
-						className="bgm-ai-toggle"
-						aria-label={t("ai.avatarZoomIn")}
-						title={t("ai.avatarZoomIn")}
-						onClick={() => {
-							const camera = getCameraActions();
-							camera.zoom(0.1);
-							camera.save();
-						}}
-					>
-						<span className="bgm-ai-toggle__dot" />+
-					</button>
-
-					<button
-						type="button"
-						className="bgm-ai-toggle"
-						aria-label={t("ai.avatarZoomOut")}
-						title={t("ai.avatarZoomOut")}
-						onClick={() => {
-							const camera = getCameraActions();
-							camera.zoom(-0.1);
-							camera.save();
-						}}
-					>
-						<span className="bgm-ai-toggle__dot" />−
-					</button>
-
+					{!isNva && zoomControls}
 					<button
 						type="button"
 						className="bgm-ai-toggle"
 						aria-label={t("ai.avatarReset")}
+						data-usage-event="ai-control-bar.button-6.click"
 						title={t("ai.avatarReset")}
 						onClick={() => getCameraActions().reset()}
 					>
 						<span className="bgm-ai-toggle__dot" />⌂
 					</button>
+					</div>
+					)}
 				</>
 			)}
 		</div>

@@ -172,12 +172,26 @@
 - P01~P05: UC-B2C-026의 카드 해석·페르소나 연결·현재 NVA/음성/배경 테마 저장/선택 구현 및 한정 검증.
 - Shell 전체 2,621 통과/21 제외, 관련 회귀 218 통과/8 제외, Playwright 1100/360px 2 통과. 타입 검사 core/Shell/BGM 통과. 로컬 가지 `feat/026-charcard-nva`, 푸시 없음.
 - 실제 Agent/음성/영상 디코딩과 저장 재시작 검증은 미실행. 첫 인사는 프롬프트 문맥에 포함하며 자동 발화·카드 라이브러리·카드별 테마 연결은 후속. 설계/범위: `docs/progress/026-b2c-charcard-nva.md`.
+<!-- src-sha: 727a1bc8c244f98e -->
+
+## 0.2.6 사용 통계 — 2026-11-04
+
+- 별도 feat/usage-events: 첫 실행 동의, 452개 고정 상세 누름·부록 의미 사건, Azure 단일 opt-in 수집, 설정 즉시 끄기·창 공유·메모리 큐.
+- 설계/검증: docs/progress/usage-events/event-inventory.md, verification.md. 실제 Azure·비용·방침 및 네이티브 서비스 관통은 출시 관문으로 남음. PR까지만, 병합·배포·Azure 자원 생성 없음.
 
 ## 서명 검증 스토어 앱 도구 동적 허용 — 2026-10-29
 
 - P01–P05 완료: 서명된 Store 앱에서 활성 앱이 선언한 `skill_*`만 모델 경계에 동적으로 허용한다. Rust는 설치 당시 서명된 원본 ZIP과 현재 `app.json` 일치를 재검증한다. Shell 내장 도구·타 앱 중복은 기록 후 거부하고, 제거·비활성화 뒤 허용하지 않는다.
 - `skill_blackjack_tutor`는 정적 Shell 목록에서 제거했다. Rust 확인된 Store 설치는 활성 앱 조건을 적용하고, 개발자 사이드로드는 설치 중인 기존 호환 경로를 유지한다.
 - 검증: focused Vitest 35/35, Biome 6개 TS 파일, 코어 build, Shell tsc, Rust `app::tests` 23/23 통과. UI 표현 변경이 없어 visual UX 검토는 해당하지 않는다. 실 Gateway entitlement 설치를 통한 native Store E2E는 실행하지 않았다.
+<!-- src-sha: 3f633f44ef08e32c -->
+
+## 설치 앱 공용 연결·설치 화면 — 2026-10-29
+
+- 검수 1차: 중복 ID 오류, 앱 질문 기록 격리와 표시, 설치 권한 고지 및 HTTPS 썸네일을 반영했다. 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 1 통과, Rust 각 1 통과. 복원 원본에 앱 표시가 없어 복원 후 앱 턴 구분은 되지 않는다.
+
+- P01–P05: 설치 앱의 권한별 모델 질의·낭독·언어 전달, 설치 상품 다국어 정보와 썸네일을 구현했다.
+- 검증: 전체 Shell Vitest 2,558 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 매니페스트 IPC 1 통과, Rust 검사와 매니페스트 왕복 시험 통과. 실 계정·음성 장치는 모의했다. 기존 conform 게이트 비활성은 범위 밖이다.
 
 ## 0.2.4 설치판 YouTube 스트림 추출 제거 — 2026-10-27
 

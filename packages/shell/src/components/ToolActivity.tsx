@@ -124,6 +124,7 @@ export function ToolActivity({ tool }: Props) {
 			<button
 				type="button"
 				className="tool-activity-header"
+				data-usage-event="tool-activity.set-expanded-1.click"
 				onClick={() => setExpanded((v) => !v)}
 			>
 				<span className="tool-status-icon">{icon}</span>

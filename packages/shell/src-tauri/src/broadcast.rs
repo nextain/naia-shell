@@ -116,14 +116,34 @@ impl ScreenCaptureSource for LinuxPortalPipeWireCapture {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnsupportedScreenCapture;
+
+impl ScreenCaptureSource for UnsupportedScreenCapture {
+    fn name(&self) -> &'static str {
+        "unsupported"
+    }
+
+    fn video_input_args(&self, _fps: u32) -> Result<Vec<String>, String> {
+        Err(
+            "현재 운영체제(macOS)에서는 내장 화면 캡처·방송 바로 송출을 지원하지 않습니다. OBS 등 외부 방송 도구를 사용해 주세요."
+                .to_string(),
+        )
+    }
+}
+
 pub fn default_screen_capture_source() -> Box<dyn ScreenCaptureSource> {
     #[cfg(target_os = "windows")]
     {
         Box::new(WindowsGdiGrabCapture)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
         Box::new(LinuxPortalPipeWireCapture::default())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Box::new(UnsupportedScreenCapture)
     }
 }
 
@@ -801,41 +821,50 @@ pub fn plan_pipewire_broadcast_links(
 
 /// Create the PipeWire virtual null audio sink (`naia-broadcast-mix`) using `pw-cli` (Item 3).
 pub fn create_pipewire_broadcast_sink(sink_name: &str) -> Result<(), String> {
-    let _ = Command::new("pw-cli")
-        .args(["destroy", sink_name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let props = format!(
-        "{{ factory.name=support.null-audio-sink node.name={sink_name} node.description=\"Naia Broadcast Mix\" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}"
-    );
-    let output = Command::new("pw-cli")
-        .args(["create-node", "adapter", &props])
-        .output()
-        .map_err(|e| format!("pw-cli 가상 싱크 생성 실행 실패: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("pw-cli 가상 싱크 생성 실패: {}", stderr.trim()));
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = sink_name;
+        return Err("PipeWire 가상 오디오 싱크는 Linux 전용입니다.".to_string());
     }
 
-    // Wait up to 1.5s for the virtual sink input ports to appear in pw-dump.
-    let deadline = Instant::now() + Duration::from_millis(1500);
-    let empty_pids = BTreeSet::new();
-    while Instant::now() < deadline {
-        if let Ok(dump) = Command::new("pw-dump").output() {
-            if dump.status.success() {
-                let text = String::from_utf8_lossy(&dump.stdout);
-                if plan_pipewire_broadcast_links(&text, &empty_pids, sink_name).is_ok() {
-                    return Ok(());
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("pw-cli")
+            .args(["destroy", sink_name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        let props = format!(
+            "{{ factory.name=support.null-audio-sink node.name={sink_name} node.description=\"Naia Broadcast Mix\" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}"
+        );
+        let output = Command::new("pw-cli")
+            .args(["create-node", "adapter", &props])
+            .output()
+            .map_err(|e| format!("pw-cli 가상 싱크 생성 실행 실패: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("pw-cli 가상 싱크 생성 실패: {}", stderr.trim()));
+        }
+
+        // Wait up to 1.5s for the virtual sink input ports to appear in pw-dump.
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        let empty_pids = BTreeSet::new();
+        while Instant::now() < deadline {
+            if let Ok(dump) = Command::new("pw-dump").output() {
+                if dump.status.success() {
+                    let text = String::from_utf8_lossy(&dump.stdout);
+                    if plan_pipewire_broadcast_links(&text, &empty_pids, sink_name).is_ok() {
+                        return Ok(());
+                    }
                 }
             }
+            std::thread::sleep(Duration::from_millis(75));
         }
-        std::thread::sleep(Duration::from_millis(75));
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 /// Find `Stream/Output/Audio` nodes belonging to `target_pids` and connect their output ports
@@ -844,44 +873,61 @@ pub fn sync_pipewire_broadcast_links_once(
     target_pids: &BTreeSet<u32>,
     sink_name: &str,
 ) -> Result<Vec<(u32, u32)>, String> {
-    let output = Command::new("pw-dump")
-        .output()
-        .map_err(|e| format!("pw-dump 실행 실패: {e}"))?;
-    if !output.status.success() {
-        return Err("pw-dump 상태 조회 실패".to_string());
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (target_pids, sink_name);
+        return Err("PipeWire 오디오 링크는 Linux 전용입니다.".to_string());
     }
-    let json_text = String::from_utf8_lossy(&output.stdout);
-    let pairs = plan_pipewire_broadcast_links(&json_text, target_pids, sink_name)?;
-    let mut connected = Vec::new();
-    for (out_port, in_port) in pairs {
-        let status = Command::new("pw-link")
-            .args([out_port.to_string(), in_port.to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if let Ok(s) = status {
-            if s.success() {
-                connected.push((out_port, in_port));
+
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("pw-dump")
+            .output()
+            .map_err(|e| format!("pw-dump 실행 실패: {e}"))?;
+        if !output.status.success() {
+            return Err("pw-dump 상태 조회 실패".to_string());
+        }
+        let json_text = String::from_utf8_lossy(&output.stdout);
+        let pairs = plan_pipewire_broadcast_links(&json_text, target_pids, sink_name)?;
+        let mut connected = Vec::new();
+        for (out_port, in_port) in pairs {
+            let status = Command::new("pw-link")
+                .args([out_port.to_string(), in_port.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            if let Ok(s) = status {
+                if s.success() {
+                    connected.push((out_port, in_port));
+                }
             }
         }
+        Ok(connected)
     }
-    Ok(connected)
 }
 
 /// Remove links created for the broadcast mix sink and destroy the virtual sink (Item 3).
 pub fn cleanup_pipewire_broadcast_sink(sink_name: &str, created_links: &[(u32, u32)]) {
-    for &(out_port, in_port) in created_links {
-        let _ = Command::new("pw-link")
-            .args(["-d", &out_port.to_string(), &in_port.to_string()])
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (sink_name, created_links);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for &(out_port, in_port) in created_links {
+            let _ = Command::new("pw-link")
+                .args(["-d", &out_port.to_string(), &in_port.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+        let _ = Command::new("pw-cli")
+            .args(["destroy", sink_name])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
     }
-    let _ = Command::new("pw-cli")
-        .args(["destroy", sink_name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
 }
 
 /// Read persisted Portal ScreenCast `restore_token` from `<adk_path>/naia-settings/ui-config.json` (Item 4).
@@ -1331,16 +1377,30 @@ pub fn select_gstreamer_audio_encoder() -> GstAudioEncoder {
     }
 }
 
-fn is_usable_ffmpeg_sidecar(path: &Path) -> bool {
-    if !path.is_file() {
+pub(crate) fn is_dev_placeholder_ffmpeg(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut file) = fs::File::open(path) else {
         return false;
+    };
+    let mut header = [0_u8; 64];
+    let Ok(read_len) = file.read(&mut header) else {
+        return false;
+    };
+    read_len == 0 || header[..read_len].starts_with(DEV_PLACEHOLDER_PREFIX)
+}
+
+pub(crate) fn is_usable_ffmpeg_sidecar(path: &Path) -> bool {
+    path.is_file() && !is_dev_placeholder_ffmpeg(path)
+}
+
+pub(crate) fn validate_ffmpeg_executable(path: &Path) -> Result<(), String> {
+    if path.is_file() && is_dev_placeholder_ffmpeg(path) {
+        return Err(
+            "번들된 ffmpeg가 개발용 자리표시 파일이어서 실행할 수 없습니다. 시스템에 실제 ffmpeg를 설치하거나 NAIA_FFMPEG_PATH를 지정해 주세요."
+                .to_string(),
+        );
     }
-    if let Ok(bytes) = fs::read(path) {
-        if bytes.starts_with(DEV_PLACEHOLDER_PREFIX) {
-            return false;
-        }
-    }
-    true
+    Ok(())
 }
 
 fn sidecar_candidate_names() -> Vec<String> {
@@ -1354,6 +1414,10 @@ fn sidecar_candidate_names() -> Vec<String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        names.push("binaries/ffmpeg-aarch64-apple-darwin".to_string());
+        names.push("ffmpeg-aarch64-apple-darwin".to_string());
+        names.push("binaries/ffmpeg-x86_64-apple-darwin".to_string());
+        names.push("ffmpeg-x86_64-apple-darwin".to_string());
         names.push("binaries/ffmpeg-x86_64-unknown-linux-gnu".to_string());
         names.push("ffmpeg-x86_64-unknown-linux-gnu".to_string());
         names.push("binaries/ffmpeg".to_string());
@@ -1388,7 +1452,10 @@ pub(crate) fn resolve_ffmpeg_path_from(
         let trimmed = raw_env.to_string_lossy();
         let trimmed = trimmed.trim();
         if !trimmed.is_empty() {
-            return PathBuf::from(trimmed);
+            let env_candidate = PathBuf::from(trimmed);
+            if !(env_candidate.is_file() && is_dev_placeholder_ffmpeg(&env_candidate)) {
+                return env_candidate;
+            }
         }
     }
 
@@ -1401,7 +1468,7 @@ pub(crate) fn resolve_ffmpeg_path_from(
         for dir in std::env::split_paths(paths) {
             for bin in bin_names {
                 let candidate = dir.join(bin);
-                if candidate.is_file() {
+                if is_usable_ffmpeg_sidecar(&candidate) {
                     return candidate;
                 }
             }
@@ -1597,6 +1664,7 @@ fn spawn_ffmpeg_with_fallback(
     base_spec: &FfmpegStreamSpec,
     capture: &dyn ScreenCaptureSource,
 ) -> Result<(Child, Option<ChildStdin>, VideoEncoder), String> {
+    validate_ffmpeg_executable(ffmpeg_path)?;
     for encoder in [VideoEncoder::H264Nvenc, VideoEncoder::Libx264] {
         let mut spec = base_spec.clone();
         spec.encoder = encoder;
@@ -2649,5 +2717,41 @@ mod tests {
             samples,
             vec![0, 0, 32767, -32767, -32767, 32767, 32767, -32767]
         );
+    }
+
+    #[test]
+    fn unsupported_screen_capture_and_placeholder_ffmpeg_are_rejected_cleanly() {
+        let unsupported = UnsupportedScreenCapture;
+        assert_eq!(unsupported.name(), "unsupported");
+        assert!(!unsupported.uses_gstreamer_pipeline());
+        let capture_err = unsupported
+            .video_input_args(30)
+            .expect_err("macOS/unsupported capture must reject before PipeWire or ffmpeg");
+        assert!(capture_err.contains("macOS"));
+
+        let tmp =
+            std::env::temp_dir().join(format!("naia-ffmpeg-placeholder-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).expect("mkdir tmp");
+        let placeholder_in_path = tmp.join(if cfg!(windows) {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        });
+        fs::write(&placeholder_in_path, DEV_PLACEHOLDER_PREFIX).expect("write placeholder");
+
+        assert!(is_dev_placeholder_ffmpeg(&placeholder_in_path));
+        assert!(!is_usable_ffmpeg_sidecar(&placeholder_in_path));
+        assert!(validate_ffmpeg_executable(&placeholder_in_path).is_err());
+
+        // Placeholder on PATH or NAIA_FFMPEG_PATH must never be selected.
+        let resolved = resolve_ffmpeg_path_from(
+            &[&tmp],
+            Some(placeholder_in_path.as_os_str()),
+            Some(tmp.as_os_str()),
+        );
+        assert_eq!(resolved, PathBuf::from("ffmpeg"));
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }

@@ -397,12 +397,13 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					{removeError}
 				</div>
 			)}
-			<div className="app-bar-tabs" onContextMenu={handleTabBarContextMenu}>
+			<div className="app-bar-tabs" data-usage-event="app-bar.handle-tab-bar-context-menu-1.context" onContextMenu={handleTabBarContextMenu}>
 				{/* 바탕화면 — no app active */}
 				<button
 					type="button"
 					className={`app-bar-tab${activeApp === null ? " app-bar-tab--active" : ""}`}
 					data-app-id="desktop"
+					data-usage-event="app-bar.set-active-app-2.click"
 					onClick={() => setActiveApp(null)}
 					aria-label={t("appbar.desktop")}
 				>
@@ -414,6 +415,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						className={`app-bar-tab${activeApp === "browser" ? " app-bar-tab--active" : ""}`}
 						data-app-id="browser"
 						aria-label={t("appbar.browser")}
+						data-usage-event="app-bar.set-active-app-3.click"
 						onClick={() => setActiveApp("browser")}
 					>
 						<span className="app-bar-tab-icon">🌐</span>
@@ -424,6 +426,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					className={`app-bar-tab${activeApp === "workspace" ? " app-bar-tab--active" : ""}`}
 					data-app-id="workspace"
 					aria-label={t("appbar.workspace")}
+					data-usage-event="app-bar.set-active-app-4.click"
 					onClick={() =>
 						setActiveApp(
 							isWeb && activeApp === "workspace" ? null : "workspace",
@@ -440,6 +443,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							className="app-bar-tab app-bar-tab--utility"
 							aria-label={t("appbar.appStore")}
 							title={t("appbar.appStore")}
+							data-usage-event="app-bar.open-app-store-5.click"
 							onClick={() => {
 								if (isKioskDemo()) {
 									setKioskStoreNotice(true);
@@ -495,6 +499,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								className={`app-bar-tab${activeApp === mode.id ? " app-bar-tab--active" : ""}${isRunning ? " app-bar-tab--running" : ""}`}
 								data-app-id={mode.id}
 								title={mode.names?.[getLocale()] ?? mode.name}
+								data-usage-event="app-bar.set-active-app-6.click"
 								onClick={() =>
 									setActiveApp(activeApp === mode.id ? null : mode.id)
 								}
@@ -553,6 +558,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 									? `아이콘 변경: ${shortcut.title || shortcut.url}`
 									: shortcut.title || shortcut.url
 							}
+							data-usage-event="app-bar.open-icon-editor-8.click"
 							onClick={() => {
 								if (editMode) {
 									openIconEditor(shortcut);
@@ -588,6 +594,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								type="button"
 								className="app-bar-tab-remove app-bar-tab-remove--shortcut"
 								title="바로가기 삭제"
+								data-usage-event="app-bar.stop-propagation-9.click"
 								onClick={(e) => {
 									e.stopPropagation();
 									removeBrowserShortcut(shortcut.url)
@@ -611,6 +618,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						<button
 							type="button"
 							className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
+							data-usage-event="app-bar.handle-ctx-remove-shortcut-10.click"
 							onClick={handleCtxRemoveShortcut}
 						>
 							{t("appbar.removeShortcut")}
@@ -641,6 +649,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							<button
 								type="button"
 								className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
+								data-usage-event="app-bar.handle-ctx-remove-app-11.click"
 								onClick={handleCtxRemoveApp}
 							>
 								{t("appbar.removeApp")}
@@ -653,15 +662,18 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				createPortal(
 					<div
 						className="app-bar-url-dialog-overlay"
+						data-usage-event="app-bar.set-add-url-dialog-12.click"
 						onClick={() => setAddUrlDialog(false)}
 					>
 						<div
 							className="app-bar-url-dialog"
+							data-usage-event="app-bar.stop-propagation-13.click"
 							onClick={(e) => e.stopPropagation()}
 						>
 							<button
 								type="button"
 								className="app-bar-url-dialog__section"
+								data-usage-event="app-bar.set-add-url-dialog-14.click"
 								onClick={() => {
 									setAddUrlDialog(false);
 									setUrlInputDialog(true);
@@ -676,6 +688,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							<button
 								type="button"
 								className="app-bar-url-dialog__section"
+								data-usage-event="app-bar.set-add-url-dialog-15.click"
 								onClick={() => {
 									setAddUrlDialog(false);
 									onAddApp?.();
@@ -690,6 +703,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							<button
 								type="button"
 								className="app-bar-url-dialog__section"
+								data-usage-event="app-bar.set-add-url-dialog-16.click"
 								onClick={() => {
 									setAddUrlDialog(false);
 									setEditMode(true);
@@ -705,6 +719,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								<button
 									type="button"
 									className="app-bar-url-dialog__section"
+									data-usage-event="app-bar.set-add-url-dialog-17.click"
 									onClick={() => {
 										setAddUrlDialog(false);
 										void openAppStore();
@@ -730,10 +745,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				createPortal(
 					<div
 						className="app-bar-url-dialog-overlay"
+						data-usage-event="app-bar.set-url-input-dialog-18.click"
 						onClick={() => setUrlInputDialog(false)}
 					>
 						<form
 							className="app-bar-url-dialog"
+							data-usage-event="app-bar.stop-propagation-19.click"
 							onClick={(e) => e.stopPropagation()}
 							onSubmit={(e) => {
 								e.preventDefault();
@@ -752,6 +769,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								<button
 									type="button"
 									className="app-bar-url-dialog__btn"
+									data-usage-event="app-bar.set-url-input-dialog-20.click"
 									onClick={() => setUrlInputDialog(false)}
 								>
 									{t("settings.cancel")}
@@ -772,6 +790,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				<button
 					type="button"
 					className="app-bar-add"
+					data-usage-event="app-bar.set-add-url-dialog-21.click"
 					onClick={() => setAddUrlDialog(true)}
 					title={t("appbar.addItem")}
 				>
@@ -782,6 +801,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				<button
 					type="button"
 					className={`app-bar-edit${editMode ? " app-bar-edit--active" : ""}`}
+					data-usage-event="app-bar.set-edit-mode-22.click"
 					onClick={() => {
 						setEditMode((v) => !v);
 						setIconEditing(null);
@@ -795,10 +815,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				createPortal(
 					<div
 						className="app-bar-url-dialog-overlay"
+						data-usage-event="app-bar.set-icon-editing-23.click"
 						onClick={() => setIconEditing(null)}
 					>
 						<form
 							className="app-bar-url-dialog"
+							data-usage-event="app-bar.stop-propagation-24.click"
 							onClick={(e) => e.stopPropagation()}
 							onSubmit={(e) => {
 								e.preventDefault();
@@ -823,6 +845,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								<button
 									type="button"
 									className="app-bar-url-dialog__btn"
+									data-usage-event="app-bar.set-icon-editing-25.click"
 									onClick={() => setIconEditing(null)}
 								>
 									{t("settings.cancel")}
@@ -844,6 +867,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}
+				data-usage-event="app-bar.set-active-app-26.click"
 				onClick={() =>
 					setActiveApp(activeApp === "settings" ? null : "settings")
 				}

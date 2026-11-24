@@ -21,6 +21,11 @@ export interface InstalledAppManifest {
 	iconSvg?: string;
 	names?: Record<string, string>;
 	descriptions?: Record<string, string>;
+	thumbnailUrl?: string;
+	nameKo?: string;
+	nameEn?: string;
+	descriptionKo?: string;
+	descriptionEn?: string;
 	version?: string;
 	manifest_version?: number;
 	manifestVersion?: number;
@@ -408,6 +413,8 @@ export async function loadInstalledApps(): Promise<void> {
 				JSON.stringify(previous.descriptions ?? {}) ===
 					JSON.stringify(manifest.descriptions ?? {}) &&
 				previous.icon === manifest.icon &&
+				JSON.stringify(previous.permissions ?? []) ===
+					JSON.stringify(manifest.permissions ?? []) &&
 				previous.htmlEntry === manifest.htmlEntry
 			) {
 				continue;
@@ -422,8 +429,9 @@ export async function loadInstalledApps(): Promise<void> {
 		appRegistry.register({
 			id: manifest.id,
 			name: manifest.name,
-			names: manifest.names,
-			descriptions: manifest.descriptions,
+			names: { ...(manifest.nameKo ? { ko: manifest.nameKo } : {}), ...(manifest.nameEn ? { en: manifest.nameEn } : {}), ...manifest.names },
+			descriptions: { ...(manifest.descriptionKo ? { ko: manifest.descriptionKo } : {}), ...(manifest.descriptionEn ? { en: manifest.descriptionEn } : {}), ...manifest.descriptions },
+			thumbnailUrl: manifest.thumbnailUrl,
 			icon: manifest.icon,
 			iconSvg: manifest.iconSvg,
 			htmlEntry: manifest.htmlEntry,

@@ -19,12 +19,14 @@ import {
 import { stopOpenCodeProjectAgentSessions } from "../apps/projects/project-agent-runtime";
 import { resetAdkPathWithRelaunch } from "../lib/adk-path-reset";
 import {
+	AgentSettingsReloadError,
 	agentKeyExists,
 	applyModelSelectionToConfig,
 	buildNaiaConfigEnv,
 	getAdkPath,
 	isNaiaConfigHydrationPending,
 	listNaiaAssets,
+	reloadAgentSettings as reloadPersistedAgentSettings,
 	resetAdkPathBinding,
 	resetNaiaPersistedSettings,
 	subscribeNaiaConfigHydration,
@@ -33,8 +35,6 @@ import {
 	writeAgentSecretAtPath,
 	writeNaiaConfig,
 	writeNaiaConfigAtPath,
-	AgentSettingsReloadError,
-	reloadAgentSettings as reloadPersistedAgentSettings,
 	writeNaiaUiConfig,
 	writeSlotsManifest,
 } from "../lib/adk-store";
@@ -44,11 +44,6 @@ import {
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
-import {
-	getOllamaThinkingUnsupportedStatus,
-	matchesOllamaThinkingUnsupportedStatus,
-	subscribeOllamaThinkingUnsupportedStatus,
-} from "../lib/ollama-thinking-status";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { setBroadcastBridgeSnapshot } from "../lib/broadcast-audio-bridge";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
@@ -129,6 +124,7 @@ import {
 	NAIA_WEB_BASE_URL,
 	type SttProviderId,
 	type ThemeId,
+	type ThinkingLevel,
 	type TtsProviderId,
 	clearAllowedTools,
 	loadConfig,
@@ -137,7 +133,6 @@ import {
 	resolveThinkingLevel,
 	saveConfig,
 	saveConfigSecure,
-	type ThinkingLevel,
 } from "../lib/config";
 import {
 	type AgentFact,
@@ -147,6 +142,10 @@ import {
 	getMemoryPendingCount,
 	importMemoryBackup,
 } from "../lib/db";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import {
 	ENVIRONMENT_APP_ID,
 	environmentSession,
@@ -160,35 +159,9 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
-import { naiaWebUrl } from "../lib/naia-instance-urls";
-import {
-	cancelOllamaModelPull,
-	fetchOllamaModelCatalog,
-	fetchOllamaModelPullStatus,
-	fetchOllamaRuntimeSnapshot,
-	isManagedOllamaHost,
-	ollamaAdmissionMessageKey,
-	ollamaModelPullErrorMessageKey,
-	ollamaModelPullStateMessageKey,
-	ollamaServerStateMessageKey,
-	retryOllamaModelPull,
-	startOllamaModelPull,
-	type ModelPullError,
-	type ModelPullErrorCode,
-	type ModelPullProgress,
-	type ModelPullSnapshot,
-	type ModelPullStartResponse,
-	type QwenModelPolicy,
-	type OllamaRuntimeSnapshot,
-} from "../lib/ollama-runtime";
-import { DevicePairingSection } from "./DevicePairingSection";
-import { SmallLlmSection } from "./SmallLlmSection";
 import { formatCreditBalance } from "../lib/credits-usage";
 import { formatModelPrice } from "../lib/llm/model-label";
-import {
-	paymentLinksHiddenNow,
-	usePaymentLinksHidden,
-} from "../lib/distribution";
+
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -226,7 +199,33 @@ import {
 } from "../lib/llm/roles";
 import { WEB_SUPPORTED_LLM_PROVIDER_IDS } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
+import {
+	type ModelPullError,
+	type ModelPullErrorCode,
+	type ModelPullProgress,
+	type ModelPullSnapshot,
+	type ModelPullStartResponse,
+	type OllamaRuntimeSnapshot,
+	type QwenModelPolicy,
+	cancelOllamaModelPull,
+	fetchOllamaModelCatalog,
+	fetchOllamaModelPullStatus,
+	fetchOllamaRuntimeSnapshot,
+	isManagedOllamaHost,
+	ollamaAdmissionMessageKey,
+	ollamaModelPullErrorMessageKey,
+	ollamaModelPullStateMessageKey,
+	ollamaServerStateMessageKey,
+	retryOllamaModelPull,
+	startOllamaModelPull,
+} from "../lib/ollama-runtime";
+import {
+	getOllamaThinkingUnsupportedStatus,
+	matchesOllamaThinkingUnsupportedStatus,
+	subscribeOllamaThinkingUnsupportedStatus,
+} from "../lib/ollama-thinking-status";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import {
 	themePatch,
@@ -266,7 +265,15 @@ import {
 import { synthesizeTts } from "../lib/tts/synthesize";
 import type { TtsVoiceMeta } from "../lib/tts/types";
 import type { ModelCapability, ProviderId } from "../lib/types";
+import {
+	UI_FONT_SCALE_IDS,
+	type UiFontScaleId,
+	applyUiFontScale,
+	normalizeUiFontScale,
+	scaledFontSize,
+} from "../lib/ui-font-scale";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
+import { beginUsageLogin, finishUsageLogin, usage } from "../lib/usage-runtime";
 import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
 import {
 	clearLocalVoiceAccessToken,
@@ -276,7 +283,8 @@ import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
-import { clearSavedCamera } from "../lib/avatar/camera-actions";
+import { clearSavedCamera } from "./AvatarCanvas";
+import { DevicePairingSection } from "./DevicePairingSection";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -299,6 +307,8 @@ import {
 import { listWebUploadedNvaModels } from "../lib/web-runtime/web-nva-archive";
 
 const WebVisualAgentSlugSettings = lazy(() => import("./WebVisualAgentSlugSettings"));
+import { SmallLlmSection } from "./SmallLlmSection";
+import { UsageSettings } from "./UsageConsentGate";
 
 const SkillsTab = lazy(() =>
 	import("./SkillsTab").then(({ SkillsTab }) => ({ default: SkillsTab })),
@@ -613,6 +623,7 @@ function LocalePicker({
 				disabled={disabled}
 				aria-controls="locale-select-options"
 				aria-expanded={open}
+				data-usage-event="settings-tab.set-open-1.click"
 				onClick={() => setOpen((current) => !current)}
 			>
 				<span>{selected.label}</span>
@@ -626,6 +637,7 @@ function LocalePicker({
 							key={locale.id}
 							aria-pressed={locale.id === value}
 							disabled={disabled}
+							data-usage-event="settings-tab.on-change-2.click"
 							onClick={() => {
 								onChange(locale.id);
 								setOpen(false);
@@ -652,6 +664,13 @@ function normalizeLocalPath(path: string): string {
 		return path.replace(/^file:\/\//, "");
 	}
 }
+
+const UI_FONT_SCALE_LABEL_KEYS = {
+	small: "settings.fontScaleSmall",
+	normal: "settings.fontScaleNormal",
+	large: "settings.fontScaleLarge",
+	xlarge: "settings.fontScaleXLarge",
+} as const satisfies Record<UiFontScaleId, string>;
 
 const THEMES: { id: ThemeId; label: string; preview: string }[] = [
 	{
@@ -747,7 +766,11 @@ function DeviceSelect({
 
 	return (
 		<div ref={ref} className="device-select">
-			<div className="device-select-trigger" onClick={() => setOpen((v) => !v)}>
+			<div
+				className="device-select-trigger"
+				data-usage-event="settings-tab.set-open-3.click"
+				onClick={() => setOpen((v) => !v)}
+			>
 				<span>{label}</span>
 				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 					<path fill="currentColor" d="M2 4l4 4 4-4" />
@@ -757,6 +780,7 @@ function DeviceSelect({
 				<div className="device-select-dropdown">
 					<div
 						className={`device-select-option${!value ? " selected" : ""}`}
+						data-usage-event="settings-tab.on-change-4.click"
 						onClick={() => {
 							onChange("");
 							setOpen(false);
@@ -768,6 +792,7 @@ function DeviceSelect({
 						<div
 							key={o.value}
 							className={`device-select-option${o.value === value ? " selected" : ""}`}
+							data-usage-event="settings-tab.on-change-5.click"
 							onClick={() => {
 								onChange(o.value);
 								setOpen(false);
@@ -822,6 +847,9 @@ export function SettingsTab() {
 		| "skills"
 		| "general"
 	>("profile");
+	useEffect(() => {
+		usage.record("settings.tab.open", activeSettingsTab);
+	}, [activeSettingsTab]);
 	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
 	// 기존 provider·memoryLlm·memoryEmbedding state 에서 파생 표시 + 변경 시 해당 state 갱신(재사용, 중복 state 없음).
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
@@ -961,6 +989,9 @@ export function SettingsTab() {
 		existing?.locale ?? getLocale(),
 	);
 	const [theme, setTheme] = useState<ThemeId>(existing?.theme ?? "midnight");
+	const [uiFontScale, setUiFontScale] = useState<UiFontScaleId>(() =>
+		normalizeUiFontScale(existing?.uiFontScale),
+	);
 	const [vrmModel, setVrmModel] = useState(savedVrmModel);
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
 	const [naiaBgs, setNaiaBgs] = useState<string[]>([]);
@@ -2972,9 +3003,13 @@ export function SettingsTab() {
 			openWebLoginPrompt("cloud-llm");
 			return;
 		}
+		beginUsageLogin("settings");
 		loginAdkPathRef.current = getAdkPath();
 		setLabWaiting(true);
-		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
+		const timeout = window.setTimeout(() => {
+			finishUsageLogin("settings", "timeout");
+			setLabWaiting(false);
+		}, 300_000);
 		try {
 			const state = await invoke<string>("generate_oauth_state").catch(
 				() => "",
@@ -2999,6 +3034,7 @@ export function SettingsTab() {
 				Logger.error("SettingsTab", "[lab-login] openUrl failed", {
 					error: String(e),
 				});
+				finishUsageLogin("settings", "browser_open");
 				window.clearTimeout(timeout);
 				setLabWaiting(false);
 			});
@@ -3006,6 +3042,7 @@ export function SettingsTab() {
 			Logger.error("SettingsTab", "[lab-login] unexpected error", {
 				error: String(e),
 			});
+			finishUsageLogin("settings", "browser_open");
 			window.clearTimeout(timeout);
 			setLabWaiting(false);
 		}
@@ -3117,6 +3154,8 @@ export function SettingsTab() {
 		fetchLabBalance(naiaKey);
 	}, [naiaKey]);
 
+	useEffect(() => () => finishUsageLogin("settings", "cancel"), []);
+
 	// Listen for Lab auth deep-link callback
 	useEffect(() => {
 		const unlisten = listen<{ naiaKey: string; naiaUserId?: string }>(
@@ -3134,6 +3173,7 @@ export function SettingsTab() {
 					!capturedSecureStorePath
 				) {
 					setLabWaiting(false);
+					finishUsageLogin("settings", "validation");
 					setError("The login callback belongs to a different ADK.");
 					return;
 				}
@@ -3196,6 +3236,7 @@ export function SettingsTab() {
 					await fetchLabBalance(nextNaiaKey, true);
 					assertCurrentAdk();
 
+					finishUsageLogin("settings");
 					setNaiaKeyState(nextNaiaKey);
 					setNaiaUserIdState(nextNaiaUserId);
 					setProvider(nextConfig.provider);
@@ -3232,6 +3273,7 @@ export function SettingsTab() {
 						}
 					}
 				} catch (activationError) {
+					finishUsageLogin("settings", "storage");
 					Logger.error("SettingsTab", "Naia login activation failed", {
 						error: String(activationError),
 					});
@@ -4106,6 +4148,42 @@ export function SettingsTab() {
 		// Auto-save theme immediately — no need to hit the save button
 		const current = loadConfig();
 		if (current) saveConfig({ ...current, theme: id });
+	}
+
+	function handleUiFontScaleChange(id: UiFontScaleId) {
+		setUiFontScale(id);
+		// 테마와 같은 경로: 즉시 적용 + 저장 단추 없이 바로 저장(FR-UI-FONT-SCALE.1).
+		applyUiFontScale(id);
+		const current = loadConfig();
+		if (current) saveConfig({ ...current, uiFontScale: id });
+	}
+
+	function handleUiFontScaleKeyDown(
+		e: React.KeyboardEvent<HTMLButtonElement>,
+		currentId: UiFontScaleId,
+	) {
+		const idx = UI_FONT_SCALE_IDS.indexOf(currentId);
+		let target: UiFontScaleId | null = null;
+		if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+			target = UI_FONT_SCALE_IDS[(idx + 1) % UI_FONT_SCALE_IDS.length];
+		} else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+			target =
+				UI_FONT_SCALE_IDS[
+					(idx - 1 + UI_FONT_SCALE_IDS.length) % UI_FONT_SCALE_IDS.length
+				];
+		} else if (e.key === "Home") {
+			target = UI_FONT_SCALE_IDS[0];
+		} else if (e.key === "End") {
+			target = UI_FONT_SCALE_IDS[UI_FONT_SCALE_IDS.length - 1];
+		}
+		if (!target) return;
+		e.preventDefault();
+		handleUiFontScaleChange(target);
+		const group = e.currentTarget.parentElement;
+		const next = group?.querySelector<HTMLButtonElement>(
+			`[data-ui-font-scale-option="${target}"]`,
+		);
+		next?.focus();
 	}
 
 	// Load VRM list from naia-settings
@@ -5051,11 +5129,13 @@ export function SettingsTab() {
 
 	return (
 		<div className="settings-tab">
+			{activeSettingsTab === "general" && <UsageSettings />}
 			<div className="settings-tab-bar">
 				<button
 					type="button"
 					data-settings-tab="profile"
 					className={`settings-tab-btn${activeSettingsTab === "profile" ? " settings-tab-btn--active" : ""}`}
+					data-usage-event="settings-tab.set-active-settings-tab-6.click"
 					onClick={() => setActiveSettingsTab("profile")}
 				>
 					{t("settings.tabProfile")}
@@ -5064,6 +5144,7 @@ export function SettingsTab() {
 					type="button"
 					data-settings-tab="brain"
 					className={`settings-tab-btn${activeSettingsTab === "brain" ? " settings-tab-btn--active" : ""}`}
+					data-usage-event="settings-tab.set-active-settings-tab-7.click"
 					onClick={() => setActiveSettingsTab("brain")}
 				>
 					{t("settings.tabBrain")}
@@ -5072,6 +5153,7 @@ export function SettingsTab() {
 					type="button"
 					data-settings-tab="voice"
 					className={`settings-tab-btn${activeSettingsTab === "voice" ? " settings-tab-btn--active" : ""}`}
+					data-usage-event="settings-tab.set-active-settings-tab-8.click"
 					onClick={() => setActiveSettingsTab("voice")}
 				>
 					{t("settings.tabVoice")}
@@ -5080,6 +5162,7 @@ export function SettingsTab() {
 					type="button"
 					data-settings-tab="avatar"
 					className={`settings-tab-btn${activeSettingsTab === "avatar" ? " settings-tab-btn--active" : ""}`}
+					data-usage-event="settings-tab.set-active-settings-tab-9.click"
 					onClick={() => setActiveSettingsTab("avatar")}
 				>
 					{t("settings.tabAvatar")}
@@ -5088,6 +5171,7 @@ export function SettingsTab() {
 					type="button"
 					data-settings-tab="persona"
 					className={`settings-tab-btn${activeSettingsTab === "persona" ? " settings-tab-btn--active" : ""}`}
+					data-usage-event="settings-tab.set-active-settings-tab-10.click"
 					onClick={() => setActiveSettingsTab("persona")}
 				>
 					{t("settings.tabPersona")}
@@ -5097,6 +5181,7 @@ export function SettingsTab() {
 						type="button"
 						data-settings-tab="memory"
 						className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
+						data-usage-event="settings-tab.set-active-settings-tab-11.click"
 						onClick={() => setActiveSettingsTab("memory")}
 					>
 						{t("settings.tabMemory")}
@@ -5107,6 +5192,7 @@ export function SettingsTab() {
 						type="button"
 						data-settings-tab="knowledge"
 						className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
+						data-usage-event="settings-tab.set-active-settings-tab-12.click"
 						onClick={() => setActiveSettingsTab("knowledge")}
 					>
 						{t("settings.tabKnowledge")}
@@ -5117,15 +5203,18 @@ export function SettingsTab() {
 						type="button"
 						data-settings-tab="skills"
 						className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+						data-usage-event="settings-tab.set-active-settings-tab-13.click"
 						onClick={() => setActiveSettingsTab("skills")}
 					>
 						{t("settings.tabSkills")}
 					</button>
 				)}
+
 				<button
 					type="button"
 					data-settings-tab="general"
 					className={`settings-tab-btn${activeSettingsTab === "general" ? " settings-tab-btn--active" : ""}`}
+					data-usage-event="settings-tab.set-active-settings-tab-14.click"
 					onClick={() => setActiveSettingsTab("general")}
 				>
 					{t("settings.tabGeneral")}
@@ -5137,6 +5226,7 @@ export function SettingsTab() {
 					{localeReloadPending && (
 						<button
 							type="button"
+							data-usage-event="settings-tab.button-15.click"
 							onClick={retryLocaleAgentReload}
 							disabled={localeRetrying || localeSaving}
 						>
@@ -5174,6 +5264,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-usage-event="settings-tab.open-url-16.click"
 								onClick={() => openUrl(manualUrl).catch(() => {})}
 							>
 								{t("settings.manual")}
@@ -5190,11 +5281,46 @@ export function SettingsTab() {
 									type="button"
 									className={`theme-swatch ${theme === th.id ? "active" : ""}`}
 									style={{ background: th.preview }}
+									data-usage-event="settings-tab.handle-theme-change-17.click"
 									onClick={() => handleThemeChange(th.id)}
 									title={th.label}
 								/>
 							))}
 						</div>
+					</div>
+
+					{/* UC-UI-FONT-SCALE-20261105: app-wide font size, right below the theme */}
+					<div className="settings-field" data-testid="ui-font-scale-section">
+						{/* biome-ignore lint/a11y/noLabelWithoutControl: names the radiogroup via aria-labelledby, same as thinking-level */}
+						<label id="ui-font-scale-label">{t("settings.fontScale")}</label>
+						<div
+							className="settings-segmented"
+							role="radiogroup"
+							aria-labelledby="ui-font-scale-label"
+						>
+							{UI_FONT_SCALE_IDS.map((id) => {
+								const active = uiFontScale === id;
+								return (
+									<button
+										key={id}
+										type="button"
+										// biome-ignore lint/a11y/useSemanticElements: segmented buttons with roving tabindex, same pattern as thinking-level
+										role="radio"
+										aria-checked={active}
+										tabIndex={active ? 0 : -1}
+										data-ui-font-scale-option={id}
+										data-usage-event="settings-tab.handle-ui-font-scale-change-117.click"
+										data-testid={`ui-font-scale-${id}`}
+										className={`settings-segmented__option${active ? " settings-segmented__option--active" : ""}`}
+										onClick={() => handleUiFontScaleChange(id)}
+										onKeyDown={(e) => handleUiFontScaleKeyDown(e, id)}
+									>
+										{t(UI_FONT_SCALE_LABEL_KEYS[id])}
+									</button>
+								);
+							})}
+						</div>
+						<div className="settings-hint">{t("settings.fontScaleHint")}</div>
 					</div>
 
 					{/* #10: 배경 이미지 — 테마 바로 아래, 드롭다운 방식 (avatar 탭에서 이동) */}
@@ -5203,7 +5329,9 @@ export function SettingsTab() {
 						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
 							<select
 								data-testid="settings-bg-select"
-								value={pendingBgPath ?? activeBgPath}
+								value={pendingBgPath ?? activeBgPath ?? ""}
+								data-usage-event="settings-tab.handle-clear-naia-bg-18.select"
+
 								onChange={(e) => {
 									const v = e.target.value;
 									if (!v) void handleClearNaiaBg();
@@ -5247,6 +5375,7 @@ export function SettingsTab() {
 									<button
 										type="button"
 										className="voice-preview-btn"
+										data-usage-event="settings-tab.handle-import-asset-19.click"
 										onClick={() => handleImportAsset("background")}
 									>
 										{t("settings.assetImport")}
@@ -5259,6 +5388,7 @@ export function SettingsTab() {
 													type="button"
 													className="voice-preview-btn"
 													style={{ color: "var(--error-color, #f44)" }}
+													data-usage-event="settings-tab.handle-delete-asset-20.click"
 													onClick={() => handleDeleteAsset("background", fn)}
 												>
 													{t("settings.assetDelete")}
@@ -5288,6 +5418,7 @@ export function SettingsTab() {
 											data-testid="settings-bg-web-upload"
 											disabled={webAssetBusy !== null}
 											onClick={() => bgFileInputRef.current?.click()}
+
 										>
 											{t("settings.assetImport")}
 										</button>
@@ -5334,6 +5465,7 @@ export function SettingsTab() {
 									type="button"
 									className="voice-preview-btn"
 									data-testid="adk-reset-btn"
+									data-usage-event="settings-tab.set-error-21.click"
 									onClick={async () => {
 										setError("");
 										try {
@@ -5376,6 +5508,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-usage-event="settings-tab.button-22.click"
 								onClick={() => {
 									clearSavedCamera();
 									window.location.reload();
@@ -5497,6 +5630,7 @@ export function SettingsTab() {
 						<select
 							id="avatar-provider"
 							value={effectiveAvatarProvider}
+							data-usage-event="settings-tab.set-avatar-provider-23.select"
 							onChange={(e) => {
 								const next = e.target.value as "vrm" | "naia-video-avatar";
 								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
@@ -5578,6 +5712,7 @@ export function SettingsTab() {
 											key={path}
 											type="button"
 											className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+											data-usage-event="settings-tab.handle-vrm-select-25.click"
 											onClick={() => handleVrmSelect(path)}
 										>
 											<img
@@ -5603,6 +5738,7 @@ export function SettingsTab() {
 											key={path}
 											type="button"
 											className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+											data-usage-event="settings-tab.handle-vrm-select-26.click"
 											onClick={() => handleVrmSelect(path)}
 										>
 											{label}
@@ -5616,6 +5752,7 @@ export function SettingsTab() {
 									<button
 										type="button"
 										className="voice-preview-btn"
+										data-usage-event="settings-tab.handle-import-asset-27.click"
 										onClick={() => handleImportAsset("vrm-files")}
 									>
 										{t("settings.assetImport")}
@@ -5628,6 +5765,7 @@ export function SettingsTab() {
 													type="button"
 													className="voice-preview-btn"
 													style={{ color: "var(--error-color, #f44)" }}
+													data-usage-event="settings-tab.handle-delete-asset-28.click"
 													onClick={() => handleDeleteAsset("vrm-files", fn)}
 												>
 													{t("settings.assetDelete")}
@@ -5636,6 +5774,7 @@ export function SettingsTab() {
 										})()}
 								</div>
 							)}
+
 						</div>
 					)}
 
@@ -5654,6 +5793,8 @@ export function SettingsTab() {
 										key={name}
 										type="button"
 										className={`vrm-list-item${resolveWebNvaSelection(nvaModel, [name]) === name ? " vrm-list-item--active" : ""}`}
+										data-usage-event="settings-tab.button-29.click"
+
 										onClick={() => {
 											void persistVideoAvatarSelection(name);
 											// #auto-apply: 즉시 반영. bare 이름 저장(절대경로 금지 — 뷰어가 경로 결합).
@@ -5669,7 +5810,9 @@ export function SettingsTab() {
 									<button
 										type="button"
 										className="voice-preview-btn"
+										data-usage-event="settings-tab.handle-import-asset-30.click"
 										onClick={() => handleImportAsset("nva-files")}
+
 									>
 										{t("settings.folderImport")}
 									</button>
@@ -5794,6 +5937,7 @@ export function SettingsTab() {
 							id="persona-disabled-toggle"
 							type="checkbox"
 							checked={personaDisabled}
+							data-usage-event="settings-tab.set-persona-disabled-32.select"
 							onChange={(e) => {
 								setPersonaDisabled(e.target.checked);
 								savePersonaFields({ personaDisabled: e.target.checked });
@@ -5850,6 +5994,7 @@ export function SettingsTab() {
 									data-testid="settings-speech-style"
 									value={speechStyle}
 									disabled={personaDisabled}
+									data-usage-event="settings-tab.set-speech-style-33.select"
 									onChange={(e) => {
 										setSpeechStyle(e.target.value);
 										savePersonaFields({ speechStyle: e.target.value });
@@ -5942,6 +6087,7 @@ export function SettingsTab() {
 										type="button"
 										data-testid="slot-apply-defaults"
 										className="voice-preview-btn"
+										data-usage-event="settings-tab.handle-apply-naia-defaults-34.click"
 										onClick={handleApplyNaiaDefaults}
 									>
 										{t("settings.slot.applyDefaults")}
@@ -5951,6 +6097,7 @@ export function SettingsTab() {
 										type="button"
 										data-testid="slot-login-naia"
 										className="voice-preview-btn"
+										data-usage-event="settings-tab.start-lab-login-35.click"
 										onClick={startLabLogin}
 									>
 										{t("settings.slot.loginNaia")}
@@ -5974,6 +6121,7 @@ export function SettingsTab() {
 								type="button"
 								data-testid="profile-login-naia"
 								className="voice-preview-btn"
+								data-usage-event="settings-tab.start-lab-login-36.click"
 								onClick={startLabLogin}
 							>
 								{t("settings.labConnect")}
@@ -6014,6 +6162,7 @@ export function SettingsTab() {
 											type="button"
 											className="voice-preview-btn"
 											data-testid="lab-balance-retry"
+											data-usage-event="settings-tab.button-37.click"
 											onClick={() => {
 												if (naiaKey) void fetchLabBalance(naiaKey);
 											}}
@@ -6028,6 +6177,7 @@ export function SettingsTab() {
 											<button
 												type="button"
 												className="voice-preview-btn"
+												data-usage-event="settings-tab.open-url-38.click"
 												onClick={() =>
 													openUrl(
 														`${getNaiaWebBaseUrl()}/${locale}/dashboard`,
@@ -6039,6 +6189,7 @@ export function SettingsTab() {
 											<button
 												type="button"
 												className="voice-preview-btn"
+												data-usage-event="settings-tab.open-url-39.click"
 												onClick={() =>
 													openUrl(
 														`${getNaiaWebBaseUrl()}/${locale}/billing`,
@@ -6058,6 +6209,7 @@ export function SettingsTab() {
 												<button
 													type="button"
 													className="settings-reset-btn"
+													data-usage-event="settings-tab.stop-open-code-project-agent-sessions-40.click"
 													onClick={async () => {
 														const sourceAdkPath = getAdkPath();
 														const sourceSecureStorePath = getSecureStorePath();
@@ -6171,6 +6323,7 @@ export function SettingsTab() {
 												<button
 													type="button"
 													className="settings-cancel-btn"
+													data-usage-event="settings-tab.set-show-lab-disconnect-41.click"
 													onClick={() => setShowLabDisconnect(false)}
 												>
 													{t("settings.cancel")}
@@ -6181,6 +6334,7 @@ export function SettingsTab() {
 										<button
 											type="button"
 											className="voice-preview-btn lab-disconnect-btn"
+											data-usage-event="settings-tab.set-show-lab-disconnect-42.click"
 											onClick={() => setShowLabDisconnect(true)}
 										>
 											{t("settings.labDisconnect")}
@@ -6270,6 +6424,7 @@ export function SettingsTab() {
 														type="button"
 														className="voice-preview-btn"
 														data-testid={`slot-edit-main`}
+														data-usage-event="settings-tab.set-active-settings-tab-43.click"
 														onClick={() => setActiveSettingsTab("brain")}
 													>
 														{t("settings.slot.editMain")}
@@ -6278,6 +6433,7 @@ export function SettingsTab() {
 														type="button"
 														className="voice-preview-btn"
 														data-testid={`slot-edit-models`}
+														data-usage-event="settings-tab.set-active-settings-tab-44.click"
 														onClick={() => setActiveSettingsTab("memory")}
 													>
 														{t("settings.slot.editModels")}
@@ -6322,6 +6478,7 @@ export function SettingsTab() {
 																data-testid="profile-tts-provider"
 																aria-label={t("settings.ttsProvider")}
 																value={ttsProvider}
+																data-usage-event="settings-tab.select-profile-tts-provider-45.select"
 																onChange={(event) =>
 																	void selectProfileTtsProvider(
 																		event.target.value as TtsProviderId,
@@ -6349,6 +6506,7 @@ export function SettingsTab() {
 																	type="button"
 																	className="voice-preview-btn"
 																	data-testid="profile-local-voice-toggle"
+																	data-usage-event="settings-tab.handle-toggle-cascade-46.click"
 																	onClick={handleToggleCascade}
 																	disabled={
 																		cascadeBusy ||
@@ -6366,11 +6524,13 @@ export function SettingsTab() {
 																</button>
 															)}
 														</>
+
 													)}
 													<button
 														type="button"
 														className="voice-preview-btn"
 														data-testid={`slot-edit-voice`}
+														data-usage-event="settings-tab.set-active-settings-tab-47.click"
 														onClick={() => setActiveSettingsTab("voice")}
 													>
 														{t("settings.slot.editVoice")}
@@ -6400,6 +6560,7 @@ export function SettingsTab() {
 													type="button"
 													className="voice-preview-btn"
 													data-testid={`slot-edit-avatar`}
+													data-usage-event="settings-tab.set-active-settings-tab-48.click"
 													onClick={() => setActiveSettingsTab("avatar")}
 												>
 													{t("settings.slot.editAvatar")}
@@ -6426,6 +6587,7 @@ export function SettingsTab() {
 								id="local-gpu-tier"
 								value={localGpuTier}
 								disabled={!naiaKey}
+								data-usage-event="settings-tab.handle-select-local-tier-49.select"
 								onChange={(e) => {
 									// R3/R4/R5: 선택 = 스테이징(즉시 persist 안 함) + 로컬 슬롯 스테이징 +
 									// 백엔드 warm(대기). "적용"(저장)에서 실제 앱에 커밋.
@@ -6558,6 +6720,7 @@ export function SettingsTab() {
 							<select
 								id="provider-select"
 								value={provider}
+								data-usage-event="settings-tab.handle-provider-change-50.select"
 								onChange={(e) =>
 									handleProviderChange(e.target.value as ProviderId)
 								}
@@ -6572,6 +6735,7 @@ export function SettingsTab() {
 								))}
 							</select>
 						)}
+
 						{slotRecommendation(activeLocalTier, "main") && (
 							<div className="settings-hint" data-testid="main-tier-hint">
 								{t("settings.tierRecommendSummary")}: ollama (
@@ -6596,6 +6760,7 @@ export function SettingsTab() {
 									className="btn-secondary"
 									data-testid="codex-readiness-check"
 									disabled={codexPreflightStatus === "checking"}
+									data-usage-event="settings-tab.button-51.click"
 									onClick={() => void checkCodexReadiness()}
 								>
 									{t("settings.codexReadinessCheck")}
@@ -6619,6 +6784,7 @@ export function SettingsTab() {
 									className="btn-secondary"
 									data-testid="grok-readiness-check"
 									disabled={grokPreflightStatus === "checking"}
+									data-usage-event="settings-tab.button-52.click"
 									onClick={() => void checkGrokReadiness()}
 								>
 									{t("settings.grokReadinessCheck")}
@@ -6642,6 +6808,7 @@ export function SettingsTab() {
 									className="btn-secondary"
 									data-testid="claude-readiness-check"
 									disabled={claudePreflightStatus === "checking"}
+									data-usage-event="settings-tab.button-53.click"
 									onClick={() => void checkClaudeReadiness()}
 								>
 									{t("settings.claudeReadinessCheck")}
@@ -6737,6 +6904,7 @@ export function SettingsTab() {
 											className="voice-preview-btn"
 											data-testid="ollama-runtime-start"
 											disabled={ollamaRuntimeBusy || ollamaRuntimeStartPending}
+											data-usage-event="settings-tab.set-ollama-runtime-busy-54.click"
 											onClick={async () => {
 												setOllamaRuntimeBusy(true);
 												const revision = ollamaRuntimeRevisionRef.current;
@@ -6766,6 +6934,7 @@ export function SettingsTab() {
 										className="voice-preview-btn"
 										data-testid="ollama-runtime-stop"
 										disabled={ollamaRuntimeBusy}
+										data-usage-event="settings-tab.set-ollama-runtime-busy-55.click"
 										onClick={async () => {
 											setOllamaRuntimeBusy(true);
 											try {
@@ -6810,6 +6979,7 @@ export function SettingsTab() {
 											data-testid="ollama-pull-model-select"
 											value={ollamaPullTag}
 											disabled={ollamaPullActive || ollamaPullBusy}
+											data-usage-event="settings-tab.set-ollama-pull-tag-56.select"
 											onChange={(event) => {
 												setOllamaPullTag(event.target.value);
 												setOllamaPullConfirming(false);
@@ -7087,6 +7257,7 @@ export function SettingsTab() {
 											className="voice-preview-btn"
 											data-testid="ollama-pull-confirm"
 											disabled={!canStartOllamaModelPull}
+											data-usage-event="settings-tab.set-ollama-pull-confirming-57.click"
 											onClick={() => {
 												setOllamaPullConfirming(false);
 												beginOllamaModelPull(ollamaPullTag, false);
@@ -7097,6 +7268,7 @@ export function SettingsTab() {
 										<button
 											className="btn-secondary"
 											data-testid="ollama-pull-confirm-dismiss"
+											data-usage-event="settings-tab.set-ollama-pull-confirming-58.click"
 											onClick={() => setOllamaPullConfirming(false)}
 										>
 											{t("settings.ollamaPullKeepUnchanged")}
@@ -7107,6 +7279,7 @@ export function SettingsTab() {
 										className="voice-preview-btn"
 										data-testid="ollama-pull-request-confirmation"
 										disabled={!canStartOllamaModelPull}
+										data-usage-event="settings-tab.set-ollama-pull-confirming-59.click"
 										onClick={() => setOllamaPullConfirming(true)}
 									>
 										{t("settings.ollamaPullReviewButton")}
@@ -7117,6 +7290,7 @@ export function SettingsTab() {
 										className="btn-secondary"
 										data-testid="ollama-pull-cancel"
 										disabled={ollamaPullCancelBusy}
+										data-usage-event="settings-tab.button-60.click"
 										onClick={cancelOllamaModelPullNow}
 									>
 										{t("settings.ollamaPullCancelButton")}
@@ -7129,6 +7303,7 @@ export function SettingsTab() {
 										className="btn-secondary"
 										data-testid="ollama-pull-retry"
 										disabled={!canStartOllamaModelPull}
+										data-usage-event="settings-tab.button-61.click"
 										onClick={() => beginOllamaModelPull(ollamaPullTag, true)}
 									>
 										{t("settings.ollamaPullRetryButton")}
@@ -7166,6 +7341,7 @@ export function SettingsTab() {
 									id="model-sort-mode"
 									data-testid="model-sort-mode"
 									value={modelSortMode}
+									data-usage-event="settings-tab.set-model-sort-mode-62.select"
 									onChange={(event) => {
 										const nextMode = event.target.value as ModelSortMode;
 										setModelSortMode(nextMode);
@@ -7230,6 +7406,8 @@ export function SettingsTab() {
 								key={`model-select-${modelSortMode}-${displayedProviderModels.map((candidate) => candidate.id).join(":")}`}
 								id="model-select"
 								value={hasSelectedModel ? activeBrainModel : "__custom__"}
+								data-usage-event="settings-tab.set-model-63.select"
+
 								onChange={(e) => {
 									if (e.target.value === "__custom__") return;
 									ollamaPullSelectionRevisionRef.current += 1;
@@ -7401,6 +7579,7 @@ export function SettingsTab() {
 								<select
 									id="omni-voice-select"
 									value={voice}
+									data-usage-event="settings-tab.set-voice-64.select"
 									onChange={(e) => {
 										setVoice(e.target.value);
 										if (existing)
@@ -7416,6 +7595,7 @@ export function SettingsTab() {
 								<button
 									type="button"
 									className="voice-preview-btn"
+									data-usage-event="settings-tab.handle-voice-preview-65.click"
 									onClick={handleVoicePreview}
 									disabled={isPreviewing}
 								>
@@ -7482,12 +7662,14 @@ export function SettingsTab() {
 								id="tools-toggle"
 								type="checkbox"
 								checked={enableTools}
+								data-usage-event="settings-tab.set-enable-tools-66.select"
 								onChange={(e) => {
 									setEnableTools(e.target.checked);
 									persistConfig({ enableTools: e.target.checked });
 								}}
 							/>
 						)}
+
 					</div>
 					{!isWebMode() && enableTools && <DevicePairingSection />}
 					<div className="settings-field" data-testid="thinking-level-section">
@@ -7531,6 +7713,7 @@ export function SettingsTab() {
 													aria-checked={active}
 													tabIndex={active ? 0 : -1}
 													data-testid={`thinking-level-${webStage}`}
+													data-usage-event="settings-tab.handle-thinking-change-67.click"
 													onClick={() => handleThinkingChange(targetLevel)}
 													onKeyDown={(e) => {
 														if (
@@ -7565,7 +7748,7 @@ export function SettingsTab() {
 															? "var(--accent, #2563eb)"
 															: "var(--text-primary, var(--cream, #0f172a))",
 														fontWeight: active ? 600 : 400,
-														fontSize: "13px",
+														fontSize: scaledFontSize(13),
 														cursor: "pointer",
 														textAlign: "center",
 														whiteSpace: "nowrap",
@@ -7596,6 +7779,7 @@ export function SettingsTab() {
 													aria-checked={active}
 													tabIndex={active ? 0 : -1}
 													data-testid={`thinking-level-${level}`}
+													data-usage-event="settings-tab.handle-thinking-change-67.click"
 													onClick={() => handleThinkingChange(level)}
 													onKeyDown={(e) => handleThinkingKeyDown(e, level)}
 													style={{
@@ -7613,7 +7797,7 @@ export function SettingsTab() {
 															? "var(--accent, #2563eb)"
 															: "var(--text-primary, var(--cream, #0f172a))",
 														fontWeight: active ? 600 : 400,
-														fontSize: "13px",
+														fontSize: scaledFontSize(13),
 														cursor: "pointer",
 														textAlign: "center",
 														whiteSpace: "nowrap",
@@ -7628,6 +7812,7 @@ export function SettingsTab() {
 										})}
 							</div>
 						)}
+
 						<div className="settings-hint" style={{ marginTop: "4px" }}>
 							{t("settings.thinkingLevelHint")}
 						</div>
@@ -7654,6 +7839,7 @@ export function SettingsTab() {
 							<select
 								id="environment-awareness"
 								value={environmentAwareness}
+								data-usage-event="settings-tab.set-environment-awareness-68.select"
 								onChange={(e) => {
 									const next = e.target.value as EnvironmentAwareness;
 									setEnvironmentAwareness(next);
@@ -7706,6 +7892,7 @@ export function SettingsTab() {
 								</option>
 							</select>
 						)}
+
 						<span className="settings-hint">
 							{t("settings.environmentAwarenessHint")}
 						</span>
@@ -7720,6 +7907,7 @@ export function SettingsTab() {
 								type="checkbox"
 								checked={environmentTerminalInput}
 								disabled={environmentAwareness === "off"}
+								data-usage-event="settings-tab.set-environment-terminal-input-69.select"
 								onChange={(e) => {
 									setEnvironmentTerminalInput(e.target.checked);
 									persistConfig({ environmentTerminalInput: e.target.checked });
@@ -7728,10 +7916,12 @@ export function SettingsTab() {
 						</div>
 					)}
 
+
 					<div className="settings-actions">
 						<button
 							type="button"
 							className="settings-save-btn"
+							data-usage-event="settings-tab.handle-save-70.click"
 							onClick={handleSave}
 						>
 							{saved ? t("settings.saved") : t("settings.save")}
@@ -7753,6 +7943,7 @@ export function SettingsTab() {
 							id="tts-toggle"
 							type="checkbox"
 							checked={ttsEnabled}
+							data-usage-event="settings-tab.set-tts-enabled-71.select"
 							onChange={(e) => {
 								setTtsEnabled(e.target.checked);
 								persistConfig({ ttsEnabled: e.target.checked });
@@ -7820,6 +8011,7 @@ export function SettingsTab() {
 										<select
 											data-testid="web-stt-provider-select"
 											value={sttProvider ? "web-speech" : ""}
+											data-usage-event="settings-tab.set-stt-provider-72.select"
 											disabled={!isWebSpeechAvailable()}
 											onChange={(e) => {
 												const next = e.target.value as SttProviderId;
@@ -7827,6 +8019,7 @@ export function SettingsTab() {
 												setSttModel("");
 												persistConfig({ sttProvider: next, sttModel: "" });
 											}}
+
 										>
 											<option value="web-speech">
 												{t("webSpeech.recognitionProvider")}
@@ -7904,6 +8097,7 @@ export function SettingsTab() {
 												<label>ASR 모델</label>
 												<select
 													value={existing?.vllmSttModel ?? ""}
+													data-usage-event="settings-tab.save-config-73.select"
 													onChange={(e) => {
 														if (existing)
 															saveConfig({
@@ -7944,6 +8138,7 @@ export function SettingsTab() {
 											type="button"
 											className="onboarding-next-btn"
 											style={{ fontSize: "0.8em", padding: "4px 12px" }}
+											data-usage-event="settings-tab.set-stt-model-modal-open-74.click"
 											onClick={() => setSttModelModalOpen(true)}
 										>
 											{t("settings.sttManageModels")}
@@ -7965,6 +8160,7 @@ export function SettingsTab() {
 								id="tts-provider-select"
 								data-testid="gateway-tts-provider"
 								value={ttsProvider === "browser" ? "browser" : "nextain"}
+								data-usage-event="settings-tab.select-profile-tts-provider-75.select"
 								onChange={(e) => {
 									const next = (
 										e.target.value === "browser" ? "browser" : "nextain"
@@ -7979,6 +8175,7 @@ export function SettingsTab() {
 								<option value="nextain">Naia Cloud TTS</option>
 								<option value="browser">
 									{t("webSpeech.synthesisProvider")}
+
 								</option>
 							</select>
 								{ttsProvider === "browser" &&
@@ -8069,6 +8266,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-usage-event="settings-tab.handle-toggle-cascade-76.click"
 								onClick={handleToggleCascade}
 								disabled={
 									cascadeBusy ||
@@ -8142,6 +8340,7 @@ export function SettingsTab() {
 										type="button"
 										className="voice-preview-btn"
 										data-testid="local-voice-migration-restore"
+										data-usage-event="settings-tab.set-voice-migration-notice-77.click"
 										onClick={async () => {
 											if (await ensureLocalVoiceReady()) {
 												setVoiceMigrationNotice(false);
@@ -8174,6 +8373,7 @@ export function SettingsTab() {
 												? ""
 												: String(existing.localVoiceGpuIndex)
 										}
+										data-usage-event="settings-tab.save-config-78.select"
 										onChange={(event) => {
 											if (!existing) return;
 											const raw = event.target.value;
@@ -8301,6 +8501,7 @@ export function SettingsTab() {
 											id="tts-voice-select"
 											data-testid="gateway-tts-voice"
 											value={ttsVoice}
+											data-usage-event="settings-tab.select-79.select"
 											onChange={(e) => persistTtsVoice(e.target.value)}
 										>
 											{voices.map((v) => (
@@ -8312,6 +8513,7 @@ export function SettingsTab() {
 										<button
 											type="button"
 											className="voice-preview-btn"
+											data-usage-event="settings-tab.handle-voice-preview-80.click"
 											onClick={handleVoicePreview}
 											disabled={isPreviewing}
 										>
@@ -8350,11 +8552,13 @@ export function SettingsTab() {
 										<select
 											id="tts-voice-select"
 											value={isKioskNextain ? KIOSK_DEMO_TTS_VOICE : ttsVoice}
+											data-usage-event="settings-tab.select-81.select"
 											disabled={isKioskNextain}
 											onChange={(e) => {
 												if (isKioskNextain) return;
 												persistTtsVoice(e.target.value);
 											}}
+
 										>
 										{showSelectedVoice && (
 											<option value={ttsVoice}>
@@ -8385,6 +8589,7 @@ export function SettingsTab() {
 										<button
 											type="button"
 											className="voice-preview-btn"
+											data-usage-event="settings-tab.handle-voice-preview-82.click"
 											onClick={handleVoicePreview}
 											disabled={isPreviewing}
 										>
@@ -8444,6 +8649,7 @@ export function SettingsTab() {
 								type="button"
 								className="onboarding-next-btn"
 								style={{ fontSize: "0.8em", padding: "4px 12px" }}
+								data-usage-event="settings-tab.stop-mic-test-83.click"
 								onClick={micTestActive ? stopMicTest : startMicTest}
 							>
 								{micTestActive ? "중지" : "마이크 테스트"}
@@ -8487,6 +8693,7 @@ export function SettingsTab() {
 								padding: "4px 12px",
 								marginTop: "6px",
 							}}
+							data-usage-event="settings-tab.button-84.click"
 							onClick={playTestBeep}
 						>
 							스피커 테스트
@@ -8496,6 +8703,7 @@ export function SettingsTab() {
 						<button
 							type="button"
 							className="settings-save-btn"
+							data-usage-event="settings-tab.handle-save-85.click"
 							onClick={handleSave}
 							disabled={selectedModelMeta?.comingSoon ?? false}
 							title={
@@ -8556,6 +8764,7 @@ export function SettingsTab() {
 										name="memory-embedding"
 										value={val}
 										checked={memoryEmbeddingProvider === val}
+										data-usage-event="settings-tab.set-memory-embedding-provider-86.select"
 										onChange={() => {
 											setMemoryEmbeddingProvider(val);
 											persistConfig({ memoryEmbeddingProvider: val });
@@ -8610,6 +8819,7 @@ export function SettingsTab() {
 												name="memory-offline-model"
 												value={val}
 												checked={memoryOfflineModel === val}
+												data-usage-event="settings-tab.set-memory-offline-model-87.select"
 												onChange={() => {
 													setMemoryOfflineModel(val);
 													persistConfig({ memoryOfflineModel: val });
@@ -8641,6 +8851,7 @@ export function SettingsTab() {
 												name="memory-embedding-device"
 												value={val}
 												checked={memoryEmbeddingDevice === val}
+												data-usage-event="settings-tab.set-memory-embedding-device-88.select"
 												onChange={() => {
 													setMemoryEmbeddingDevice(val);
 													persistConfig({ memoryEmbeddingDevice: val });
@@ -8772,6 +8983,7 @@ export function SettingsTab() {
 						<button
 							type="button"
 							className="settings-save-btn"
+							data-usage-event="settings-tab.handle-save-89.click"
 							onClick={handleSave}
 						>
 							{saved ? t("settings.saved") : t("settings.save")}
@@ -8820,6 +9032,7 @@ export function SettingsTab() {
 											name="memory-adapter"
 											value={val}
 											checked={memoryAdapter === val}
+											data-usage-event="settings-tab.set-memory-adapter-90.select"
 											onChange={() => {
 												setMemoryAdapter(val);
 												persistConfig({ memoryAdapter: val });
@@ -8875,6 +9088,7 @@ export function SettingsTab() {
 									type="button"
 									disabled
 									data-testid="memory-backup-export"
+									data-usage-event="settings-tab.set-backup-status-91.click"
 									onClick={async () => {
 										setBackupStatus("exporting");
 										setBackupError("");
@@ -8905,6 +9119,7 @@ export function SettingsTab() {
 								<button
 									type="button"
 									disabled
+									data-usage-event="settings-tab.set-backup-status-92.click"
 									onClick={async () => {
 										const pw = backupPassword;
 										const fileInput = document.createElement("input");
@@ -8996,6 +9211,7 @@ export function SettingsTab() {
 										<button
 											type="button"
 											className="fact-delete-btn"
+											data-usage-event="settings-tab.delete-fact-confirm-93.click"
 											onClick={async () => {
 												// 기억은 지우면 되돌릴 수 없다
 												// (UC-QUALITY-DESTRUCTIVE-AFFORDANCE).
@@ -9027,6 +9243,7 @@ export function SettingsTab() {
 						<button
 							type="button"
 							className="settings-save-btn"
+							data-usage-event="settings-tab.handle-save-94.click"
 							onClick={handleSave}
 						>
 							{saved ? t("settings.saved") : t("settings.save")}
@@ -9068,6 +9285,7 @@ export function SettingsTab() {
 								className="voice-preview-btn"
 								title="agent-health-check-btn"
 								data-testid="agent-health-check-btn"
+								data-usage-event="settings-tab.set-agent-health-status-95.click"
 								onClick={async () => {
 									setAgentHealthStatus("checking");
 									try {
@@ -9116,6 +9334,7 @@ export function SettingsTab() {
 											type="button"
 											className="voice-preview-btn"
 											data-testid={`revoke-allowed-tool-${name}`}
+											data-usage-event="settings-tab.remove-allowed-tool-96.click"
 											onClick={() => {
 												removeAllowedTool(name);
 												setAllowedTools((prev) =>
@@ -9132,6 +9351,7 @@ export function SettingsTab() {
 								type="button"
 								className="voice-preview-btn"
 								data-testid="clear-allowed-tools-btn"
+								data-usage-event="settings-tab.set-allowed-tools-97.click"
 								onClick={() => {
 									clearAllowedTools();
 									setAllowedTools([]);
@@ -9157,6 +9377,7 @@ export function SettingsTab() {
 									key={file}
 									type="button"
 									className="voice-preview-btn"
+									data-usage-event="settings-tab.button-98.click"
 									onClick={async () => {
 										try {
 											const logDir = await invoke<string>("get_log_dir");
@@ -9177,6 +9398,7 @@ export function SettingsTab() {
 								type="button"
 								className="voice-preview-btn"
 								data-testid="log-viewer-btn"
+								data-usage-event="settings-tab.open-path-99.click"
 								onClick={async () => {
 									try {
 										const logDir = await invoke<string>("get_log_dir");
@@ -9204,6 +9426,7 @@ export function SettingsTab() {
 									<input
 										type="checkbox"
 										checked={resetClearHistory}
+										data-usage-event="settings-tab.set-reset-clear-history-100.select"
 										onChange={(e) => setResetClearHistory(e.target.checked)}
 									/>
 									{t("settings.resetClearHistory")}
@@ -9212,6 +9435,7 @@ export function SettingsTab() {
 									<button
 										type="button"
 										className="settings-reset-btn"
+										data-usage-event="settings-tab.button-101.click"
 										onClick={executeReset}
 									>
 										{t("settings.resetExecute")}
@@ -9219,6 +9443,7 @@ export function SettingsTab() {
 									<button
 										type="button"
 										className="settings-cancel-btn"
+										data-usage-event="settings-tab.set-show-reset-confirm-102.click"
 										onClick={() => {
 											setShowResetConfirm(false);
 										}}
@@ -9231,6 +9456,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="settings-reset-btn"
+								data-usage-event="settings-tab.handle-reset-103.click"
 								onClick={handleReset}
 							>
 								{t("settings.reset")}
@@ -9248,6 +9474,7 @@ export function SettingsTab() {
 			{sttModelModalOpen && (
 				<div
 					className="app-modal-overlay"
+					data-usage-event="settings-tab.set-stt-model-modal-open-104.click"
 					onClick={() => setSttModelModalOpen(false)}
 				>
 					<div
@@ -9257,6 +9484,7 @@ export function SettingsTab() {
 							maxHeight: "calc(var(--naia-vh, 1vh) * 85)",
 							overflow: "auto",
 						}}
+						data-usage-event="settings-tab.stop-propagation-105.click"
 						onClick={(e) => e.stopPropagation()}
 					>
 						<h3>{t("settings.sttModelManagerTitle")}</h3>
@@ -9289,6 +9517,7 @@ export function SettingsTab() {
 												value={m.modelId}
 												checked={sttModel === m.modelId}
 												disabled={!m.downloaded || !m.ready}
+												data-usage-event="settings-tab.set-stt-model-106.select"
 												onChange={() => setSttModel(m.modelId)}
 											/>
 											<strong style={{ fontSize: "0.9em" }}>
@@ -9351,6 +9580,7 @@ export function SettingsTab() {
 														padding: "2px 8px",
 														cursor: "pointer",
 													}}
+													data-usage-event="settings-tab.handle-stt-model-download-107.click"
 													onClick={() => handleSttModelDownload(m.modelId)}
 												>
 													{t("settings.sttModelDownload")}
@@ -9375,6 +9605,7 @@ export function SettingsTab() {
 													cursor: "pointer",
 													color: "var(--error-color, #f44)",
 												}}
+												data-usage-event="settings-tab.handle-stt-model-delete-108.click"
 												onClick={() => handleSttModelDelete(m.modelId)}
 											>
 												{t("settings.sttModelDelete")}
@@ -9387,6 +9618,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="onboarding-next-btn"
+								data-usage-event="settings-tab.set-stt-model-modal-open-109.click"
 								onClick={() => setSttModelModalOpen(false)}
 							>
 								OK
@@ -9405,6 +9637,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="onboarding-next-btn"
+								data-usage-event="settings-tab.handle-sync-dialog-apply-110.click"
 								onClick={handleSyncDialogApply}
 							>
 								{t("settings.labSyncDialog.useOnline")}
@@ -9412,6 +9645,7 @@ export function SettingsTab() {
 							<button
 								type="button"
 								className="onboarding-back-btn"
+								data-usage-event="settings-tab.set-sync-dialog-open-111.click"
 								onClick={() => {
 									setSyncDialogOpen(false);
 									setSyncDialogOnlineConfig(null);
@@ -9516,7 +9750,7 @@ function BroadcastSettingsSection() {
 					id="broadcast-platform-select"
 					data-testid="broadcast-platform-select"
 					value={platform}
-					onChange={(e) => {
+					data-usage-event="settings-tab.main-merge-1.select" onChange={(e) => {
 						const nextPlatform = e.target.value as NonNullable<
 							AppConfig["broadcastPlatform"]
 						>;
@@ -9559,7 +9793,7 @@ function BroadcastSettingsSection() {
 					id="broadcast-resolution-select"
 					data-testid="broadcast-resolution-select"
 					value={resolution}
-					onChange={(e) => {
+					data-usage-event="settings-tab.main-merge-2.select" onChange={(e) => {
 						const nextRes = e.target.value as NonNullable<
 							AppConfig["broadcastResolution"]
 						>;
@@ -9600,7 +9834,7 @@ function BroadcastSettingsSection() {
 						type="button"
 						className="voice-preview-btn"
 						data-testid="broadcast-save-btn"
-						onClick={() => void persistBroadcastSettings()}
+						data-usage-event="settings-tab.main-merge-3.click" onClick={() => void persistBroadcastSettings()}
 					>
 						{t("settings.broadcastSave")}
 					</button>
@@ -9627,6 +9861,7 @@ export function AboutSection() {
 						target="_blank"
 						rel="noopener noreferrer"
 						className="settings-about__link"
+						data-usage-event="settings-tab.open-url-112.click"
 						onClick={(e) => {
 							e.preventDefault();
 							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
@@ -9641,6 +9876,7 @@ export function AboutSection() {
 						target="_blank"
 						rel="noopener noreferrer"
 						className="settings-about__link"
+						data-usage-event="settings-tab.open-url-113.click"
 						onClick={(e) => {
 							e.preventDefault();
 							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
@@ -9656,6 +9892,7 @@ export function AboutSection() {
 							target="_blank"
 							rel="noopener noreferrer"
 							className="settings-about__link settings-about__link--sponsor"
+							data-usage-event="settings-tab.open-url-114.click"
 							onClick={(e) => {
 								e.preventDefault();
 								import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
@@ -9721,6 +9958,7 @@ function VersionFooter() {
 				<button
 					type="button"
 					className="version-footer-btn"
+					data-usage-event="settings-tab.handle-check-update-115.click"
 					onClick={handleCheckUpdate}
 				>
 					{t("update.checkNow")}
@@ -9736,6 +9974,7 @@ function VersionFooter() {
 				<button
 					type="button"
 					className="version-footer-btn"
+					data-usage-event="settings-tab.handle-install-116.click"
 					onClick={handleInstall}
 				>
 					{t("update.now")} ({updateInfo.version})

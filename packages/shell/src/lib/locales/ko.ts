@@ -1751,4 +1751,26 @@ export default {
 	"slides.videoNoFileName": "(파일 이름 없음)",
 	"slides.videoLabel": "{position} / 영상 {name}",
 	"slides.videoIndicator": "{position} / 영상",
+
+	"usage.title": "사용 통계 보내기(선택)",
+	"usage.description": "나이아를 더 낫게 만들 수 있도록 버튼을 누른 기록과 화면 이동 기록을 Microsoft Azure Application Insights로 보내도 될까요? 보내는 것은 임의로 만든 설치 번호, 버튼·화면 이름, 앱 버전, 운영체제·배포 경로, 일어난 시각과 순서뿐입니다. 이름·계정·대화·파일 경로·입력한 글은 보내지 않습니다.",
+	"usage.optional": "보내지 않아도 모든 기능을 그대로 쓸 수 있고, 설정 → 일반에서 언제든 바꿀 수 있습니다. 허용하기 전에는 아무것도 모으지 않습니다.",
+	"usage.decline": "보내지 않기",
+	"usage.allow": "보내기 허용",
+	"usage.enabled": "사용 통계 보내기",
+	"usage.stopNotice": "끄면 모든 창에서 수집을 즉시 멈추고 아직 보내지 않은 기록을 버립니다. 이미 보낸 요청은 도착할 수 있습니다. 이전에 보낸 자료는 이 스위치로 삭제되지 않습니다.",
+	"usage.saveError": "선택을 저장하지 못했습니다. 사용 통계는 꺼져 있습니다. 다시 시도하거나 통계 없이 계속할 수 있습니다.",
+	"usage.continueOff": "통계를 끄고 계속",
+
+
+	"apps.permission.clipboard.write": "사용자가 누를 때 클립보드에 쓰기",
+	"settings.fontScale": "글자 크기",
+	"settings.fontScaleSmall": "작게",
+	"settings.fontScaleNormal": "보통",
+	"settings.fontScaleLarge": "크게",
+	"settings.fontScaleXLarge": "아주 크게",
+	"settings.fontScaleHint": "채팅·메뉴·설정·자막·방송 화면의 글자 크기를 바꿉니다. 바로 적용됩니다.",
+	"bgm.keyboardHelp": "음악 조작: 스페이스 또는 K 재생·정지, 좌우 5초 이동, 상하 음량, N 다음 곡, P 이전 곡",
+	"bgm.showCaptions": "자막 표시",
+	"ai.avatarControls": "아바타 조작",
 } as const;

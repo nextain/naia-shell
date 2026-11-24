@@ -245,6 +245,20 @@
 	overflow: hidden;
 }
 
+.charcard-app__card-initial {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--accent-color);
+	color: #ffffff;
+	font-weight: 700;
+	font-size: 15px;
+	flex-shrink: 0;
+}
+
 .charcard-app__card-meta {
 	display: flex;
 	flex-direction: column;

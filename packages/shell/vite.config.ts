@@ -1,4 +1,8 @@
-import { cpSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, existsSync, realpathSync, rmSync, statSync } from "node:fs";
+import packageJson from "./package.json";
+import { shouldIncludeDesktopPublicAsset } from "./src/lib/avatar/desktop-public-assets";
+
+export { shouldIncludeDesktopPublicAsset };
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,28 +21,6 @@ import { WEB_CSP } from "./src/lib/web-runtime/csp";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workerPath = path.resolve(__dirname, "web-worker/create-agent-worker.ts");
-
-// Web NVA and background bundles are served by the web build. Desktop reads
-// these assets from the ADK workspace; copying the web bundles into its package
-// duplicates them while the existing desktop public assets remain necessary.
-function desktopPublicAssetsPlugin(): Plugin {
-	let outputDirectory = "";
-	const publicDirectory = path.resolve(__dirname, "public");
-	const webOnly = new Set(["nva", "backgrounds", "kiosk-slides"]);
-	return {
-		name: "desktop-public-assets",
-		apply: "build",
-		configResolved(config) {
-			outputDirectory = path.resolve(config.root, config.build.outDir);
-		},
-		writeBundle() {
-			cpSync(publicDirectory, outputDirectory, {
-				recursive: true,
-				filter: (source) => !webOnly.has(path.relative(publicDirectory, source).split(path.sep)[0]),
-			});
-		},
-	};
-}
 
 // 회사 소개 슬라이드 그림은 비밀번호를 거치는 시연판에서만 내보낸다. 일반 웹판 산출물에서는 지운다.
 function kioskSlidesAssetsPlugin(): Plugin {
@@ -257,6 +239,35 @@ function readPositiveIntegerEnv(
 	return value;
 }
 
+export function desktopPublicAssetsPlugin(): Plugin {
+	let outputDirectory = "";
+	const publicDirectory = path.resolve(__dirname, "public");
+	return {
+		name: "desktop-public-assets",
+		apply: "build",
+		configResolved(config) {
+			outputDirectory = path.resolve(config.root, config.build.outDir);
+		},
+		writeBundle() {
+			if (!existsSync(publicDirectory)) return;
+			cpSync(publicDirectory, outputDirectory, {
+				recursive: true,
+				filter: (source) => {
+					const rel = path.relative(publicDirectory, source);
+					if (!rel) return true;
+					let isDir = false;
+					try {
+						isDir = statSync(source).isDirectory();
+					} catch {
+						isDir = false;
+					}
+					return shouldIncludeDesktopPublicAsset(rel, isDir);
+				},
+			});
+		},
+	};
+}
+
 const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
@@ -303,6 +314,7 @@ export default defineConfig(async ({ mode, command }) => {
 			manifest: true,
 		},
 		define: {
+			__USAGE_VERSION__: JSON.stringify(packageJson.version),
 			__WEB_VERSION__: JSON.stringify(`0.2.5-dev (${revision})`),
 			__BUILD_ID__: JSON.stringify(
 				new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),

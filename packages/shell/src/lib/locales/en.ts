@@ -1525,6 +1525,28 @@ const englishCore = {
 	"slides.videoNoFileName": "(no file name)",
 	"slides.videoLabel": "{position} / Video {name}",
 	"slides.videoIndicator": "{position} / Video",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "Write to the clipboard when you click",
+	"settings.fontScale": "Font size",
+	"settings.fontScaleSmall": "Small",
+	"settings.fontScaleNormal": "Normal",
+	"settings.fontScaleLarge": "Large",
+	"settings.fontScaleXLarge": "Extra large",
+	"settings.fontScaleHint": "Changes the text size of chat, menus, settings, subtitles and broadcast overlays. Applies immediately.",
+	"bgm.keyboardHelp": "Music controls: Space or K play/stop; left/right seek 5 seconds; up/down volume; N next, P previous",
+	"bgm.showCaptions": "Show captions",
+	"ai.avatarControls": "Avatar controls",
 } as const;
 
 type EnglishTable = Readonly<Record<keyof typeof englishCore, string>> &

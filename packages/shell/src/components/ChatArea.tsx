@@ -263,6 +263,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
+import { usage } from "../lib/usage-runtime";
 import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
@@ -512,6 +513,7 @@ function ChatErrorNotice({
 			<button
 				type="button"
 				className="chat-error-notice__retry"
+				data-usage-event="chat-area.on-retry-1.click"
 				onClick={onRetry}
 			>
 				{t("chat.answerFailed.retry")}
@@ -841,28 +843,16 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
-	const installedAppRequestRef = useRef<{
-		appId: string;
-		requestId: string;
-	} | null>(null);
+	const installedAppRequestRef = useRef<{ appId: string; requestId: string } | null>(null);
 	const installedAppTurnRef = useRef(false);
-	const installedAppSendRef = useRef<
-		((prompt: string) => Promise<void>) | null
-	>(null);
+	const installedAppSendRef = useRef<((prompt: string) => Promise<void>) | null>(null);
 	const installedAppVoiceBlockedRef = useRef(false);
 	const installedAppConfig = loadConfig();
-	const installedAppMainRole = installedAppConfig
-		? effectiveMainRole(installedAppConfig)
-		: {};
-	const installedAppProvider =
-		installedAppMainRole.provider ?? installedAppConfig?.provider;
-	const installedAppModel =
-		installedAppMainRole.model ?? installedAppConfig?.model;
-	installedAppVoiceBlockedRef.current =
-		voiceMode !== "off" ||
-		(installedAppProvider === "nextain" &&
-			!!installedAppModel &&
-			isOmniModel(installedAppProvider, installedAppModel));
+	const installedAppMainRole = installedAppConfig ? effectiveMainRole(installedAppConfig) : {};
+	const installedAppProvider = installedAppMainRole.provider ?? installedAppConfig?.provider;
+	const installedAppModel = installedAppMainRole.model ?? installedAppConfig?.model;
+	installedAppVoiceBlockedRef.current = voiceMode !== "off" ||
+		(installedAppProvider === "nextain" && !!installedAppModel && isOmniModel(installedAppProvider, installedAppModel));
 	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
 	const gestureActionPlayedRef = useRef(false);
 	const pendingAiGestureActionRef = useRef<string | null>(null);
@@ -1057,6 +1047,7 @@ export function ChatArea({
 						}, delayMs);
 					},
 				});
+				// #423: browser speech end/error releases the held expression.
 				if (!on) {
 					// #423: browser speech end/error releases the held expression.
 					settleAvatarEmotionIfIdle();
@@ -1536,28 +1527,15 @@ export function ChatArea({
 		error?: string,
 	): void {
 		const active = activeSlidePresenterSpeechRef.current;
-		if (
-			!active ||
-			(status === "finished" &&
-				active.appId &&
-				(!active.started ||
-					sentencePipelineRef.current?.hasActiveRequests() ||
-					cascadeTtsJobsRef.current > 0 ||
-					audioQueueRef.current?.isActive))
-		) {
-			return;
-		}
+		if (!active || (status === "finished" && active.appId &&
+			(!active.started || sentencePipelineRef.current?.hasActiveRequests() ||
+				cascadeTtsJobsRef.current > 0 || audioQueueRef.current?.isActive))) return;
 		activeSlidePresenterSpeechRef.current = null;
 		slideSpeechProgressRef.current = null;
 		window.dispatchEvent(
-			new CustomEvent(
-				active.appId
-					? INSTALLED_APP_SPEECH_RESULT_EVENT
-					: SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
-				{
-					detail: { ...active, status, error },
-				},
-			),
+			new CustomEvent(active.appId ? INSTALLED_APP_SPEECH_RESULT_EVENT : SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+				detail: { ...active, status, error },
+			}),
 		);
 		Logger.info("ChatArea", "slide narration settled", {
 			page: active.page,
@@ -1647,8 +1625,7 @@ export function ChatArea({
 
 	function beginCascadeTtsJob(): () => void {
 		const generation = ttsTextSyncRef.current.generation;
-		if (activeSlidePresenterSpeechRef.current?.appId)
-			activeSlidePresenterSpeechRef.current.started = true;
+		if (activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
 		let ended = false;
 		cascadeTtsJobsRef.current++;
 		ttsPlayingRef.current = true;
@@ -1849,8 +1826,7 @@ export function ChatArea({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
 				measureSpeech: () => Boolean(getWebVrmLipSyncSink()),
 				onPlaybackStart: () => {
-					if (activeSlidePresenterSpeechRef.current?.appId)
-						activeSlidePresenterSpeechRef.current.started = true;
+					if (activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
 					useAvatarStore.getState().setSpeaking(true);
 					ttsPlayingRef.current = true;
 					setTtsPlaying(true);
@@ -2011,9 +1987,7 @@ export function ChatArea({
 	useEffect(() => {
 		let disposed = false;
 		const handleSpeak = (event: Event) => {
-			const detail = (
-				event as CustomEvent<SlidePresenterSpeechRequest & { appId?: string }>
-			).detail;
+			const detail = (event as CustomEvent<SlidePresenterSpeechRequest & { appId?: string }>).detail;
 			if (
 				!detail?.requestId ||
 				!Number.isSafeInteger(detail.generation) ||
@@ -2066,11 +2040,7 @@ export function ChatArea({
 					return;
 				}
 				const config = await loadConfigWithSecrets();
-				if (
-					disposed ||
-					activeSlidePresenterSpeechRef.current?.requestId !== detail.requestId
-				)
-					return;
+				if (activeSlidePresenterSpeechRef.current !== detail) return;
 				if (!config || config.ttsEnabled !== true) {
 					settleSlidePresenterSpeech("failed", "tts_disabled");
 					return;
@@ -2577,6 +2547,7 @@ export function ChatArea({
 	}, []);
 
 	async function handleNewConversation() {
+		usage.record("chat.session.new", "chat");
 		const store = useChatStore.getState();
 		// Stop any TTS still reading the previous conversation.
 		interruptTts();
@@ -2818,6 +2789,8 @@ export function ChatArea({
 			settleInstalledAppReply("", t("apps.voiceModeBlocked"));
 			return;
 		}
+		usage.record("chat.message.send", "text");
+		usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null;
 		pendingAiGestureActionRef.current = null;
 		if (!installedAppTurn && (await handleSpeechProfilePhrase(text))) return;
 		if (
@@ -2865,7 +2838,7 @@ export function ChatArea({
 		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
 			if (installedAppTurn) {
 				installedAppTurnRef.current = true;
-				settleInstalledAppReply("", t("apps.requestBusy"));
+				settleInstalledAppReply("", "Naia is busy with another reply. Please retry.");
 				return;
 			}
 			useChatStore.getState().enqueueMessage(text);
@@ -2955,10 +2928,7 @@ export function ChatArea({
 		const configuredModel = mainRole.model ?? config?.model;
 		// FR-LLM-LOGOUT.2: 제공자가 없으면 보내지 않고 세 갈래 안내를 답변 자리에 보인다.
 		// 채팅 저장소의 기본 제공자로 대신 보내면 지원하지 않는 곳으로 나갈 수 있다.
-		if (
-			config &&
-			(!configuredProvider || (installedAppTurn && !configuredModel))
-		) {
+		if (config && (!configuredProvider || (installedAppTurn && !configuredModel))) {
 			settleInstalledAppReply("", t("chat.noLlm"));
 			useChatStore.getState().appendStreamChunk(t("chat.noLlm"));
 			useChatStore.getState().finishStreaming();
@@ -3308,14 +3278,7 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
-			settleInstalledAppReply("", t("apps.requestFailed"));
-			if (isKioskDemo()) {
-				finishStreamingWithVoiceTail();
-				finishLocalVoicePrebuffer();
-				completeCurrentRequest(requestId);
-				await handleKioskTurnFailure(text, installedAppTurn);
-				return;
-			}
+			settleInstalledAppReply("", errStr);
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
@@ -3360,117 +3323,59 @@ export function ChatArea({
 		const { appId, requestId } = request;
 		installedAppRequestRef.current = null;
 		installedAppTurnRef.current = false;
-		Logger.debug("ChatArea", "Installed app request settled", {
-			requestId,
-			error: !!error,
-		});
-		window.dispatchEvent(
-			new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
-				detail: { appId, requestId, text, ...(error ? { error } : {}) },
-			}),
-		);
+		Logger.debug("ChatArea", "Installed app request settled", { requestId, error: !!error });
+		window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
+			detail: { appId, requestId, text, ...(error ? { error } : {}) },
+		}));
 	}
 
 	installedAppSendRef.current = (prompt) => handleSend(prompt, true);
 	useEffect(() => {
 		const onAbort = (event: Event) => {
-			const detail = (
-				event as CustomEvent<{ appId: string; requestId: string }>
-			).detail;
-			if (
-				detail?.appId !== installedAppRequestRef.current?.appId ||
-				detail?.requestId !== installedAppRequestRef.current?.requestId
-			)
-				return;
-			if (installedAppTurnRef.current && currentRequestId.current)
-				handleCancelStreaming();
+			const detail = (event as CustomEvent<{ appId: string; requestId: string }>).detail;
+			if (detail?.appId !== installedAppRequestRef.current?.appId || detail?.requestId !== installedAppRequestRef.current?.requestId) return;
+			if (installedAppTurnRef.current && currentRequestId.current) handleCancelStreaming();
 			installedAppRequestRef.current = null;
 			installedAppTurnRef.current = false;
 		};
 		const onRequest = (event: Event) => {
-			const detail = (
-				event as CustomEvent<{
-					appId?: string;
-					requestId?: string;
-					prompt?: string;
-				}>
-			).detail;
-			if (
-				!detail ||
-				typeof detail.appId !== "string" ||
-				typeof detail.requestId !== "string" ||
-				typeof detail.prompt !== "string" ||
-				!detail.prompt.trim() ||
-				detail.prompt.length > 9_000
-			)
-				return;
-			const respondError = (error: string) =>
-				window.dispatchEvent(
-					new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
-						detail: {
-							appId: detail.appId,
-							requestId: detail.requestId,
-							text: "",
-							error,
-						},
-					}),
-				);
-			Logger.debug("ChatArea", "Installed app request received", {
-				requestId: detail.requestId,
-			});
+			const detail = (event as CustomEvent<{ appId?: string; requestId?: string; prompt?: string }>).detail;
+			if (!detail || typeof detail.appId !== "string" || typeof detail.requestId !== "string" ||
+				typeof detail.prompt !== "string" || !detail.prompt.trim() || detail.prompt.length > 9_000) return;
+			const respondError = (error: string) => window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
+				detail: { appId: detail.appId, requestId: detail.requestId, text: "", error },
+			}));
+			Logger.debug("ChatArea", "Installed app request received", { requestId: detail.requestId });
 			if (installedAppVoiceBlockedRef.current) {
 				respondError(t("apps.voiceModeBlocked"));
 				return;
 			}
 			if (installedAppRequestRef.current) {
-				respondError(t("apps.requestBusy"));
+				respondError("Naia is busy with another reply. Please retry.");
 				return;
 			}
-			installedAppRequestRef.current = {
-				appId: detail.appId,
-				requestId: detail.requestId,
-			};
+			installedAppRequestRef.current = { appId: detail.appId, requestId: detail.requestId };
 			setActiveTab("chat");
 			void (async () => {
 				let ready = false;
 				try {
-					ready = await sendAppSkills(
-						detail.appId!,
-						appRegistry.get(detail.appId!)?.tools ?? [],
-						{ awaitAck: true },
-					);
+					ready = await sendAppSkills(detail.appId!, appRegistry.get(detail.appId!)?.tools ?? [], { awaitAck: true });
 				} catch (error) {
-					Logger.warn("ChatArea", "Installed app tools registration failed", {
-						error: String(error),
-					});
+					Logger.warn("ChatArea", "Installed app tools registration failed", { error: String(error) });
 				}
-				if (
-					installedAppRequestRef.current?.appId !== detail.appId ||
-					installedAppRequestRef.current?.requestId !== detail.requestId
-				)
-					return;
-				if (
-					!ready ||
-					!installedAppSendRef.current ||
-					installedAppVoiceBlockedRef.current
-				) {
+				if (installedAppRequestRef.current?.appId !== detail.appId || installedAppRequestRef.current?.requestId !== detail.requestId) return;
+				if (!ready || !installedAppSendRef.current || installedAppVoiceBlockedRef.current) {
 					installedAppTurnRef.current = true;
-					settleInstalledAppReply(
-						"",
-						installedAppVoiceBlockedRef.current
-							? t("apps.voiceModeBlocked")
-							: t("apps.requestUnavailable"),
-					);
+					settleInstalledAppReply("", installedAppVoiceBlockedRef.current
+						? t("apps.voiceModeBlocked")
+						: ready ? "Naia chat is unavailable." : "Naia could not register the app tools. Please retry.");
 					return;
 				}
 				try {
 					await installedAppSendRef.current(detail.prompt!);
 				} catch (error) {
 					installedAppTurnRef.current = true;
-					Logger.warn("ChatArea", "Installed app request failed", {
-						error: String(error),
-					});
-					settleInstalledAppReply("", t("apps.requestFailed"));
+					settleInstalledAppReply("", String(error));
 				}
 			})();
 		};
@@ -3943,6 +3848,7 @@ export function ChatArea({
 	function appendCleanVisibleResponseText(cleanText: string): void {
 		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
+		if (usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "text"); usageUserTurn.current = null; }
 		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
 			ttsTextSyncRef.current.canonical += visible;
@@ -4278,7 +4184,7 @@ export function ChatArea({
 				}
 				flushThinkingStream();
 				flushGestureTriggerStream();
-				settleInstalledAppReply("", t("apps.requestFailed"));
+				settleInstalledAppReply("", wireErrorMessage(chunk.code, chunk.message));
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
@@ -4507,6 +4413,7 @@ export function ChatArea({
 	}
 
 	async function handleVoiceToggle() {
+		usage.record("chat.voice.toggle", "chat");
 		if (voiceMode !== "off") pendingAiGestureActionRef.current = null;
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
@@ -5139,6 +5046,7 @@ export function ChatArea({
 			) => {
 				playFirstGestureAction(gestures, liveGestureActionPlayed);
 				if (!cleanText && !recordEmpty) return;
+				if (cleanText && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
 				outputAccum += cleanText;
 				const { emotion, cleanText: displayText } =
 					extractExpression(outputAccum);
@@ -5155,8 +5063,12 @@ export function ChatArea({
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
 
-			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
+			session.onAudio = (pcmBase64) => {
+				if (pcmBase64 && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
+				player.enqueue(pcmBase64);
+			};
 			session.onInputTranscript = (text) => {
+				if (!inputTurnDirty && text) { usage.record("chat.message.send", "voice"); usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null; }
 				pendingAiGestureActionRef.current = null;
 				const store = useChatStore.getState();
 				if (!inputTurnDirty) setEmotion("think");
@@ -5535,6 +5447,7 @@ export function ChatArea({
 	}
 
 	function handleVoiceCancel() {
+		usage.record("chat.voice.cancel", "chat");
 		// Cancel an in-progress cold-start. disconnect() breaks naia-omni's retry
 		// loop (abortableSleep → AbortError) and fires abandonPod to release the
 		// warming Pod; the connect() catch then runs cleanup and clears the banner.
@@ -5753,6 +5666,7 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
 							data-chat-tab="chat"
+							data-usage-event="chat-area.handle-tab-change-2.click"
 							onClick={() => handleTabChange("chat")}
 							title={t("progress.tabChat")}
 							aria-label={t("progress.tabChat")}
@@ -5767,6 +5681,7 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
 							data-chat-tab="history"
+							data-usage-event="chat-area.handle-tab-change-3.click"
 							onClick={() => handleTabChange("history")}
 							title={t("history.tabHistory")}
 							aria-label={t("history.tabHistory")}
@@ -5790,6 +5705,7 @@ export function ChatArea({
 											? "cost-badge session-cost cost-badge-clickable credit-amount"
 											: "cost-badge session-cost cost-badge-clickable"
 									}
+									data-usage-event="chat-area.set-show-cost-dashboard-4.click"
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
 									{formatUsageTotal(
@@ -5801,6 +5717,7 @@ export function ChatArea({
 						<button
 							type="button"
 							className="settings-icon-btn new-chat-btn"
+							data-usage-event="chat-area.handle-new-conversation-5.click"
 							onClick={handleNewConversation}
 							title={t("chat.newConversation")}
 							disabled={isStreaming}
@@ -5982,6 +5899,7 @@ export function ChatArea({
 						<button
 							type="button"
 							aria-label="dismiss"
+							data-usage-event="chat-area.set-compaction-notice-6.click"
 							onClick={() => setCompactionNotice(null)}
 						>
 							×
@@ -6206,6 +6124,7 @@ export function ChatArea({
 							<button
 								type="button"
 								className="voice-status-cancel"
+								data-usage-event="chat-area.handle-voice-cancel-7.click"
 								onClick={handleVoiceCancel}
 							>
 								{t("chat.voiceColdStartCancel")}
@@ -6324,6 +6243,7 @@ export function ChatArea({
 					<button
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
+						data-usage-event="chat-area.handle-voice-toggle-8.click"
 						onClick={handleVoiceToggle}
 						disabled={
 							voiceMode === "connecting" ||
@@ -6399,6 +6319,7 @@ export function ChatArea({
 					{isStreaming || outputStage !== null || ttsPlaying ? (
 						<button
 							type="button"
+							data-usage-event="chat-area.handle-cancel-streaming-9.click"
 							onClick={handleCancelStreaming}
 							className="chat-send-btn chat-cancel-btn"
 							title="ESC"
@@ -6408,6 +6329,7 @@ export function ChatArea({
 					) : (
 						<button
 							type="button"
+							data-usage-event="chat-area.handle-send-10.click"
 							onClick={() => handleSend()}
 							disabled={
 								!input.trim() || webSendBlocked || characterTransitionPending
@@ -6423,10 +6345,12 @@ export function ChatArea({
 			{showNoAuthModal && (
 				<div
 					className="sync-dialog-overlay"
+					data-usage-event="chat-area.set-show-no-auth-modal-11.click"
 					onClick={() => setShowNoAuthModal(false)}
 				>
 					<div
 						className="sync-dialog-card"
+						data-usage-event="chat-area.stop-propagation-12.click"
 						onClick={(e) => e.stopPropagation()}
 						style={{ maxWidth: 360 }}
 					>
@@ -6443,6 +6367,7 @@ export function ChatArea({
 							<button
 								type="button"
 								className="onboarding-next-btn"
+								data-usage-event="chat-area.set-show-no-auth-modal-13.click"
 								onClick={() => {
 									setShowNoAuthModal(false);
 									useAppStore.getState().setActiveApp("settings");

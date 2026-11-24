@@ -276,7 +276,12 @@
 				"icons/icon.png",
 				"icons/icon.icns"
 			],
-			"installer": {},
+			"installer": {
+				"macOS": {
+					"infoPlist": "Info.plist",
+					"entitlements": "entitlements.app.plist"
+				}
+			},
 			"artifacts": [
 				{
 					"glob": "macos/*.app.tar.gz",

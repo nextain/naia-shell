@@ -1,6 +1,6 @@
 import { Logger } from "../../../lib/logger";
 
-let charCardLocaleLogged = false;
+Logger.debug("CharCardLocale", "loading character card app locale strings");
 
 export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.imageOmitted": "Image not shown because it is too large.",
@@ -10,7 +10,6 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.subtitleMemoryOnly":
 		"Import PNG, JSON, or CHARX character cards (V2/V3) to roleplay with Naia. Starting roleplay sends the card content to your chat model.",
 	"charcard.createButton": "Create",
-	"charcard.importButton": "Add File",
 	"charcard.apply": "Apply",
 	"charcard.name": "Character name",
 	"charcard.newName": "New character",
@@ -18,16 +17,19 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.greetingField": "First greeting",
 	"charcard.save": "Save card",
 	"charcard.saving": "Adding card…",
+	"charcard.error.STORAGE_VALUE_TOO_LARGE":
+		"This card is too large to save. Choose a smaller card file.",
+	"charcard.importButton": "Add File",
 	"charcard.importPreparing": "Preparing storage…",
 	"charcard.importDropHint":
-		"Drop a PNG, JSON, or CHARX card here",
+		"Drop a .png, .json, or .charx card file here, or click Import Card",
 	"charcard.cardListLabel": "Character Cards",
 	"charcard.sampleBadge": "Sample",
 	"charcard.importedBadge": "Imported",
 	"charcard.emptyList":
 		"No character cards yet. Import a .png, .json, or .charx card to start.",
 	"charcard.memoryOnlyBanner":
-		"Card storage is unavailable. Cards added here will disappear when you refresh or close this window.",
+		"Stored for this session only (IndexedDB is unavailable in this environment).",
 	"charcard.activeBanner": "Roleplaying as {name}",
 	"charcard.activeHint":
 		"Say hello in the Naia chat panel! Naia will stay in character as {name} until you end roleplay.",
@@ -75,8 +77,6 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.errorTitle": "Could not load character card",
 	"charcard.errorChooseAnother": "Choose Another File",
 	"charcard.errorDismiss": "Back to Card",
-	"charcard.error.STORAGE_VALUE_TOO_LARGE":
-		"This card is too large to save. Choose a smaller card file.",
 	"charcard.error.FILE_TOO_LARGE":
 		"This file exceeds the 20 MB size limit. Please choose a smaller PNG, JSON, or CHARX card.",
 	"charcard.error.JSON_TOO_LARGE":
@@ -125,7 +125,6 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.subtitleMemoryOnly":
 		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)로 나이아와 대화해요. 연기를 시작하면 카드 내용이 대화 모델에 함께 보내져요.",
 	"charcard.createButton": "만들기",
-	"charcard.importButton": "파일 추가",
 	"charcard.apply": "적용",
 	"charcard.name": "캐릭터 이름",
 	"charcard.newName": "새 캐릭터",
@@ -133,6 +132,9 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.greetingField": "첫 인사",
 	"charcard.save": "카드 저장",
 	"charcard.saving": "카드를 추가하는 중…",
+	"charcard.error.STORAGE_VALUE_TOO_LARGE":
+		"카드가 너무 큽니다. 더 작은 카드 파일을 골라 주세요.",
+	"charcard.importButton": "파일 추가",
 	"charcard.importPreparing": "보관함 준비 중…",
 	"charcard.importDropHint":
 		".png, .json, .charx 카드 파일을 여기에 끌어다 놓거나 카드 불러오기를 누르세요",
@@ -142,7 +144,7 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.emptyList":
 		"아직 카드가 없습니다. .png, .json, .charx 카드를 불러오세요.",
 	"charcard.memoryOnlyBanner":
-		"카드를 저장할 수 없어 이 창에서만 사용할 수 있습니다. 새로 고침하거나 창을 닫으면 사라집니다.",
+		"이번 실행 동안만 보관됩니다 (이 환경에서 IndexedDB를 쓸 수 없습니다).",
 	"charcard.activeBanner": "{name} 연기 중",
 	"charcard.activeHint":
 		"나이아 대화창에서 말을 걸어 보세요! 연기를 끝낼 때까지 나이아가 {name} 캐릭터로 답합니다.",
@@ -188,8 +190,6 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.errorTitle": "캐릭터 카드를 불러오지 못했습니다",
 	"charcard.errorChooseAnother": "다른 파일 고르기",
 	"charcard.errorDismiss": "돌아가기",
-	"charcard.error.STORAGE_VALUE_TOO_LARGE":
-		"카드가 너무 큽니다. 더 작은 카드 파일을 골라 주세요.",
 	"charcard.error.FILE_TOO_LARGE":
 		"파일 크기가 20MB 상한을 넘었습니다. 더 작은 PNG, JSON, CHARX 카드를 골라 주세요.",
 	"charcard.error.JSON_TOO_LARGE":
@@ -306,10 +306,6 @@ export function charCardText(
 	params?: Readonly<Record<string, string | number>>,
 	localeOverride?: string,
 ): string {
-	if (!charCardLocaleLogged) {
-		charCardLocaleLogged = true;
-		Logger.debug("CharCardLocale", "loading character card app locale strings");
-	}
 	const lang = resolveCharCardLocale(localeOverride);
 	const table = CHARCARD_MESSAGES_BY_LOCALE[lang] ?? CHARCARD_ENGLISH_MESSAGES;
 	const template = table[key] ?? CHARCARD_ENGLISH_MESSAGES[key];

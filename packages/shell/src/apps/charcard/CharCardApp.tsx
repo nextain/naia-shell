@@ -309,6 +309,7 @@ export function CharCardApp({
 		[allCards, selectedCardId],
 	);
 
+
 	const greetingsList = useMemo(() => {
 		if (!selectedRecord) return [];
 		const { first_mes, alternate_greetings } = selectedRecord.card;
@@ -421,6 +422,8 @@ export function CharCardApp({
 			fileName: file.name,
 			size: file.size,
 		});
+		setErrorCode(null);
+		setStorageError(null);
 		if (file.size > MAX_CARD_FILE_BYTES) {
 			setErrorCode("FILE_TOO_LARGE");
 			return;
@@ -443,6 +446,7 @@ export function CharCardApp({
 			setErrorCode(result.code);
 			return;
 		}
+
 
 		const imageBlob =
 			result.card.sourceFormat === "png" && !result.imageOmitted
@@ -997,6 +1001,7 @@ export function CharCardApp({
 								) : null}
 
 								<div className="charcard-app__action-buttons">
+
 									{isCurrentCardActive ? (
 										<button
 											type="button"

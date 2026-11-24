@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "(sem nome de arquivo)",
 	"slides.videoLabel": "{position} / Vídeo {name}",
 	"slides.videoIndicator": "{position} / Vídeo",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "Escrever na área de transferência ao clicar",
+	"settings.fontScale": "Tamanho do texto",
+	"settings.fontScaleSmall": "Pequeno",
+	"settings.fontScaleNormal": "Normal",
+	"settings.fontScaleLarge": "Grande",
+	"settings.fontScaleXLarge": "Muito grande",
+	"settings.fontScaleHint": "Altera o tamanho do texto do chat, menus, configurações, legendas e sobreposições de transmissão. Aplica-se imediatamente.",
+	"bgm.keyboardHelp": "Música: espaço ou K reproduzir/parar; esquerda/direita 5 segundos; cima/baixo volume; N próxima, P anterior",
+	"bgm.showCaptions": "Mostrar legendas",
+	"ai.avatarControls": "Controles do avatar",
 } as const;

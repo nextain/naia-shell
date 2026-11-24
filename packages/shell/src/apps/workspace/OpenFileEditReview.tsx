@@ -127,6 +127,7 @@ export function OpenFileEditReview({
           type="button"
           data-testid="open-file-edit-approve"
           className="open-file-edit-review__btn open-file-edit-review__btn--approve"
+          data-usage-event="open-file-edit-review.on-approve-1.click"
           onClick={() => onApprove(proposal.id)}
         >
           {t("workspace.aiEdit.approve")}
@@ -136,6 +137,7 @@ export function OpenFileEditReview({
           ref={rejectButtonRef}
           data-testid="open-file-edit-reject"
           className="open-file-edit-review__btn open-file-edit-review__btn--reject"
+          data-usage-event="open-file-edit-review.on-reject-2.click"
           onClick={() => onReject(proposal.id)}
         >
           {t("workspace.aiEdit.reject")}

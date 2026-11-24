@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "（ファイル名なし）",
 	"slides.videoLabel": "{position} / 動画 {name}",
 	"slides.videoIndicator": "{position} / 動画",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "操作時にクリップボードへ書き込み",
+	"settings.fontScale": "文字サイズ",
+	"settings.fontScaleSmall": "小",
+	"settings.fontScaleNormal": "標準",
+	"settings.fontScaleLarge": "大",
+	"settings.fontScaleXLarge": "特大",
+	"settings.fontScaleHint": "チャット・メニュー・設定・字幕・配信画面の文字サイズを変更します。すぐに反映されます。",
+	"bgm.keyboardHelp": "音楽操作: スペース・K 再生/停止、左右 5秒移動、上下 音量、N 次、P 前",
+	"bgm.showCaptions": "字幕を表示",
+	"ai.avatarControls": "アバター操作",
 } as const;

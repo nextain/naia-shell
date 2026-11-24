@@ -13,6 +13,7 @@ import {
 	readImageDimensions,
 } from "../card-parser";
 import { CHARCARD_MESSAGES_BY_LOCALE, charCardText } from "../locales/messages";
+import { getBundledSampleCardRecords } from "../sample-cards";
 
 const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -922,7 +923,7 @@ describe("card-parser", () => {
 		});
 	});
 
-	it("parses all 4 bundled sample files (including PNG CRC32 check) and returns 4 distinct sample cards", async () => {
+	it("UT-04 parses all 4 bundled sample files (including PNG CRC32 check) and returns 4 distinct sample cards", async () => {
 		const samplesDir = resolve(__dirname, "../package-public/samples");
 		const v2Bytes = new Uint8Array(
 			readFileSync(resolve(samplesDir, "starlight-archivist-v2.json")),
@@ -987,5 +988,12 @@ describe("card-parser", () => {
 			).toBeGreaterThanOrEqual(2);
 		}
 
+		const records = getBundledSampleCardRecords();
+		expect(records.map((r) => r.card.name)).toEqual([
+			"온새미",
+			"한도윤",
+			"백하진",
+			"서윤하",
+		]);
 	});
 });

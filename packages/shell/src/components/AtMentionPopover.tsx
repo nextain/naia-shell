@@ -239,6 +239,7 @@ export const AtMentionPopover = forwardRef<
 					<div
 						key={item.path}
 						className={`chat-at-popover__item${i === activeIndex ? " chat-at-popover__item--active" : ""}`}
+						data-usage-event="at-mention-popover.handle-select-1.click"
 						onClick={() => handleSelect(item)}
 						onMouseEnter={() => setActiveIndex(i)}
 						onKeyDown={() => {}}

@@ -101,6 +101,7 @@ export function createGenericInstalledApp(
 				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
+				disposeContextBridge();
 			};
 		}, [htmlEntry, frameSrc, appId, permissions]);
 
@@ -165,7 +166,9 @@ export function createGenericInstalledApp(
 				}),
 			);
 
-			return () => unsubs.forEach((u) => u());
+			return () => {
+				for (const u of unsubs) u();
+			};
 		}, [naia, htmlEntry, tools]);
 
 		if (htmlEntry) {
@@ -175,6 +178,7 @@ export function createGenericInstalledApp(
 					className="generic-installed-app__iframe"
 					src={frameSrc}
 					title="App"
+					allow={permissions.includes("clipboard.write") ? "clipboard-write" : undefined}
 					sandbox={sandboxAttr}
 					allowFullScreen={trustedSlides || isWebMode()}
 				/>

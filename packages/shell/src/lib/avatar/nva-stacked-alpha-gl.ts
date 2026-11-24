@@ -1,18 +1,13 @@
 /**
- * Stacked color/alpha MP4 compositor for Safari transparency.
+ * Stacked color/alpha MP4 compositor for Safari and macOS WKWebView transparency.
  *
  * The stacked clip packs two pictures in one frame: the top half is the color
  * image and the bottom half is the alpha (grayscale) image. This renderer
  * uploads one video frame as a texture and composites both halves with WebGL1
- * into its own offscreen `canvas`, so Safari (which cannot show VP9 alpha WebM
- * transparently) gets real transparency without any external package.
- *
- * Alpha handling: the browser converts YUV to RGB per the standard, which
- * already stretches the limited-range Y 16..235 of the bottom half to RGB
- * 0..255. The shader therefore uses the bottom half's G value as-is.
- * `alphaRange` only guards against device differences:
- * `alpha = clamp((g - lo) / (hi - lo), 0, 1)`, default (0, 1).
+ * into its own offscreen `canvas`, so WebKit/WKWebView (which cannot decode VP9
+ * alpha WebM transparently) gets real transparency without any external package.
  */
+import { Logger } from "../logger";
 
 export type StackedAlphaRange = readonly [number, number];
 
@@ -145,7 +140,6 @@ export class NvaStackedAlphaGL {
 		);
 		gl.useProgram(program);
 
-		// Full-screen quad: positions with matching UVs (v = 0 at the bottom).
 		const buffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 		gl.bufferData(
@@ -179,8 +173,12 @@ export class NvaStackedAlphaGL {
 		this.handleContextLost = (event: Event) => {
 			event.preventDefault();
 			this.contextLost = true;
+			Logger.warn("NvaStackedAlphaGL", "webglcontextlost observed");
 		};
 		canvas.addEventListener?.("webglcontextlost", this.handleContextLost);
+		Logger.debug("NvaStackedAlphaGL", "initialized", {
+			alphaRange: range,
+		});
 	}
 
 	/** True after the canvas fired `webglcontextlost`. `draw` then stays a no-op. */

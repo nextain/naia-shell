@@ -274,6 +274,7 @@ export function SmallLlmSection({
 							data-testid="small-llm-choice-naia"
 							checked={activeChoice === "naia"}
 							disabled={!naiaKeyPresent}
+							data-usage-event="small-llm-section.handle-select-naia-1.select"
 							onChange={handleSelectNaia}
 						/>
 						{t("settings.smallLlmNaia")}
@@ -290,6 +291,7 @@ export function SmallLlmSection({
 							value="ollama"
 							data-testid="small-llm-choice-ollama"
 							checked={activeChoice === "ollama"}
+							data-usage-event="small-llm-section.handle-select-local-2.select"
 							onChange={() => handleSelectLocal("ollama")}
 						/>
 						{t("settings.smallLlmOllama")}
@@ -301,6 +303,7 @@ export function SmallLlmSection({
 							value="vllm"
 							data-testid="small-llm-choice-vllm"
 							checked={activeChoice === "vllm"}
+							data-usage-event="small-llm-section.handle-select-local-3.select"
 							onChange={() => handleSelectLocal("vllm")}
 						/>
 						{t("settings.smallLlmVllm")}
@@ -312,6 +315,7 @@ export function SmallLlmSection({
 							value="threshold"
 							data-testid="small-llm-choice-threshold"
 							checked={activeChoice === "threshold"}
+							data-usage-event="small-llm-section.handle-select-threshold-4.select"
 							onChange={handleSelectThreshold}
 						/>
 						{t("settings.smallLlmThreshold")}
@@ -323,6 +327,7 @@ export function SmallLlmSection({
 							value="off"
 							data-testid="small-llm-choice-off"
 							checked={activeChoice === "off"}
+							data-usage-event="small-llm-section.handle-select-off-5.select"
 							onChange={handleSelectOff}
 						/>
 						{t("settings.smallLlmOff")}
@@ -330,60 +335,56 @@ export function SmallLlmSection({
 				</div>
 				{activeChoice !== "off" &&
 					(state.kind === "on" || state.kind === "on-threshold") && (
-						<div
-							role="radiogroup"
-							aria-label={t("settings.surfacingLevel")}
-							data-testid="surfacing-level"
-							style={{
-								display: "flex",
-								flexDirection: "column",
-								gap: "6px",
-								marginTop: "8px",
-								flexWrap: "wrap",
-							}}
-						>
-							<label
-								style={{ display: "flex", alignItems: "center", gap: "6px" }}
-							>
-								<input
-									type="radio"
-									name="surfacing-level"
-									value="less"
-									data-testid="surfacing-level-less"
-									checked={activeLevel === "less"}
-									onChange={() => handleSelectLevel("less")}
-								/>
-								{t("settings.surfacingLevelLess")}
-							</label>
-							<label
-								style={{ display: "flex", alignItems: "center", gap: "6px" }}
-							>
-								<input
-									type="radio"
-									name="surfacing-level"
-									value="normal"
-									data-testid="surfacing-level-normal"
-									checked={activeLevel === "normal"}
-									onChange={() => handleSelectLevel("normal")}
-								/>
-								{t("settings.surfacingLevelNormal")}
-							</label>
-							<label
-								style={{ display: "flex", alignItems: "center", gap: "6px" }}
-							>
-								<input
-									type="radio"
-									name="surfacing-level"
-									value="more"
-									data-testid="surfacing-level-more"
-									checked={activeLevel === "more"}
-									onChange={() => handleSelectLevel("more")}
-								/>
-								{t("settings.surfacingLevelMore")}
-							</label>
-							<div className="settings-hint">
-								{t("settings.surfacingLevelHint")}
-							</div>
+					<div
+						role="radiogroup"
+						aria-label={t("settings.surfacingLevel")}
+						data-testid="surfacing-level"
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: "6px",
+							marginTop: "8px",
+							flexWrap: "wrap",
+						}}
+					>
+						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="radio"
+								name="surfacing-level"
+								value="less"
+								data-testid="surfacing-level-less"
+								checked={activeLevel === "less"}
+								data-usage-event="small-llm-section.handle-select-level-6.select"
+								onChange={() => handleSelectLevel("less")}
+							/>
+							{t("settings.surfacingLevelLess")}
+						</label>
+						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="radio"
+								name="surfacing-level"
+								value="normal"
+								data-testid="surfacing-level-normal"
+								checked={activeLevel === "normal"}
+								data-usage-event="small-llm-section.handle-select-level-7.select"
+								onChange={() => handleSelectLevel("normal")}
+							/>
+							{t("settings.surfacingLevelNormal")}
+						</label>
+						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="radio"
+								name="surfacing-level"
+								value="more"
+								data-testid="surfacing-level-more"
+								checked={activeLevel === "more"}
+								data-usage-event="small-llm-section.handle-select-level-8.select"
+								onChange={() => handleSelectLevel("more")}
+							/>
+							{t("settings.surfacingLevelMore")}
+						</label>
+						<div className="settings-hint">
+							{t("settings.surfacingLevelHint")}
 						</div>
 					)}
 				{(activeChoice === "ollama" || activeChoice === "vllm") && (

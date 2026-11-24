@@ -142,6 +142,7 @@ export function ProjectWebViewPanel({
 						className="projects-app__primary-button"
 						type="button"
 						disabled={openState === "opening"}
+						data-usage-event="project-web-view-panel.open-project-web-view-1.click"
 						onClick={() => void openProjectWebView()}
 					>
 						{openState === "opening"

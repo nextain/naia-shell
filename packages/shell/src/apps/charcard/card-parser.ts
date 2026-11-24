@@ -1285,6 +1285,7 @@ export async function parseCharacterCardBytes(
 	fileName = "",
 ): Promise<CardParseResult> {
 	Logger.debug(TAG, "parsing character card bytes", {
+		fileName,
 		byteLength: bytes.byteLength,
 	});
 

@@ -308,9 +308,60 @@ export function SkillsTab({
 										</div>
 									</div>
 								</div>
-							))
-						)}
-					</>
+								<div className="skill-card-actions">
+									<label
+										className="skill-toggle"
+										data-usage-event="skills-tab.stop-propagation-2.click"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<input
+											type="checkbox"
+											data-testid={`cli-enable-${cli.id}`}
+											checked={enabled.has(cli.id)}
+											data-usage-event="skills-tab.handle-toggle-cli-3.select"
+											onChange={(e) =>
+												handleToggleCli(cli.id, e.target.checked)
+											}
+										/>
+									</label>
+								</div>
+							</div>
+							<div className="skill-card-detail" style={{ display: "block" }}>
+								<div className="skills-header-actions">
+									<span
+										aria-live="polite"
+										data-testid={`cli-status-${cli.id}`}
+									>
+										{t(statusLabelKey(cli.status) as Parameters<typeof t>[0])}
+									</span>
+									<button
+										type="button"
+										className="skills-action-btn"
+										data-testid={`cli-recheck-${cli.id}`}
+										disabled={checkingId === cli.id}
+										data-usage-event="skills-tab.handle-recheck-4.click"
+										onClick={() => void handleRecheck(cli.id)}
+									>
+										{checkingId === cli.id
+											? t("skills.cliChecking")
+											: t("skills.cliRecheck")}
+									</button>
+									{(cli.status === "login-required" ||
+										cli.status === "waiting-input") && (
+										<button
+											type="button"
+											className="skills-action-btn"
+											data-testid={`cli-login-${cli.id}`}
+											data-usage-event="skills-tab.handle-login-5.click"
+											onClick={() => void handleLogin(cli.id)}
+										>
+											{t("skills.cliLogin")}
+										</button>
+									)}
+								</div>
+							</div>
+						</div>
+					))
 				)}
 
 				<div
@@ -340,12 +391,14 @@ export function SkillsTab({
 								<div className="skill-card-actions">
 									<label
 										className="skill-toggle"
+										data-usage-event="skills-tab.stop-propagation-6.click"
 										onClick={(e) => e.stopPropagation()}
 									>
 										<input
 											type="checkbox"
 											data-testid={`gesture-enable-${gesture.id}`}
 											checked={!disabled}
+											data-usage-event="skills-tab.handle-toggle-gesture-7.select"
 											onChange={(e) =>
 												handleToggleGesture(gesture.id, e.target.checked)
 											}

@@ -21,6 +21,7 @@ import { normalizeTauriAssetUrl } from "../lib/asset-url";
 import { avatarEmptyNotice } from "../lib/avatar-notice";
 import { clearSavedCamera, getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
+import { scaledFontSize } from "../lib/ui-font-scale";
 import {
 	UI_PREFERENCE_KEYS,
 	getUiPreference,
@@ -32,6 +33,18 @@ import {
 	loadVRMAnimation,
 	reAnchorRootPositionTrack,
 } from "../lib/vrm/animation";
+
+export function resolveVrmPixelRatio(
+	rawDpr: number = typeof window !== "undefined" ? window.devicePixelRatio : 1,
+	userAgent: string = typeof navigator !== "undefined" ? navigator.userAgent : "",
+): number {
+	const dpr =
+		typeof rawDpr === "number" && Number.isFinite(rawDpr) && rawDpr > 0
+			? rawDpr
+			: 1;
+	const maxDpr = /(Macintosh|Mac OS X)/i.test(userAgent) ? 1.5 : 2;
+	return Math.min(maxDpr, dpr);
+}
 import { loadVrm, loadVrmFromArrayBuffer } from "../lib/vrm/core";
 import {
 	buildExpressionResolver,
@@ -286,7 +299,7 @@ export function AvatarCanvas() {
 		let initializedRenderer: WebGLRenderer | null = null;
 		try {
 			initializedRenderer = new WebGLRenderer({ antialias: true, alpha: true });
-			initializedRenderer.setPixelRatio(window.devicePixelRatio);
+			initializedRenderer.setPixelRatio(resolveVrmPixelRatio());
 			initializedRenderer.setSize(
 				container.clientWidth,
 				container.clientHeight,
@@ -746,7 +759,7 @@ export function AvatarCanvas() {
 						justifyContent: "center",
 						padding: "0 32px",
 						textAlign: "center",
-						fontSize: 13,
+						fontSize: scaledFontSize(13),
 						lineHeight: 1.6,
 						color: "rgba(255,255,255,0.55)",
 						// 이 안내가 클릭을 먹으면 그 뒤의 화면을 못 쓴다. 브라우저 앱의
@@ -763,7 +776,7 @@ export function AvatarCanvas() {
 					position: "absolute",
 					bottom: 4,
 					left: 4,
-					fontSize: 9,
+					fontSize: scaledFontSize(9),
 					fontFamily: "monospace",
 					color: "rgba(255,255,255,0.5)",
 					whiteSpace: "pre",

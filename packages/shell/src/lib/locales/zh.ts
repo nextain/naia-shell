@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "（无文件名）",
 	"slides.videoLabel": "{position} / 视频 {name}",
 	"slides.videoIndicator": "{position} / 视频",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "点击时写入剪贴板",
+	"settings.fontScale": "字体大小",
+	"settings.fontScaleSmall": "小",
+	"settings.fontScaleNormal": "标准",
+	"settings.fontScaleLarge": "大",
+	"settings.fontScaleXLarge": "特大",
+	"settings.fontScaleHint": "更改聊天、菜单、设置、字幕和直播画面的文字大小。立即生效。",
+	"bgm.keyboardHelp": "音乐控制：空格或 K 播放/停止，左右快进快退5秒，上下调音量，N 下一首，P 上一首",
+	"bgm.showCaptions": "显示字幕",
+	"ai.avatarControls": "虚拟形象控制",
 } as const;

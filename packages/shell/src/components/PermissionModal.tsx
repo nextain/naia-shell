@@ -68,6 +68,7 @@ export function PermissionModal({ pending, onDecision }: Props) {
 					<button
 						type="button"
 						className="permission-btn-once"
+						data-usage-event="permission-modal.button-1.click"
 						onClick={() => decide("once")}
 					>
 						{t("permission.allowOnce")} ({permissionShortcutLabel("once")})
@@ -75,6 +76,7 @@ export function PermissionModal({ pending, onDecision }: Props) {
 					<button
 						type="button"
 						className="permission-btn-always"
+						data-usage-event="permission-modal.button-2.click"
 						onClick={() => decide("always")}
 					>
 						{t("permission.allowAlways")} ({permissionShortcutLabel("always")})
@@ -82,6 +84,7 @@ export function PermissionModal({ pending, onDecision }: Props) {
 					<button
 						type="button"
 						className="permission-btn-reject"
+						data-usage-event="permission-modal.button-3.click"
 						onClick={() => decide("reject")}
 					>
 						{t("permission.reject")} ({permissionShortcutLabel("reject")})

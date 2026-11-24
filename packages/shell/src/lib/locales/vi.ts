@@ -1748,4 +1748,26 @@ export default {
 	"slides.videoNoFileName": "(không có tên tệp)",
 	"slides.videoLabel": "{position} / Video {name}",
 	"slides.videoIndicator": "{position} / Video",
+
+	"usage.title": "Optional usage statistics",
+	"usage.description": "Allow Naia to send button clicks and screen visits to Microsoft Azure Application Insights? We send a random installation ID, fixed event and screen names, app version, platform and distribution channel, plus event time and order. We do not send your name, account, conversations, file paths or input.",
+	"usage.optional": "Your choice does not affect app features. You can change it in Settings → General. No usage events are collected before you allow this.",
+	"usage.decline": "Do not allow",
+	"usage.allow": "Allow usage statistics",
+	"usage.enabled": "Send usage statistics",
+	"usage.stopNotice": "Turning this off immediately stops collection and clears unsent events in every window. A request already sent may still arrive. Previously sent data is not deleted by this switch.",
+	"usage.saveError": "Your choice could not be saved. Usage statistics remain off. You can retry or continue without statistics.",
+	"usage.continueOff": "Continue with statistics off",
+
+
+	"apps.permission.clipboard.write": "Ghi vào bảng nhớ tạm khi nhấn",
+	"settings.fontScale": "Cỡ chữ",
+	"settings.fontScaleSmall": "Nhỏ",
+	"settings.fontScaleNormal": "Bình thường",
+	"settings.fontScaleLarge": "Lớn",
+	"settings.fontScaleXLarge": "Rất lớn",
+	"settings.fontScaleHint": "Thay đổi cỡ chữ của trò chuyện, menu, cài đặt, phụ đề và lớp phủ phát sóng. Áp dụng ngay.",
+	"bgm.keyboardHelp": "Nhạc: Space hoặc K phát/dừng; trái/phải 5 giây; lên/xuống âm lượng; N bài tiếp, P bài trước",
+	"bgm.showCaptions": "Hiện phụ đề",
+	"ai.avatarControls": "Điều khiển hình đại diện",
 } as const;

@@ -67,6 +67,17 @@ tauri-driver (port 4444)
 | 03-basic-chat | "안녕" → 응답 수신 확인 |
 | 04-skill-time | skill_time 도구 실행 → 시간 정보 확인 |
 | 06-skill-memo | skill_memo 저장 + 읽기 확인 |
+| app-store-window | Windows 실제 앱스토어 창 생성·주소·포커스 재사용·닫기와 메인 창 응답 확인 |
+
+Windows에서 준비된 E2E 바이너리와 기존 하네스 전제 조건을 사용해 이 스펙만 실행:
+
+```powershell
+cd packages/shell
+pnpm exec wdio run e2e-tauri/wdio.conf.ts --spec e2e-tauri/specs/app-store-window.spec.ts
+```
+
+이 스펙은 Windows 인앱 WebDriver의 Tauri 창 레이블을 사용한다. 스토어 페이지
+이동을 확인하므로 스토어 주소로의 네트워크 접근과 실제 데스크톱 포커스가 필요하다.
 
 ## 기술 스택
 

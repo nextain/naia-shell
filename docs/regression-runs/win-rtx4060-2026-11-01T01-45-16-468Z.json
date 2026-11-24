@@ -1,0 +1,268 @@
+{
+	"machine": "win-rtx4060",
+	"tiers": [
+		"deterministic_ci",
+		"credentialed_live",
+		"native_local"
+	],
+	"ranOn": {
+		"inventorySha256": "675cb5f2a890ba5ff074714fdb404d07eec60a4cb5c04e69c3af6bba6999a013",
+		"commit": "27d0fb72e2b2c363f1d8b94bc0f09928dbb97218",
+		"host": "win-rtx4060",
+		"platform": "win32-x64",
+		"node": "v24.21.0"
+	},
+	"started": "2026-11-01T01:45:16.468Z",
+	"finished": "2026-11-01T02:19:24.236Z",
+	"status": "passed",
+	"planned": [
+		"100-installed-app-metadata.spec.ts",
+		"15-skill-manager-ai.spec.ts",
+		"31-diagnostics.spec.ts",
+		"33-usage-dashboard.spec.ts",
+		"94-radio-bgm-queue.spec.ts",
+		"96-codex-readiness.spec.ts",
+		"96-memory-storage-boundary.spec.ts",
+		"environment-dispatch.spec.ts",
+		"project-catalog-native.spec.ts",
+		"02-configure.spec.ts",
+		"04-skill-time.spec.ts",
+		"08-memory.spec.ts",
+		"10-history-tab.spec.ts",
+		"12-skills-gateway.spec.ts",
+		"16-skill-weather.spec.ts",
+		"19-skills-bulk.spec.ts",
+		"28-skills-install.spec.ts",
+		"36-memory-semantic.spec.ts",
+		"39-web-tools.spec.ts",
+		"43-device-operations.spec.ts",
+		"53-settings-theme.spec.ts",
+		"54b-settings-locale-prompt.spec.ts",
+		"56-settings-voice.spec.ts",
+		"58-history-interactions.spec.ts",
+		"60-diagnostics-interactions.spec.ts",
+		"66-settings-memory-facts.spec.ts",
+		"70c-nextain-default-chat.spec.ts",
+		"73-tts-edge-preview.spec.ts",
+		"77-stt-provider-switching.spec.ts",
+		"79-pipeline-voice-activation.spec.ts",
+		"82-chat-tts-multi-model.spec.ts",
+		"90-glm-newcore-chat.spec.ts",
+		"97-launch-f1-naia-login.spec.ts",
+		"98-launch-f2-chat-with-login.spec.ts",
+		"99-store-certification.spec.ts",
+		"94-nva-prebaked-shell.spec.ts"
+	],
+	"executed": [
+		"100-installed-app-metadata.spec.ts",
+		"15-skill-manager-ai.spec.ts",
+		"31-diagnostics.spec.ts",
+		"33-usage-dashboard.spec.ts",
+		"96-memory-storage-boundary.spec.ts",
+		"environment-dispatch.spec.ts",
+		"project-catalog-native.spec.ts",
+		"02-configure.spec.ts",
+		"04-skill-time.spec.ts",
+		"08-memory.spec.ts",
+		"10-history-tab.spec.ts",
+		"12-skills-gateway.spec.ts",
+		"16-skill-weather.spec.ts",
+		"19-skills-bulk.spec.ts",
+		"28-skills-install.spec.ts",
+		"36-memory-semantic.spec.ts",
+		"39-web-tools.spec.ts",
+		"43-device-operations.spec.ts",
+		"53-settings-theme.spec.ts",
+		"54b-settings-locale-prompt.spec.ts",
+		"56-settings-voice.spec.ts",
+		"58-history-interactions.spec.ts",
+		"60-diagnostics-interactions.spec.ts",
+		"66-settings-memory-facts.spec.ts",
+		"73-tts-edge-preview.spec.ts",
+		"77-stt-provider-switching.spec.ts",
+		"79-pipeline-voice-activation.spec.ts",
+		"82-chat-tts-multi-model.spec.ts",
+		"97-launch-f1-naia-login.spec.ts",
+		"98-launch-f2-chat-with-login.spec.ts",
+		"99-store-certification.spec.ts",
+		"94-radio-bgm-queue.spec.ts",
+		"96-codex-readiness.spec.ts",
+		"70c-nextain-default-chat.spec.ts",
+		"90-glm-newcore-chat.spec.ts",
+		"94-nva-prebaked-shell.spec.ts"
+	],
+	"passedSpecs": [
+		"100-installed-app-metadata.spec.ts",
+		"15-skill-manager-ai.spec.ts",
+		"31-diagnostics.spec.ts",
+		"33-usage-dashboard.spec.ts",
+		"96-memory-storage-boundary.spec.ts",
+		"environment-dispatch.spec.ts",
+		"project-catalog-native.spec.ts",
+		"02-configure.spec.ts",
+		"04-skill-time.spec.ts",
+		"08-memory.spec.ts",
+		"10-history-tab.spec.ts",
+		"12-skills-gateway.spec.ts",
+		"16-skill-weather.spec.ts",
+		"19-skills-bulk.spec.ts",
+		"28-skills-install.spec.ts",
+		"36-memory-semantic.spec.ts",
+		"39-web-tools.spec.ts",
+		"43-device-operations.spec.ts",
+		"53-settings-theme.spec.ts",
+		"54b-settings-locale-prompt.spec.ts",
+		"56-settings-voice.spec.ts",
+		"58-history-interactions.spec.ts",
+		"60-diagnostics-interactions.spec.ts",
+		"66-settings-memory-facts.spec.ts",
+		"73-tts-edge-preview.spec.ts",
+		"77-stt-provider-switching.spec.ts",
+		"79-pipeline-voice-activation.spec.ts",
+		"82-chat-tts-multi-model.spec.ts",
+		"97-launch-f1-naia-login.spec.ts",
+		"98-launch-f2-chat-with-login.spec.ts",
+		"99-store-certification.spec.ts",
+		"94-radio-bgm-queue.spec.ts",
+		"96-codex-readiness.spec.ts",
+		"70c-nextain-default-chat.spec.ts",
+		"90-glm-newcore-chat.spec.ts",
+		"94-nva-prebaked-shell.spec.ts"
+	],
+	"premise": "ok",
+	"premiseSignals": {
+		"agentStarts": 36,
+		"leaseBlocked": 0,
+		"executed": 36,
+		"expectedStarts": 36,
+		"reason": ""
+	},
+	"groups": [
+		{
+			"conf": "wdio.conf.ts",
+			"specs": 31,
+			"status": "passed",
+			"passed": 31,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.radio-queue.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.codex.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.nextain-chat.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.chat.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.nva-prebaked.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		}
+	],
+	"envMissingBeforeRun": {},
+	"harnessProvidedEnv": {
+		"100-installed-app-metadata.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"96-memory-storage-boundary.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"02-configure.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"04-skill-time.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"08-memory.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"10-history-tab.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"16-skill-weather.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"19-skills-bulk.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"28-skills-install.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"39-web-tools.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"43-device-operations.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"53-settings-theme.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"54b-settings-locale-prompt.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"56-settings-voice.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"58-history-interactions.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"60-diagnostics-interactions.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"66-settings-memory-facts.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"73-tts-edge-preview.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"77-stt-provider-switching.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"79-pipeline-voice-activation.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"82-chat-tts-multi-model.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"97-launch-f1-naia-login.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"98-launch-f2-chat-with-login.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"99-store-certification.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		]
+	},
+	"capabilityBlockedBeforeRun": {},
+	"envMissingGroups": [],
+	"detail": "",
+	"billableCalls": {},
+	"credentialsPresent": [
+		"NAIA_API_KEY"
+	],
+	"flakySpecs": [],
+	"stableFailures": []
+}
