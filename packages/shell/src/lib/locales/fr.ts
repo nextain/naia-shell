@@ -429,6 +429,7 @@ export default {
 	"settings.thinkingLevelLow": "Faible",
 	"settings.thinkingLevelHigh": "Élevé",
 	"settings.thinkingLevelXhigh": "Très élevé",
+	"settings.thinkingLevelMax": "Maximum",
 	"settings.thinkingLevelHint": "Activer la réflexion ralentit les réponses et augmente le coût en jetons.",
 	"settings.gatewayUrl": "URL de la passerelle Naia",
 	"settings.gatewayToken": "Jeton de passerelle Naia",

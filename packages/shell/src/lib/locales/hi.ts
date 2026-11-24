@@ -429,6 +429,7 @@ export default {
 	"settings.thinkingLevelLow": "कम",
 	"settings.thinkingLevelHigh": "उच्च",
 	"settings.thinkingLevelXhigh": "बहुत उच्च",
+	"settings.thinkingLevelMax": "अधिकतम",
 	"settings.thinkingLevelHint": "थिंकिंग सक्षम करने से प्रतिक्रिया धीमी होती है और टोकन लागत बढ़ती है।",
 	"settings.gatewayUrl": "Naia गेटवे यूआरएल",
 	"settings.gatewayToken": "Naia गेटवे टोकन",

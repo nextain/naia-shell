@@ -429,6 +429,7 @@ export default {
 	"settings.thinkingLevelLow": "Bajo",
 	"settings.thinkingLevelHigh": "Alto",
 	"settings.thinkingLevelXhigh": "Muy alto",
+	"settings.thinkingLevelMax": "Máximo",
 	"settings.thinkingLevelHint": "Activar el pensamiento ralentiza las respuestas y aumenta el coste de tokens.",
 	"settings.gatewayUrl": "URL de puerta de enlace de Naia",
 	"settings.gatewayToken": "Token de puerta de enlace de Naia",

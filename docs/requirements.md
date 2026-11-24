@@ -1,5 +1,9 @@
 # 요구사항 (P03 — FR/NFR) — 2단계 산출물
 
+## WebGPU hosted model defaults (2026-11-24)
+
+웹 모드 `nextain` 메인은 `deepseek-v4.1-flash`(기본, `xhigh`), `gpt-6.1-terra`(`xhigh`), `gpt-6-luna`(`max`)이며, 보조는 `deepseek-v4.1-flash`(기본, `low`)와 `gpt-6-luna`(`low`)이다. 부분 카탈로그에서도 이 순서의 안전한 폴백을 유지한다.
+
 > **현재 Windows 로컬 표현 기준 (2026-08-06):** 별도 GPU 프로파일은 없다. NVA는 GPU·로그인과 무관한 사전 생성 web-player다. 감지 VRAM 6GB 이상이면 Voice 설정에서만 `voxCPM 2 local voice`를 명시적으로 켜고 끌 수 있으며 로그인은 필요하지 않다. 자세한 활성 계약은 이 문서의 `2026-08-06 active Windows NVA/Voice/Media contract`와 [`windows-6gb-voice.md`](windows-6gb-voice.md)를 따른다. [`windows-8gb-nva.md`](windows-8gb-nva.md) 및 FR-CASCADE.1~22의 Ditto/TRT/Cascade 프로파일 조항은 비규범 이력이다.
 
 `[Phase 05 (P03 요구사항)]`

@@ -256,7 +256,7 @@ export type TtsProviderId =
 
 export type AppPosition = "left" | "right" | "bottom";
 
-export type ThinkingLevel = "off" | "low" | "high" | "xhigh";
+export type ThinkingLevel = "off" | "low" | "high" | "xhigh" | "max";
 
 /**
  * 생각 세기 마이그레이션 및 정규화 (#709 / FR-CHAT-THINKING.4)
@@ -268,12 +268,13 @@ export function resolveThinkingLevel(
 ): ThinkingLevel {
 	if (isKioskDemo()) return KIOSK_DEMO_THINKING_LEVEL;
 	const roleLevel = config?.llmRoles?.main?.thinkingLevel;
-	if (roleLevel === "off" || roleLevel === "low" || roleLevel === "high" || roleLevel === "xhigh") return roleLevel;
+	if (roleLevel === "off" || roleLevel === "low" || roleLevel === "high" || roleLevel === "xhigh" || roleLevel === "max") return roleLevel;
 	if (
 		config?.thinkingLevel === "off" ||
 		config?.thinkingLevel === "low" ||
 		config?.thinkingLevel === "high" ||
-		config?.thinkingLevel === "xhigh"
+		config?.thinkingLevel === "xhigh" ||
+		config?.thinkingLevel === "max"
 	) {
 		return config.thinkingLevel;
 	}
@@ -292,6 +293,7 @@ export function resolveWebThinkingEnabled(
 		config?.thinkingLevel === "low" ||
 		config?.thinkingLevel === "high" ||
 		config?.thinkingLevel === "xhigh" ||
+		config?.thinkingLevel === "max" ||
 		(config as { thinkingLevel?: unknown } | null)?.thinkingLevel === "on"
 	) {
 		return true;

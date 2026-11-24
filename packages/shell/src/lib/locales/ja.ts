@@ -429,6 +429,7 @@ export default {
 	"settings.thinkingLevelLow": "低",
 	"settings.thinkingLevelHigh": "高",
 	"settings.thinkingLevelXhigh": "非常に高い",
+	"settings.thinkingLevelMax": "最大",
 	"settings.thinkingLevelHint": "思考を有効にすると回答が遅くなり、トークン費用が増加します。",
 	"settings.gatewayUrl": "Naia ゲートウェイURL",
 	"settings.gatewayToken": "Naia ゲートウェイトークン",

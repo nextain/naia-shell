@@ -1,6 +1,7 @@
 // 웹 모드 전용 영어 문구.
 // 데스크톱 운영 빌드에는 싣지 않는다.
 export default {
+	"settings.thinkingLevelMax": "Max",
 	"webVisualAgent.slugLabel": "Share address name",
 	"webVisualAgent.hint": "Use 3–32 lowercase letters, numbers or hyphens (-).",
 	"webVisualAgent.publicAddress": "Public address",

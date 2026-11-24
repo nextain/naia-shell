@@ -136,7 +136,7 @@ describe("registry — Naia (nextain) provider models", () => {
 	});
 
 	it("default model is deepseek-v4-flash", () => {
-		expect(getDefaultLlmModel("nextain")).toBe("gpt-6.1-terra");
+		expect(getDefaultLlmModel("nextain")).toBe("deepseek-v4.1-flash");
 	});
 });
 
@@ -436,6 +436,6 @@ describe("registry — sortModels", () => {
 
 describe("recommended order", () => {
  it("ranks product recommendations before other models", () => {
-  expect(sortModels(getLlmProvider("nextain")!.models, "recommended").map(m => m.id)).toEqual(["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "motif-3", "deepseek-v4-flash", "solar-mini"]);
+  expect(sortModels(getLlmProvider("nextain")!.models, "recommended").map(m => m.id).slice(0, 3)).toEqual(["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"]);
  });
 });

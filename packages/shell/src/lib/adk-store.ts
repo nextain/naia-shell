@@ -440,7 +440,7 @@ function stripForAgent(
 			for (const [key, value] of Object.entries(v)) {
 				try {
 					const pair: unknown = JSON.parse(key);
-					if (Array.isArray(pair) && pair.length === 2 && pair.every(part => typeof part === "string" && part.length > 0 && part.length <= 300 && !/[\u0000-\u001f]/.test(part)) && typeof value === "string" && ["off", "low", "high", "xhigh"].includes(value)) levels[JSON.stringify(pair)] = value;
+					if (Array.isArray(pair) && pair.length === 2 && pair.every(part => typeof part === "string" && part.length > 0 && part.length <= 300 && !/[\u0000-\u001f]/.test(part)) && typeof value === "string" && ["off", "low", "high", "xhigh", "max"].includes(value)) levels[JSON.stringify(pair)] = value;
 				} catch { /* Invalid keys are not configuration. */ }
 			}
 			out[k] = levels;
@@ -463,7 +463,7 @@ function stripForAgent(
 					if (typeof source[field] === "string" && source[field])
 						clean[field] = source[field] as string;
 				}
-				if (typeof source.thinkingLevel === "string" && ["off", "low", "high", "xhigh"].includes(source.thinkingLevel)) {
+				if (typeof source.thinkingLevel === "string" && ["off", "low", "high", "xhigh", "max"].includes(source.thinkingLevel)) {
 					clean.thinkingLevel = source.thinkingLevel;
 				}
 				if (Object.keys(clean).length) roles[role] = clean;

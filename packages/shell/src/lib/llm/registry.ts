@@ -179,7 +179,9 @@ export function shouldMigrateNextainModel(
 	const fallbackCandidates = isKioskDemo()
 		? [KIOSK_DEMO_LLM_MODEL, "deepseek-v4-pro", "deepseek-v4-flash"]
 		: [
+				"deepseek-v4.1-flash",
 				"gpt-6.1-terra",
+				"gpt-6-luna",
 				KIOSK_DEMO_LLM_MODEL,
 				"deepseek-v4-pro",
 				"deepseek-v4-flash",
@@ -568,10 +570,12 @@ export function applyCapabilityOverrides(
 // deepseek-v4-pro rather than the lighter gemini-3.1-flash-lite/gpt-5.6-luna tier.
 // Product recommendation order; the remaining models keep catalog order.
 const NAIA_PRODUCT_ORDER: Readonly<Record<string, number>> = {
-	"gpt-6.1-terra": 1,
-	"solar-pro4": 2,
-	[KIOSK_DEMO_LLM_MODEL]: 3,
-	"motif-3": 4,
+	"deepseek-v4.1-flash": 1,
+	"gpt-6.1-terra": 2,
+	"gpt-6-luna": 3,
+	"solar-pro4": 4,
+	[KIOSK_DEMO_LLM_MODEL]: 5,
+	"motif-3": 6,
 };
 
 const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
@@ -667,16 +671,31 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gpt-6.1-terra",
+	defaultModel: "deepseek-v4.1-flash",
 	// #670: Naia-account / nextain picker is the affordable hosted chat lineup.
 	// Codex ChatGPT models stay on the codex provider below. Retired ids
 	// migrate via shouldMigrateNextainModel and other gateway-served ids are
 	// kept (#707).
 	models: [
 		{
+			id: "deepseek-v4.1-flash",
+			label: "DeepSeek V4.1 Flash",
+			capabilities: ["llm"],
+			supportsTools: true,
+			pricing: [0.33, 1.32],
+			cachePricing: { read: 0.0066, write: null },
+		},
+		{
 			id: "gpt-6.1-terra",
 			label: "GPT-6.1 Terra",
 			capabilities: ["llm"],
+		},
+		{
+			id: "gpt-6-luna",
+			label: "GPT-6 Luna",
+			capabilities: ["llm"],
+			supportsTools: true,
+			pricing: [0.11, 0.55],
 		},
 		{
 			// Gateway routes/prices this model and advertises verified tool calling.

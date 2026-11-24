@@ -420,6 +420,7 @@ const englishCore = {
 	"settings.thinkingLevelLow": "Low",
 	"settings.thinkingLevelHigh": "High",
 	"settings.thinkingLevelXhigh": "Very High",
+	"settings.thinkingLevelMax": "Max",
 	"settings.thinkingLevelHint": "Enabling thinking slows down responses and increases token cost.",
 	"settings.gatewayUrl": "Naia Gateway URL",
 	"settings.gatewayToken": "Naia Gateway Token",

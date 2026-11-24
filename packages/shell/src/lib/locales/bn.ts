@@ -429,6 +429,7 @@ export default {
 	"settings.thinkingLevelLow": "কম",
 	"settings.thinkingLevelHigh": "বেশি",
 	"settings.thinkingLevelXhigh": "খুব বেশি",
+	"settings.thinkingLevelMax": "সর্বোচ্চ",
 	"settings.thinkingLevelHint": "থিংকিং সক্রিয় করলে প্রতিক্রিয়া ধীর হয় এবং টোকেন খরচ বাড়ে।",
 	"settings.gatewayUrl": "Naia গেটওয়ে ইউআরএল",
 	"settings.gatewayToken": "Naia গেটওয়ে টোকেন",

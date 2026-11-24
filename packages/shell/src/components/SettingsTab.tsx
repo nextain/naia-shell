@@ -3771,7 +3771,7 @@ export function SettingsTab() {
 		setBackgroundVideoUrl(bgUrl);
 	}
 
-	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high", "xhigh"];
+	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high", "xhigh", "max"];
 
 	function handleThinkingChange(level: ThinkingLevel) {
 		if (isKioskDemo()) {
@@ -4818,10 +4818,15 @@ export function SettingsTab() {
 	);
 	const displayedProviderModels = useMemo(
 		() =>
-			provider === "nextain"
-				? sortModels(availableProviderModels, modelSortMode)
+			provider === "nextain" && isWebMode()
+				? ["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"]
+					.map((id) => availableProviderModels.find((candidate) => candidate.id === id))
+					.filter((candidate): candidate is LlmModelMeta => Boolean(candidate))
+					.concat(availableProviderModels.filter((candidate) => !["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"].includes(candidate.id) && candidate.id === activeBrainModel))
+				: provider === "nextain"
+					? sortModels(availableProviderModels, modelSortMode)
 				: availableProviderModels,
-		[provider, availableProviderModels, modelSortMode],
+		[provider, availableProviderModels, modelSortMode, activeBrainModel],
 	);
 	// 선택기 숨김 규칙 (에픽 #589 할 일 2): 고를 수 있는 대화 모델이 하나뿐이면 모델
 	// 선택기를 그리지 않는다. 판정은 등록부(표시용 모델 목록)로 한다. ollama 는 동적
@@ -7770,6 +7775,8 @@ export function SettingsTab() {
 														? t("settings.thinkingLevelLow")
 														: level === "xhigh"
 															? t("settings.thinkingLevelXhigh")
+																: level === "max"
+																	? t("settings.thinkingLevelMax")
 															: t("settings.thinkingLevelHigh");
 											return (
 												<button
