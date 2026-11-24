@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMainModel, defaultSmallModel, smallModelChoices } from "../small-model";
+import { defaultMainModel, defaultSmallModel, defaultThinkingLevel, smallModelChoices } from "../small-model";
 import { readConfiguredLlmRoles, writeConfiguredLlmRole } from "../roles";
 import { applyNaiaSlotDefaults } from "../../slots/model";
 import type { AppConfig } from "../../config";
@@ -56,5 +56,17 @@ describe("UT-SM-04 Terra present", () => {
 describe("UT-SM-05 Terra absent", () => {
  it("selects the next available recommendation", () => {
    expect(defaultMainModel([meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "max" });
+ });
+});
+describe("UT-SM-06 default thinking levels (webgpu 3-model lineup)", () => {
+ it("maps the webgpu lineup to its per-model default strength", () => {
+   expect(defaultThinkingLevel("deepseek-v4.1-flash")).toBe("xhigh");
+   expect(defaultThinkingLevel("gpt-6.1-terra")).toBe("xhigh");
+   expect(defaultThinkingLevel("gpt-6-luna")).toBe("max");
+ });
+ it("leaves non-lineup models without a default", () => {
+   expect(defaultThinkingLevel("solar-pro4")).toBeUndefined();
+   expect(defaultThinkingLevel("gpt-5.6-luna")).toBeUndefined();
+   expect(defaultThinkingLevel("")).toBeUndefined();
  });
 });

@@ -402,6 +402,115 @@ describe("web provider switch persistence", () => {
 	});
 });
 
+describe("webgpu model defaults (v2-20261124)", () => {
+	beforeEach(() => {
+		setWebAssetsModeForTests(true);
+		registerWebLlmProvider();
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		startWebModelSpy.mockClear();
+		agentBridgeStart.mockClear();
+		chatServiceMocks.sendCredsUpdate.mockClear();
+		mockInvoke.mockReset().mockResolvedValue([]);
+		vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+	});
+
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		setWebAssetsModeForTests(null);
+		resetWebModelStatusForTests();
+		mockInvoke.mockReset();
+		vi.unstubAllGlobals();
+	});
+
+	it("W1 restricts the web sub list to the two approved models plus inherit", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId<HTMLSelectElement>("small-model-select");
+		await waitFor(() => {
+			expect([...small.options].some((option) => option.value.startsWith('["nextain",'))).toBe(true);
+		});
+		const nextainValues = [...small.options]
+			.map((option) => option.value)
+			.filter((value) => value.startsWith('["nextain",'))
+			.sort();
+		expect(nextainValues).toEqual(
+			[
+				JSON.stringify(["nextain", "deepseek-v4.1-flash"]),
+				JSON.stringify(["nextain", "gpt-6-luna"]),
+			].sort(),
+		);
+		expect([...small.options].map((option) => option.value)).toContain("__inherit__");
+	});
+
+	it("W2 applies low thinking when a web sub model is picked", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId<HTMLSelectElement>("small-model-select");
+		await waitFor(() => {
+			expect([...small.options].some((option) => option.value.startsWith('["nextain",'))).toBe(true);
+		});
+		fireEvent.change(small, { target: { value: JSON.stringify(["nextain", "deepseek-v4.1-flash"]) } });
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.sub).toMatchObject({
+				provider: "nextain",
+				model: "deepseek-v4.1-flash",
+				thinkingLevel: "low",
+			});
+		});
+	});
+
+	it("W3 applies the model default strength when a fresh web main model is picked", async () => {
+		localStorage.setItem("naia-remote-key", "test-w3-fixture");
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+			apiKey: "",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+		}));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const main = document.getElementById("model-select") as HTMLSelectElement;
+		await waitFor(() => {
+			expect([...main.options].map((option) => option.value)).toContain("gpt-6-luna");
+		});
+		fireEvent.change(main, { target: { value: "gpt-6-luna" } });
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.main).toMatchObject({
+				provider: "nextain",
+				model: "gpt-6-luna",
+				thinkingLevel: "max",
+			});
+		});
+	});
+
+	it("W4 applies xhigh when fresh DeepSeek is picked as the web main model", async () => {
+		localStorage.setItem("naia-remote-key", "test-w4-fixture");
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: "gpt-6-luna",
+			apiKey: "",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6-luna" } },
+		}));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const main = document.getElementById("model-select") as HTMLSelectElement;
+		await waitFor(() => {
+			expect([...main.options].map((option) => option.value)).toContain("deepseek-v4.1-flash");
+		});
+		fireEvent.change(main, { target: { value: "deepseek-v4.1-flash" } });
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.main).toMatchObject({
+				provider: "nextain",
+				model: "deepseek-v4.1-flash",
+				thinkingLevel: "xhigh",
+			});
+		});
+	});
+});
+
 describe("SettingsTab", () => {
 	it("applies the sole vLLM model after config hydration resets the empty selection", async () => {
 		localStorage.setItem("naia-adk-path", "/tmp/test-adk");

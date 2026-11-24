@@ -218,19 +218,21 @@ describe("S-SLOT · FR-SLOT.5 sub/memory SoT separation", () => {
 });
 
 describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, §9 #5 해결)", () => {
-	it("NAIA_SLOT_DEFAULTS main = nextain / deepseek-v4-flash (2026-08-08 기본모델 변경)", () => {
+	it("NAIA_SLOT_DEFAULTS main = nextain / deepseek-v4.1-flash + xhigh (webgpu 기본모델)", () => {
 		expect(NAIA_SLOT_DEFAULTS.main).toEqual({
 			provider: "nextain",
-			model: "deepseek-v4-flash",
+			model: "deepseek-v4.1-flash",
+			thinkingLevel: "xhigh",
 		});
 		// stale hardcode gemini-2.5-flash 회귀 금지
 		expect(NAIA_SLOT_DEFAULTS.main.model).not.toBe("gemini-2.5-flash");
 	});
 
-	it("NAIA_SLOT_DEFAULTS sub = naia / gemini-3.1-flash-lite", () => {
+	it("NAIA_SLOT_DEFAULTS sub = nextain / deepseek-v4.1-flash + low (webgpu 보조 기본값)", () => {
 		expect(NAIA_SLOT_DEFAULTS.sub).toEqual({
-			provider: "naia",
-			model: "gemini-3.1-flash-lite",
+			provider: "nextain",
+			model: "deepseek-v4.1-flash",
+			thinkingLevel: "low",
 		});
 	});
 
@@ -252,8 +254,10 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 
 	it("UT-SM-03 목록이 도착한 빈 설정의 모델과 나머지 슬롯 기본값", () => {
 		const filled = applyNaiaSlotDefaults({} as AppConfig, [
+			{ id: "deepseek-v4.1-flash", label: "DeepSeek", capabilities: ["llm"] },
 			{ id: "gpt-6.1-terra", label: "Terra", capabilities: ["llm"] },
-			{ id: "gpt-5.6-luna", label: "Luna", capabilities: ["llm"] },
+			{ id: "gpt-6-luna", label: "Luna", capabilities: ["llm"] },
+			{ id: "gpt-5.6-luna", label: "Old Luna", capabilities: ["llm"] },
 		]);
 		expect(filled.provider).toBe("nextain");
 		expect(filled.model).toBe("deepseek-v4.1-flash");

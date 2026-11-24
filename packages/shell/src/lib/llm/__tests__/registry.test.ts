@@ -48,6 +48,12 @@ describe("registry — provider registration", () => {
 	});
 
 	it("Naia offline fallbacks keep every selectable model skill-capable without claiming live provenance", () => {
+		for (const id of ["deepseek-v4.1-flash", "gpt-6-luna"]) {
+			const model = getLlmModel("nextain", id);
+			expect(model).toMatchObject({ supportsTools: true });
+			expect(model?.upstreamProvider ?? "unknown").toBe("unknown");
+			expect(model?.lifecycle ?? "unknown").toBe("unknown");
+		}
 		expect(getLlmModel("nextain", "deepseek-v4-flash")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "solar-pro4")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "solar-mini")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
@@ -55,7 +61,9 @@ describe("registry — provider registration", () => {
 		expect(getLlmModel("nextain", "gpt-5.6-luna")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		const selectable = getLlmProvider("nextain")!.models.filter((model) => !model.comingSoon);
 		expect(selectable.map((model) => model.id)).toEqual([
+			"deepseek-v4.1-flash",
 			"gpt-6.1-terra",
+			"gpt-6-luna",
 			"deepseek-v4-flash",
 			"solar-pro4",
 			"solar-mini",
@@ -428,7 +436,9 @@ describe("registry — sortModels", () => {
 			"solar-mini",
 			"motif-3",
 			"gpt-5.6-luna",
+			"deepseek-v4.1-flash",
 			"gpt-6.1-terra",
+			"gpt-6-luna",
 		]);
 	});
 });

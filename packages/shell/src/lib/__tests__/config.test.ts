@@ -14,6 +14,7 @@ import {
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
 	resolveThinkingLevel,
+	resolveWebThinkingEnabled,
 	saveConfig,
 } from "../config";
 import { KIOSK_DEMO_TTS_VOICE } from "../config-seed";
@@ -457,3 +458,17 @@ describe("normalizeRetiredVoiceConfig kiosk vs desktop Neural2 handling", () => 
 	});
 });
 
+
+describe("ThinkingLevel max (webgpu model defaults)", () => {
+	it("passes max through from the main role and the legacy flat field", () => {
+		expect(
+			resolveThinkingLevel({ llmRoles: { main: { thinkingLevel: "max" } } }),
+		).toBe("max");
+		expect(resolveThinkingLevel({ thinkingLevel: "max" })).toBe("max");
+	});
+
+	it("treats max as thinking-enabled on the web", () => {
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "max" })).toBe(true);
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "off" })).toBe(false);
+	});
+});

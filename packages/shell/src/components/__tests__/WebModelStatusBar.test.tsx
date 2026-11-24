@@ -15,6 +15,14 @@ import {
 	WEB_LLM_MODEL_ID,
 } from "../../lib/web-runtime/webllm-model";
 
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: vi.fn().mockResolvedValue([]),
+	convertFileSrc: vi.fn((path: string) => path),
+}));
+vi.mock("../../lib/web-runtime/agent-bridge", () => ({
+	getStartableAgentBridge: () => ({ start: vi.fn(), sendLine: vi.fn() }),
+}));
+
 describe("WebModelStatusBar", () => {
 	beforeEach(() => {
 		resetWebModelStatusForTests();
@@ -215,6 +223,25 @@ describe("WebModelStatusBar", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Check credits again" }));
 		expect(await screen.findByRole("button", { name: "Switch to cloud chat" })).toBeEnabled();
 		expect(fetchBalance).toHaveBeenCalledTimes(2);
+	});
+
+	it("applies the cloud default model with xhigh thinking on switch", async () => {
+		localStorage.setItem(webAuth.WEB_REMOTE_KEY_STORAGE_KEY, "fixture-account-key");
+		vi.spyOn(labBalance, "fetchLabBalancePayload").mockResolvedValue({ credits: 6 });
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "webllm", model: WEB_LLM_FALLBACK_F32 }));
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		setWebModelStatus({ phase: "error", errorKind: "no-webgpu" });
+		render(<WebModelStatusBar offerCloudRecovery />);
+		const button = await screen.findByRole("button", { name: "Switch to cloud chat" });
+		expect(button).toBeEnabled();
+		fireEvent.click(button);
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.main).toMatchObject({
+				provider: "nextain",
+				model: "deepseek-v4.1-flash",
+				thinkingLevel: "xhigh",
+			});
+		});
 	});
 
 	it("offers sign-in again when the account service rejects the saved sign-in", async () => {

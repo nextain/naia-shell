@@ -914,6 +914,45 @@ describe("writeNaiaConfig", () => {
 		).toBe("selected-adk-model");
 	});
 
+	it("keeps max thinking levels when persisting the agent config", async () => {
+		await setAdkPath(WIN_ADK);
+		await writeNaiaConfigAtPath(
+			{
+				provider: "nextain",
+				model: "deepseek-v4.1-flash",
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6-luna",
+						thinkingLevel: "max",
+					},
+					sub: {
+						provider: "nextain",
+						model: "deepseek-v4.1-flash",
+						thinkingLevel: "low",
+					},
+				},
+				mainModelThinkingLevels: {
+					'["nextain","gpt-6-luna"]': "max",
+				},
+			},
+			WIN_ADK,
+		);
+
+		const configWrites = mockInvoke.mock.calls.filter(
+			([command]) => command === "write_naia_config",
+		);
+		expect(configWrites).toHaveLength(1);
+		const agentJson = JSON.parse(
+			(configWrites[0]?.[1] as { json: string }).json,
+		);
+		expect(agentJson.llmRoles?.main?.thinkingLevel).toBe("max");
+		expect(agentJson.llmRoles?.sub?.thinkingLevel).toBe("low");
+		expect(agentJson.mainModelThinkingLevels).toEqual({
+			'["nextain","gpt-6-luna"]': "max",
+		});
+	});
+
 	it("does not borrow the newly selected ADK credential for a queued old-path manifest", async () => {
 		await setAdkPath(WIN_ADK);
 		secureState.naiaKey = "credential-from-new-selection";

@@ -10,7 +10,9 @@
 import { describe, expect, it } from "vitest";
 
 const NEXTAIN_ACCOUNT_PICKER_IDS = [
+	"deepseek-v4.1-flash",
 	"gpt-6.1-terra",
+	"gpt-6-luna",
 	"deepseek-v4-flash",
 	"solar-pro4",
 	"solar-mini",
@@ -26,7 +28,9 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 		const ids = naia!.models.map((m) => m.id);
 		expect(ids).toEqual([...NEXTAIN_ACCOUNT_PICKER_IDS]);
 		expect(naia!.models.map((m) => m.label)).toEqual([
+			"DeepSeek V4.1 Flash",
 			"GPT-6.1 Terra",
+			"GPT-6 Luna",
 			"DeepSeek V4 Flash",
 			"Solar Pro 4",
 			"Solar Mini",
