@@ -265,17 +265,17 @@ describe("web-auth (item 5)", () => {
 	});
 
 	it("supports /app/auth/callback, /u/<slug>/auth/callback, and portal #key=gw-... handoff while upgrading WebGPU starter to Cloud + Dragon voice", async () => {
-		// 1) /u/cafelua builds callback under /u/cafelua/auth/callback and cleans back to /u/cafelua
+		// 1) /u/demo-user builds callback under /u/demo-user/auth/callback and cleans back to /u/demo-user
 		const slugRedirect = startWebLoginRedirect({
 			origin: "https://dev.naia.land",
-			pathname: "/u/cafelua",
+			pathname: "/u/demo-user",
 			lang: "ko",
 			state: "slug-callback-state",
 			navigate: () => {},
 		});
 		const parsedSlugUrl = new URL(slugRedirect.url);
 		expect(parsedSlugUrl.searchParams.get("redirect_uri")).toBe(
-			"https://dev.naia.land/u/cafelua/auth/callback",
+			"https://dev.naia.land/u/demo-user/auth/callback",
 		);
 
 		// Simulate prior unauthenticated WebGPU starter with an active character card
@@ -296,14 +296,14 @@ describe("web-auth (item 5)", () => {
 		const replaceSlug = vi.fn();
 		const slugRes = await consumeWebAuthCallbackFromLocation(
 			{
-				pathname: "/u/cafelua/auth/callback",
+				pathname: "/u/demo-user/auth/callback",
 				search: "",
-				hash: "#key=gw-slug-owner-token-777&user_id=usr_cafelua&state=slug-callback-state",
+				hash: "#key=gw-slug-owner-token-777&user_id=usr_demo&state=slug-callback-state",
 			},
 			replaceSlug,
 		);
 		expect(slugRes.ok).toBe(true);
-		expect(replaceSlug).toHaveBeenCalledWith("/u/cafelua");
+		expect(replaceSlug).toHaveBeenCalledWith("/u/demo-user");
 		expect(loadConfig()).toMatchObject({
 			provider: "nextain",
 			ttsProvider: "nextain",

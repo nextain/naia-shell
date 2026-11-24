@@ -43,7 +43,7 @@ const LEAK_RULES = [
   ["biz-reg-no(KR)", /\b\d{3}-\d{2}-\d{5}\b/g],
   ["private/cloud-ip", /\b(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168|34\.\d{1,3}|35\.\d{1,3})\.\d{1,3}\.\d{1,3}\b/g],
   ["tailscale-host", /\b[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net\b/g],
-  ["internal-project-slug", /\bcafelua(?:-prod|-dev|-db)?\b/g], // 메인테이너 내부 GCP 프로젝트 슬러그(bare — 크로스리뷰 발견)
+  ["internal-project-slug", /\bcafelua(?:-prod|-dev|-db)?\b(?!-tarot\b)/g], // 메인테이너 내부 GCP 프로젝트 슬러그(bare — 크로스리뷰 발견; 공개 스토어 제품 슬러그 cafelua-tarot 제외)
 ];
 
 function entropy(s) {

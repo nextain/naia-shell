@@ -3647,7 +3647,7 @@ Terra가 보낸 본문을 채팅창에 표시합니다. 생각 필드가 함께 
 
 받은 주소를 열면 포털이 해당 이름의 웹 셸로 연결합니다. 주소에서 개인 대화나 작업공간을 공유하지 않습니다. 찾을 수 없는 주소에는 기본 나이아를 열 수 있는 안내가 표시됩니다.
 
-주소 조사(기준 `40cb52b6`). `packages/shell/src/lib/web-runtime/web-slug-guard.ts:45,67,73`과 `packages/shell/src/App.tsx:285,294`는 이전 호스트를 읽어 소유자 확인에 씁니다. `packages/shell/src/lib/web-runtime/web-auth.ts:110–131`는 로그인 콜백에 현재 브라우저 호스트를 사용합니다. 안내 화면에 표시된 주소는 `packages/shell/src/components/WebSlugOwnerGuard.tsx:100`의 개인 공간 경로입니다. 셸 제품 코드에서 `cafelua.naia.land` 문자열과 `cafelua` 기본값은 발견되지 않았습니다.
+주소 조사(기준 `40cb52b6`). `packages/shell/src/lib/web-runtime/web-slug-guard.ts:45,67,73`과 `packages/shell/src/App.tsx:285,294`는 이전 호스트를 읽어 소유자 확인에 씁니다. `packages/shell/src/lib/web-runtime/web-auth.ts:110–131`는 로그인 콜백에 현재 브라우저 호스트를 사용합니다. 안내 화면에 표시된 주소는 `packages/shell/src/components/WebSlugOwnerGuard.tsx:100`의 개인 공간 경로입니다. 셸 제품 코드에서 레거시 개인 슬러그 문자열과 기본값은 발견되지 않았습니다.
 
 ### Test Coverage Map — UC-WEB-VISUAL-AGENT-SLUG
 

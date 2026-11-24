@@ -174,26 +174,26 @@ describe("Stage-1 Unified Web Shell Features", () => {
 		expect(
 			extractWebSlugFromLocation({
 				hostname: "dev.naia.land",
-				pathname: "/u/cafelua",
+				pathname: "/u/demo-user",
 			}),
-		).toBe("cafelua");
+		).toBe("demo-user");
 		expect(
 			extractWebSlugFromLocation({
-				hostname: "cafelua.dev.naia.land",
+				hostname: "demo-user.dev.naia.land",
 				pathname: "/",
 			}),
-		).toBe("cafelua");
+		).toBe("demo-user");
 
-		// Gateway 401 (master-key protected) -> falls back to portal `/api/slug/cafelua`
+		// Gateway 401 (master-key protected) -> falls back to portal `/api/slug/demo-user`
 		const fetchSlug = vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
-			if (url.endsWith("/v1/slug/cafelua")) {
+			if (url.endsWith("/v1/slug/demo-user")) {
 				return jsonResponse(401, { detail: "master key required" });
 			}
-			if (url.endsWith("/api/slug/cafelua")) {
+			if (url.endsWith("/api/slug/demo-user")) {
 				return jsonResponse(200, {
 					user_id: "usr_owner_1",
-					slug: "cafelua",
+					slug: "demo-user",
 					redirect: false,
 				});
 			}
@@ -206,11 +206,11 @@ describe("Stage-1 Unified Web Shell Features", () => {
 			gatewayUrl: "https://api-dev.naia.land",
 			webBaseUrl: "https://dev.naia.land",
 			authenticatedUserId: null,
-			location: { hostname: "dev.naia.land", pathname: "/u/cafelua" },
+			location: { hostname: "dev.naia.land", pathname: "/u/demo-user" },
 		});
 		expect(loggedOut).toEqual({
 			status: "login_required",
-			slug: "cafelua",
+			slug: "demo-user",
 			ownerUserId: "usr_owner_1",
 		});
 
@@ -220,11 +220,11 @@ describe("Stage-1 Unified Web Shell Features", () => {
 			gatewayUrl: "https://api-dev.naia.land",
 			webBaseUrl: "https://dev.naia.land",
 			authenticatedUserId: "usr_intruder_9",
-			location: { hostname: "cafelua.dev.naia.land", pathname: "/" },
+			location: { hostname: "demo-user.dev.naia.land", pathname: "/" },
 		});
 		expect(otherUser).toEqual({
 			status: "forbidden_not_owner",
-			slug: "cafelua",
+			slug: "demo-user",
 			ownerUserId: "usr_owner_1",
 			currentUserId: "usr_intruder_9",
 		});
@@ -235,11 +235,11 @@ describe("Stage-1 Unified Web Shell Features", () => {
 			gatewayUrl: "https://api-dev.naia.land",
 			webBaseUrl: "https://dev.naia.land",
 			authenticatedUserId: "usr_owner_1",
-			location: { hostname: "dev.naia.land", pathname: "/u/cafelua" },
+			location: { hostname: "dev.naia.land", pathname: "/u/demo-user" },
 		});
 		expect(ownerOk).toEqual({
 			status: "authorized",
-			slug: "cafelua",
+			slug: "demo-user",
 			ownerUserId: "usr_owner_1",
 		});
 
