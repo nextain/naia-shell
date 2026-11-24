@@ -1602,6 +1602,33 @@
 [data-layout-orientation="portrait"] .bgm-volume { display: none; }
 [data-naia-mobile="true"] .bgm-player-controls,
 [data-layout-orientation="portrait"] .bgm-player-controls { justify-content: center; }
+[data-naia-mobile="true"]:not([data-layout-orientation="landscape"]) .app-bar,
+[data-layout-orientation="portrait"] .app-bar {
+	max-width: 100%;
+	overflow: hidden;
+}
+[data-naia-mobile="true"] .bgm-player,
+[data-layout-orientation="portrait"] .bgm-player {
+	max-width: 100%;
+	box-sizing: border-box;
+}
+[data-naia-mobile="true"] .bgm-yt-app,
+[data-layout-orientation="portrait"] .bgm-yt-app {
+	width: min(380px, calc(100vw - 16px));
+	max-width: calc(100vw - 16px);
+	box-sizing: border-box;
+}
+@media (max-width: 600px) and (orientation: portrait) {
+	:root:not([data-layout-orientation="landscape"]) .app-bar {
+		max-width: 100%;
+		overflow: hidden;
+	}
+	.bgm-yt-app {
+		width: min(380px, calc(100vw - 16px));
+		max-width: calc(100vw - 16px);
+		box-sizing: border-box;
+	}
+}
 
 /* Web layout follows the viewport; the native shell keeps its manual control. */
 [data-naia-web="true"] [data-testid="layout-orientation-toggle"] { display: none; }

@@ -569,6 +569,16 @@ export function AppMainContent(props: AppMainContentProps) {
 									)}
 									<button
 										type="button"
+										data-testid="web-mobile-bgm-btn"
+										onClick={() => {
+											setMobileMenu(false);
+											window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+										}}
+									>
+										♫ {t("bgm.appToggleTitle")}
+									</button>
+									<button
+										type="button"
 										onClick={() => {
 											setActiveApp("settings");
 											setMobileMenu(false);

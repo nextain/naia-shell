@@ -549,6 +549,13 @@ export function BgmPlayer({ naia }: Props) {
 	// appExpanded: the single app is open or closed
 	// appTab: which tab is currently shown in the app (independent of what's playing)
 	const [appExpanded, setAppExpanded] = useState(false);
+	useEffect(() => {
+		const handleBgmToggle = () => setAppExpanded((v) => !v);
+		window.addEventListener("naia:bgm-toggle", handleBgmToggle);
+		return () => {
+			window.removeEventListener("naia:bgm-toggle", handleBgmToggle);
+		};
+	}, []);
 	const [appTab, setAppTab] = useState<AppTab>("youtube");
 	const broadcastBridge = useBroadcastBridge();
 	const broadcasting = isBroadcastActive(broadcastBridge.state);
@@ -1924,19 +1931,51 @@ export function BgmPlayer({ naia }: Props) {
 	// ── App anchor position ─────────────────────────────────────────────────
 	// appPos is always calculated so the portal stays in DOM for CSS animation.
 	useEffect(() => {
-		if (!playerRef.current) {
-			setAppPos(null);
-			return;
-		}
-		const rect = playerRef.current.getBoundingClientRect();
-		// CSS .bgm-yt-app 의 width(380px)와 반드시 같은 값 — 어긋나면 우측 정렬 계산이 밀린다.
-		const APP_W = Math.min(380, window.innerWidth - 16);
-		// Right-align app to player's right edge, clamp so it doesn't overflow screen
-		const safeLeft = Math.max(
-			8,
-			Math.min(rect.right - APP_W, window.innerWidth - APP_W - 8),
-		);
-		setAppPos({ top: rect.bottom + 4, left: safeLeft });
+		const updateAppPos = () => {
+			if (!playerRef.current) {
+				setAppPos(null);
+				return;
+			}
+			const rect = playerRef.current.getBoundingClientRect();
+			// CSS .bgm-yt-app 의 width(380px)와 반드시 같은 값 — 어긋나면 우측 정렬 계산이 밀린다.
+			const APP_W = Math.min(380, Math.max(240, window.innerWidth - 16));
+			// Right-align app to player's right edge, clamp so it doesn't overflow screen
+			const maxLeft = Math.max(8, window.innerWidth - APP_W - 8);
+			const safeLeft = Math.max(8, Math.min(rect.right - APP_W, maxLeft));
+
+			const trigger = document.querySelector<HTMLElement>(
+				".web-mobile-menu-trigger",
+			);
+			let triggerBottom = 0;
+			if (trigger) {
+				const style = getComputedStyle(trigger);
+				const r = trigger.getBoundingClientRect();
+				if (
+					style.display !== "none" &&
+					style.visibility !== "hidden" &&
+					r.width > 0 &&
+					r.height > 0
+				) {
+					triggerBottom = Math.ceil(r.bottom);
+				}
+			}
+
+			let top = rect.bottom + 4;
+			if (triggerBottom > 0) {
+				top = Math.max(top, triggerBottom + 8);
+			} else if (rect.bottom <= 0 && window.innerWidth <= 600) {
+				top = Math.max(top, 56);
+			}
+
+			setAppPos({ top, left: safeLeft });
+		};
+
+		updateAppPos();
+		if (!appExpanded) return;
+		window.addEventListener("resize", updateAppPos);
+		return () => {
+			window.removeEventListener("resize", updateAppPos);
+		};
 	}, [appExpanded, ytAppHeight]);
 
 	// ── BGM state persistence ─────────────────────────────────────────────────
@@ -2626,6 +2665,8 @@ export function BgmPlayer({ naia }: Props) {
 					type="button"
 					className={`bgm-track-name bgm-track-toggle${appExpanded ? " bgm-track-name--open" : ""}`}
 					title={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
+					aria-label={`${t("bgm.appToggleTitle")}: ${trackLabel}`}
+					aria-expanded={appExpanded}
 					onClick={() => setAppExpanded((v) => !v)}
 				>
 					{isScrolling ? (
@@ -2667,6 +2708,7 @@ export function BgmPlayer({ naia }: Props) {
 							position: "fixed",
 							top: appPos.top,
 							left: appPos.left,
+							maxWidth: "calc(100vw - 16px)",
 							zIndex: 10001,
 							height: ytAppHeight,
 						}}

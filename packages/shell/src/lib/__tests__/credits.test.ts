@@ -12,11 +12,14 @@ import {
 	usdToCredits,
 } from "../credits";
 import {
+	formatByProviderStats,
 	formatCreditBalance,
+	formatProviderCostStat,
 	formatSavedVoiceCostSummary,
 	formatUsageCost,
 	formatUsageTotal,
 	formatUsdEstimate,
+	isLocalFreeProvider,
 } from "../credits-usage";
 import { setLocale, t } from "../i18n";
 import { formatModelLabel } from "../llm/model-label";
@@ -163,5 +166,44 @@ describe("R42 web credit display", () => {
 		markWebCloudCreditNoticeDismissed(fakeStorage);
 		expect(map.get(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY)).toBe("1");
 		expect(isWebCloudCreditNoticeDismissed(fakeStorage)).toBe(true);
+	});
+});
+
+describe("local WebLLM free cost formatting", () => {
+	it("identifies webllm as a local free provider without affecting cloud or ollama/vllm", () => {
+		expect(isLocalFreeProvider("webllm")).toBe(true);
+		expect(isLocalFreeProvider("nextain")).toBe(false);
+		expect(isLocalFreeProvider("gemini")).toBe(false);
+		expect(isLocalFreeProvider("ollama")).toBe(false);
+		expect(isLocalFreeProvider(null)).toBe(false);
+		expect(isLocalFreeProvider(undefined)).toBe(false);
+	});
+
+	it.each([
+		{ locale: "ko", expected: "무료" },
+		{ locale: "en", expected: "Free" },
+	] as const)("formats webllm usage and provider stats as $expected in $locale without dollar zero", async ({ locale, expected }) => {
+		await setLocale(locale);
+		try {
+			const usageText = formatUsageCost(0, "webllm");
+			const statText = formatProviderCostStat("webllm", 0);
+			const groupedText = formatByProviderStats(
+				[{ provider: "webllm", cost: 0 }],
+				0,
+				"webllm",
+			);
+			const fallbackText = formatByProviderStats([], 0, "webllm");
+
+			for (const text of [usageText, statText, groupedText, fallbackText]) {
+				expect(text).toBe(expected);
+				expect(text).not.toContain("$0.000000");
+			}
+
+			// Keep R47 nextain and cloud provider formatting unchanged
+			expect(formatUsageCost(0.0123, "nextain")).toMatch(/12\.3/);
+			expect(formatUsageCost(0.0123, "gemini")).toContain("$0.012");
+		} finally {
+			await setLocale("en");
+		}
 	});
 });

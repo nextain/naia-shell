@@ -5348,4 +5348,59 @@ describe("ChatArea", () => {
 			vi.unstubAllEnvs();
 		}
 	});
+
+	it("shows localized Free label instead of $0.000000 in .cost-badge for webllm answers", async () => {
+		const { setWebAssetsModeForTests } = await import(
+			"../../lib/web-runtime/web-assets"
+		);
+		const { setLocale } = await import("../../lib/i18n");
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: "Qwen3-4B-q4f32_1-MLC" }),
+		);
+		useChatStore.setState({
+			provider: "webllm",
+			messages: [
+				{
+					id: "m-webllm-free",
+					role: "assistant",
+					content: "로컬 WebGPU 답변입니다.",
+					timestamp: 2000,
+					localAnswer: true,
+					cost: {
+						provider: "webllm",
+						model: "Qwen3-4B-q4f32_1-MLC",
+						inputTokens: 1200,
+						outputTokens: 1046,
+						cost: 0,
+					},
+				},
+			],
+		});
+		try {
+			await setLocale("ko");
+			const koRender = render(<ChatArea />);
+			const koBadge = koRender.container.querySelector(".cost-badge");
+			expect(koBadge?.textContent).toContain("무료");
+			expect(koBadge?.textContent).toContain("2246");
+			expect(koBadge?.textContent).not.toContain("$0.000000");
+			koRender.unmount();
+
+			await setLocale("en");
+			const enRender = render(<ChatArea />);
+			const enBadge = enRender.container.querySelector(".cost-badge");
+			expect(enBadge?.textContent).toContain("Free");
+			expect(enBadge?.textContent).toContain("2246");
+			expect(enBadge?.textContent).not.toContain("$0.000000");
+			enRender.unmount();
+		} finally {
+			setWebAssetsModeForTests(null);
+			await setLocale("ko");
+			localStorage.removeItem("naia-config");
+			vi.unstubAllEnvs();
+		}
+	});
 });

@@ -8,7 +8,12 @@ import {
 } from "../lib/config";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { isNaiaAccountProvider } from "../lib/credits";
-import { formatCreditBalance, formatUsageCost, formatUsageTotal } from "../lib/credits-usage";
+import {
+	formatCreditBalance,
+	formatUsageCost,
+	formatUsageTotal,
+	isLocalFreeProvider,
+} from "../lib/credits-usage";
 import { usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import {
@@ -277,8 +282,13 @@ export function CostDashboard({
 		.filter((g) => isNaiaAccountProvider(g.provider))
 		.reduce((sum, g) => sum + g.cost, 0);
 	const otherTotal = groups
-		.filter((g) => !isNaiaAccountProvider(g.provider))
+		.filter(
+			(g) =>
+				!isNaiaAccountProvider(g.provider) && !isLocalFreeProvider(g.provider),
+		)
 		.reduce((sum, g) => sum + g.cost, 0);
+	const onlyLocalFree =
+		groups.length > 0 && groups.every((g) => isLocalFreeProvider(g.provider));
 	const totalInput = groups.reduce((sum, g) => sum + g.inputTokens, 0);
 	const totalOutput = groups.reduce((sum, g) => sum + g.outputTokens, 0);
 
@@ -318,7 +328,11 @@ export function CostDashboard({
 						<td colSpan={3}>{t("cost.total")}</td>
 						<td>{totalInput.toLocaleString()}</td>
 						<td>{totalOutput.toLocaleString()}</td>
-						<td>{formatUsageTotal(naiaTotal, otherTotal)}</td>
+						<td>
+							{onlyLocalFree
+								? formatUsageCost(0, groups[0].provider)
+								: formatUsageTotal(naiaTotal, otherTotal)}
+						</td>
 					</tr>
 				</tfoot>
 			</table>

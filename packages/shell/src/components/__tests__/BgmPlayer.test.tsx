@@ -2339,3 +2339,148 @@ describe("BgmPlayer local folder playlist loop", () => {
 		await end(audio, "a");
 	});
 });
+
+describe("BgmPlayer mobile BGM toggle & 390x844 layout safety (R10/R36)", () => {
+	beforeEach(() => {
+		bgmPlayback.reset();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		listeners.clear();
+		bgmPlayback.reset();
+		useAvatarStore.setState(useAvatarStore.getInitialState());
+		localStorage.clear();
+		document.querySelectorAll(".web-mobile-menu-trigger").forEach((el) => el.remove());
+	});
+
+	it("toggles .bgm-yt-app open and closed when window receives naia:bgm-toggle", () => {
+		const { container } = render(<BgmPlayer />);
+		const panel = document.querySelector(".bgm-yt-app") as HTMLElement;
+		expect(panel).toBeTruthy();
+		expect(panel.classList.contains("bgm-yt-app--hidden")).toBe(true);
+		expect(panel).toHaveAttribute("aria-hidden", "true");
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+		});
+		expect(panel.classList.contains("bgm-yt-app--hidden")).toBe(false);
+		expect(panel).not.toHaveAttribute("aria-hidden");
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+		});
+		expect(panel.classList.contains("bgm-yt-app--hidden")).toBe(true);
+		expect(container.querySelector(".bgm-player")).toBeInTheDocument();
+	});
+
+	it("keeps a stable accessible music/BGM label on .bgm-track-toggle even when the track title changes", async () => {
+		const { container } = render(<BgmPlayer />);
+		const toggleBtn = container.querySelector(".bgm-track-toggle") as HTMLButtonElement;
+		expect(toggleBtn).toBeTruthy();
+		expect(toggleBtn).toHaveAttribute("aria-label");
+		expect(toggleBtn.getAttribute("aria-label")).toMatch(/음악|뮤직|bgm|music/i);
+
+		await startTrack("v-lofi", "Midnight Lo-Fi Beats");
+		expect(toggleBtn.getAttribute("aria-label")).toMatch(/음악|뮤직|bgm|music/i);
+		expect(toggleBtn.getAttribute("aria-label")).toContain("Midnight Lo-Fi Beats");
+
+		fireEvent.click(toggleBtn);
+		expect(toggleBtn.getAttribute("aria-label")).toMatch(/음악|뮤직|bgm|music/i);
+	});
+
+	it("positions .bgm-yt-app below a visible .web-mobile-menu-trigger with 0 overlap and clamped width on 390x844", () => {
+		const prevW = window.innerWidth;
+		const prevH = window.innerHeight;
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+		Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+
+		const trigger = document.createElement("button");
+		trigger.className = "web-mobile-menu-trigger";
+		trigger.style.display = "block";
+		trigger.style.visibility = "visible";
+		trigger.getBoundingClientRect = () =>
+			({
+				top: 8,
+				left: 342,
+				right: 382,
+				bottom: 48,
+				width: 40,
+				height: 40,
+				x: 342,
+				y: 8,
+				toJSON: () => ({}),
+			}) as DOMRect;
+		document.body.appendChild(trigger);
+
+		try {
+			const { container } = render(<BgmPlayer />);
+			const playerEl = container.querySelector(".bgm-player") as HTMLElement;
+			// Simulate clipped offscreen player position observed in 390x844 QA
+			playerEl.getBoundingClientRect = () =>
+				({
+					top: 4,
+					left: 381.17,
+					right: 453.17,
+					bottom: 44,
+					width: 72,
+					height: 40,
+					x: 381.17,
+					y: 4,
+					toJSON: () => ({}),
+				}) as DOMRect;
+
+			act(() => {
+				window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+			});
+
+			const panel = document.querySelector(".bgm-yt-app") as HTMLElement;
+			const top = Number.parseFloat(panel.style.top);
+			const left = Number.parseFloat(panel.style.left);
+			expect(top).toBeGreaterThanOrEqual(48 + 8);
+			expect(left).toBeGreaterThanOrEqual(8);
+			expect(left + 374).toBeLessThanOrEqual(390 - 8);
+			expect(panel.style.maxWidth).toBe("calc(100vw - 16px)");
+
+			// Resize recalculates position while expanded
+			trigger.getBoundingClientRect = () =>
+				({
+					top: 24,
+					left: 342,
+					right: 382,
+					bottom: 64,
+					width: 40,
+					height: 40,
+					x: 342,
+					y: 24,
+					toJSON: () => ({}),
+				}) as DOMRect;
+			act(() => {
+				window.dispatchEvent(new Event("resize"));
+			});
+			expect(Number.parseFloat(panel.style.top)).toBeGreaterThanOrEqual(64 + 8);
+		} finally {
+			Object.defineProperty(window, "innerWidth", { configurable: true, value: prevW });
+			Object.defineProperty(window, "innerHeight", { configurable: true, value: prevH });
+		}
+	});
+
+	it("falls back to top >= 56 on narrow mobile when .app-bar is collapsed and trigger is absent", () => {
+		const prevW = window.innerWidth;
+		const prevH = window.innerHeight;
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+		Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+		try {
+			render(<BgmPlayer />);
+			act(() => {
+				window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+			});
+			const panel = document.querySelector(".bgm-yt-app") as HTMLElement;
+			expect(Number.parseFloat(panel.style.top)).toBeGreaterThanOrEqual(56);
+		} finally {
+			Object.defineProperty(window, "innerWidth", { configurable: true, value: prevW });
+			Object.defineProperty(window, "innerHeight", { configurable: true, value: prevH });
+		}
+	});
+});

@@ -407,4 +407,32 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 		expect(localStorage.getItem("naia:chatMode")).toBe("workspace");
 		expect(localStorage.getItem("naia:railCollapsed")).toBe("false");
 	});
+
+	it("R10/R36: mobile menu includes a BGM toggle button that closes the menu and dispatches naia:bgm-toggle", async () => {
+		const { setLocale } = await import("../../lib/i18n");
+		setWebAssetsModeForTests(true);
+		const prevW = window.innerWidth;
+		const prevH = window.innerHeight;
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+		Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+		const onBgmToggle = vi.fn();
+		window.addEventListener("naia:bgm-toggle", onBgmToggle);
+		try {
+			await setLocale("ko");
+			render(<AppMainContent {...baseProps({ naiaVisible: true })} />);
+			fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+			const bgmBtn = screen.getByTestId("web-mobile-bgm-btn");
+			expect(bgmBtn).toBeInTheDocument();
+			expect(bgmBtn.textContent).toMatch(/음악|뮤직|bgm|music/i);
+
+			fireEvent.click(bgmBtn);
+			expect(onBgmToggle).toHaveBeenCalledTimes(1);
+			expect(screen.queryByTestId("web-mobile-bgm-btn")).toBeNull();
+		} finally {
+			window.removeEventListener("naia:bgm-toggle", onBgmToggle);
+			Object.defineProperty(window, "innerWidth", { configurable: true, value: prevW });
+			Object.defineProperty(window, "innerHeight", { configurable: true, value: prevH });
+			await setLocale("ko");
+		}
+	});
 });

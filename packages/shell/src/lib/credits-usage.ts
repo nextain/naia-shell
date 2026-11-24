@@ -42,16 +42,29 @@ export function formatSavedVoiceCostSummary(content: string, usd: number): strin
 	);
 }
 
+/** Provider id for in-browser free WebLLM execution. */
+export function isLocalFreeProvider(
+	provider: string | null | undefined,
+): boolean {
+	return provider === "webllm";
+}
+
+function formatLocalFreeCost(): string {
+	const label = t("webAppStore.free");
+	return label === "webAppStore.free" ? "Free" : label;
+}
+
 /** "$0.012 (제공사 요금 추정)" — the user pays the provider directly. */
 export function formatProviderEstimate(usd: number): string {
 	return t("cost.providerEstimate", { amount: formatUsdEstimate(usd) });
 }
 
-/** Usage cost for one provider: credits for a Naia account, else a USD estimate. */
+/** Usage cost for one provider: free for local WebLLM, credits for Naia, else USD. */
 export function formatUsageCost(
 	usd: number,
 	provider: string | null | undefined,
 ): string {
+	if (isLocalFreeProvider(provider)) return formatLocalFreeCost();
 	return isNaiaAccountProvider(provider)
 		? formatApproxCredits(usd)
 		: formatProviderEstimate(usd);
@@ -75,6 +88,9 @@ export function formatProviderCostStat(
 	if (provider === "unconfirmed") {
 		return `${formatRawCost(cost)} (${t("cost.unconfirmedProvider")})`;
 	}
+	if (isLocalFreeProvider(provider)) {
+		return formatLocalFreeCost();
+	}
 	if (isNaiaAccountProvider(provider)) {
 		return formatApproxCredits(cost);
 	}
@@ -94,6 +110,12 @@ export function formatByProviderStats(
 		return formatUsageCost(fallbackTotalCost, currentProvider);
 	}
 	const nonZero = byProvider.filter((s) => s.cost > 0);
+	if (
+		nonZero.length === 0 &&
+		byProvider.every((s) => isLocalFreeProvider(s.provider))
+	) {
+		return formatLocalFreeCost();
+	}
 	const target = nonZero.length > 0 ? nonZero : byProvider;
 	return target
 		.map((s) => formatProviderCostStat(s.provider, s.cost))
