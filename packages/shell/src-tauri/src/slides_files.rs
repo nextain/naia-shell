@@ -4,7 +4,7 @@ use base64::Engine;
 use serde::Serialize;
 use serde_json::json;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -15,6 +15,17 @@ use tauri_plugin_dialog::DialogExt;
 
 const MAX_PDF_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_SCRIPT_BYTES: u64 = 1024 * 1024;
+const MAX_VIDEO_BYTES: u64 = 300 * 1024 * 1024;
+const MAX_TOTAL_VIDEO_BYTES: u64 = 600 * 1024 * 1024;
+const MAX_VIDEO_FILES: usize = 20;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SlidesVideoAsset {
+    name: String,
+    mime_type: &'static str,
+    base64: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +35,8 @@ pub(crate) struct SlidesPdfSelection {
     script_name: Option<String>,
     script_text: Option<String>,
     script_read_failed: bool,
+    videos: Vec<SlidesVideoAsset>,
+    video_read_failures: Vec<String>,
 }
 
 fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
@@ -75,6 +88,153 @@ fn read_script(selected_pdf: &Path) -> Result<Option<(String, String)>, String> 
     )))
 }
 
+fn valid_slide_video_name(name: &str) -> bool {
+    if name.is_empty()
+        || name.chars().count() > 180
+        || name.starts_with('.')
+        || name.contains("..")
+        || name.trim() != name
+        || name.chars().any(|character| {
+            character.is_control()
+                || matches!(
+                    character,
+                    '/' | '\\' | ':' | '*' | '?' | '<' | '>' | '|' | '"'
+                )
+        })
+    {
+        return false;
+    }
+    Path::new(name).components().count() == 1
+        && Path::new(name).file_name().and_then(|value| value.to_str()) == Some(name)
+        && Path::new(name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("mp4")
+                    || extension.eq_ignore_ascii_case("webm")
+                    || extension.eq_ignore_ascii_case("m4v")
+            })
+}
+
+fn video_names_from_script(script: &str) -> (Vec<String>, Vec<String>) {
+    let mut names = Vec::new();
+    let mut failures = Vec::new();
+    let mut seen = HashSet::new();
+    for line in script.lines() {
+        let Some(heading) = line.strip_prefix("## ") else {
+            continue;
+        };
+        let Some((position, rest)) = heading.split_once(". ") else {
+            continue;
+        };
+        let Some((page, order)) = position.split_once('-') else {
+            continue;
+        };
+        let valid_position = page.parse::<u32>().is_ok_and(|value| value > 0)
+            && order.parse::<u32>().is_ok_and(|value| value > 0);
+        let rest = rest.trim_start();
+        let Some(tag_end) = rest.find(']') else {
+            continue;
+        };
+        let Some(tag) = rest.strip_prefix('[') else {
+            continue;
+        };
+        let tag = &tag[..tag_end.saturating_sub(1)];
+        if !(tag.eq_ignore_ascii_case("video") || tag == "영상") {
+            continue;
+        }
+        let name = rest[tag_end + 1..].trim();
+        let label = if name.is_empty() {
+            "(파일 이름 없음)".to_string()
+        } else {
+            name.to_string()
+        };
+        if !valid_position || !valid_slide_video_name(name) {
+            if !failures.contains(&label) {
+                failures.push(label);
+            }
+            continue;
+        }
+        if seen.insert(name.to_string()) {
+            names.push(name.to_string());
+        }
+    }
+    (names, failures)
+}
+
+fn read_slide_videos(
+    selected_document: &Path,
+    script: &str,
+) -> (Vec<SlidesVideoAsset>, Vec<String>) {
+    let (names, mut failures) = video_names_from_script(script);
+    if names.is_empty() {
+        return (Vec::new(), failures);
+    }
+    let Some(parent) = selected_document
+        .parent()
+        .and_then(|path| path.canonicalize().ok())
+    else {
+        failures.extend(names);
+        return (Vec::new(), failures);
+    };
+    let mut videos = Vec::new();
+    let mut total_bytes = 0_u64;
+    for (index, name) in names.into_iter().enumerate() {
+        if index >= MAX_VIDEO_FILES {
+            failures.push(name);
+            continue;
+        }
+        let candidate = parent.join(&name);
+        let metadata = match fs::symlink_metadata(&candidate) {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => metadata,
+            _ => {
+                failures.push(name);
+                continue;
+            }
+        };
+        if metadata.len() > MAX_VIDEO_BYTES
+            || total_bytes.saturating_add(metadata.len()) > MAX_TOTAL_VIDEO_BYTES
+        {
+            failures.push(name);
+            continue;
+        }
+        let canonical = match candidate.canonicalize() {
+            Ok(path) if path.parent() == Some(parent.as_path()) => path,
+            _ => {
+                failures.push(name);
+                continue;
+            }
+        };
+        let bytes = match read_bounded(&canonical, MAX_VIDEO_BYTES) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                failures.push(name);
+                continue;
+            }
+        };
+        total_bytes = total_bytes.saturating_add(bytes.len() as u64);
+        let mime_type = match Path::new(&name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "webm" => "video/webm",
+            _ => "video/mp4",
+        };
+        videos.push(SlidesVideoAsset {
+            name,
+            mime_type,
+            base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        });
+    }
+    for name in &failures {
+        log::warn!("[SlidesFiles] demo video unavailable or rejected: {}", name);
+    }
+    (videos, failures)
+}
+
 fn read_selected_pdf(selected: &Path) -> Result<SlidesPdfSelection, String> {
     if !selected
         .extension()
@@ -97,6 +257,8 @@ fn read_selected_pdf(selected: &Path) -> Result<SlidesPdfSelection, String> {
         script_name: None,
         script_text: None,
         script_read_failed: false,
+        videos: Vec::new(),
+        video_read_failures: Vec::new(),
     };
     match read_script(selected) {
         Ok(Some((name, text))) => {
@@ -105,6 +267,9 @@ fn read_selected_pdf(selected: &Path) -> Result<SlidesPdfSelection, String> {
         }
         Ok(None) => {}
         Err(_) => selection.script_read_failed = true,
+    }
+    if let Some(script) = selection.script_text.as_deref() {
+        (selection.videos, selection.video_read_failures) = read_slide_videos(selected, script);
     }
     log::debug!(
         "[SlidesFiles] selected PDF; companion={}, companion_failed={}",
@@ -166,6 +331,8 @@ fn assemble_pptx_selection(
         script_name: None,
         script_text: None,
         script_read_failed: false,
+        videos: Vec::new(),
+        video_read_failures: Vec::new(),
     };
     match read_script(selected) {
         Ok(Some((name, text))) => {
@@ -186,6 +353,9 @@ fn assemble_pptx_selection(
             }
         }
         Err(_) => selection.script_read_failed = true,
+    }
+    if let Some(script) = selection.script_text.as_deref() {
+        (selection.videos, selection.video_read_failures) = read_slide_videos(selected, script);
     }
     Ok(selection)
 }

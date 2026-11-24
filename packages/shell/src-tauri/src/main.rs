@@ -63,6 +63,11 @@ fn main() {
     // This must be set before any GTK/WebKit code runs.
     #[cfg(target_os = "linux")]
     {
+        if std::env::var_os("APPIMAGE").is_some() && std::process::Command::new("secret-tool").arg("--version").output().is_err() {
+            let message = "비밀 저장소 도구가 없어 로그인을 저장할 수 없어요. libsecret-tools를 설치한 뒤 다시 로그인해 주세요. / Install libsecret-tools to save login credentials.";
+            eprintln!("{message}");
+            let _ = std::process::Command::new("zenity").args(["--warning", "--text", message]).status();
+        }
         // SAFETY: Called before any threads are spawned (single-threaded main).
         unsafe {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");

@@ -5,7 +5,11 @@ vi.mock("../../logger", () => ({
 	Logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
-import { createWebSpeechSttSession } from "../web-speech-stt";
+import {
+	createWebSpeechSttSession,
+	webSpeechErrorMessageKey,
+	webSpeechSttOptions,
+} from "../web-speech-stt";
 
 /**
  * Minimal fake of the browser SpeechRecognition object, letting tests
@@ -19,6 +23,7 @@ class FakeSpeechRecognition {
 	maxAlternatives = 1;
 	onresult: ((event: unknown) => void) | null = null;
 	onerror: ((event: unknown) => void) | null = null;
+	onend: (() => void) | null = null;
 	start = vi.fn();
 	stop = vi.fn();
 	abort = vi.fn();
@@ -29,6 +34,10 @@ class FakeSpeechRecognition {
 
 	emitError(error: string, message = "") {
 		this.onerror?.({ error, message });
+	}
+
+	emitEnd() {
+		this.onend?.();
 	}
 
 	emitResult(
@@ -130,6 +139,34 @@ describe("createWebSpeechSttSession — empty transcript detection (#615)", () =
 			{ transcript: "날씨 어때요", isFinal: true, confidence: 0.8 },
 		]);
 	});
+
+	it("web build (detectEmptyBackend: false) drops empty finals without erroring", async () => {
+		const session = createWebSpeechSttSession("ko-KR", {
+			detectEmptyBackend: false,
+		});
+		const results: { transcript: string; isFinal: boolean }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+
+		// Music or a stop() flush in a real browser: several empty finals.
+		for (let i = 0; i < 5; i++) {
+			recognition.emitResult([
+				{ transcript: "", confidence: 0, isFinal: true },
+			]);
+		}
+		recognition.emitResult([
+			{ transcript: "노래 틀어줘", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(errors).toEqual([]);
+		expect(results).toEqual([
+			{ transcript: "노래 틀어줘", isFinal: true, confidence: 0.9 },
+		]);
+	});
 });
 
 describe("createWebSpeechSttSession — network error retry loop (#623)", () => {
@@ -205,5 +242,256 @@ describe("createWebSpeechSttSession — network error retry loop (#623)", () => 
 			{ transcript: "다시 시작", isFinal: true, confidence: 0.9 },
 		]);
 		expect(errors).toHaveLength(1);
+	});
+});
+
+describe("createWebSpeechSttSession — build options (19판)", () => {
+	beforeEach(() => {
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("desktop build keeps the #615 check: two empty finals report empty-transcript", async () => {
+		const session = createWebSpeechSttSession(
+			"ko-KR",
+			webSpeechSttOptions(false),
+		);
+		const errors: { code: string }[] = [];
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		recognition.emitResult([{ transcript: "", confidence: 1, isFinal: true }]);
+		recognition.emitResult([{ transcript: "", confidence: 1, isFinal: true }]);
+
+		expect(errors.map((e) => e.code)).toEqual(["empty-transcript"]);
+	});
+
+	it("web build drops empty finals without erroring", async () => {
+		const session = createWebSpeechSttSession(
+			"ko-KR",
+			webSpeechSttOptions(true),
+		);
+		const errors: { code: string }[] = [];
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		for (let i = 0; i < 5; i++) {
+			recognition.emitResult([
+				{ transcript: "", confidence: 0, isFinal: true },
+			]);
+		}
+
+		expect(errors).toEqual([]);
+	});
+});
+
+describe("createWebSpeechSttSession — late results after stop (19판)", () => {
+	beforeEach(() => {
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("drops results a stopped recognizer flushes after stop()", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		const results: { transcript: string }[] = [];
+		session.onResult((r) => results.push(r));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		await session.stop();
+		// Real browsers still deliver the pending final after stop().
+		recognition.emitResult([
+			{ transcript: "멈춘 뒤 결과", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(recognition.stop).toHaveBeenCalledTimes(1);
+		expect(results).toEqual([]);
+	});
+
+	it("after a pause/resume only the new recognizer forwards results", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		const results: { transcript: string }[] = [];
+		session.onResult((r) => results.push(r));
+
+		await session.start();
+		const first = FakeSpeechRecognition.instances[0];
+		// TTS self-echo pause: stop then start again.
+		await session.stop();
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+
+		first.emitResult([
+			{ transcript: "나이아 목소리 메아리", confidence: 0.9, isFinal: true },
+		]);
+		second.emitResult([
+			{ transcript: "사용자 말", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(results.map((r) => r.transcript)).toEqual(["사용자 말"]);
+	});
+
+	it("detaches onerror on stop() so a late aborted error from a TTS-paused recognizer never kills the resumed recognizer", async () => {
+		const session = createWebSpeechSttSession("ko-KR", webSpeechSttOptions(true));
+		const results: { transcript: string }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const first = FakeSpeechRecognition.instances[0];
+		// Capture old handler reference in case a broken browser retained an internal closure
+		const staleOnError = first.onerror;
+		await session.stop();
+		expect(first.onerror).toBeNull();
+		expect(first.onresult).toBeNull();
+		expect(first.onend).toBeNull();
+
+		// Resume after TTS ends
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+
+		// Even if stale closure is invoked directly after new start(), instance guard blocks it
+		staleOnError?.({ error: "aborted", message: "late abort" });
+		expect(errors).toEqual([]);
+		expect(second.abort).not.toHaveBeenCalled();
+
+		second.emitResult([
+			{ transcript: "정상 이어 말하기", confidence: 0.95, isFinal: true },
+		]);
+		expect(results.map((r) => r.transcript)).toEqual(["정상 이어 말하기"]);
+	});
+});
+
+describe("createWebSpeechSttSession — continuous voice recovery (Stage 1)", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("silently recovers and auto-restarts on no-speech, aborted, transient audio-capture, and natural onend in web mode", async () => {
+		const session = createWebSpeechSttSession("ko-KR", {
+			...webSpeechSttOptions(true),
+			recoveryDelayMs: 50,
+			maxAudioCaptureRetries: 2,
+		});
+		const results: { transcript: string }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		expect(FakeSpeechRecognition.instances).toHaveLength(1);
+
+		// 1) no-speech -> silent restart
+		FakeSpeechRecognition.instances[0].emitError("no-speech");
+		await vi.advanceTimersByTimeAsync(60);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(2);
+
+		// 2) aborted -> silent restart
+		FakeSpeechRecognition.instances[1].emitError("aborted");
+		await vi.advanceTimersByTimeAsync(60);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(3);
+
+		// 3) browser natural onend -> silent restart
+		FakeSpeechRecognition.instances[2].emitEnd();
+		await vi.advanceTimersByTimeAsync(60);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(4);
+
+		// 4) transient audio-capture (2x within maxAudioCaptureRetries=2) -> silent restart
+		FakeSpeechRecognition.instances[3].emitError("audio-capture");
+		await vi.advanceTimersByTimeAsync(150);
+		expect(errors).toEqual([]);
+		expect(FakeSpeechRecognition.instances).toHaveLength(5);
+
+		FakeSpeechRecognition.instances[4].emitResult([
+			{ transcript: "마이크 복구 완료", confidence: 0.9, isFinal: true },
+		]);
+		expect(results.map((r) => r.transcript)).toEqual(["마이크 복구 완료"]);
+
+		// 5) persistent audio-capture exceeding maxAudioCaptureRetries surfaces cleanly
+		FakeSpeechRecognition.instances[4].emitError("audio-capture");
+		await vi.advanceTimersByTimeAsync(150);
+		FakeSpeechRecognition.instances[5].emitError("audio-capture");
+		await vi.advanceTimersByTimeAsync(300);
+		FakeSpeechRecognition.instances[6].emitError("audio-capture");
+		expect(errors.map((e) => e.code)).toEqual(["audio-capture"]);
+
+		await session.stop();
+		vi.useRealTimers();
+	});
+
+	it("aborts any prior active recognizer if start() is called twice without leaking duplicate listeners", async () => {
+		vi.useRealTimers();
+		const session = createWebSpeechSttSession("ko-KR", webSpeechSttOptions(true));
+		await session.start();
+		const first = FakeSpeechRecognition.instances[0];
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+
+		expect(first.abort).toHaveBeenCalledTimes(1);
+		expect(first.onresult).toBeNull();
+		expect(second.start).toHaveBeenCalledTimes(1);
+		await session.stop();
+	});
+});
+
+describe("R26 web voice chat microphone error guidance", () => {
+	it("R26 routes a device failure during automatic restart through the capture error handler", async () => {
+		vi.useFakeTimers();
+		FakeSpeechRecognition.instances = [];
+		vi.stubGlobal("SpeechRecognition", class extends FakeSpeechRecognition {
+			start = vi.fn(() => {
+				if (FakeSpeechRecognition.instances.length > 1) {
+					throw new DOMException("Device went away", "NotReadableError");
+				}
+			});
+		});
+		const session = createWebSpeechSttSession("ko-KR", webSpeechSttOptions(true));
+		const onError = vi.fn();
+		session.onError?.(onError);
+		try {
+			await session.start();
+			FakeSpeechRecognition.instances[0].emitEnd();
+			await vi.advanceTimersByTimeAsync(150);
+
+			const failed = FakeSpeechRecognition.instances[1];
+			expect(onError).toHaveBeenCalledExactlyOnceWith({
+				code: "audio-capture",
+				message: "NotReadableError: Device went away",
+			});
+			expect(failed.abort).toHaveBeenCalledOnce();
+			expect(failed.onerror).toBeNull();
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(FakeSpeechRecognition.instances).toHaveLength(2);
+		} finally {
+			await session.stop();
+			vi.unstubAllGlobals();
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		["not-allowed", "chat.webSpeechErrorNotAllowed"],
+		["service-not-allowed", "chat.webSpeechErrorNotAllowed"],
+		["audio-capture", "chat.webSpeechErrorAudioCapture"],
+		["network", "chat.webSpeechErrorNetwork"],
+		["language-not-supported", "chat.webSpeechErrorLanguage"],
+		["NOT_AVAILABLE", "chat.webSpeechErrorUnsupported"],
+	])("R26 maps %s to an actionable message", (code, key) => {
+		expect(webSpeechErrorMessageKey(code)).toBe(key);
+	});
+
+	it("R26 keeps unknown codes for the raw fallback", () => {
+		expect(webSpeechErrorMessageKey("restart-failed")).toBeNull();
+		expect(webSpeechErrorMessageKey("")).toBeNull();
 	});
 });

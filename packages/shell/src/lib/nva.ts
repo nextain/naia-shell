@@ -275,7 +275,10 @@ export function resolveNvaAssetPath(
 	bundleDir: string,
 	relativePath: string,
 ): string {
-	if (!relativePath || relativePath.includes("..")) {
+	if (
+		!relativePath ||
+		relativePath.split(/[/\\]/).some((part) => part === "..")
+	) {
 		throw new Error("Invalid NVA asset path");
 	}
 	const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");

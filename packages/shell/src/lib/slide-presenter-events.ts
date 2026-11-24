@@ -8,6 +8,14 @@ export interface SlidePresenterSpeechRequest {
 	generation: number;
 	page: number;
 	text: string;
+	/** Prepared narration ticket for this page, if it was prefetched by its predecessor. */
+	prefetchId?: string;
+	/** The single following narration page to prepare while this page plays. */
+	nextPrefetch?: {
+		id: string;
+		page: number;
+		text: string;
+	};
 }
 
 export interface SlidePresenterSpeechResult {
@@ -101,8 +109,23 @@ function bufferSpeechRequest(event: Event): void {
 function cancelBufferedSpeechRequest(event: Event): void {
 	if (!bufferedSpeechRequest) return;
 	const detail = (
-		event as CustomEvent<{ requestId?: string; generation?: number }>
+		event as CustomEvent<{
+			requestId?: string;
+			generation?: number;
+			prefetchId?: string;
+			invalidateGeneration?: boolean;
+		}>
 	).detail;
+	if (
+		detail?.prefetchId &&
+		bufferedSpeechRequest.nextPrefetch?.id === detail.prefetchId
+	) {
+		bufferedSpeechRequest = {
+			...bufferedSpeechRequest,
+			nextPrefetch: undefined,
+		};
+	}
+	if (!detail?.requestId && detail?.invalidateGeneration !== true) return;
 	if (detail?.requestId && detail.requestId !== bufferedSpeechRequest.requestId)
 		return;
 	if (
@@ -190,6 +213,8 @@ export function cancelSlidePresenterSpeech(
 	detail: {
 		requestId?: string;
 		generation?: number;
+		prefetchId?: string;
+		invalidateGeneration?: boolean;
 	} = {},
 ): void {
 	if (window.parent !== window) {

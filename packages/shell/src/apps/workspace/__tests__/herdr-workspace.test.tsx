@@ -21,6 +21,8 @@ const mockInvoke = vi.fn();
 const terminalFocus = vi.fn();
 const editorRevealLocation = vi.fn();
 const editorReloadFile = vi.fn();
+// Set to a pending promise to make the Editor suspend like a slow lazy chunk.
+let editorChunkLoading: Promise<void> | null = null;
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),
@@ -132,6 +134,7 @@ vi.mock("../Editor", () => ({
 		{ filePath }: { filePath: string },
 		ref,
 	) {
+		if (editorChunkLoading) throw editorChunkLoading;
 		useImperativeHandle(ref, () => ({
 			reloadFile: editorReloadFile,
 			revealLocation: editorRevealLocation,
@@ -196,6 +199,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 		terminalFocus.mockReset();
 		editorRevealLocation.mockReset();
 		editorReloadFile.mockReset();
+		editorChunkLoading = null;
 		toolHandlers.clear();
 		useAppStoreMock.getState().setActiveApp("workspace");
 		vi.mocked(bridge.pushContext).mockClear();
@@ -229,8 +233,21 @@ describe("HerdrWorkspaceCenterArea", () => {
 		expect(
 			spaces.compareDocumentPosition(agents) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
-		const terminal = await screen.findByTestId("embedded-herdr-terminal");
+		// Terminal is React.lazy; the first mount in this file waits for that chunk.
+		const terminal = await screen.findByTestId(
+			"embedded-herdr-terminal",
+			undefined,
+			{ timeout: 5000 },
+		);
 
+		// The Editor chunk is still loading for a few frames after the viewer
+		// opens; the line jump must wait for it rather than be dropped.
+		editorChunkLoading = new Promise((resolve) =>
+			setTimeout(() => {
+				editorChunkLoading = null;
+				resolve();
+			}, 200),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Open terminal path" }));
 		await screen.findByTestId("workspace-viewer");
 		expect(mockInvoke).toHaveBeenCalledWith("workspace_resolve_file_location", {
@@ -554,6 +571,7 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		terminalFocus.mockReset();
 		editorRevealLocation.mockReset();
 		editorReloadFile.mockReset();
+		editorChunkLoading = null;
 		toolHandlers.clear();
 		useAppStoreMock.getState().setActiveApp("workspace");
 		vi.mocked(bridge.pushContext).mockClear();

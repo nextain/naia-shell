@@ -4,42 +4,67 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import packageJson from "./package.json";
 
-export default defineConfig({
-	define: { __USAGE_VERSION__: JSON.stringify(packageJson.version) },
-	base: "./",
-	plugins: [
-		react(),
-		{
-			// The packaged Slides app loads inside a Tauri asset-protocol iframe
-			// (convertFileSrc → http://asset.localhost/…). Vite tags its module
-			// script/stylesheet with `crossorigin`, which forces a CORS-mode fetch
-			// that the asset protocol does not answer with the required headers —
-			// so the module never executes and `#root` stays blank (2026-08-31
-			// rehearsal: installed Slides app rendered empty in real WebView2 while
-			// the browser Playwright e2e passed). Strip `crossorigin`; the assets
-			// are same-origin as the iframe document and need no CORS handshake.
-			name: "naia-slides-strip-crossorigin",
-			enforce: "post",
-			transformIndexHtml(html) {
-				return html.replace(/\s+crossorigin(=(["'][^"']*["']|\S+))?/g, "");
+export default defineConfig(({ mode }) => {
+	const hosted = mode === "web";
+	let outputDirectory = "";
+	return {
+		define: { __USAGE_VERSION__: JSON.stringify(packageJson.version) },
+		base: "./",
+		plugins: [
+			react(),
+			{
+				// The standalone app always gets an empty private kiosk deck.
+				name: "naia-slides-no-private-slides",
+				resolveId(id: string) {
+					if (id === "virtual:kiosk-private-slides") return `\0${id}`;
+				},
+				load(id: string) {
+					if (id === "\0virtual:kiosk-private-slides") {
+						return "export default { slides: [] };";
+					}
+				},
+			},
+			{
+				name: "naia-slides-strip-crossorigin",
+				enforce: "post",
+				transformIndexHtml(html) {
+					// Tauri's asset protocol does not answer CORS-mode fetches.
+					const entry = html.replace(
+						/\s+crossorigin(=(["'][^"']*["']|\S+))?/g,
+						"",
+					);
+					// Classic script loading also works from an opaque-origin web iframe.
+					return hosted
+						? entry.replace(
+								/<script type="module" src=("[^"]+")><\/script>/g,
+								"<script defer src=$1></script>",
+							)
+						: entry;
+				},
+			},
+			{
+				name: "naia-slides-package-index",
+				configResolved(config) {
+					outputDirectory = resolve(config.root, config.build.outDir);
+				},
+				closeBundle() {
+					const source = resolve(outputDirectory, "slides.html");
+					if (existsSync(source)) {
+						renameSync(source, resolve(outputDirectory, "index.html"));
+					}
+				},
+			},
+		],
+		publicDir: "src/apps/slides/package-public",
+		build: {
+			outDir: "dist-slides",
+			emptyOutDir: true,
+			rollupOptions: {
+				input: { index: resolve(__dirname, "slides.html") },
+				...(hosted
+					? { output: { format: "iife", inlineDynamicImports: true } }
+					: {}),
 			},
 		},
-		{
-			name: "naia-slides-package-index",
-			closeBundle() {
-				const source = resolve(__dirname, "dist-slides/slides.html");
-				if (existsSync(source)) {
-					renameSync(source, resolve(__dirname, "dist-slides/index.html"));
-				}
-			},
-		},
-	],
-	publicDir: "src/apps/slides/package-public",
-	build: {
-		outDir: "dist-slides",
-		emptyOutDir: true,
-		rollupOptions: {
-			input: { index: resolve(__dirname, "slides.html") },
-		},
-	},
+	};
 });

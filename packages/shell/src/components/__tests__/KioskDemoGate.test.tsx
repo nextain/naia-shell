@@ -1,0 +1,399 @@
+// @vitest-environment jsdom
+import { StrictMode } from "react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import {
+	KIOSK_PASSCODE_PASSED_KEY,
+	KIOSK_PASSCODE_SHA256,
+	sha256Hex,
+} from "../../lib/kiosk-demo/passcode";
+import { KioskDemoGate } from "../KioskDemoGate";
+const mocks = vi.hoisted(() => ({
+	auth: vi.fn(),
+	verifyAuth: vi.fn(),
+	prep: vi.fn(),
+	prewarm: vi.fn(async () => {}),
+	boot: vi.fn(),
+	greeting: vi.fn(),
+	install: vi.fn(),
+	clearConversations: vi.fn(),
+	restoreOriginals: vi.fn(),
+}));
+vi.mock("../../lib/web-runtime/web-auth", () => ({
+	seedKioskDemoWebAuth: mocks.auth,
+	verifyKioskDemoWebAuth: mocks.verifyAuth,
+}));
+vi.mock("../../lib/web-runtime/web-workspace-commands", () => ({
+	clearWebConversations: mocks.clearConversations,
+}));
+vi.mock("../../lib/onboarding-core", () => ({
+	prepareKioskDemoOnboarding: mocks.prep,
+}));
+vi.mock("../../lib/avatar/nva-speech/speech-asset-prewarm", () => ({
+	prewarmWebSpeechAssets: mocks.prewarm,
+}));
+vi.mock("../../lib/web-runtime/auto-install", () => ({
+	bootWebRuntimeAndModel: mocks.boot,
+}));
+vi.mock("../../lib/web-runtime/install", () => ({
+	installWebRuntime: mocks.install,
+}));
+vi.mock("../../lib/web-runtime/web-adk-edit", () => ({
+	restoreKioskAdkOriginals: mocks.restoreOriginals,
+}));
+vi.mock("../../lib/kiosk-demo/entry", async () => ({
+	...(await vi.importActual("../../lib/kiosk-demo/entry")),
+	requestKioskGreeting: mocks.greeting,
+}));
+beforeEach(() => {
+	localStorage.clear();
+	sessionStorage.clear();
+	// 비밀번호 화면은 아래 전용 시험에서만 본다. 나머지는 이미 통과한 브라우저로 시작한다.
+	localStorage.setItem(KIOSK_PASSCODE_PASSED_KEY, "1");
+	vi.stubEnv("MODE", "web");
+	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+	vi.clearAllMocks();
+	mocks.auth.mockReturnValue(true);
+	mocks.verifyAuth.mockResolvedValue({ ok: true, credits: 100 });
+	mocks.prep.mockResolvedValue(undefined);
+	mocks.clearConversations.mockResolvedValue(undefined);
+	mocks.restoreOriginals.mockResolvedValue(undefined);
+});
+afterEach(() => {
+	cleanup();
+	vi.unstubAllEnvs();
+});
+const mount = () =>
+	render(
+		<StrictMode>
+			<KioskDemoGate>
+				<div>conversation</div>
+			</KioskDemoGate>
+		</StrictMode>,
+	);
+it("OFF renders the ordinary app without seeding or greeting", () => {
+	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+	mount();
+	expect(screen.getByText("conversation")).toBeTruthy();
+	expect(mocks.auth).not.toHaveBeenCalled();
+	expect(mocks.greeting).not.toHaveBeenCalled();
+});
+it("blocks missing key without mounting the app or starting the model", async () => {
+	mocks.auth.mockReturnValue(false);
+	mount();
+	expect(await screen.findByRole("alert")).toHaveProperty(
+		"textContent",
+		"시연 열쇠 없음",
+	);
+	expect(screen.queryByText("conversation")).toBeNull();
+	expect(mocks.boot).not.toHaveBeenCalled();
+});
+it("waits for preparation and opens once only after a gesture", async () => {
+	let finish!: () => void;
+	mocks.prep.mockImplementationOnce(
+		() =>
+			new Promise<void>((resolve) => {
+				finish = resolve;
+			}),
+	);
+	mount();
+	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+		true,
+	);
+	expect(screen.getByRole("status").textContent).toContain("준비");
+	expect(mocks.greeting).not.toHaveBeenCalled();
+	await waitFor(() => expect(mocks.prep).toHaveBeenCalledOnce());
+	finish();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(screen.queryByText("처음으로")).toBeNull();
+	// Mouth assets are already loading on the entry screen, before the gesture.
+	expect(mocks.prewarm).toHaveBeenCalledOnce();
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+	expect(mocks.greeting).toHaveBeenCalledOnce();
+	expect(mocks.prep).toHaveBeenCalledOnce();
+	expect(mocks.boot).toHaveBeenCalledOnce();
+	// R3: 부팅 준비 때 시연 ADK 원본을 되돌린다.
+	expect(mocks.restoreOriginals).toHaveBeenCalledOnce();
+});
+it("unlocks AudioContext and speechSynthesis synchronously inside the entry click gesture", async () => {
+	const resumeAudio = vi.fn(() => Promise.resolve());
+	class FakeAudioContext {
+		state = "suspended";
+		resume = resumeAudio;
+	}
+	const cancelSpeech = vi.fn();
+	const resumeSpeech = vi.fn();
+	vi.stubGlobal("AudioContext", FakeAudioContext);
+	vi.stubGlobal("speechSynthesis", {
+		cancel: cancelSpeech,
+		resume: resumeSpeech,
+	});
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(resumeAudio).toHaveBeenCalledOnce();
+	expect(cancelSpeech).toHaveBeenCalledOnce();
+	expect(resumeSpeech).toHaveBeenCalledOnce();
+	expect(resumeAudio.mock.invocationCallOrder[0]).toBeLessThan(
+		mocks.greeting.mock.invocationCallOrder[0],
+	);
+	vi.unstubAllGlobals();
+});
+it("shows a safe preparation error and offers retry", async () => {
+	mocks.prep.mockRejectedValueOnce(new Error("sensitive exception detail"));
+	mount();
+	expect((await screen.findByRole("alert")).textContent).not.toContain(
+		"sensitive",
+	);
+	fireEvent.click(screen.getByText("다시 시도"));
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+});
+
+it("entry screen has no 처음으로 button; reload resets the visit", async () => {
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(screen.queryByText("처음으로")).toBeNull();
+});
+
+it("shows unavailable notice when gateway confirms zero credits", async () => {
+	mocks.verifyAuth.mockResolvedValueOnce({ ok: false, reason: "unavailable" });
+	mount();
+	const alert = await screen.findByRole("alert");
+	expect(
+		screen.getByRole("heading", { name: "지금은 시연을 잠시 쉬고 있어요" }),
+	).toBeTruthy();
+	expect(alert.textContent).toContain("오늘 준비한 시연 사용량을 다 썼어요.");
+	expect(alert.textContent).toContain("잠시 뒤 다시 들어와 주세요.");
+	expect(alert.textContent).not.toContain("부스 직원");
+	expect(screen.queryByText("지나와 이야기해 보세요")).toBeNull();
+	expect(screen.queryByText("들어가기")).toBeNull();
+	expect(screen.queryByText("conversation")).toBeNull();
+	expect(mocks.boot).not.toHaveBeenCalled();
+});
+
+it("does not show unavailable screen when balance lookup fails transiently", async () => {
+	mocks.verifyAuth.mockResolvedValueOnce({
+		ok: false,
+		reason: "lookup-failed",
+	});
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(
+		screen.queryByRole("heading", { name: "지금은 시연을 잠시 쉬고 있어요" }),
+	).toBeNull();
+});
+
+it("cleans up previous visitor memory and conversations when previous visit was left without reset", async () => {
+	localStorage.setItem("naia-kiosk-last-active-at", "1000");
+	localStorage.setItem(
+		"naia-config",
+		JSON.stringify({
+			agentName: "방문자설정",
+			provider: "codex",
+			model: "gpt-5.6-sol",
+			apiKey: "",
+		}),
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(mocks.clearConversations).toHaveBeenCalledOnce();
+	expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+		agentName: "지나",
+		provider: "nextain",
+		model: "gpt-5.6-luna",
+	});
+});
+
+it("transitions back to unavailable screen when credits run out mid-demo", async () => {
+	const { notifyKioskDemoUnavailable } = await import(
+		"../../lib/kiosk-demo/entry"
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+
+	notifyKioskDemoUnavailable();
+	const alert = await screen.findByRole("alert");
+	expect(
+		screen.getByRole("heading", { name: "지금은 시연을 잠시 쉬고 있어요" }),
+	).toBeTruthy();
+	expect(alert.textContent).toContain("오늘 준비한 시연 사용량을 다 썼어요.");
+	expect(alert.textContent).toContain("잠시 뒤 다시 들어와 주세요.");
+	expect(alert.textContent).not.toContain("부스 직원");
+	expect(screen.queryByText("지나와 이야기해 보세요")).toBeNull();
+	expect(screen.queryByText("들어가기")).toBeNull();
+	expect(screen.queryByText("conversation")).toBeNull();
+});
+
+it("enables entry while the balance lookup is still pending", async () => {
+	mocks.verifyAuth.mockImplementationOnce(() => new Promise(() => {}));
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(mocks.boot).toHaveBeenCalledOnce();
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+	expect(mocks.greeting).toHaveBeenCalledOnce();
+});
+
+it("closes the gate when a slow balance lookup reports zero credits after entry", async () => {
+	let answer!: (value: unknown) => void;
+	mocks.verifyAuth.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				answer = resolve;
+			}),
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+
+	answer({ ok: false, reason: "unavailable" });
+	expect(
+		await screen.findByRole("heading", {
+			name: "지금은 시연을 잠시 쉬고 있어요",
+		}),
+	).toBeTruthy();
+	expect(screen.queryByText("conversation")).toBeNull();
+	expect(screen.queryByText("들어가기")).toBeNull();
+});
+
+it("shows the missing key notice when a slow lookup rejects the key before entry", async () => {
+	let answer!: (value: unknown) => void;
+	mocks.verifyAuth.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				answer = resolve;
+			}),
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	answer({ ok: false, reason: "missing-key" });
+	expect(await screen.findByRole("alert")).toHaveProperty(
+		"textContent",
+		"시연 열쇠 없음",
+	);
+	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+		true,
+	);
+	expect(screen.queryByText("conversation")).toBeNull();
+});
+
+it("lets the visitor in when the balance lookup throws", async () => {
+	mocks.verifyAuth.mockRejectedValueOnce(new Error("network"));
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+});
+
+// 시험은 흉내 비밀번호의 해시를 넣어 확인한다. 진짜 비밀번호는 코드에도 시험에도 없다.
+const FAKE_PASSCODE = "0000";
+const WRONG_PASSCODE = "1111";
+const mountWithPasscode = async () => {
+	const fakeSha256 = await sha256Hex(FAKE_PASSCODE);
+	expect(fakeSha256).not.toBe(KIOSK_PASSCODE_SHA256);
+	return render(
+		<StrictMode>
+			<KioskDemoGate passcodeSha256={fakeSha256}>
+				<div>conversation</div>
+			</KioskDemoGate>
+		</StrictMode>,
+	);
+};
+it("asks a 4-digit passcode with a numeric keypad before the entry screen", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	await mountWithPasscode();
+	const input = screen.getByTestId("kiosk-passcode-input");
+	expect(input.getAttribute("inputmode")).toBe("numeric");
+	expect(input.getAttribute("maxlength")).toBe("4");
+	expect(screen.queryByRole("button", { name: "들어가기" })).toBeNull();
+	expect(screen.queryByText("conversation")).toBeNull();
+});
+it("keeps the gate closed on a wrong passcode and lets the visitor type again", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	await mountWithPasscode();
+	const input = screen.getByTestId("kiosk-passcode-input") as HTMLInputElement;
+	fireEvent.change(input, { target: { value: WRONG_PASSCODE } });
+	expect((await screen.findByRole("alert")).textContent).toContain(
+		"비밀번호가 맞지 않아요",
+	);
+	expect(input.value).toBe("");
+	expect(screen.queryByRole("button", { name: "들어가기" })).toBeNull();
+	expect(localStorage.getItem(KIOSK_PASSCODE_PASSED_KEY)).toBeNull();
+	fireEvent.change(input, { target: { value: FAKE_PASSCODE } });
+	expect(await screen.findByRole("button", { name: "들어가기" })).toBeTruthy();
+});
+it("opens on the right passcode, stores only the pass flag, and does not ask again", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	const first = await mountWithPasscode();
+	fireEvent.change(screen.getByTestId("kiosk-passcode-input"), {
+		target: { value: FAKE_PASSCODE },
+	});
+	expect(await screen.findByRole("button", { name: "들어가기" })).toBeTruthy();
+	expect(localStorage.getItem(KIOSK_PASSCODE_PASSED_KEY)).toBe("1");
+	const stored = JSON.stringify({ ...localStorage });
+	expect(stored).not.toContain(FAKE_PASSCODE);
+	expect(stored).not.toContain(await sha256Hex(FAKE_PASSCODE));
+	first.unmount();
+	await mountWithPasscode();
+	expect(screen.queryByTestId("kiosk-passcode-input")).toBeNull();
+	expect(await screen.findByRole("button", { name: "들어가기" })).toBeTruthy();
+});
+it("does not show the passcode screen outside the demo build", async () => {
+	localStorage.removeItem(KIOSK_PASSCODE_PASSED_KEY);
+	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+	await mountWithPasscode();
+	expect(screen.getByText("conversation")).toBeTruthy();
+	expect(screen.queryByTestId("kiosk-passcode-input")).toBeNull();
+});

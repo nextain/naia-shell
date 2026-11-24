@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { getAdkPath, readLocalBlob, toLocalBlobUrl } from "../lib/adk-store";
+import { selectAmbientIdle } from "../lib/avatar/ambient-idle";
 import {
 	clearCameraActions,
 	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
+import { resolveWebNvaAssetUrl } from "../lib/avatar/nva-speech/speech-asset-prewarm";
 import {
 	createDesktopNvaAssetBlobLoader,
 	isStackedAlphaClipUrl,
@@ -18,7 +20,12 @@ import {
 	PrebakedAvatarRenderer,
 	type ResolvedNvaClipSource,
 } from "../lib/avatar/prebaked-renderer";
+import {
+	isBroadcastActive,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
 import { getLocale, t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	type NvaManifest,
 	collectNvaManifestClipPaths,
@@ -31,6 +38,16 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "../lib/ui-preferences";
+import {
+	isNarrowPortraitScreen,
+	isWebMode,
+	resolveWebPublicAssetUrl,
+} from "../lib/web-runtime/web-assets";
+import {
+	type LoadedWebNvaArchive,
+	loadWebUploadedNvaArchive,
+} from "../lib/web-runtime/web-nva-archive";
+import { hasParentDirectorySegment } from "../lib/web-runtime/web-adk-policy";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -44,13 +61,15 @@ interface NvaPan {
 }
 const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
 function videoTransform(pan: NvaPan, zoom = 1): string {
-	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px) scale(${zoom})`;
+	const base = `translate(calc(var(--nva-center-offset, var(--naia-width, 320px) / 2 - calc(var(--naia-vw, 1vw) * 50)) + ${pan.x}px), ${pan.y}px)`;
+	// Web renders zoom via canvas buffer sizing instead of CSS scale.
+	return isWebMode() ? base : `${base} scale(${zoom})`;
 }
 const MIN_NVA_ZOOM = 0.5;
 const MAX_NVA_ZOOM = 3;
 const NVA_ZOOM_STEP = 0.1;
 function clampNvaZoom(value: number): number {
-	return Math.min(MAX_NVA_ZOOM, Math.max(MIN_NVA_ZOOM, value));
+	return Math.round(Math.min(MAX_NVA_ZOOM, Math.max(MIN_NVA_ZOOM, value)) * 100) / 100;
 }
 function normalizeNvaZoom(value: unknown): number {
 	return typeof value === "number" &&
@@ -60,8 +79,49 @@ function normalizeNvaZoom(value: unknown): number {
 		? value
 		: 1;
 }
+function resolveAvatarDpr(): number {
+	const raw = typeof window !== "undefined" ? window.devicePixelRatio : 1;
+	return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+		? Math.min(2, Math.max(1, raw))
+		: 1;
+}
+export function syncAvatarCanvasBufferSize(
+	canvas: HTMLCanvasElement,
+	manifest: NvaManifest,
+	zoom: number,
+): { width: number; height: number; dpr: number } {
+	const dpr = resolveAvatarDpr();
+	const rect =
+		typeof canvas.getBoundingClientRect === "function"
+			? canvas.getBoundingClientRect()
+			: { width: 0, height: 0 };
+	const displayW =
+		rect.width > 0
+			? rect.width
+			: canvas.clientWidth > 0
+				? canvas.clientWidth
+				: manifest.canvas.width;
+	const displayH =
+		rect.height > 0
+			? rect.height
+			: canvas.clientHeight > 0
+				? canvas.clientHeight
+				: manifest.canvas.height;
+	const nextW = Math.max(1, Math.round(displayW * zoom * dpr));
+	const nextH = Math.max(1, Math.round(displayH * zoom * dpr));
+	if (canvas.width !== nextW) canvas.width = nextW;
+	if (canvas.height !== nextH) canvas.height = nextH;
+	const ctx = canvas.getContext("2d", { alpha: true });
+	if (ctx) {
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = "high";
+	}
+	return { width: nextW, height: nextH, dpr };
+}
 const VIDEO_STYLE = {
-	maxWidth: "min(100%, 56vh)",
+	height: "92%",
+	width: "auto",
+	maxWidth: "min(100%, calc(var(--naia-vh, 1vh) * 56))",
 	maxHeight: "92%",
 	objectFit: "contain" as const,
 };
@@ -82,6 +142,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const [error, setError] = useState("");
 	const [manifest, setManifest] = useState<NvaManifest | null>(null);
 	const [bundleDir, setBundleDir] = useState("");
+	const [webArchive, setWebArchive] = useState<LoadedWebNvaArchive | null>(
+		null,
+	);
 	const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 	const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
 	const avatarAreaRef = useRef<HTMLDivElement>(null);
@@ -164,8 +227,82 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		setMode("loading");
 		setError("");
 		setManifest(null);
+		setWebArchive(null);
 		setLoaded(false);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
+		if (isWebMode()) {
+			const trimmedModel = nvaModel?.trim() ?? "";
+			const isTrustedStudioRemoteDir =
+				!hasParentDirectorySegment(trimmedModel) &&
+				(trimmedModel.startsWith("/api/nva-preview/") ||
+					/^https:\/\/([a-z0-9-]+\.)?naia\.land\/[A-Za-z0-9/_-]+$/i.test(
+						trimmedModel,
+					));
+			void (async () => {
+				if (!isTrustedStudioRemoteDir) {
+					const uploaded = await loadWebUploadedNvaArchive(trimmedModel);
+					if (uploaded) {
+						if (!disposed) {
+							setWebArchive(uploaded);
+							setBundleDir(uploaded.bundleDir);
+							setManifest(uploaded.manifest);
+						}
+						return;
+					}
+				}
+				let directory: string;
+				if (isTrustedStudioRemoteDir) {
+					directory = trimmedModel
+						.replace(/\/manifest\.json$/i, "")
+						.replace(/\/+$/, "");
+				} else {
+					const segments = trimmedModel.split(/[/\\]/).filter(Boolean);
+					const bundleName = segments.at(-1) ?? "";
+					if (
+						!bundleName ||
+						segments.includes("..") ||
+						!/^[a-z0-9-]+$/.test(bundleName)
+					) {
+						const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
+						if (!disposed) {
+							setError(err);
+							setMode("error");
+							useCascadeAvatarStore.getState().setNvaLoadError(err);
+						}
+						return;
+					}
+					directory = resolveWebPublicAssetUrl(`/nva/${bundleName}`);
+				}
+				const res = await fetch(`${directory}/manifest.json`);
+				if (!res.ok) {
+					throw new Error(`HTTP ${res.status}`);
+				}
+				const raw =
+					typeof res.text === "function"
+						? await res.text()
+						: JSON.stringify(await res.json());
+				const parsed = parseNvaManifest(raw);
+				if (!isPrebakedNvaManifest(parsed))
+					throw new Error("NVA requires vrm_slots prebaked WebM assets");
+				for (const clipPath of collectNvaManifestClipPaths(parsed)) {
+					resolveNvaAssetPath(directory, clipPath);
+				}
+				if (!disposed) {
+					setWebArchive(null);
+					setBundleDir(directory);
+					setManifest(parsed);
+				}
+			})().catch((cause) => {
+				if (!disposed) {
+					setError(String(cause));
+					setMode("error");
+					useCascadeAvatarStore.getState().setNvaLoadError(String(cause));
+				}
+			});
+			return () => {
+				disposed = true;
+			};
+		}
 		const adkPath = getAdkPath();
 		if (!adkPath || !nvaModel) {
 			setError("missing-nva-model");
@@ -210,12 +347,53 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		};
 	}, [nvaModel, setLoaded]);
 
+	// Broadcast / BGM ambient idle (keyboard-idle, singing-keyboard) when the bundle has it.
+	const broadcastActive = isBroadcastActive(useBroadcastBridge().state);
+	const bgmPlaying = useAvatarStore((s) => s.bgmPlaying);
+	const ambientIdle = manifest
+		? selectAmbientIdle({ broadcastActive, bgmPlaying }, manifest)
+		: null;
+	const ambientIdleRef = useRef(ambientIdle);
+	ambientIdleRef.current = ambientIdle;
+	useEffect(() => {
+		rendererRef.current?.setIdleOverride(ambientIdle);
+	}, [ambientIdle]);
+
+	useEffect(() => {
+		rendererRef.current?.setZoom(zoom);
+		if (!canvas || !manifest) return;
+		syncAvatarCanvasBufferSize(canvas, manifest, zoom);
+	}, [canvas, manifest, zoom]);
+
+	useEffect(() => {
+		if (!canvas || !manifest) return;
+		const sync = () => {
+			syncAvatarCanvasBufferSize(canvas, manifest, zoomRef.current);
+		};
+		const observer =
+			typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
+		observer?.observe(canvas);
+		if (avatarAreaRef.current) {
+			observer?.observe(avatarAreaRef.current);
+		}
+		if (typeof window !== "undefined") {
+			window.addEventListener("resize", sync);
+		}
+		return () => {
+			observer?.disconnect();
+			if (typeof window !== "undefined") {
+				window.removeEventListener("resize", sync);
+			}
+		};
+	}, [canvas, manifest]);
+
 	useEffect(() => {
 		if (!video || !canvas || !manifest || !bundleDir) return;
-		canvas.width = manifest.canvas.width;
-		canvas.height = manifest.canvas.height;
+		syncAvatarCanvasBufferSize(canvas, manifest, zoomRef.current);
 		const urls = new Map<string, string>();
-		const adkPath = getAdkPath() ?? "";
+		// Web mode serves bundled /nva/... and OPFS archives over fetch/blob URLs:
+	// never touch the desktop ADK path (or its Tauri invoke) on that path.
+	const adkPath = isWebMode() ? "" : (getAdkPath() ?? "");
 		const bundleName =
 			bundleDir.split(/[/\\]/).filter(Boolean).pop() ??
 			nvaModel?.split(/[/\\]/).filter(Boolean).pop() ??
@@ -277,10 +455,37 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		});
 
 		const renderer = new PrebakedAvatarRenderer({
+			modelId: nvaModel,
 			manifest,
 			locale: getLocale(),
-			resolveAssetUrl: resolveDirectLocalUrl,
-			loadAssetBlob,
+			resolveAssetUrl: async (relativePath) => {
+				const cached = urls.get(relativePath);
+				if (cached) return cached;
+				if (isWebMode() && webArchive) {
+					const url = await webArchive.resolveAssetUrl(
+						relativePath,
+						shouldUseStackedAlpha(),
+					);
+					urls.set(relativePath, url);
+					return url;
+				}
+				if (isWebMode()) {
+					const url = resolveWebNvaAssetUrl(
+						bundleDir,
+						manifest,
+						relativePath,
+						shouldUseStackedAlpha(),
+						resolveNvaAssetPath,
+					);
+					urls.set(relativePath, url);
+					return url;
+				}
+				const url = await toLocalBlobUrl(
+					resolveNvaAssetPath(bundleDir, relativePath),
+				);
+				urls.set(relativePath, url);
+				return url;
+			},
 			resolveClipCandidates: async (
 				relativePath: string,
 			): Promise<ResolvedNvaClipSource[]> => {
@@ -337,7 +542,17 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				}
 				return resolved;
 			},
+			// Read bytes directly: a Linux webm URL is MediaSource-backed and not fetch()able;
+			// OPFS-uploaded web `.nva` archives also supply clip and speech blobs from memory.
+			loadAssetBlob: isWebMode()
+				? webArchive
+					? (relativePath) =>
+							webArchive.loadAssetBlob(relativePath, shouldUseStackedAlpha())
+					: undefined
+				: loadAssetBlob,
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
+			// 시연에서는 기다리는 동안 몸짓을 틀지 않는다(대표님 11/13 "대기중에 지나가 모션이 나오는데 이거 빼줘").
+			idleGestureIntervalMs: isKioskDemo() ? 0 : 18_000,
 			onPlaybackFailure: (reason) => {
 				setError(reason);
 				setMode("error");
@@ -348,6 +563,8 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				}
 			},
 		});
+		renderer.setIdleOverride(ambientIdleRef.current);
+		renderer.setZoom(zoomRef.current);
 		renderer.start(video, canvas);
 		rendererRef.current = renderer;
 		useCascadeAvatarStore.getState().setRenderer(renderer);
@@ -362,7 +579,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			for (const url of urls.values())
 				if (url.startsWith("blob:")) URL.revokeObjectURL(url);
 		};
-	}, [video, canvas, manifest, bundleDir, nvaModel, setLoaded]);
+	}, [video, canvas, manifest, bundleDir, webArchive, nvaModel, setLoaded]);
 
 	return (
 		<div
@@ -399,8 +616,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
+				data-video-avatar-zoom={zoom}
 				style={{
 					...VIDEO_STYLE,
+					aspectRatio: manifest
+						? `${manifest.canvas.width} / ${manifest.canvas.height}`
+						: undefined,
 					transform: videoTransform(pan, zoom),
 					visibility: mode === "error" ? "hidden" : "visible",
 				}}
@@ -409,7 +630,11 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				<output data-video-avatar-status={mode} aria-live="polite">
 					{mode === "loading"
 						? t("avatar.videoLoading")
-						: t("avatar.videoFailed")}
+						: isNarrowPortraitScreen()
+							? getLocale() === "ko"
+								? "아바타 영상을 불러오지 못했습니다. 배경 화면으로 대화를 계속할 수 있습니다."
+								: "Could not load the avatar video. You can continue chatting on the background screen."
+							: t("avatar.videoFailed")}
 				</output>
 			)}
 		</div>

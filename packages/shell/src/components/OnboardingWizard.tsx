@@ -1,3 +1,4 @@
+import { ResilientVideo } from "./ResilientVideo";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -19,6 +20,12 @@ import {
 } from "../lib/avatar-presets";
 import { selectOnboardingBackground } from "../lib/background-selection";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import {
+	getDefaultDragonVoiceForLocale,
+	getRecommendedDragonVoicesForLocale,
+	getTtsProviderMeta,
+} from "../lib/tts/registry";
+import { synthesizeTts } from "../lib/tts/synthesize";
 import {
 	activateNaiaLlm,
 	isNewCore,
@@ -50,6 +57,7 @@ import {
 	keepsProviderWhenLoggedOut,
 	resolveLoggedOutLlm,
 } from "../lib/llm/logged-out-default";
+import { fetchGatewayModelCatalog } from "../lib/llm/registry";
 import { writeConfiguredLlmRole } from "../lib/llm/roles";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import {
@@ -128,7 +136,7 @@ function stepChat(step: Step, name: string, user: string): string {
 	// 경어 접미사는 언어의 문법이므로 로케일이 정한다. 한국어만 "님" 이고
 	// 나머지는 빈 문자열이다 — 코드가 언어를 보고 고르면 새 언어가 추가될
 	// 때마다 이 자리를 고쳐야 하고, 대개 잊는다.
-	const u = user ? `${user}${t("common.honorificSuffix")}` : "";
+	const u = user.trim() ? `${user.trim()}${t("common.honorificSuffix")}` : "";
 	const fill = (key: TranslationKey) =>
 		t(key).replace("{agent}", n).replace("{user}", u);
 
@@ -140,7 +148,9 @@ function stepChat(step: Step, name: string, user: string): string {
 		case "userName":
 			return fill("onboard.chat.userName");
 		case "speechStyle":
-			return fill("onboard.chat.speechStyle");
+			return u
+				? fill("onboard.chat.speechStyle")
+				: t("onboard.chat.speechStyleNoName");
 		case "character":
 			return t("onboard.chat.character");
 		case "background":
@@ -191,7 +201,8 @@ interface OnboardingSnapshot {
 	memoryEmbeddingProvider: "none" | "offline" | "vllm" | "ollama" | "naia";
 	memoryLlmProvider: "none" | "naia" | "vllm" | "ollama";
 	ttsEnabled: boolean;
-	webVoiceLang: string;
+	webVoiceURI: string;
+	cloudVoice: string;
 	localVoiceEnabled: boolean;
 }
 
@@ -203,66 +214,39 @@ function BackgroundThumbnail({
 	className?: string;
 }) {
 	const [capturedFrame, setCapturedFrame] = useState("");
-
-	useEffect(() => {
-		if (background.type !== "video") return;
-		const video = document.createElement("video");
-		video.src = background.url;
-		video.muted = true;
-		video.preload = "auto";
-		video.playsInline = true;
-		let settled = false;
-		const cleanup = () => {
-			video.removeAttribute("src");
-			video.load();
-		};
-		const capture = () => {
-			if (settled || !video.videoWidth || !video.videoHeight) return;
-			settled = true;
+	const capture = (video: HTMLVideoElement) => {
+		if (!video.videoWidth || !video.videoHeight || capturedFrame) return;
+		try {
 			const canvas = document.createElement("canvas");
 			canvas.width = video.videoWidth;
 			canvas.height = video.videoHeight;
 			canvas.getContext("2d")?.drawImage(video, 0, 0);
-			try {
-				setCapturedFrame(canvas.toDataURL("image/jpeg", 0.82));
-			} catch {
-				// asset:// may be canvas-tainted on some WebView2 versions.
-			}
-			cleanup();
-		};
-		video.onloadeddata = () => {
-			const seekTo = Number.isFinite(video.duration)
-				? Math.min(0.25, Math.max(0, video.duration / 20))
-				: 0;
-			if (seekTo > 0) video.currentTime = seekTo;
-			else capture();
-		};
-		video.onseeked = capture;
-		video.onerror = cleanup;
-		video.load();
-		return cleanup;
-	}, [background.type, background.url]);
-
-	if (capturedFrame) {
-		return (
-			<img src={capturedFrame} alt={background.label} className={className} />
-		);
-	}
+			setCapturedFrame(canvas.toDataURL("image/jpeg", 0.82));
+			// Keep src and the element intact; load()/src reset can deadlock WebKitGTK.
+			video.pause();
+		} catch {
+			/* Tainted canvas: retain the guarded video preview. */
+		}
+	};
 	return (
-		// #447-2: when the single-frame capture can't produce a still (e.g. a VP9
-		// alpha .webm whose early frames are transparent, or a tainted canvas), a
-		// metadata-only <video> paints nothing and the tile looks empty. Autoplay a
-		// muted loop so the avatar/background is always visible in the grid.
-		<video
-			src={background.url}
-			className={className}
-			muted
-			loop
-			autoPlay
-			preload="metadata"
-			playsInline
-			aria-label={background.label}
-		/>
+		<>
+			<ResilientVideo
+				key={background.url}
+				src={background.url}
+				className={capturedFrame ? undefined : className}
+				style={capturedFrame ? { display: "none" } : undefined}
+				onLoadedData={(event) => capture(event.currentTarget)}
+				muted
+				loop
+				autoPlay
+				preload="metadata"
+				playsInline
+				aria-label={background.label}
+			/>
+			{capturedFrame && (
+				<img src={capturedFrame} alt={background.label} className={className} />
+			)}
+		</>
 	);
 }
 
@@ -418,6 +402,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	// Voice step state — default ON with the free Web TTS engine (FR-VOICE onboarding).
 	const [ttsEnabled, setTtsEnabled] = useState(true);
 	const [webVoiceURI, setWebVoiceURI] = useState("");
+	// Naia Cloud(드래곤 HD) 목소리 — 로그인했을 때만 고를 수 있고, 고르면 브라우저 목소리 대신 쓴다.
+	const [cloudVoice, setCloudVoice] = useState("");
+	const [cloudVoiceError, setCloudVoiceError] = useState("");
 	const [webVoices, setWebVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [voicePreviewing, setVoicePreviewing] = useState(false);
 	const [localVoiceEnabled, setLocalVoiceEnabled] = useState(false);
@@ -515,20 +502,6 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			const voices = window.speechSynthesis.getVoices();
 			if (voices.length === 0) return;
 			setWebVoices(voices);
-			setWebVoiceURI((current) => {
-				if (current && voices.some((voice) => voice.voiceURI === current))
-					return current;
-				const locale = getLocale();
-				const matched =
-					voices.find((voice) =>
-						voice.lang?.toLowerCase().startsWith(locale),
-					) ??
-					voices.find((voice) =>
-						voice.lang?.toLowerCase().startsWith(locale.split("-")[0]),
-					) ??
-					voices[0];
-				return matched?.voiceURI ?? "";
-			});
 		};
 		applyVoices();
 		window.speechSynthesis.onvoiceschanged = applyVoices;
@@ -548,6 +521,45 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		utter.onend = () => setVoicePreviewing(false);
 		utter.onerror = () => setVoicePreviewing(false);
 		window.speechSynthesis.speak(utter);
+	}
+
+	const currentUiLocale = getLocale();
+	const allCloudVoices = getTtsProviderMeta("nextain")?.voices ?? [];
+	const recommendedCloudVoices =
+		getRecommendedDragonVoicesForLocale(currentUiLocale);
+	const cloudVoices =
+		recommendedCloudVoices.length > 0 ? recommendedCloudVoices : allCloudVoices;
+
+	// 로그인하면 기본 목소리를 현재 UI 언어의 드래곤 대표 목소리로 둔다(브라우저 목소리를 직접 고르면 그쪽이 이김).
+	useEffect(() => {
+		if (naiaLoginDone && !cloudVoice && !webVoiceURI) {
+			const localeDefault = getDefaultDragonVoiceForLocale(currentUiLocale);
+			setCloudVoice(localeDefault || cloudVoices[0]?.id || "");
+		}
+	}, [naiaLoginDone, cloudVoice, webVoiceURI, currentUiLocale, cloudVoices]);
+
+	async function previewCloudVoice(voice: string) {
+		const naiaKey =
+			loadConfig()?.naiaKey ?? localStorage.getItem("naia-remote-key") ?? "";
+		setCloudVoiceError("");
+		setVoicePreviewing(true);
+		try {
+			const { audioBase64 } = await synthesizeTts({
+				text: t("onboard.voice.previewText"),
+				voice,
+				provider: "nextain",
+				naiaKey,
+				gatewayUrl: LAB_GATEWAY_URL,
+			});
+			const mime = audioBase64.startsWith("UklGR") ? "wav" : "mp3";
+			const audio = new Audio(`data:audio/${mime};base64,${audioBase64}`);
+			audio.onended = () => setVoicePreviewing(false);
+			audio.onerror = () => setVoicePreviewing(false);
+			await audio.play();
+		} catch (err) {
+			setVoicePreviewing(false);
+			setCloudVoiceError(err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	async function refreshVoxCpm2InstallationForOnboarding(): Promise<{
@@ -777,8 +789,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryEmbeddingProvider,
 			memoryLlmProvider,
 			ttsEnabled,
-			webVoiceLang:
-				webVoices.find((voice) => voice.voiceURI === webVoiceURI)?.lang ?? "",
+			webVoiceURI,
+			cloudVoice,
 			localVoiceEnabled,
 		};
 	});
@@ -1140,8 +1152,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryEmbeddingProvider,
 			memoryLlmProvider,
 			ttsEnabled,
-			webVoiceLang:
-				webVoices.find((voice) => voice.voiceURI === webVoiceURI)?.lang ?? "",
+			webVoiceURI,
+			cloudVoice,
 			localVoiceEnabled,
 		},
 	) {
@@ -1154,8 +1166,12 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			provider: "",
 			model: "",
 		};
+		const catalog = auth ? await fetchGatewayModelCatalog(LAB_GATEWAY_URL) : null;
+		const catalogModels = (catalog ?? [])
+			.filter((m) => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase()))
+			.map((m) => ({ id: m.id, label: m.id, capabilities: ["llm" as const] }));
 		// FR-LLM-LOGOUT.1: 로그인을 건너뛰면 키 없는 나이아 계정도 gemini 도 저장하지
-		// 않는다. 이미 고른 CLI·로컬 제공자는 두고, 아니면 로컬 Ollama 또는 "LLM 없음".
+		// 않는다. 이미 고른 CLI·로컬 제공자는 두고, 아니면 "LLM 없음".
 		const baseMainProvider =
 			effectiveMainRole(base as AppConfig).provider ?? base.provider;
 		const loggedOutLlm =
@@ -1185,15 +1201,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		const persona = snapshot.extraPersona?.trim()
 			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
 			: personaBase;
-		// auth(naia 로그인) 시: 6슬롯 Gemini 기본값은 applyNaiaSlotDefaults 가 아래서 일괄 적용.
-		// 따라서 auth 시에는 스냅샣 memory provider 를 주입하지 않고(비파괴 기본값 적용이 채움),
-		// BYO 시에만 사용자 선택값을 유지한다.
+		// 기존 선택은 보존하고, 나이아 계정의 빈 모델은 이용 가능 목록으로 정한다.
 		const completedFlat: Record<string, unknown> = {
 			...base,
-			provider: auth ? "nextain" : (loggedOutLlm?.provider ?? base.provider),
-			model: auth
-				? base.model || NAIA_SLOT_DEFAULTS.main.model
-				: (loggedOutLlm?.model ?? base.model),
+			provider: auth ? (base.provider ?? "") : (loggedOutLlm?.provider ?? base.provider),
+			model: auth ? (base.model || NAIA_SLOT_DEFAULTS.main.model) : (loggedOutLlm?.model ?? base.model),
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,
@@ -1213,13 +1225,21 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						localVoiceEnabled: true,
 						vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST,
 					}
-				: {
+				: snapshot.ttsEnabled && snapshot.cloudVoice && snapshot.naiaLoginDone
+					? {
+							ttsEnabled: true,
+							ttsProvider: "nextain" as const,
+							ttsVoice: snapshot.cloudVoice,
+						}
+					: {
 						ttsEnabled: snapshot.ttsEnabled,
 						ttsProvider: snapshot.ttsEnabled
-							? ("browser" as const)
+							? !snapshot.webVoiceURI && base.ttsProvider === "nextain"
+								? ("nextain" as const)
+								: ("browser" as const)
 							: base.ttsProvider,
-						...(snapshot.ttsEnabled && snapshot.webVoiceLang
-							? { voice: snapshot.webVoiceLang }
+						...(snapshot.ttsEnabled && snapshot.webVoiceURI
+							? { ttsVoice: snapshot.webVoiceURI }
 							: {}),
 					}),
 			...(!auth && snapshot.memoryEmbeddingProvider !== "none"
@@ -1229,10 +1249,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				? { memoryLlmProvider: snapshot.memoryLlmProvider }
 				: {}),
 		};
-		// FR-SLOT.3 / R2-1: naia 게이트 통과 시 미설정 슬롯에 기본값 자동 적용(비파괴).
+		// FR-SM: 목록에 있는 모델만 빈 역할의 기본값으로 적용한다.
 		// 로그인하지 않았으면 구조화된 main 역할도 로그인하지 않은 상태의 LLM 으로 맞춘다.
 		const finalConfig: AppConfig = auth
-			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig)
+			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig, catalogModels)
 			: loggedOutLlm
 				? writeConfiguredLlmRole(
 						{ ...(completedFlat as unknown as AppConfig), ...loggedOutLlm },
@@ -1289,11 +1309,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			if (typeof completedFlat.naiaKey === "string") {
 				await sendAuthUpdateStrict(completedFlat.naiaKey, sourceAdkPath);
 				assertCurrentAdk();
-				await activateNaiaLlm(
-					completedFlat.naiaKey,
-					String(completedFlat.provider || "nextain"),
-					String(completedFlat.model || NAIA_SLOT_DEFAULTS.main.model),
-				);
+				if (completedFlat.provider && completedFlat.model) {
+					await activateNaiaLlm(
+						completedFlat.naiaKey,
+						String(completedFlat.provider),
+						String(completedFlat.model),
+					);
+				}
 				// Do not leave the renderer with the pre-login zero balance. Fetch with
 				// the same credential before committing onboarding, then prime the shared
 				// dashboard cache for the app that mounts after this wizard unmounts.
@@ -1779,14 +1801,81 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								</span>
 							</button>
 						</div>
+						{ttsEnabled && naiaLoginDone && cloudVoices.length > 0 && (
+							<div
+								className="onboarding-step__provider-done"
+								data-testid="onboarding-cloud-voice"
+							>
+								<span className="onboarding-step__provider-check">
+									{t("onboard.voice.cloudTitle")}
+								</span>
+								<p>{t("onboard.voice.cloudHint")}</p>
+								<div className="onboarding-step__options">
+									{cloudVoices.map((voice) => (
+										<button
+											key={voice.id}
+											type="button"
+											className={`onboarding-step__option${cloudVoice === voice.id ? " onboarding-step__option--selected" : ""}`}
+											onClick={() => {
+												setCloudVoice(voice.id);
+												setWebVoiceURI("");
+												void previewCloudVoice(voice.id);
+											}}
+											disabled={voicePreviewing}
+										>
+											<span className="onboarding-step__option-label">
+												{voicePreviewing && cloudVoice === voice.id
+													? t("onboard.voice.previewing")
+													: voice.label}
+											</span>
+										</button>
+									))}
+								</div>
+								{allCloudVoices.length > cloudVoices.length && (
+									<div style={{ marginTop: 8 }}>
+										<select
+											className="onboarding-step__input"
+											aria-label={t("onboard.voice.cloudTitle")}
+											value={cloudVoice}
+											onChange={(e) => {
+												const nextId = e.target.value;
+												if (!nextId) return;
+												setCloudVoice(nextId);
+												setWebVoiceURI("");
+												void previewCloudVoice(nextId);
+											}}
+										>
+											{allCloudVoices.map((voice) => (
+												<option key={voice.id} value={voice.id}>
+													{voice.label}
+												</option>
+											))}
+										</select>
+									</div>
+								)}
+								{cloudVoiceError && (
+									<p className="onboarding-step__hint onboarding-step__hint--warn">
+										{cloudVoiceError}
+									</p>
+								)}
+							</div>
+						)}
 						{ttsEnabled && webVoices.length > 0 && (
 							<div className="onboarding-step__voice-picker">
+								{naiaLoginDone && cloudVoices.length > 0 && (
+									<span className="onboarding-step__hint">
+										{t("onboard.voice.browserTitle")}
+									</span>
+								)}
 								<select
 									className="onboarding-step__input"
 									value={webVoiceURI}
 									data-usage-event="onboarding-wizard.set-web-voice-uri-14.select"
 									onChange={(e) => setWebVoiceURI(e.target.value)}
 								>
+									<option value="">
+										{t("settings.memoryEmbeddingDeviceAuto")}
+									</option>
 									{webVoices.map((voice) => (
 										<option key={voice.voiceURI} value={voice.voiceURI}>
 											{voice.name} ({voice.lang})

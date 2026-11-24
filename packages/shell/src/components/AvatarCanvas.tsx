@@ -19,7 +19,7 @@ import { randFloat } from "three/src/math/MathUtils.js";
 import { getAdkPath } from "../lib/adk-store";
 import { normalizeTauriAssetUrl } from "../lib/asset-url";
 import { avatarEmptyNotice } from "../lib/avatar-notice";
-import { getCameraActions } from "../lib/avatar/camera-actions";
+import { clearSavedCamera, getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
 import { scaledFontSize } from "../lib/ui-font-scale";
 import {
@@ -52,7 +52,11 @@ import {
 } from "../lib/vrm/expression";
 import { randomSaccadeInterval } from "../lib/vrm/eye-motions";
 import { applyRelaxedFists } from "../lib/vrm/hand-pose";
-import { createMouthController } from "../lib/vrm/mouth";
+import { createVrmMouthController } from "../lib/vrm/lip-sync";
+import {
+	isWebMode,
+	resolveWebPublicAssetUrl,
+} from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
 
 // 카메라 액션 브리지는 lib/avatar/camera-actions 로 분리(VRM·NVA 공용). 아래에서는
@@ -112,9 +116,7 @@ function cameraStateSignature(camera: SavedCamera | null): string {
 		: "default";
 }
 
-export function clearSavedCamera(): void {
-	void patchUiPreferences({ [UI_PREFERENCE_KEYS.avatarCamera]: undefined });
-}
+export { clearSavedCamera } from "../lib/avatar/camera-actions";
 
 function saveCameraState(camera: PerspectiveCamera, target: Vector3): void {
 	const state: SavedCamera = {
@@ -165,7 +167,9 @@ function resolveAssetUrl(path: string): string {
 	}
 	// Relative web-asset paths — normalize to absolute web path
 	if (normalized.startsWith("avatars/") || normalized.startsWith("assets/")) {
-		return `/${normalized}`;
+		return isWebMode()
+			? resolveWebPublicAssetUrl(`/${normalized}`)
+			: `/${normalized}`;
 	}
 	if (
 		normalized.startsWith("/assets/") ||
@@ -176,7 +180,7 @@ function resolveAssetUrl(path: string): string {
 		normalized.startsWith("blob:") ||
 		normalized.startsWith("data:")
 	) {
-		return normalized;
+		return isWebMode() ? resolveWebPublicAssetUrl(normalized) : normalized;
 	}
 	const assetUrl = convertFileSrc(normalized);
 	return normalizeTauriAssetUrl(assetUrl);
@@ -286,7 +290,7 @@ export function AvatarCanvas() {
 		const createdObjectUrls: string[] = [];
 		let mixer: AnimationMixer | null = null;
 		let emotionCtrl: ReturnType<typeof createEmotionController> | null = null;
-		let mouthCtrl: ReturnType<typeof createMouthController> | null = null;
+		let mouth: ReturnType<typeof createVrmMouthController> | null = null;
 		let blinkExprName = "blink";
 
 		// Renderer — WebGL context creation can fail on a host without a usable
@@ -472,6 +476,7 @@ export function AvatarCanvas() {
 			const delta = Math.min(clock.getDelta(), MAX_DELTA);
 
 			controls.update();
+			mouth?.restore();
 
 			if (mixer) {
 				mixer.update(delta);
@@ -484,7 +489,10 @@ export function AvatarCanvas() {
 				updateBlink(vrm, delta, animState, blinkExprName);
 				updateSaccade(vrm, delta, animState);
 				emotionCtrl?.update(delta);
-				mouthCtrl?.update(delta);
+				if (mouth) {
+					const { isSpeaking, lipSyncSource } = useAvatarStore.getState();
+					if (isSpeaking && lipSyncSource) mouth.apply(lipSyncSource());
+				}
 				vrm.expressionManager?.update();
 				vrm.springBoneManager?.update(delta);
 			}
@@ -593,13 +601,14 @@ export function AvatarCanvas() {
 				controls.update();
 
 				emotionCtrl = createEmotionController(vrm);
-				mouthCtrl = createMouthController(vrm);
 				const avatarState = useAvatarStore.getState();
 				emotionCtrl.setEmotion(avatarState.currentEmotion);
-				mouthCtrl.setSpeaking(avatarState.isSpeaking);
 
 				// Resolve blink expression name for VRM 0.0/1.0 compat
 				if (vrm.expressionManager) {
+					if (isWebMode()) {
+						mouth = createVrmMouthController(vrm.expressionManager);
+					}
 					const resolve = buildExpressionResolver(
 						vrm.expressionManager.expressionMap,
 					);
@@ -657,20 +666,12 @@ export function AvatarCanvas() {
 			}
 		}
 
-		// Subscribe to isSpeaking changes for lip sync
-		let prevSpeaking = false;
-		const unsubSpeaking = useAvatarStore.subscribe((state) => {
-			if (state.isSpeaking !== prevSpeaking) {
-				prevSpeaking = state.isSpeaking;
-				mouthCtrl?.setSpeaking(state.isSpeaking);
-			}
-		});
-
 		// Subscribe to currentEmotion changes for avatar expression
 		let prevEmotion = "neutral";
 		const unsubEmotion = useAvatarStore.subscribe((state) => {
 			if (state.currentEmotion !== prevEmotion) {
 				prevEmotion = state.currentEmotion;
+				mouth?.restore();
 				emotionCtrl?.setEmotion(state.currentEmotion);
 			}
 		});
@@ -699,10 +700,8 @@ export function AvatarCanvas() {
 			ro.disconnect();
 			window.removeEventListener("naia-width-changed", onResize);
 			cancelAnimationFrame(frameId);
-			unsubSpeaking();
 			unsubEmotion();
 			unsubscribeUiPreferences();
-			mouthCtrl?.stop();
 			if (saveTimeout) clearTimeout(saveTimeout);
 			// Save camera position on unmount
 			saveCameraState(camera, controls.target);

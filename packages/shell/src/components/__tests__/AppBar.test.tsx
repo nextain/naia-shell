@@ -13,15 +13,20 @@ import { resetDistributionChannelForTests } from "../../lib/distribution";
 const {
 	mockNavigate,
 	mockSetActiveApp,
+	mockCloseApp,
+	mockSendAppSkillsClear,
 	mockEmit,
 	mockInvoke,
 	channel,
 	registeredApps,
 	appListVersion,
+	storeRuntime,
 } = vi.hoisted(() => ({
 	channel: { value: "standard" },
 	mockNavigate: vi.fn(),
 	mockSetActiveApp: vi.fn(),
+	mockCloseApp: vi.fn(),
+	mockSendAppSkillsClear: vi.fn().mockResolvedValue(true),
 	mockEmit: vi.fn().mockResolvedValue(undefined),
 	mockInvoke: vi.fn(),
 	registeredApps: {
@@ -30,11 +35,17 @@ const {
 			name: string;
 			center: () => null;
 			builtIn?: boolean;
+			keepAlive?: boolean;
 			icon?: string;
 			names?: Record<string, string>;
 		}>,
 	},
 	appListVersion: { value: 0 },
+	storeRuntime: {
+		activeApp: null as string | null,
+		activatedApps: [] as string[],
+		closedApps: [] as string[],
+	},
 }));
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -77,6 +88,14 @@ vi.mock("../../lib/config", () => ({
 vi.mock("../../lib/app-loader", () => ({
 	removeInstalledApp: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock("../../lib/chat-service", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../lib/chat-service")>();
+	return {
+		...actual,
+		sendAppSkillsClear: (...a: unknown[]) => mockSendAppSkillsClear(...a),
+	};
+});
 
 vi.mock("../../lib/app-registry", () => ({
 	appRegistry: {
@@ -121,8 +140,11 @@ const mockPopModal = vi.fn();
 vi.mock("../../stores/app", () => {
 	// state 는 lazy 생성(호출 시점) — 팩토리는 hoist 되어 module-level mock 보다 먼저 실행되므로.
 	const getState = () => ({
-		activeApp: null,
+		activeApp: storeRuntime.activeApp,
+		activatedApps: storeRuntime.activatedApps,
+		closedApps: storeRuntime.closedApps,
 		setActiveApp: mockSetActiveApp,
+		closeApp: mockCloseApp,
 		setActiveAppContext: vi.fn(),
 		appListVersion: appListVersion.value,
 		bumpAppListVersion: () => {
@@ -220,6 +242,35 @@ describe("AppBar — add dialog", () => {
 		expect(appStore).toBeInTheDocument();
 		expect(appStore.closest(".app-bar-tab-wrapper")).toBeNull();
 		expect(appStore).not.toHaveAttribute("data-app-id");
+	});
+
+	it("opens a closable notice dialog from the fixed App Store action in kiosk demo", async () => {
+		channel.value = "unknown";
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		try {
+			resetDistributionChannelForTests();
+			const onAddApp = vi.fn();
+			render(<AppBar onAddApp={onAddApp} />);
+			const appStore = await screen.findByRole("button", {
+				name: "appbar.appStore",
+			});
+			fireEvent.click(appStore);
+			expect(
+				await screen.findByRole("dialog", { name: "appbar.appStore" }),
+			).toHaveTextContent("웹버전 통합 진행중");
+			expect(onAddApp).not.toHaveBeenCalled();
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"focus_or_create_app_store_window",
+				expect.anything(),
+			);
+			fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+			expect(
+				screen.queryByRole("dialog", { name: "appbar.appStore" }),
+			).toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("shows a built-in app registered after the first render and keeps the first tabs", async () => {
@@ -423,6 +474,51 @@ describe("AppBar — installed app removal", () => {
 		);
 		expect(screen.getByTitle("Notes")).toBeInTheDocument();
 	});
+
+	it("separates appbar.closeApp above appbar.removeApp only when the app is active or mounted in background (#872)", async () => {
+		const { appRegistry } = await import("../../lib/app-registry");
+		const { removeInstalledApp } = await import("../../lib/app-loader");
+		const descriptor = {
+			id: "notes",
+			name: "Notes",
+			source: "installed" as const,
+			keepAlive: true,
+			center: () => null,
+		};
+		vi.mocked(appRegistry.list).mockReturnValue([descriptor]);
+		vi.mocked(appRegistry.get).mockReturnValue(descriptor);
+		storeRuntime.activeApp = null;
+		storeRuntime.activatedApps = [];
+		storeRuntime.closedApps = [];
+
+		const { rerender } = render(<AppBar />);
+		expect(document.querySelector(".app-bar-tab__running-dot")).toBeNull();
+		fireEvent.contextMenu(screen.getByTitle("Notes"));
+		expect(screen.queryByText("appbar.closeApp")).toBeNull();
+		expect(screen.getByText("appbar.removeApp")).toBeInTheDocument();
+
+		// Background-mounted keepAlive app: running dot + closeApp above removeApp
+		fireEvent.click(window);
+		storeRuntime.activatedApps = ["notes"];
+		rerender(<AppBar />);
+		expect(document.querySelector(".app-bar-tab__running-dot")).not.toBeNull();
+
+		fireEvent.contextMenu(screen.getByTitle("Notes"));
+		const items = Array.from(
+			document.querySelectorAll(".app-bar-ctx-menu__item"),
+		).map((el) => el.textContent);
+		expect(items).toEqual(["appbar.closeApp", "appbar.removeApp"]);
+		expect(document.querySelector(".app-bar-ctx-menu__divider")).not.toBeNull();
+
+		fireEvent.click(screen.getByText("appbar.closeApp"));
+		expect(mockCloseApp).toHaveBeenCalledWith("notes");
+		expect(mockSendAppSkillsClear).toHaveBeenCalledWith("notes");
+		expect(removeInstalledApp).not.toHaveBeenCalled();
+
+		storeRuntime.activeApp = null;
+		storeRuntime.activatedApps = [];
+		storeRuntime.closedApps = [];
+	});
 });
 
 // ── Edit mode (#295) ─────────────────────────────────────────────────────────
@@ -514,6 +610,54 @@ describe("AppBar — edit mode (#295)", () => {
 		expect(mockUpdateBrowserShortcutIcon).toHaveBeenCalledWith(
 			SHORTCUT.url,
 			"🎯",
+		);
+	});
+
+	it("renders BgmPlayer in web mode for YouTube BGM playback", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			const { container } = render(<AppBar />);
+			await act(async () => {});
+			await waitFor(() =>
+				expect(container.querySelector(".bgm-player")).not.toBeNull(),
+			);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R8: web mode places the BGM player at the end of the app bar", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			const { container } = render(<AppBar />);
+			await act(async () => {});
+			await waitFor(() =>
+				expect(container.querySelector(".bgm-player")).not.toBeNull(),
+			);
+			const bgm = container.querySelector(".bgm-player")!;
+			const controls = [
+				screen.getByTestId("web-brain-status-badge"),
+				screen.getByTestId("web-open-harness-btn"),
+				screen.getByTestId("web-character-card-quick-btn"),
+				screen.getByTestId("web-login-free-credits-btn"),
+				container.querySelector(".app-bar-settings")!,
+				bgm,
+			];
+			for (const [index, control] of controls.slice(1).entries()) {
+				expect(controls[index].compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+			}
+			expect(container.querySelector(".app-bar")?.lastElementChild).toBe(bgm);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R8: desktop mode keeps the BGM player before settings", async () => {
+		const { container } = render(<AppBar />);
+		await act(async () => {});
+		await waitFor(() => expect(container.querySelector(".bgm-player")).not.toBeNull());
+		expect(container.querySelector(".bgm-player")?.nextElementSibling).toBe(
+			container.querySelector(".app-bar-settings"),
 		);
 	});
 });

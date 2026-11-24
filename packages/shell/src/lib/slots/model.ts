@@ -3,13 +3,16 @@ import { effectiveAvatarProviderFromConfig } from "../avatar/nva-gate";
 // 게이트(naia 계정 binary) → 6 클라우드 슬롯(main·sub·embedding·stt·tts·avatar) 각각 독립 설정.
 // I/O 0(DOM/localStorage 접근 금지) — SettingsTab UI·온보딩 기본값 양쪽이 동일 로직 소비(비일관 방지).
 // SoT: .agents/progress/naia-model-slots-architecture-2026-06-28.md
-import type { AppConfig, SttProviderId, TtsProviderId } from "../config";
+import type { AppConfig, SttProviderId, ThinkingLevel, TtsProviderId } from "../config";
+import { applyKioskDemoMainModel } from "../config-seed";
+import { isKioskDemo } from "../kiosk-demo/flag";
 import {
 	readConfiguredLlmRoles,
 	resolveEffectiveLlmRoles,
 	writeConfiguredLlmRole,
 } from "../llm/roles";
-import { NAIA_SMALL_LLM_DEFAULT } from "../llm/surfacing";
+import { defaultMainModel, defaultSmallModel } from "../llm/small-model";
+import type { LlmModelMeta } from "../llm/types";
 import type { ProviderId } from "../types";
 
 // ── FR-SLOT.2: 6 슬롯 (순서 권위) ──
@@ -86,10 +89,11 @@ export const SLOT_FIELD_MAP: Record<SlotId, readonly string[]> = {
 
 // ── 슬롯 값 스냅샷 ──
 export interface SlotSnapshot {
-	main: { provider: ProviderId; model: string };
+	main: { provider: ProviderId; model: string; thinkingLevel?: ThinkingLevel };
 	sub: {
 		provider: ProviderId | "none" | undefined;
 		model?: string;
+		thinkingLevel?: ThinkingLevel;
 	};
 	embedding: {
 		provider: AppConfig["memoryEmbeddingProvider"];
@@ -129,14 +133,23 @@ export function effectiveMainRole(config: AppConfig): {
 	provider?: string;
 	model?: string;
 } {
+	if (isKioskDemo()) {
+		const pinned = applyKioskDemoMainModel(config);
+		return {
+			provider: pinned.provider,
+			model: pinned.model,
+		};
+	}
 	const resolved = resolveEffectiveLlmRoles(config);
 	const main = resolved.ok
 		? resolved.roles.find((role) => role.role === "main")
 		: undefined;
 	const configured = readConfiguredLlmRoles(config).main;
+	const provider = main?.provider ?? configured?.provider ?? config.provider;
+	const model = main?.model ?? configured?.model ?? config.model;
 	return {
-		provider: main?.provider ?? configured?.provider ?? config.provider,
-		model: main?.model ?? configured?.model ?? config.model,
+		provider,
+		model,
 	};
 }
 
@@ -283,8 +296,8 @@ export type NaiaDefaultSlots = Pick<
 >;
 /** memory role default = Naia gpt-5.4-nano (#692); a directly chosen memory role is kept. */
 export const NAIA_SLOT_DEFAULTS: NaiaDefaultSlots = {
-	main: { provider: "nextain", model: "deepseek-v4-flash" },
-	sub: { provider: "naia", model: "gemini-3.1-flash-lite" },
+	main: { provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "xhigh" },
+	sub: { provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "low" },
 	// 기본 임베딩 = 다국어 e5 (한국어 우선 정책, 2026-07-15 루크 승인 "e5 추가 + 기본값으로").
 	// 영어 전용 MiniLM(80MB)보다 무겁지만(~1.1GB, CPU 동작) 한국어 회상 품질이 기준.
 	embedding: { provider: "offline", model: "multilingual-e5-large" },
@@ -300,8 +313,8 @@ function isMainSet(c: AppConfig): boolean {
 	const main = c.llmRoles?.main;
 	return !!main && !main.inherit && !!main.provider && !!main.model;
 }
-function isSubSet(c: AppConfig): boolean {
-	return c.llmRoles?.sub !== undefined || !!c.subLlmProvider;
+export function hasSmallModelSetting(c: AppConfig): boolean {
+	return c.llmRoles?.sub !== undefined || !!(c.subLlmProvider || c.subLlmModel || c.subLlmBaseUrl || c.subLlmCredentialRef || c.memoryLlmProvider || c.memoryLlmModel || c.memoryLlmBaseUrl || c.memoryLlmCredentialRef) || !!(c.llmRoles?.memory && !c.llmRoles.memory.inherit);
 }
 function isEmbeddingSet(c: AppConfig): boolean {
 	return !!c.memoryEmbeddingProvider && c.memoryEmbeddingProvider !== "none";
@@ -320,29 +333,22 @@ function isTtsSet(c: AppConfig): boolean {
  * 비파괴·idempotent — 이미 설정된 슬롯은 보존(사용자 override 우선).
  * 게이트 판단(deriveGateFromConfig)은 호출처 책임 — 본 함수는 순수 기본값 적용만.
  */
-export function applyNaiaSlotDefaults(config: AppConfig): AppConfig {
+export function applyNaiaSlotDefaults(config: AppConfig, models?: readonly LlmModelMeta[]): AppConfig {
 	let next = config;
 	if (!isMainSet(next)) {
 		// Preserve a valid legacy top-level selection while repairing its
 		// structured mirror. Fresh-login configs can carry llmRoles.main.inherit
 		// from the pre-login snapshot; the Agent treats that as incomplete even
 		// when provider/model are present at the top level.
-		next = writeSlot(next, "main", {
-			provider: next.provider || NAIA_SLOT_DEFAULTS.main.provider,
-			model: next.model || NAIA_SLOT_DEFAULTS.main.model,
-		});
+		if (next.provider && next.model) {
+			next = writeSlot(next, "main", { provider: next.provider, model: next.model });
+		} else if (models) {
+			const main = defaultMainModel(models);
+			if (main) next = writeConfiguredLlmRole(next, "main", main);
+		}
 	}
-	if (!isSubSet(next)) {
-		next = writeSlot(next, "sub", NAIA_SLOT_DEFAULTS.sub);
-	}
-	if (
-		(!config.llmRoles?.memory || !!config.llmRoles.memory.inherit) &&
-		(!config.memoryLlmProvider || config.memoryLlmProvider === "none")
-	) {
-		next = writeConfiguredLlmRole(next, "memory", {
-			provider: "nextain",
-			model: NAIA_SMALL_LLM_DEFAULT.model,
-		});
+	if (models && !hasSmallModelSetting(next)) {
+		next = writeConfiguredLlmRole(next, "sub", defaultSmallModel(models));
 	}
 	if (!isEmbeddingSet(next)) {
 		next = writeSlot(next, "embedding", NAIA_SLOT_DEFAULTS.embedding);

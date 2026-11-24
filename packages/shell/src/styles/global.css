@@ -617,7 +617,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	top: 48px;
 	left: 50%;
 	z-index: 1000;
-	max-width: min(520px, calc(100vw - 32px));
+	max-width: min(520px, calc(calc(var(--naia-vw, 1vw) * 100) - 32px));
 	transform: translateX(-50%);
 	padding: 8px 12px;
 	border: 1px solid #f85149;
@@ -654,6 +654,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 }
 
 .app-bar-tab {
+	position: relative;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -668,6 +669,19 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	cursor: pointer;
 	border-radius: 8px;
 	transition: background 0.1s, color 0.1s;
+}
+
+.app-bar-tab__running-dot {
+	position: absolute;
+	bottom: 2px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--accent, #7ca0ff);
+	box-shadow: 0 0 6px var(--accent, rgba(124, 160, 255, 0.85));
+	pointer-events: none;
 }
 
 .app-bar-tab:hover {
@@ -837,6 +851,12 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 .app-bar-ctx-menu__item--danger:hover {
 	background: rgba(239, 68, 68, 0.18);
 	color: #fca5a5;
+}
+
+.app-bar-ctx-menu__divider {
+	height: 1px;
+	margin: 4px 6px;
+	background: rgba(148, 163, 184, 0.18);
 }
 
 .app-bar-url-dialog-overlay {
@@ -1017,7 +1037,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	border: 1px solid var(--espresso-light);
 	border-radius: 12px;
 	width: 420px;
-	max-width: 90vw;
+	max-width: calc(var(--naia-vw, 1vw) * 90);
 	display: flex;
 	flex-direction: column;
 	gap: 0;
@@ -1281,6 +1301,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	top: 32px; /* below titlebar */
 	bottom: 0;
 	width: var(--naia-width, 320px);
+	max-width: calc(var(--naia-vw, 1vw) * 100);
 	display: flex;
 	flex-direction: column;
 	background: transparent;
@@ -1303,9 +1324,9 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	position: fixed;
 	top: 72px;
 	bottom: 0;
-	left: calc(var(--naia-width, 320px) - 6px);
-	z-index: 8;
-	width: 12px;
+	left: calc(var(--naia-width, 320px) - 16px);
+	z-index: 25;
+	width: 22px;
 	cursor: col-resize;
 	display: flex;
 	align-items: flex-start;
@@ -1320,7 +1341,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	position: absolute;
 	top: 0;
 	bottom: 0;
-	left: 5px;
+	left: 15px;
 	width: 1px;
 	background: rgba(140, 180, 230, 0.22);
 	opacity: 0;
@@ -1398,6 +1419,18 @@ body.resizing-col .naia-work-rail::before {
 	stroke-width: 1.8;
 	stroke-linecap: round;
 	stroke-linejoin: round;
+}
+
+.bgm-ai-toggle--active .bgm-ai-toggle__icon {
+	stroke: #34d399;
+}
+
+.bgm-ai-toggle--off .bgm-ai-toggle__icon {
+	stroke: rgba(148, 163, 184, 0.85);
+}
+
+.bgm-ai-toggle[data-broadcast-state="live"] .bgm-ai-toggle__icon {
+	stroke: #ef4444;
 }
 
 .ai-control-tooltip {
@@ -1485,6 +1518,7 @@ body.resizing-col .naia-work-rail::before {
 	bottom: 0;
 	left: 8px;
 	width: calc(var(--naia-width, 320px) - 16px);
+	max-width: calc(calc(var(--naia-vw, 1vw) * 100) - 16px);
 	display: flex;
 	flex-direction: column;
 	z-index: 3;
@@ -1521,16 +1555,27 @@ body.resizing-col .naia-work-rail::before {
    workspace 모드에서 드래그 토글은 숨지만(아래) 이 스위치는 유지돼 어느 모드서도 전환 가능. */
 .naia-chat-modes {
 	position: absolute;
-	top: 0;
+	top: -8px;
 	right: 4px;
-	z-index: 4;
+	z-index: 6;
 	display: flex;
-	gap: 2px;
+	align-items: center;
+	gap: 4px;
 	pointer-events: auto;
 }
+.naia-avatar-corner-panel {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 5px;
+	border-radius: 7px;
+	background: rgba(8, 14, 28, 0.88);
+	border: 1px solid rgba(100, 160, 255, 0.32);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
 .naia-chat-mode {
-	width: 20px;
-	height: 18px;
+	width: 24px;
+	height: 22px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -1543,6 +1588,20 @@ body.resizing-col .naia-work-rail::before {
 	line-height: 1;
 	cursor: pointer;
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.naia-avatar-corner-trigger {
+	width: 28px;
+	height: 26px;
+	border-radius: 7px;
+}
+.naia-avatar-corner-trigger__icon {
+	width: 14px;
+	height: 14px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.9;
+	stroke-linecap: round;
+	stroke-linejoin: round;
 }
 .naia-chat-mode:hover {
 	background: rgba(100, 160, 255, 0.12);
@@ -1607,8 +1666,9 @@ body.resizing-col .naia-work-rail::before {
 	box-shadow: none !important;
 }
 
-/* App slot — keep-alive overlay with opacity transition */
+/* Hidden keep-alive apps retain state without exposing controls or paint. */
 .content-app__slot {
+	visibility: hidden;
 	position: absolute;
 	inset: 0;
 	opacity: 0;
@@ -1618,8 +1678,75 @@ body.resizing-col .naia-work-rail::before {
 }
 
 .content-app__slot--active {
+	visibility: visible;
 	opacity: 1;
 	pointer-events: auto;
+}
+
+/* R5: installed (non built-in) apps sit under a slim shell title bar that
+   owns the close button, so app headers (menus, music toggles) never sit
+   under it. */
+.content-app__titlebar {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: var(--content-app-titlebar-h, 40px);
+	padding: 0 8px 0 14px;
+	border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+	background: var(--espresso, #181c26);
+	color: var(--cream, #e8eaed);
+	box-sizing: border-box;
+}
+
+.content-app__title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: calc(13px * var(--ui-font-scale, 1));
+	font-weight: 600;
+}
+
+.content-app--with-titlebar > .content-app__slot {
+	top: var(--content-app-titlebar-h, 40px);
+}
+
+.content-app__close-btn {
+	position: relative;
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	border-radius: 999px;
+	background: rgba(12, 18, 32, 0.68);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	color: rgba(241, 245, 249, 0.9);
+	font-size: calc(13px * var(--ui-font-scale, 1));
+	line-height: 1;
+	cursor: pointer;
+	opacity: 0.72;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+	transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.content-app__close-btn:hover,
+.content-app__close-btn:focus-visible {
+	opacity: 1;
+	background: rgba(220, 38, 38, 0.88);
+	border-color: rgba(252, 165, 165, 0.65);
+	color: #ffffff;
+	transform: scale(1.05);
 }
 
 /* Home screen when no mode selected */
@@ -1919,6 +2046,10 @@ body.resizing-row {
 
 .cost-badge.session-cost {
 	color: var(--sage);
+}
+
+[data-naia-web="true"] .credit-amount {
+	white-space: nowrap;
 }
 
 /* Messages */
@@ -2442,6 +2573,8 @@ body.resizing-row {
 
 .chat-input {
 	flex: 1;
+	min-width: 0;
+	box-sizing: border-box;
 	background: var(--espresso-dark);
 	border: 1px solid var(--espresso-light);
 	border-radius: 6px;
@@ -2833,8 +2966,8 @@ body.resizing-row {
 	border-radius: 12px;
 	padding: 24px;
 	width: 360px;
-	max-width: 90vw;
-	max-height: 85vh;
+	max-width: calc(var(--naia-vw, 1vw) * 90);
+	max-height: calc(var(--naia-vh, 1vh) * 85);
 	overflow-y: auto;
 }
 
@@ -2876,14 +3009,23 @@ body.resizing-row {
 
 /* ── Settings tab bar ──────────────────────────────────────────────────────── */
 .settings-tab-bar {
+	position: sticky;
+	top: 0;
+	z-index: 20;
 	display: flex;
 	flex-direction: row;
-	/* Large font scales: wrap instead of clipping 프로파일…일반 off the right edge. */
+	align-items: center;
+	min-height: 46px;
+	box-sizing: border-box;
+	background: var(--espresso, #181c26);
 	flex-wrap: wrap;
 	border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-	padding: 0 12px;
+	margin: 0 -12px 12px;
+	padding: 4px 12px 0;
 	gap: 0;
 	flex-shrink: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
 }
 
 .settings-tab-btn {
@@ -2896,8 +3038,9 @@ body.resizing-row {
 	cursor: pointer;
 	transition: color 0.15s, border-color 0.15s, background 0.15s;
 	border-radius: 4px 4px 0 0;
-	margin-bottom: -1px;
+	margin-bottom: 0;
 	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .settings-tab-btn:hover {
@@ -2918,13 +3061,15 @@ body.resizing-row {
 	align-content: start;
 	overflow-y: auto;
 	min-height: 0; /* required for flex overflow-y: auto to work */
-	padding: 12px 12px 120px; /* bottom: space for fixed save button */
+	padding: 0 12px 20px;
 }
 
 .settings-tab > .settings-tab-bar,
 .settings-tab > .settings-section-divider,
 .settings-tab > .settings-danger-zone,
-.settings-tab > .skills-tab {
+.settings-tab > .settings-actions,
+.settings-tab > .skills-tab,
+.settings-tab > .settings-coming-soon-banner {
 	grid-column: 1 / -1;
 }
 
@@ -3204,6 +3349,15 @@ body.resizing-row {
 	text-align: left;
 }
 
+.settings-vroid-hub {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	margin-top: 8px;
+	text-decoration: none;
+}
+
 .connection-setup-steps {
 	margin: 8px 0 0;
 	padding-left: 22px;
@@ -3357,6 +3511,7 @@ body.resizing-row {
 }
 
 .settings-field select,
+.settings-field textarea,
 .settings-field input:not([type="checkbox"]):not([type="radio"]) {
 	width: 100%;
 	padding: 8px 10px;
@@ -3368,6 +3523,12 @@ body.resizing-row {
 	outline: none;
 	-webkit-appearance: none;
 	appearance: none;
+	box-sizing: border-box;
+}
+
+.settings-field textarea {
+	font-family: inherit;
+	resize: vertical;
 }
 
 .settings-field input:not([type="checkbox"]):not([type="radio"]) {
@@ -3451,6 +3612,7 @@ body.resizing-row {
 }
 
 .settings-field select:focus,
+.settings-field textarea:focus,
 .settings-field input:not([type="checkbox"]):focus {
 	border-color: var(--wood);
 }
@@ -3461,14 +3623,17 @@ body.resizing-row {
 	margin-top: 4px;
 }
 
-.settings-actions {
-	position: fixed;
-	bottom: 24px;
-	right: 24px;
-	z-index: 100;
-	display: flex;
-	gap: 8px;
-	pointer-events: none;
+.visual-agent-slug-settings {
+	padding: 12px;
+	border: 1px solid var(--espresso-light);
+	border-radius: 8px;
+	min-width: 0;
+}
+
+.settings-field.visual-agent-slug-settings > label {
+	color: var(--cream);
+	font-size: calc(14px * var(--ui-font-scale, 1));
+	font-weight: 600;
 }
 
 .settings-save-btn {
@@ -3480,14 +3645,202 @@ body.resizing-row {
 	color: #fff;
 	font-size: calc(14px * var(--ui-font-scale, 1));
 	font-weight: 600;
+}
+
+.visual-agent-slug-settings p {
+	margin: 6px 0 0;
+}
+
+.visual-agent-slug-settings .settings-hint {
+	font-size: calc(12px * var(--ui-font-scale, 1));
+	line-height: 1.4;
+}
+
+.visual-agent-slug-settings input[aria-invalid="true"]:not([type="checkbox"]) {
+	border-color: var(--error);
+}
+
+.visual-agent-slug-preview {
+	margin: 10px 0;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: var(--espresso-dark);
+	overflow-wrap: anywhere;
+}
+
+.visual-agent-slug-preview > p {
+	color: var(--cream);
+	font-size: calc(13px * var(--ui-font-scale, 1));
+	user-select: text;
+}
+
+.visual-agent-slug-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.visual-agent-slug-actions > button {
+	min-height: 40px;
+	max-width: 100%;
+	white-space: normal;
+}
+
+.visual-agent-slug-actions > button:focus-visible {
+	outline: 2px solid var(--cream);
+	outline-offset: 2px;
+}
+
+.visual-agent-slug-actions > button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.settings-actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 20;
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 8px;
+	margin: 12px -12px -20px;
+	padding: 12px 16px;
+	background: var(--espresso, #181c26);
+	border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+	pointer-events: auto;
+}
+
+/* Card library controls keep their labels and touch targets at narrow widths. */
+.character-theme-settings > h3 {
+	margin: 12px 0 8px;
+}
+.character-theme-settings p {
+	margin: 6px 0;
+	line-height: 1.5;
+}
+.character-theme-settings button {
+	min-height: 40px;
+	max-width: 100%;
+	margin: 6px 6px 6px 0;
+	white-space: normal;
+}
+.character-theme-settings button:not(.settings-save-btn) {
+	padding: 8px 12px;
+	border: 1px solid var(--espresso-light);
+	border-radius: 6px;
+	background: transparent;
+	color: var(--cream);
+	font-size: calc(14px * var(--ui-font-scale, 1));
 	cursor: pointer;
-	transition: background 0.15s, box-shadow 0.15s;
-	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.character-theme-settings button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.character-theme-settings output {
+	margin-top: 8px;
+	padding: 8px;
+	border-radius: 6px;
+	background: var(--espresso-light);
+	font-size: calc(14px * var(--ui-font-scale, 1));
+}
+
+.character-card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.character-card-actions button {
+	margin: 0;
+	white-space: nowrap;
+}
+
+.character-card-actions output,
+.character-card-actions [role="alert"] {
+	flex-basis: 100%;
+}
+
+.character-card-library {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 6px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.character-card-library li {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.character-theme-settings .character-card-library button {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.character-card-library button span {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.character-theme-settings .character-card-library button[aria-pressed="true"] {
+	background: var(--espresso-light);
+}
+
+.character-card-library img {
+	width: 48px;
+	height: 48px;
+	flex: none;
+	border-radius: 4px;
+	object-fit: cover;
+}
+
+/* R2: the apply button sits inside the sticky action bar, so it is a plain
+   primary button (no floating shadow). Light accent themes get dark text to
+   keep 4.5:1 contrast; the deep-blue default theme keeps white text. */
+.settings-save-btn {
+	pointer-events: auto;
+	min-height: 36px;
+	min-width: 96px;
+	padding: 8px 22px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: var(--wood);
+	color: #0b1220;
+	font-size: calc(14px * var(--ui-font-scale, 1));
+	font-weight: 600;
+	line-height: 1.2;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: filter 0.15s;
+}
+
+:root:not([data-theme]) .settings-save-btn,
+[data-theme="espresso"] .settings-save-btn {
+	color: #fff;
+}
+
+[data-theme="sakura"] .settings-save-btn {
+	color: #000;
 }
 
 .settings-save-btn:hover {
-	background: var(--sage);
-	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+	filter: brightness(1.08);
+}
+
+.settings-save-btn:focus-visible {
+	outline: 2px solid var(--cream, #e8eaed);
+	outline-offset: 2px;
 }
 
 .settings-cancel-btn {
@@ -4149,8 +4502,8 @@ body.resizing-row {
 	border-radius: 12px;
 	padding: 20px;
 	width: 340px;
-	max-width: 90vw;
-	max-height: 85vh;
+	max-width: calc(var(--naia-vw, 1vw) * 90);
+	max-height: calc(var(--naia-vh, 1vh) * 85);
 	display: flex;
 	flex-direction: column;
 	font-family: var(--mono);
@@ -5878,18 +6231,6 @@ body.resizing-row {
 	}
 }
 
-@keyframes splash-ring-pulse {
-	0%,
-	100% {
-		transform: scale(1);
-		opacity: 0.3;
-	}
-	50% {
-		transform: scale(1.12);
-		opacity: 0.7;
-	}
-}
-
 @keyframes splash-text-in {
 	0% {
 		opacity: 0;
@@ -6010,14 +6351,6 @@ body.resizing-row {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-}
-
-.splash-ring {
-	position: absolute;
-	inset: -12px;
-	border-radius: 50%;
-	border: 1.5px solid rgba(34, 211, 238, 0.4);
-	animation: splash-ring-pulse 1.6s ease-in-out infinite;
 }
 
 .splash-logo-spin {
@@ -6326,6 +6659,40 @@ body.resizing-row {
 	pointer-events: auto;
 }
 
+/* R31 — web: YouTube did not start the requested song. */
+.bgm-yt-notice {
+	position: fixed;
+	top: 44px;
+	right: 8px;
+	z-index: 1000;
+	/* 세로 모바일은 상단 바(조상)가 숨지만 음악 앱에서 재생이 실패해도 알림은 보여야 한다. */
+	visibility: visible;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	max-width: min(360px, calc(100vw - 16px));
+	padding: 8px 10px;
+	background: rgba(8, 14, 28, 0.92);
+	color: #f2f4f8;
+	font-size: calc(12px * var(--ui-font-scale, 1));
+	line-height: 1.45;
+	border: 1px solid rgba(255, 196, 90, 0.55);
+	border-radius: 8px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+	pointer-events: auto;
+}
+
+.bgm-yt-notice-close {
+	flex-shrink: 0;
+	background: none;
+	border: none;
+	color: inherit;
+	font-size: calc(14px * var(--ui-font-scale, 1));
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 2px;
+}
+
 @media (max-width: 500px) {
 	.app-bar {
 		position: fixed;
@@ -6515,6 +6882,40 @@ body.resizing-row {
 	color: rgba(255, 255, 255, 0.7);
 }
 
+/* R10: 웹판 로컬 음악 올리기 */
+.bgm-local-import {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 6px 8px;
+}
+
+.bgm-local-import-btn {
+	align-self: flex-start;
+	min-height: 32px;
+	padding: 6px 12px;
+	border: 1px solid rgba(130, 180, 255, 0.5);
+	border-radius: 6px;
+	background: rgba(130, 180, 255, 0.15);
+	color: rgba(255, 255, 255, 0.92);
+	font-size: calc(12px * var(--ui-font-scale, 1));
+	cursor: pointer;
+}
+
+.bgm-local-import-btn:hover:not(:disabled) {
+	background: rgba(130, 180, 255, 0.28);
+}
+
+.bgm-local-import-btn:focus-visible {
+	outline: 2px solid rgba(130, 180, 255, 0.9);
+	outline-offset: 2px;
+}
+
+.bgm-local-import-btn:disabled {
+	opacity: 0.6;
+	cursor: progress;
+}
+
 /* Local track row icon */
 .bgm-local-row {
 	align-items: center;
@@ -6558,7 +6959,7 @@ body.resizing-row {
 	color-scheme: dark;
 	color: rgba(255, 255, 255, 0.9);
 	/* height is controlled by inline style (drag-to-resize); max-height is a fallback */
-	max-height: min(700px, calc(100vh - 120px));
+	max-height: min(700px, calc(calc(var(--naia-vh, 1vh) * 100) - 120px));
 	display: flex;
 	flex-direction: column;
 	background: rgba(8, 14, 28, 0.92);
@@ -7042,7 +7443,7 @@ body.resizing-row {
 .onboarding-card {
 	width: 100%;
 	max-width: 420px;
-	max-height: calc(100vh - 40px);
+	max-height: calc(calc(var(--naia-vh, 1vh) * 100) - 40px);
 	display: flex;
 	flex-direction: column;
 	gap: 20px;
@@ -7687,7 +8088,7 @@ body.resizing-row {
 	border-radius: 8px;
 	padding: 16px;
 	width: min(520px, 90%);
-	max-height: 70vh;
+	max-height: calc(var(--naia-vh, 1vh) * 70);
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
@@ -7715,7 +8116,7 @@ body.resizing-row {
 	border-radius: 4px;
 	padding: 10px;
 	margin: 0;
-	max-height: 50vh;
+	max-height: calc(var(--naia-vh, 1vh) * 50);
 }
 
 .diagnostics-log-modal-close {
@@ -8009,6 +8410,7 @@ body.resizing-row {
 	top: 0;
 	left: 0;
 	width: var(--naia-width, 320px);
+	max-width: calc(var(--naia-vw, 1vw) * 100);
 	bottom: 0;
 	background: rgba(0, 0, 0, 0.6);
 	display: flex;
@@ -8043,6 +8445,22 @@ body.resizing-row {
 	display: flex;
 	gap: 8px;
 	justify-content: flex-end;
+}
+
+.web-app-install-link {
+	box-sizing: border-box;
+	max-height: 90vh;
+	overflow: auto;
+	overflow-wrap: anywhere;
+}
+
+.web-app-install-link .sync-dialog-actions {
+	align-items: center;
+	flex-wrap: wrap;
+}
+
+.web-app-install-link .sync-dialog-actions a {
+	color: var(--cream);
 }
 
 /* ── Update Banner ── */
@@ -8117,7 +8535,7 @@ body.resizing-row {
 .update-prompt {
 	position: relative;
 	width: min(540px, 100%);
-	max-height: min(680px, calc(100vh - 48px));
+	max-height: min(680px, calc(calc(var(--naia-vh, 1vh) * 100) - 48px));
 	margin: 0;
 	overflow: auto;
 	padding: 24px;
@@ -9218,6 +9636,12 @@ body.resizing-row {
 	white-space: nowrap;
 }
 
+.herdr-workspace__web-path {
+	padding: 4px 8px;
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+
 .herdr-workspace__toggle-btn {
 	background: var(--surface-2, #333);
 	border: 1px solid var(--border-color, #444);
@@ -9895,7 +10319,7 @@ body.resizing-col * {
 
 .coding-workers {
 	flex: 0 0 auto;
-	max-height: min(62vh, 560px);
+	max-height: min(calc(var(--naia-vh, 1vh) * 62), 560px);
 	overflow: auto;
 	padding: 14px;
 	background: var(--surface, #242424);
@@ -12235,8 +12659,8 @@ body.resizing-col * {
 }
 .onboarding-step__nva-crop-media {
 	position: absolute;
-	/* NVA characters sit at different scales inside their 720×1280 frame (naia is
-	   taller, naia-anime is smaller and sits lower). A tight fixed crop that suits
+	/* NVA characters sit at different scales inside their 720×1280 frame (live
+	   and anime portraits sit at different heights). A tight fixed crop that suits
 	   one shows only ears/headroom on the other, so keep the zoom moderate and the
 	   window near the top — head + shoulders land in frame across heights. */
 	top: -12px;
@@ -12623,7 +13047,7 @@ body.resizing-col * {
 
 .open-file-edit-review__diff {
 	margin: 0;
-	max-height: 40vh;
+	max-height: calc(var(--naia-vh, 1vh) * 40);
 	overflow: auto;
 	padding: 8px 12px;
 	background: var(--bg-base, #17181a);
@@ -12704,6 +13128,131 @@ body.resizing-col * {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
+.settings-model-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.settings-model-roles .settings-field { min-width: 0; }
+@media (max-width: 600px) { .settings-model-roles { grid-template-columns: minmax(0, 1fr); } }
+
+.settings-model-selected-label { overflow-wrap: anywhere; white-space: normal; font-size: calc(12px * var(--ui-font-scale, 1)); opacity: 1; }
+
+/* Character/theme settings need usable space beside the companion on narrow
+   windows. Only the active Settings surface takes the full available width. */
+@media (max-width: 700px) {
+	.app-layout:has(.content-app__slot--active .settings-tab) {
+		left: 0 !important;
+		z-index: 100;
+	}
+	.settings-tab-bar {
+		overflow-x: auto;
+		overflow-y: hidden;
+		min-width: 0;
+		min-height: 46px;
+	}
+}
+
+/* Keep the first Settings entry reachable before opening any app at 360px. */
+@media (max-width: 700px) {
+	.app-layout { left: 0 !important; }
+	.app-bar { min-width: 0; width: 100%; box-sizing: border-box; }
+	.app-bar-settings { flex-shrink: 0; min-width: 40px; min-height: 40px; }
+}
+
+/* Web build credit balance in the app bar (SP-00) and zero-credit card (SP-10) */
+.web-credit {
+	position: relative;
+	flex-shrink: 0;
+}
+
+.web-credit__chip {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid var(--border-color);
+	border-radius: 14px;
+	background: transparent;
+	color: var(--cream);
+	font-size: calc(12px * var(--ui-font-scale, 1));
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+}
+
+.web-credit__chip:hover {
+	background: var(--hover-bg);
+}
+
+.web-credit__chip--low,
+.web-credit__value--low {
+	color: var(--amber);
+}
+
+.web-credit__chip--empty,
+.web-credit__value--empty {
+	color: var(--error);
+}
+
+.web-credit__chip--low,
+.web-credit__chip--empty {
+	border-color: currentColor;
+}
+
+.web-credit__popover,
+.web-credit__empty {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 1000;
+	min-width: 220px;
+	padding: 12px;
+	border: 1px solid var(--glass-border);
+	border-radius: 10px;
+	background: var(--bg-surface);
+	color: var(--cream);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+	font-size: calc(13px * var(--ui-font-scale, 1));
+}
+
+.web-credit__empty {
+	width: 280px;
+}
+
+.web-credit__empty p {
+	margin: 0 0 10px;
+	line-height: 1.5;
+}
+
+.web-credit__row {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+
+.web-credit__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.web-credit__actions button {
+	padding: 5px 10px;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	background: transparent;
+	color: var(--cream);
+	font-size: calc(12px * var(--ui-font-scale, 1));
+	cursor: pointer;
+}
+
+.web-credit__actions button:hover {
+	background: var(--hover-bg);
+}
+
+.web-credit__actions .web-credit__primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #fff;
+}
 /* Optional usage consent is shown before ADK setup, including existing installs.
    Card and buttons reuse the onboarding look (.onboarding-*). */
 .usage-consent {

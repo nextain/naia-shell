@@ -51,6 +51,7 @@ export async function getConversationHistory(
 					role?: string;
 					content?: string;
 					timestamp?: number;
+					appName?: unknown;
 				};
 				if (m.role === "user" || m.role === "assistant") {
 					messages.push({
@@ -58,6 +59,11 @@ export async function getConversationHistory(
 						role: m.role,
 						content: m.content ?? "",
 						timestamp: m.timestamp ?? Date.now(),
+						...(typeof m.appName === "string" &&
+						m.appName.trim().length > 0 &&
+						m.appName.trim().length <= 200
+							? { appName: m.appName.trim() }
+							: {}),
 					});
 				}
 			} catch {

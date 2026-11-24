@@ -130,8 +130,6 @@ export function SplashScreen({
 							className="splash-logo-mark"
 						/>
 					</div>
-					{/* Outer ring */}
-					<div className="splash-ring" />
 				</div>
 
 				{/* "Naia" text fade-in */}

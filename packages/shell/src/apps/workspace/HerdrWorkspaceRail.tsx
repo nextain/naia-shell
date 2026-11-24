@@ -1,4 +1,5 @@
 import { type RefObject, useMemo, useState } from "react";
+import { getAdkPath } from "../../lib/adk-store";
 import { t } from "../../lib/i18n";
 import { FileTree } from "./FileTree";
 import { WorkspaceContextApp } from "./WorkspaceContextApp";
@@ -23,6 +24,9 @@ interface RailProps {
 
 export function HerdrWorkspaceRail(props: RailProps) {
 	const [tab, setTab] = useState<"spaces" | "agents" | "context">("spaces");
+	const [showWebPath, setShowWebPath] = useState(false);
+	const isBrowser = !("__TAURI_INTERNALS__" in window);
+	const webPath = isBrowser ? getAdkPath() : null;
 	const agents = useMemo(
 		() =>
 			[...(props.snapshot?.agents ?? [])].sort((a, b) => {
@@ -57,7 +61,18 @@ export function HerdrWorkspaceRail(props: RailProps) {
 				aria-label={t("workspace.herdrFileTree")}
 			>
 				<header className="herdr-workspace__section-title">
-					<span>{t("workspace.herdrFileTree")}</span>
+					{isBrowser ? (
+						<button
+							type="button"
+							className="herdr-workspace__toggle-btn"
+							aria-expanded={showWebPath}
+							onClick={() => setShowWebPath(!showWebPath)}
+						>
+							{t("workspace.herdrFileTree")}
+						</button>
+					) : (
+						<span>{t("workspace.herdrFileTree")}</span>
+					)}
 					{props.workspaceRoot && (
 						<span
 							className="herdr-workspace__root"
@@ -77,7 +92,9 @@ export function HerdrWorkspaceRail(props: RailProps) {
 						>
 							{t("workspace.herdrBackButton")}
 						</button>
-					) : props.onShowViewer && (props.openFilePath || (props.openDocs && props.openDocs.length > 0)) ? (
+					) : props.onShowViewer &&
+						(props.openFilePath ||
+							(props.openDocs && props.openDocs.length > 0)) ? (
 						<button
 							type="button"
 							className="herdr-workspace__toggle-btn"
@@ -99,6 +116,9 @@ export function HerdrWorkspaceRail(props: RailProps) {
 						</button>
 					) : null}
 				</header>
+				{isBrowser && showWebPath && webPath && (
+					<div className="herdr-workspace__web-path">{webPath}</div>
+				)}
 				{props.workspaceRoot ? (
 					<FileTree
 						key={props.workspaceRoot}

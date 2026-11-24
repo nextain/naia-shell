@@ -4,6 +4,10 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { t } from "../../lib/i18n";
+import {
+	type KioskIrSlide,
+	kioskIrSlideImageUrl,
+} from "../../lib/kiosk-demo/slides";
 import { pdfTextFromItems } from "../../lib/slides-pdf-text";
 
 type SlidesWorkerLocation = Pick<Location, "protocol" | "host" | "pathname">;
@@ -50,7 +54,8 @@ export function resolveSlidesPdfWorkerUrl(
 	const normalizedAbsolutePath = pathWithoutUrlSlash.replaceAll("\\", "/");
 	const lastSlash = normalizedAbsolutePath.lastIndexOf("/");
 	if (
-		(!normalizedAbsolutePath.startsWith("/") && !/^[A-Za-z]:\//.test(normalizedAbsolutePath)) ||
+		(!normalizedAbsolutePath.startsWith("/") &&
+			!/^[A-Za-z]:\//.test(normalizedAbsolutePath)) ||
 		lastSlash <= 0
 	) {
 		return workerUrl;
@@ -58,7 +63,8 @@ export function resolveSlidesPdfWorkerUrl(
 
 	const appRoot = normalizedAbsolutePath.slice(0, lastSlash);
 	const separator = pathWithoutUrlSlash.includes("\\") ? "\\" : "/";
-	const outputRoot = separator === "\\" ? appRoot.replaceAll("/", "\\") : appRoot;
+	const outputRoot =
+		separator === "\\" ? appRoot.replaceAll("/", "\\") : appRoot;
 	const workerPath = `${outputRoot}${separator}assets${separator}${workerName}`;
 	return `${location.protocol}//${location.host}/${encodeURIComponent(workerPath)}`;
 }
@@ -72,6 +78,8 @@ export interface SlidesViewerProps {
 	viewerRef: RefObject<HTMLDivElement>;
 	viewerWidth: number;
 	totalPages: number;
+	hidden?: boolean;
+	slideCard?: KioskIrSlide | null;
 	onReady: (file: File, totalPages: number, texts: string[]) => void;
 	onError: (file: File, error: unknown) => void;
 }
@@ -83,13 +91,21 @@ export function SlidesViewer({
 	viewerRef,
 	viewerWidth,
 	totalPages,
+	hidden = false,
+	slideCard,
 	onReady,
 	onError,
 }: SlidesViewerProps) {
 	return (
-		<div className="slides-app__viewer" ref={viewerRef} data-testid="slides-viewer">
+		<div
+			className="slides-app__viewer"
+			ref={viewerRef}
+			data-testid="slides-viewer"
+			hidden={hidden}
+		>
 			{file ? (
-				<Document
+				<div className="slides-app__stage">
+					<Document
 					file={file}
 					onLoadSuccess={async (document) => {
 						const texts: string[] = [];
@@ -101,26 +117,46 @@ export function SlidesViewer({
 						onReady(file, document.numPages, texts);
 					}}
 					onLoadError={(error) => onError(file, error)}
-					loading={
-						<div className="slides-app__empty">{t("slides.loading")}</div>
-					}
-					error={
-						<div className="slides-app__empty slides-app__empty--error">
-							{t("slides.loadError")}
-						</div>
-					}
-				>
-					{totalPages > 0 ? (
-						<PdfPage
-							key={`${fileName}-${totalPages}`}
-							pageNumber={page}
-							width={viewerWidth}
-							renderAnnotationLayer={false}
-							renderTextLayer={false}
-							className="slides-app__page"
-						/>
+						loading={
+							slideCard ? null : (
+								<div className="slides-app__empty">{t("slides.loading")}</div>
+							)
+						}
+						error={
+							slideCard ? null : (
+								<div className="slides-app__empty slides-app__empty--error">
+									{t("slides.loadError")}
+								</div>
+							)
+						}
+					>
+						{totalPages > 0 ? (
+							<PdfPage
+								key={`${fileName}-${totalPages}`}
+								pageNumber={page}
+								width={viewerWidth}
+								renderAnnotationLayer={false}
+								renderTextLayer={false}
+								className="slides-app__page"
+							/>
+						) : null}
+					</Document>
+					{slideCard ? (
+						<figure
+							className="slides-app__card-overlay"
+							data-testid="slides-card-overlay"
+							data-slide-page={slideCard.page}
+						>
+							<img
+								className="slides-app__card-image"
+								data-testid="slides-card-image"
+								src={kioskIrSlideImageUrl(slideCard)}
+								alt={slideCard.title}
+								draggable={false}
+							/>
+						</figure>
 					) : null}
-				</Document>
+				</div>
 			) : (
 				<div className="slides-app__empty">
 					<div className="slides-app__empty-icon">▣</div>

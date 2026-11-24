@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getPlatformAppStoreAdapter } from "./app-store-adapter";
 import { LAB_GATEWAY_URL } from "./config";
+import { isWebMode } from "./web-runtime/web-assets";
 import { getLocale } from "./i18n";
 
 export interface AppInstallRequest {
@@ -24,10 +26,13 @@ export function getStoreGatewayUrl(): string {
 	// legacy chat WebSocket gateway (ws://localhost:18789), so install hit a dead
 	// localhost port ("error sending request for url http://localhost:18789/...",
 	// 2026-08-31 rehearsal). config.gatewayUrl (chat gateway) is unrelated here.
-	return httpGatewayUrl(LAB_GATEWAY_URL);
+	return httpGatewayUrl(LAB_GATEWAY_URL || "https://api.naia.land");
 }
 
 export function hasStoreEntitlement(appId: string): Promise<boolean> {
+	if (isWebMode()) {
+		return getPlatformAppStoreAdapter().checkEntitlement(appId);
+	}
 	return invoke<boolean>("app_store_has_entitlement", {
 		appId,
 		gatewayUrl: getStoreGatewayUrl(),

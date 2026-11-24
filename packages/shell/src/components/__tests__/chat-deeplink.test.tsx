@@ -22,6 +22,7 @@ vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi.fn().mockResolvedValue(undefined),
 	cancelChat: vi.fn().mockResolvedValue(undefined),
 	configureSpeechProfile: vi.fn().mockResolvedValue(undefined),
+	fetchAgentSkills: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -93,9 +94,14 @@ describe("ChatArea — file deep-links", () => {
 			"수정한 파일은 /home/user/dev/naia-os/shell/src/App.tsx 입니다.",
 		);
 		render(<ChatArea />);
-		const btn = await screen.findByRole("button", {
-			name: "/home/user/dev/naia-os/shell/src/App.tsx",
-		});
+		// The cold lazy markdown import initially renders plain text.
+		const btn = await screen.findByRole(
+			"button",
+			{
+				name: "/home/user/dev/naia-os/shell/src/App.tsx",
+			},
+			{ timeout: 5_000 },
+		);
 		expect(btn).toBeInTheDocument();
 	});
 

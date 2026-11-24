@@ -1,3 +1,6 @@
+import { mergeCatalogModels } from "../lib/llm/small-model";
+import { defaultSmallModel, defaultThinkingLevel, LOCAL_SMALL_MODEL, smallModelChoices } from "../lib/llm/small-model";
+import { WebPushSettings } from "./WebPushSettings";
 import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -44,6 +47,49 @@ import {
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { setBroadcastBridgeSnapshot } from "../lib/broadcast-audio-bridge";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import {
+	isRetiredWebBackground,
+	isWebMode,
+	WEB_BACKGROUND_ASSETS,
+	WEB_DEFAULT_BACKGROUND,
+	WEB_DEFAULT_VRM,
+	WEB_NVA_ASSETS,
+} from "../lib/web-runtime/web-assets";
+import {
+	getWebAuthenticatedUserId,
+	isWebAuthenticated,
+	logoutWebSession,
+	startWebLoginRedirect,
+} from "../lib/web-runtime/web-auth";
+import { openWebLoginPrompt } from "../lib/web-runtime/web-login-prompt";
+import {
+	formatWebStorageSummaryLine,
+	getWebStoragePersistState,
+	requestWebPersistentStorage,
+	subscribeWebStoragePersistState,
+} from "../lib/web-runtime/web-storage-persist";
+import {
+	getWebModelStatus,
+	setWebModelStatus,
+} from "../lib/web-runtime/web-model-status";
+import { readNavigatorGpu } from "../lib/web-runtime/webgpu-check";
+import {
+	KIOSK_DEMO_ENABLE_TOOLS,
+	KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+	KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
+	KIOSK_DEMO_THINKING_LEVEL,
+	KIOSK_DEMO_TTS_VOICE,
+} from "../lib/config-seed";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	WEB_LLM_MODEL_IDS,
+	WEB_LLM_MODEL_PREF_KEY,
+	formatWebLlmModelLabel,
+	isWebLlmModelId,
+	type WebLlmModelId,
+} from "../lib/web-runtime/webllm-model";
+import { isWebSpeechAvailable } from "../lib/stt";
+import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
@@ -89,15 +135,11 @@ import {
 	saveConfigSecure,
 } from "../lib/config";
 import {
-	formatCredits,
-	formatCreditsExact,
-	formatCreditsFromUsd,
-} from "../lib/credits";
-import {
 	type AgentFact,
 	deleteAgentFact,
 	exportMemoryBackup,
 	getAllAgentFacts,
+	getMemoryPendingCount,
 	importMemoryBackup,
 } from "../lib/db";
 import {
@@ -117,6 +159,9 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
+import { formatCreditBalance } from "../lib/credits-usage";
+import { formatModelPrice } from "../lib/llm/model-label";
+
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -152,6 +197,7 @@ import {
 	readConfiguredLlmRoles,
 	writeConfiguredLlmRole,
 } from "../lib/llm/roles";
+import { WEB_SUPPORTED_LLM_PROVIDER_IDS } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
@@ -182,6 +228,14 @@ import {
 } from "../lib/ollama-thinking-status";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import {
+	themePatch,
+	loadWebThemeBackgroundUrl,
+	probeThemeMedia,
+	resolveWebThemeBackground,
+	type CharacterTheme,
+} from "../lib/character-theme";
+import { CharacterThemeSettings } from "./CharacterThemeSettings";
+import {
 	type ProactiveSpeechSettings,
 	toSpeechProfileCommandInput,
 } from "../lib/proactive-speech-settings";
@@ -195,14 +249,21 @@ import {
 	SLOT_GROUPS,
 	type SlotId,
 	applyNaiaSlotDefaults,
+	hasSmallModelSetting,
 	deriveGate,
 	effectiveMainRole,
 	effectiveTtsProvider,
 	readSlots,
 } from "../lib/slots/model";
 import { listSttProviders } from "../lib/stt/registry";
-import { listTtsProviderMetas } from "../lib/tts/registry";
+import {
+	getTtsProviderMeta,
+	browserVoicesToTtsVoiceMetas,
+	groupTtsVoicesForLocale,
+	listTtsProviderMetas,
+} from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
+import type { TtsVoiceMeta } from "../lib/tts/types";
 import type { ModelCapability, ProviderId } from "../lib/types";
 import {
 	UI_FONT_SCALE_IDS,
@@ -230,6 +291,22 @@ import {
 	RadioDjSettingsCard,
 } from "./ProactiveSpeechSettingsSection";
 import { RefAudioSection } from "./RefAudioSection";
+import { useWebModelStatus } from "./WebModelStatusBar";
+import { WEB_SETTINGS_ASSETS_CHANGED_EVENT } from "../lib/web-runtime/web-nva-archive";
+import { WEB_ADK_PATH } from "../lib/web-runtime/web-adk-path";
+import { isNotFoundError } from "../lib/web-runtime/web-adk-policy";
+import {
+	WebSettingsAssetImportError,
+	canDeleteWebSettingsAsset,
+	getWebBackgroundMediaType,
+	importWebSettingsAsset,
+	removeWebSettingsAsset,
+	resolveWebBackgroundSelection,
+	resolveWebNvaSelection,
+} from "../lib/web-runtime/web-settings-assets";
+import { listWebUploadedNvaModels } from "../lib/web-runtime/web-nva-archive";
+
+const WebVisualAgentSlugSettings = lazy(() => import("./WebVisualAgentSlugSettings"));
 import { SmallLlmSection } from "./SmallLlmSection";
 import { UsageSettings } from "./UsageConsentGate";
 
@@ -237,7 +314,6 @@ const SkillsTab = lazy(() =>
 	import("./SkillsTab").then(({ SkillsTab }) => ({ default: SkillsTab })),
 );
 
-const LLM_PROVIDERS = listLlmProviders();
 
 function vramTierLabelKey(_id: VramTierId) {
 	return "settings.vramTier.windows-voice-6g" as const;
@@ -348,51 +424,54 @@ function isVoxCpm2InstallationStatus(
 	);
 }
 
+type ModelThinkingConfig = AppConfig & { mainModelThinkingLevels?: Record<string, ThinkingLevel> };
+const modelThinkingKey = (provider: string, model: string) => JSON.stringify([provider, model]);
+
+function writeMainModelSelection(config: AppConfig, role: LlmRoleConfig, previous: AppConfig = config): AppConfig {
+	const levels = { ...(previous as ModelThinkingConfig).mainModelThinkingLevels };
+	const prior = readConfiguredLlmRoles(previous).main;
+	if (prior?.provider && prior.model) {
+		const level = prior.thinkingLevel ?? previous.thinkingLevel;
+		if (level) levels[modelThinkingKey(prior.provider, prior.model)] = level;
+	}
+	const key = role.provider && role.model ? modelThinkingKey(role.provider, role.model) : "";
+	const storedOrPrior = (key && levels[key]) || (prior?.provider === role.provider && prior?.model === role.model ? prior?.thinkingLevel : undefined);
+	// 웹 모드 nextain 선택: 저장된 개별 override가 없으면 모델별 기본 추론 강도 적용.
+	const webDefault = role.provider === "nextain" && role.model && isWebMode() && !isKioskDemo() ? defaultThinkingLevel(role.model) : undefined;
+	const level = storedOrPrior ?? webDefault;
+	const selection = { ...role };
+	delete selection.thinkingLevel;
+	const updated = writeConfiguredLlmRole(config, "main", { ...selection, ...(level ? { thinkingLevel: level } : {}) });
+	return { ...updated, mainModelThinkingLevels: levels, thinkingLevel: level || "off", enableThinking: Boolean(level && level !== "off") } as ModelThinkingConfig;
+}
+
 function buildNaiaLoginConfig(
 	current: AppConfig | null,
 	nextNaiaKey: string,
 	nextNaiaUserId: string,
+	models?: readonly LlmModelMeta[],
 ): AppConfig {
-	const nextModel =
-		current?.provider === "nextain" && current.model
-			? current.model
-			: getDefaultLlmModel("nextain");
+	const main = current ? effectiveMainRole(current) : undefined;
+	const hasMain = Boolean(main?.provider && main.model);
 	const base: AppConfig = current ?? {
 		provider: "nextain",
-		model: nextModel,
+		model: "",
 		apiKey: "",
 		locale: getLocale(),
 	};
-
-	// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용.
-	// applyNaiaSlotDefaults 는 비파괴(사용자가 이미 설정한 슬롯은 보존). §9 #5 모델 문자열 SoT.
 	const withNaiaKey: AppConfig = {
 		...base,
-		provider: "nextain",
-		model: nextModel,
-		apiKey: "",
+		provider: hasMain ? main!.provider as ProviderId : "nextain",
+		model: hasMain ? main!.model! : "",
+		apiKey: base.apiKey ?? "",
 		naiaKey: nextNaiaKey,
 		naiaUserId: nextNaiaUserId || undefined,
 		voice: base.voice ?? getDefaultVoiceForAvatar(base.vrmModel),
 	};
-	// A Settings-tab Naia login is an explicit main-brain selection. Keep the
-	// structured role mirror in lockstep with the top-level provider/model;
-	// otherwise a previous Gemini main role remains authoritative to the Agent.
-	const withNaiaMain = writeConfiguredLlmRole(withNaiaKey, "main", {
-		provider: "nextain",
-		model: nextModel,
-	});
-	return applyNaiaSlotDefaults(withNaiaMain);
+	return applyNaiaSlotDefaults(withNaiaKey, models);
 }
-const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
-const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
-
-function getBackgroundMediaType(path: string): "image" | "video" | "" {
-	const ext = path.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
-	if (BG_VIDEO_EXTS.has(ext)) return "video";
-	if (BG_IMAGE_EXTS.has(ext)) return "image";
-	return "";
-}
+/** 배경 미디어 종류 판정은 단일 계약(getWebBackgroundMediaType)을 쓴다. */
+const getBackgroundMediaType = getWebBackgroundMediaType;
 
 // Fallback voice lists for Edge TTS
 const ALL_EDGE_VOICES: string[] = [
@@ -733,10 +812,15 @@ function DeviceSelect({
 
 /** Localized provider price tag; the Naia credit tag follows the UI language. */
 function ttsPricingLabel(p: { id: string; pricing?: string }): string {
-	return p.id === "nextain" ? t("tts.pricingNaiaCredits") : (p.pricing ?? "");
+	if (p.id !== "nextain") return p.pricing ?? "";
+	return isWebMode() ? "Naia Cr" : t("tts.pricingNaiaCredits");
 }
 
 async function openNvaAvatarCreator(): Promise<void> {
+	if (isWebMode() && !isKioskDemo() && !isWebAuthenticated()) {
+		openWebLoginPrompt("studio");
+		return;
+	}
 	const url = naiaWebUrl(`${getLocale()}/studio/nva/create`, NAIA_WEB_BASE_URL);
 	Logger.debug("SettingsTab", "Opening NVA avatar creator", { url });
 	try {
@@ -784,6 +868,40 @@ export function SettingsTab() {
 	const [claudePreflightStatus, setClaudePreflightStatus] =
 		useState<CodexPreflightStatus>("idle");
 	const existing = loadConfig();
+	const displaySmallRole = (config: AppConfig): LlmRoleConfig => {
+		const roles = readConfiguredLlmRoles(config);
+		const role = roles.sub?.inherit === "memory" ? roles.memory : roles.sub;
+		if (
+			isWebMode() &&
+			role?.provider &&
+			!WEB_SUPPORTED_LLM_PROVIDER_IDS.some((id) => id === role.provider)
+		) {
+			Logger.debug("SettingsTab", "Using main model in web picker", { provider: role.provider });
+			return { inherit: "main" };
+		}
+		return role ?? { inherit: "main" };
+	};
+	const catalogModels = useRef<readonly LlmModelMeta[] | undefined>(undefined);
+	const lastSyncedWorkspace = useRef(getAdkPath());
+	const [smallRole, setSmallRole] = useState<LlmRoleConfig>(() => existing ? displaySmallRole(existing) : { inherit: "main" });
+	const [smallSortMode, setSmallSortMode] = useState<ModelSortMode>("recommended");
+	function applyCatalogSmallDefault(config: AppConfig): AppConfig {
+		if (catalogModels.current === undefined) return config;
+		let updated = config;
+		if ((!config.provider || config.provider === "nextain") && config.llmRoles?.main?.provider !== "" && !config.model && !config.llmRoles?.main?.model) {
+			const withDefaults = applyNaiaSlotDefaults(config, catalogModels.current);
+			if (withDefaults.llmRoles?.main?.model) {
+				updated = writeConfiguredLlmRole(updated, "main", withDefaults.llmRoles.main);
+			}
+		}
+		if (!hasSmallModelSetting(updated)) {
+			updated = writeConfiguredLlmRole(updated, "sub", defaultSmallModel(catalogModels.current));
+		}
+		if (updated === config) return config;
+		saveConfig(updated);
+		void writeNaiaConfig(updated as unknown as Record<string, unknown>);
+		return updated;
+	}
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
@@ -802,10 +920,11 @@ export function SettingsTab() {
 	const [savedVrmModel, setSavedVrmModel] = useState(
 		normalizeLocalPath(existing?.vrmModel ?? DEFAULT_AVATAR_MODEL),
 	);
-	const initialMainRole = existing ? effectiveMainRole(existing) : {};
+	const initialMainRole = effectiveMainRole(existing ?? ({} as AppConfig));
 	const initProvider = (initialMainRole.provider ?? "") as ProviderId;
 	const savedModel = initialMainRole.model;
 	const [provider, setProvider] = useState<ProviderId>(initProvider);
+	const webModelStatus = useWebModelStatus();
 	const modelValid =
 		savedModel &&
 		(initProvider === "ollama" ||
@@ -813,9 +932,17 @@ export function SettingsTab() {
 			(getLlmProvider(initProvider)?.models.some((m) => m.id === savedModel) ??
 				false));
 	const [model, setModel] = useState(
-		modelValid ? savedModel : getDefaultLlmModel(initProvider),
+		isWebMode() && initProvider === "webllm" && webModelStatus.model
+			? webModelStatus.model
+			: modelValid
+				? savedModel
+				: getDefaultLlmModel(initProvider),
 	);
-	const [configSecretsSettled, setConfigSecretsSettled] = useState(false);
+	useEffect(() => {
+		if (isWebMode() && provider === "webllm" && webModelStatus.model) {
+			setModel(webModelStatus.model);
+		}
+	}, [provider, webModelStatus.model]);
 	// SettingsTab remains mounted while the Shell starts.  The workspace config
 	// hydrates asynchronously, so its initial state can otherwise keep showing
 	// the bootstrap provider even after the agent has loaded the workspace's
@@ -824,12 +951,25 @@ export function SettingsTab() {
 	// their persisted selection rather than being reverted.
 	useEffect(() => {
 		const syncMainBrainFromConfig = () => {
-			const cfg = loadConfig();
-			if (!cfg) return;
+			const loaded = loadConfig();
+			if (!loaded) return;
+			lastSyncedWorkspace.current = getAdkPath();
+			const cfg = applyCatalogSmallDefault(loaded);
+			setSmallRole(displaySmallRole(cfg));
 			const mainRole = effectiveMainRole(cfg);
 			if (!mainRole.provider) return;
 			const nextProvider = mainRole.provider as ProviderId;
 			setProvider(nextProvider);
+			if (isWebMode() && nextProvider === "webllm") {
+				const runtimeModel = getWebModelStatus().model;
+				setModel(
+					runtimeModel ||
+						(typeof mainRole.model === "string" && mainRole.model.trim()
+							? mainRole.model
+							: getDefaultLlmModel(nextProvider)),
+				);
+				return;
+			}
 			setModel(
 				typeof mainRole.model === "string" && mainRole.model.trim()
 					? mainRole.model
@@ -861,9 +1001,13 @@ export function SettingsTab() {
 	const [naiaNvas, setNaiaNvas] = useState<string[]>([]);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>(existing?.avatarProvider ?? "naia-video-avatar");
+	>(
+		existing?.avatarProvider ??
+			(import.meta.env.MODE === "web" ? "vrm" : "naia-video-avatar"),
+	);
 	const [nvaModel, setNvaModel] = useState(existing?.nvaModel ?? "");
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
+	const [pendingBgPath, setPendingBgPath] = useState<string | null>(null);
 	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
 		string | undefined
 	>(existing?.backgroundVideo);
@@ -881,17 +1025,93 @@ export function SettingsTab() {
 		existing?.vrmModel,
 	);
 	const [ttsVoice, setTtsVoice] = useState(
-		existing?.ttsVoice ?? defaultVoiceForProvider,
+		isKioskDemo()
+			? existing?.ttsProvider === "browser"
+				? (existing?.ttsVoice ?? "")
+				: KIOSK_DEMO_TTS_VOICE
+			: existing?.ttsVoice ?? (isWebMode() ? "" : defaultVoiceForProvider),
 	);
+	// 웹판 Naia Cloud 기본 목소리: 키오스크는 지나, 일반 웹판은 드래곤 HD 첫 목소리(온보딩과 같음).
+	const webCloudVoice = isKioskDemo()
+		? KIOSK_DEMO_TTS_VOICE
+		: (getTtsProviderMeta("nextain")?.voices?.[0]?.id ?? "");
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
-	// 보여 준다(#575).
+	// 보여 준다(#575). 웹판은 브라우저 내장 합성("browser")과 Naia Cloud TTS("nextain")
+	// 둘 중 하나다. 키오스크 시연판은 nextain, 일반 웹판은 browser 가 기본이다.
 	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>(
-		effectiveTtsProvider((existing ?? {}) as AppConfig),
+		isKioskDemo()
+			? existing?.ttsProvider === "browser"
+				? "browser"
+				: "nextain"
+			: isWebMode()
+				? existing?.ttsProvider === "nextain"
+					? "nextain"
+					: "browser"
+				: effectiveTtsProvider((existing ?? {}) as AppConfig),
 	);
 	const [sttProvider, setSttProvider] = useState<SttProviderId>(
-		existing?.sttProvider ?? "",
+		existing?.sttProvider ?? (isWebMode() ? "web-speech" : ""),
 	);
+	const [browserSpeechVoices, setBrowserSpeechVoices] = useState<
+		SpeechSynthesisVoice[]
+	>([]);
+	const [webStorageState, setWebStorageState] = useState(() =>
+		getWebStoragePersistState(),
+	);
+	const [webAuthLoggedIn, setWebAuthLoggedIn] = useState(() =>
+		isWebAuthenticated(),
+	);
+	const [webAuthUserId, setWebAuthUserId] = useState(() =>
+		getWebAuthenticatedUserId(),
+	);
+	const [webAuthError, setWebAuthError] = useState<string | null>(null);
+	useEffect(() => {
+		if (!isWebMode()) return;
+		const unsubStorage = subscribeWebStoragePersistState(() => {
+			setWebStorageState(getWebStoragePersistState());
+		});
+		void requestWebPersistentStorage();
+		const syncAuth = () => {
+			setWebAuthLoggedIn(isWebAuthenticated());
+			setWebAuthUserId(getWebAuthenticatedUserId());
+		};
+		window.addEventListener("naia_auth_ready", syncAuth);
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		return () => {
+			unsubStorage();
+			window.removeEventListener("naia_auth_ready", syncAuth);
+			window.removeEventListener("naia-web-auth-changed", syncAuth);
+		};
+	}, []);
+	useEffect(() => {
+		if (
+			!isWebMode() ||
+			typeof window === "undefined" ||
+			!("speechSynthesis" in window)
+		)
+			return;
+		const synth = window.speechSynthesis;
+		if (!synth || typeof synth.getVoices !== "function") return;
+		const refreshVoices = () => {
+			try {
+				setBrowserSpeechVoices(synth.getVoices() ?? []);
+			} catch {
+				setBrowserSpeechVoices([]);
+			}
+		};
+		refreshVoices();
+		const prevHandler = synth.onvoiceschanged;
+		synth.onvoiceschanged = (ev) => {
+			refreshVoices();
+			if (typeof prevHandler === "function") prevHandler.call(synth, ev);
+		};
+		return () => {
+			if (synth.onvoiceschanged !== prevHandler) {
+				synth.onvoiceschanged = prevHandler;
+			}
+		};
+	}, []);
 	const [sttModel, setSttModel] = useState(existing?.sttModel ?? "");
 	const [sttModels, setSttModels] = useState<SttModelInfo[]>([]);
 	const [sttDownloading, setSttDownloading] = useState<string | null>(null);
@@ -905,6 +1125,18 @@ export function SettingsTab() {
 			const cfg = loadConfig();
 			setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
 			setNvaModel(cfg?.nvaModel ?? "");
+			if (cfg?.vrmModel !== undefined) {
+				const nextVrm = normalizeLocalPath(cfg.vrmModel);
+				setVrmModel(nextVrm);
+				setSavedVrmModel(nextVrm);
+			}
+			if (cfg?.backgroundVideo !== undefined) {
+				setBackgroundVideoFilename(cfg.backgroundVideo);
+			}
+			if (cfg && isWebMode() && !isKioskDemo()) {
+				setTtsProvider(cfg.ttsProvider === "nextain" ? "nextain" : "browser");
+				setTtsVoice(cfg.ttsVoice ?? "");
+			}
 		};
 		window.addEventListener("naia-config-changed", syncAvatarFromConfig);
 		return () =>
@@ -952,16 +1184,24 @@ export function SettingsTab() {
 	const [speechStyle, setSpeechStyle] = useState(
 		existing?.speechStyle ?? "casual",
 	);
-	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
+	const [enableTools, setEnableTools] = useState(
+		isKioskDemo() ? KIOSK_DEMO_ENABLE_TOOLS : (existing?.enableTools ?? true),
+	);
 	// #502 (FR-ENV-ATTENTION.4): 작업 표면 인지는 사용자가 직접 고른다.
 	// 설정 파일에만 있고 화면에 없으면 "사용자에게 옵셔널하게"가 아니다.
 	const [environmentAwareness, setEnvironmentAwareness] =
-		useState<EnvironmentAwareness>(existing?.environmentAwareness ?? "auto");
+		useState<EnvironmentAwareness>(
+			isKioskDemo()
+				? KIOSK_DEMO_ENVIRONMENT_AWARENESS
+				: (existing?.environmentAwareness ?? "auto"),
+		);
 	const [environmentTerminalInput, setEnvironmentTerminalInput] = useState(
-		existing?.environmentTerminalInput === true,
+		isKioskDemo()
+			? KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT
+			: existing?.environmentTerminalInput === true,
 	);
 	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
-		resolveThinkingLevel(existing),
+		isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : resolveThinkingLevel(existing),
 	);
 	const workspaceRoot = existing?.workspaceRoot || getAdkPath() || "";
 	const [voice, setVoice] = useState(
@@ -970,9 +1210,9 @@ export function SettingsTab() {
 	const [dynamicModels, setDynamicModels] = useState<
 		Record<string, LlmModelMeta[]>
 	>(getStaticModelsRecord);
-	const [naiaModelsSettled, setNaiaModelsSettled] = useState(false);
+
 	const [modelSortMode, setModelSortMode] = useState<ModelSortMode>(
-		existing?.modelSortMode ?? "price",
+		existing?.modelSortMode ?? "recommended",
 	);
 	const [ollamaHost, setOllamaHost] = useState(
 		existing?.ollamaHost ?? DEFAULT_OLLAMA_HOST,
@@ -1826,12 +2066,15 @@ export function SettingsTab() {
 	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken] = useState(existing?.gatewayToken ?? "");
 	const [error, setError] = useState("");
+	const webModelSelectionRevision = useRef(0);
 	const [saved, setSaved] = useState(false);
 	const [isPreviewing, setIsPreviewing] = useState(false);
 	const [dynamicTtsVoices, setDynamicTtsVoices] = useState<
 		{ id: string; label: string; gender?: string }[]
 	>([]);
 	const [facts, setFacts] = useState<AgentFact[]>([]);
+	const [memoryPending, setMemoryPending] = useState(0);
+	const [memoryReadError, setMemoryReadError] = useState(false);
 
 	// Memory adapter settings
 	const [memoryAdapter, setMemoryAdapter] = useState<"local" | "qdrant">(
@@ -1864,6 +2107,12 @@ export function SettingsTab() {
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
 	);
+	const [memoryEmbeddingRevision, setMemoryEmbeddingRevision] = useState(
+		existing?.memoryEmbeddingRevision ?? "",
+	);
+	const [memoryEmbeddingDimensions, setMemoryEmbeddingDimensions] = useState(
+		existing?.memoryEmbeddingDimensions ?? 1536,
+	);
 	const [smallLlmRev, setSmallLlmRev] = useState(0);
 	// 보조·전문가·기억 LLM 역할 편집기 제거 (에픽 #589 할 일 2·3, #598): 나이아 로그인은
 	// 모델 하나만 알고, 두뇌 화면에는 역할 편집기를 그리지 않는다. main 역할만 정본으로 남는다.
@@ -1874,12 +2123,18 @@ export function SettingsTab() {
 		"idle" | "exporting" | "importing" | "done" | "error"
 	>("idle");
 	const [backupError, setBackupError] = useState("");
+	const [transferStatus, setTransferStatus] = useState<"idle" | "exporting" | "error">("idle");
 
 	const [allowedTools, setAllowedTools] = useState<string[]>(
 		existing?.allowedTools ?? [],
 	);
 	const [adkRestartRequired, setAdkRestartRequired] = useState(false);
-	const [naiaKey, setNaiaKeyState] = useState(existing?.naiaKey ?? "");
+	const [naiaKey, setNaiaKeyState] = useState(
+		existing?.naiaKey ||
+			(isWebMode() && typeof localStorage !== "undefined"
+				? localStorage.getItem("naia-remote-key")?.trim() ?? ""
+				: ""),
+	);
 	const [secureNaiaCredentialReady, setSecureNaiaCredentialReady] =
 		useState(false);
 	const naiaCredentialEpochRef = useRef(0);
@@ -1892,6 +2147,14 @@ export function SettingsTab() {
 	> | null>(null);
 	const labSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const labBrowserVisibleRef = useRef(false);
+
+	// 웹판 설정 자산 가져오기: 파일 선택→검사→브라우저 저장→목록 갱신→선택 적용.
+	const bgFileInputRef = useRef<HTMLInputElement>(null);
+	const nvaFileInputRef = useRef<HTMLInputElement>(null);
+	const [webAssetBusy, setWebAssetBusy] = useState<
+		"background" | "nva-files" | null
+	>(null);
+	const [webUploadedNvas, setWebUploadedNvas] = useState<string[]>([]);
 
 	// A profile can have been saved before its automatic slot wiring was
 	// available (or while the app was being restarted). Reconcile it once after
@@ -2009,11 +2272,19 @@ export function SettingsTab() {
 			return resolveProvider(matched[1]);
 		};
 
+		const catalogWorkspace = getAdkPath();
 		async function fetchModels() {
 			try {
 				// E1 셸-직결: 게이트웨이 `/v1/pricing` 전체 카탈로그(구 skill_config directToolCall 대체 — 신코어
 				// tool_request 미지원. nextain(vertexai) 가격은 별도 fetchNaiaPricing 가 다룸 → 아래 dedup 로 중복 회피).
 				const models = await fetchGatewayModelCatalog(LAB_GATEWAY_URL);
+				const candidates: LlmModelMeta[] = (models ?? []).filter(m => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase())).map(m => ({ id: normalizeModelId(m.id), label: m.id, capabilities: ["llm"] }));
+				catalogModels.current = candidates;
+				const current = loadConfig();
+				if ((getAdkPath() === catalogWorkspace || getAdkPath() === lastSyncedWorkspace.current) && current) {
+					const updated = applyCatalogSmallDefault(current);
+					setSmallRole(displaySmallRole(updated));
+				}
 				if (models && models.length > 0) {
 					const grouped = Object.fromEntries(
 						Object.entries(getStaticModelsRecord()).map(([k, v]) => [
@@ -2025,10 +2296,7 @@ export function SettingsTab() {
 					for (const m of models) {
 						if (!m || typeof m.id !== "string") continue;
 						const modelId = normalizeModelId(m.id);
-						const priceStr = m.price
-							? ` ($${m.price.input ?? "?"} / $${m.price.output ?? "?"})`
-							: "";
-						const label = `${m.name || modelId}${priceStr}`;
+						const label = m.name || modelId;
 
 						const pushModel = (key: string) => {
 							// #602: 제거된 공급자로 매핑되면 grouped[key] 가 없으므로 건너뛴다.
@@ -2038,6 +2306,7 @@ export function SettingsTab() {
 									id: modelId,
 									label,
 									capabilities: ["llm"] as const,
+									...(m.price?.input != null && m.price?.output != null ? { pricing: [m.price.input, m.price.output] as [number, number] } : {}),
 								});
 							}
 						};
@@ -2065,13 +2334,21 @@ export function SettingsTab() {
 					setDynamicModels((prev) => ({
 						...prev,
 						...grouped,
-						...(prev.nextain?.some((m) => m.pricing !== undefined)
-							? { nextain: prev.nextain }
-							: {}),
+						nextain: mergeCatalogModels(grouped.nextain ?? [], prev.nextain ?? []),
+						// vLLM/Ollama lists come from their own hosts, not this catalog.
+						// The catalog can land after that discovery; its static (empty)
+						// lists must not wipe the discovered models and blank the model.
+						...(prev.vllm?.length ? { vllm: prev.vllm } : {}),
+						...(prev.ollama?.length ? { ollama: prev.ollama } : {}),
 					}));
 				}
 			} catch {
-				// Fallback to static registry models
+				catalogModels.current = [];
+				const current = loadConfig();
+				if ((getAdkPath() === catalogWorkspace || getAdkPath() === lastSyncedWorkspace.current) && current) {
+					const updated = applyCatalogSmallDefault(current);
+					setSmallRole(displaySmallRole(updated));
+				}
 			}
 		}
 		fetchModels();
@@ -2212,7 +2489,7 @@ export function SettingsTab() {
 				const mainRole: LlmRoleConfig = {
 					provider: "ollama",
 					model: snapshot.tag,
-					...(persistedMainRole?.provider === "ollama" &&
+										...(persistedMainRole?.provider === "ollama" &&
 					persistedMainRole.credentialRef !== undefined
 						? { credentialRef: persistedMainRole.credentialRef }
 						: {}),
@@ -2221,11 +2498,12 @@ export function SettingsTab() {
 						? { baseUrl: persistedMainRole.baseUrl }
 						: {}),
 				};
-				const nextSelection = writeConfiguredLlmRole(
+				const nextSelection = writeMainModelSelection(
 					legacySelection as unknown as AppConfig,
-					"main",
 					mainRole,
+					persistedConfig ?? undefined,
 				);
+				setThinkingLevel(resolveThinkingLevel(nextSelection));
 				saveConfig(
 					nextSelection as unknown as Parameters<typeof saveConfig>[0],
 				);
@@ -2442,7 +2720,9 @@ export function SettingsTab() {
 
 	useEffect(() => {
 		if (provider !== "vllm") return;
+		let active = true;
 		fetchVllmModels(vllmHost).then(({ models, connected }) => {
+			if (!active) return;
 			setVllmConnected(connected);
 			if (models.length > 0) {
 				setDynamicModels((prev) => ({ ...prev, vllm: models }));
@@ -2456,18 +2736,17 @@ export function SettingsTab() {
 				}
 			}
 		});
+		return () => {
+			active = false;
+		};
 	}, [provider, vllmHost]);
 
 	// Fetch live Naia pricing from gateway (DB = SoT).
 	// Runs when provider switches to "nextain" so the displayed price always
 	// matches what the gateway actually charges.
 	useEffect(() => {
-		if (provider !== "nextain") {
-			setNaiaModelsSettled(false);
-			return;
-		}
+		if (provider !== "nextain") return;
 		let active = true;
-		setNaiaModelsSettled(false);
 		// Pricing (DB SoT) + capability catalog (#365: gateway SoT for caps).
 		// If the catalog fetch fails, models keep their static capabilities.
 		Promise.all([
@@ -2483,13 +2762,10 @@ export function SettingsTab() {
 				setDynamicModels((prev) => ({
 					...prev,
 					nextain: applyNaiaModelMetadata(
-						liveModels ?? prev.nextain ?? [],
+						mergeCatalogModels(prev.nextain ?? [], liveModels ?? []),
 						metadata,
 					),
 				}));
-			})
-			.finally(() => {
-				if (active) setNaiaModelsSettled(true);
 			});
 		return () => {
 			active = false;
@@ -2694,10 +2970,7 @@ export function SettingsTab() {
 					setModel(cfg.model || getDefaultLlmModel("nextain"));
 				}
 			})
-			.catch(() => {})
-			.finally(() => {
-				if (!cancelled) setConfigSecretsSettled(true);
-			});
+			.catch(() => {});
 		return () => {
 			cancelled = true;
 		};
@@ -2729,6 +3002,10 @@ export function SettingsTab() {
 	}, []);
 
 	const startLabLogin = async () => {
+		if (isWebMode() && !isKioskDemo()) {
+			openWebLoginPrompt("cloud-llm");
+			return;
+		}
 		beginUsageLogin("settings");
 		loginAdkPathRef.current = getAdkPath();
 		setLabWaiting(true);
@@ -2785,13 +3062,34 @@ export function SettingsTab() {
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	useEffect(() => {
-		getAllAgentFacts()
-			.then((result: AgentFact[]) => setFacts(result ?? []))
-			.catch((err: unknown) => {
+		if (isWebMode()) return;
+		let alive = true;
+		const refresh = async () => {
+			try {
+				const [latest, pending] = await Promise.all([
+					getAllAgentFacts(),
+					getMemoryPendingCount(),
+				]);
+				if (alive) {
+					setFacts(latest ?? []);
+					setMemoryPending(pending ?? 0);
+					setMemoryReadError(false);
+				}
+			} catch (err) {
+				if (alive) setMemoryReadError(true);
 				Logger.warn("SettingsTab", "Failed to load agent memory facts", {
 					error: String(err),
 				});
-			});
+			}
+		};
+		void refresh();
+		const timer = window.setInterval(() => {
+			void refresh();
+		}, 2000);
+		return () => {
+			alive = false;
+			window.clearInterval(timer);
+		};
 	}, []);
 
 	// Fetch Lab balance for a given key
@@ -2904,6 +3202,7 @@ export function SettingsTab() {
 						loadConfig(),
 						nextNaiaKey,
 						nextNaiaUserId,
+						catalogModels.current,
 					);
 					await saveSecretKeyAtPath(
 						"naiaKey",
@@ -2943,7 +3242,7 @@ export function SettingsTab() {
 					finishUsageLogin("settings");
 					setNaiaKeyState(nextNaiaKey);
 					setNaiaUserIdState(nextNaiaUserId);
-					setProvider("nextain");
+					setProvider(nextConfig.provider);
 					setModel(nextConfig.model);
 					setApiKey("");
 					setSecureNaiaCredentialReady(true);
@@ -2983,7 +3282,16 @@ export function SettingsTab() {
 					});
 					setSecureNaiaCredentialReady(false);
 					setLabBalanceError(true);
-					setError(t("cost.labError"));
+					setError(
+						String(activationError).includes("secret_tool_missing") ||
+							String(activationError).includes(
+								"secret-tool failed: No such file",
+							)
+							? t("settings.secretToolMissing")
+							: String(activationError).includes("secret_store_failed")
+								? t("settings.secretStoreFailed")
+								: t("cost.labError"),
+					);
 				} finally {
 					setLabWaiting(false);
 				}
@@ -3001,26 +3309,87 @@ export function SettingsTab() {
 		setAvatarModelPath(normalized);
 		setSavedVrmModel(normalized);
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, vrmModel: normalized || undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, vrmModel: normalized || undefined });
+			if (isWebMode()) {
+				void writeNaiaUiConfig({ vrmModel: normalized || undefined });
+			}
+		}
 	}
 
-	function handleNaiaBgSelect(path: string) {
-		const filename = path.split(/[/\\]/).pop() ?? "";
-		setActiveBgPath(path);
-		setBackgroundVideoFilename(filename || undefined);
-		setBackgroundMediaType(getBackgroundMediaType(path));
-		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
-		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+	// Only the newest read may enqueue a write. UI-config writes themselves are
+	// serialized by adk-store, so the last successful write determines the UI.
+	const bgSelectRevision = useRef(0);
+	const nvaSelectRevision = useRef(0);
+
+	async function persistAssetSelection(patch: Partial<AppConfig>) {
+		const workspace = getAdkPath();
+		if (
+			workspace &&
+			(!(await writeNaiaUiConfig(patch, workspace)) || getAdkPath() !== workspace)
+		) {
+			throw new Error("asset selection was not saved");
+		}
+		const current = loadConfig();
+		const committed = current ? { ...current, ...patch } : null;
+		if (committed) saveConfig(committed);
+		return committed;
 	}
 
-	function handleClearNaiaBg() {
-		setActiveBgPath("");
-		setBackgroundVideoFilename(undefined);
-		setBackgroundMediaType("");
-		setBackgroundVideoUrl("");
-		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: undefined });
+	async function handleNaiaBgSelect(path: string, revision = ++bgSelectRevision.current) {
+		const isLatest = () => revision === bgSelectRevision.current;
+		if (!isLatest()) return;
+		setError("");
+		setPendingBgPath(path);
+		let selectedPath = path;
+		let url = "";
+		let missing = false;
+		try {
+			if (path) {
+				try {
+					url = await toLocalBlobUrl(path);
+				} catch (error) {
+					if (!isLatest()) return;
+					if (!isWebMode() || !isNotFoundError(error)) throw error;
+					missing = true;
+					const paths = await listNaiaAssets("background");
+					if (!isLatest()) return;
+					selectedPath = resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ?? "";
+					url = selectedPath ? await toLocalBlobUrl(selectedPath) : "";
+					if (!isLatest()) return;
+					setNaiaBgs(paths);
+				}
+			}
+			if (!isLatest()) return;
+			const filename = selectedPath.startsWith(`${WEB_ADK_PATH}/`)
+				? selectedPath
+				: selectedPath.split(/[/\\]/).pop() || undefined;
+			try {
+				await persistAssetSelection({ backgroundVideo: filename });
+			} catch (error) {
+				Logger.warn("SettingsTab", "[background] selection write failed", {
+					error: String(error),
+				});
+				if (isLatest()) setError(t("settings.saveFailed"));
+				return;
+			}
+			setActiveBgPath(selectedPath);
+			setBackgroundVideoFilename(filename);
+			setBackgroundMediaType(selectedPath ? getBackgroundMediaType(selectedPath) : "");
+			setBackgroundVideoUrl(url);
+			if (missing && isLatest()) setError(t("settings.webAssetMissing"));
+		} catch (error) {
+			Logger.warn("SettingsTab", "[background] media or list read failed", {
+				error: String(error),
+			});
+			if (isLatest()) setError(t("settings.webAssetFailed"));
+		} finally {
+			if (isLatest()) setPendingBgPath(null);
+		}
+	}
+
+	function handleClearNaiaBg(revision?: number) {
+		return handleNaiaBgSelect("", revision);
 	}
 
 	// #12: Import file (Downloads → naia-settings/{subdir}/)
@@ -3091,12 +3460,137 @@ export function SettingsTab() {
 			} else {
 				setNaiaBgs(paths);
 				if (activeBgPath && activeBgPath.endsWith(filename))
-					handleClearNaiaBg();
+					void handleClearNaiaBg();
 			}
 		} catch (e) {
 			Logger.warn("SettingsTab", "[delete-asset] failed", {
 				error: String(e),
 			});
+		}
+	}
+
+	function webAssetErrorKey(
+		code: string,
+	):
+		| "settings.webAssetUnsupported"
+		| "settings.webAssetTooLarge"
+		| "settings.webAssetInvalidNva"
+		| "settings.webAssetUnplayable"
+		| "settings.webAssetQuota"
+		| "settings.webAssetFailed" {
+		switch (code) {
+			case "unsupported":
+			case "unsupported_browser":
+				return "settings.webAssetUnsupported";
+			case "too_large":
+				return "settings.webAssetTooLarge";
+			case "invalid_nva":
+				return "settings.webAssetInvalidNva";
+			case "unplayable":
+				return "settings.webAssetUnplayable";
+			case "quota":
+				return "settings.webAssetQuota";
+			default:
+				return "settings.webAssetFailed";
+		}
+	}
+
+	// 웹판 설정 자산 가져오기: 파일 선택→검사→브라우저 저장→목록 갱신→선택
+	// 적용→다시 열기. 저장이 끝나기 전에는 적용 성공을 표시하지 않는다. 파일
+	// 대화상자를 취소하면(file == null) 기존 선택을 그대로 둔다.
+	async function handleWebImportAsset(
+		kind: "background" | "nva-files",
+		file: File | null,
+	) {
+		if (!file || webAssetBusy) return;
+		const revision = kind === "background"
+			? ++bgSelectRevision.current
+			: ++nvaSelectRevision.current;
+		if (kind === "background") setPendingBgPath(null);
+		setError("");
+		setWebAssetBusy(kind);
+		try {
+			const storedPath = await importWebSettingsAsset(kind, file);
+			if (kind === "background") {
+				const paths = await listNaiaAssets("background");
+				setNaiaBgs(paths);
+				await handleNaiaBgSelect(storedPath, revision);
+			} else {
+				const [paths, uploaded] = await Promise.all([
+					listNaiaAssets("nva-files"),
+					listWebUploadedNvaModels(),
+				]);
+				setNaiaNvas(paths);
+				setWebUploadedNvas(uploaded);
+				const entry =
+					resolveWebNvaSelection(storedPath, paths) ??
+					storedPath.split(/[/\\]/).filter(Boolean).pop() ??
+					storedPath;
+				await persistVideoAvatarSelection(entry, revision);
+			}
+		} catch (error) {
+			const code =
+				error instanceof WebSettingsAssetImportError ? error.code : "write_failed";
+			Logger.warn("SettingsTab", "[web-import-asset] failed", {
+				kind,
+				name: file.name,
+				code,
+			});
+			setError(t(webAssetErrorKey(code)));
+		} finally {
+			setWebAssetBusy(null);
+		}
+	}
+
+	// 웹판 사용자 자산 삭제. 번들은 목록에 남아 있으므로 지우지 않는다.
+	async function handleWebDeleteAsset(
+		kind: "background" | "nva-files",
+		storedIdentifier: string,
+	) {
+		if (!storedIdentifier) return;
+		if (!globalThis.confirm(t("settings.deleteAssetConfirm"))) return;
+		// 번들은 지우지 않는다: 배경은 사용자 식별자만, NVA는 업로드 목록에만
+		// 있는 항목만 대상으로 한다.
+		if (!canDeleteWebSettingsAsset(kind, storedIdentifier, webUploadedNvas)) {
+			setError(t("settings.webAssetFailed"));
+			return;
+		}
+		const revision = kind === "background"
+			? ++bgSelectRevision.current
+			: ++nvaSelectRevision.current;
+		if (kind === "background") setPendingBgPath(null);
+		try {
+			const target =
+				kind === "background"
+					? storedIdentifier
+					: `${WEB_ADK_PATH}/naia-settings/nva-files/${
+							resolveWebNvaSelection(storedIdentifier, naiaNvas) ??
+							storedIdentifier.split(/[/\\]/).filter(Boolean).pop() ??
+							storedIdentifier
+						}`;
+			await removeWebSettingsAsset(target);
+			if (kind === "background") {
+				const paths = await listNaiaAssets("background");
+				setNaiaBgs(paths);
+				if (activeBgPath === storedIdentifier) await handleClearNaiaBg(revision);
+			} else {
+				const [paths, uploaded] = await Promise.all([
+					listNaiaAssets("nva-files"),
+					listWebUploadedNvaModels(),
+				]);
+				setNaiaNvas(paths);
+				setWebUploadedNvas(uploaded);
+				if (revision === nvaSelectRevision.current && !resolveWebNvaSelection(nvaModel, paths)) {
+					await persistAssetSelection({ nvaModel: "" });
+					setNvaModel("");
+				}
+			}
+		} catch (error) {
+			Logger.warn("SettingsTab", "[web-delete-asset] failed", {
+				kind,
+				error: String(error),
+			});
+			setError(t("settings.webAssetFailed"));
 		}
 	}
 
@@ -3119,13 +3613,181 @@ export function SettingsTab() {
 		} as unknown as Record<string, unknown>);
 	}
 
-	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high"];
+	async function persistCharacterSettings(patch: Partial<AppConfig>) {
+		const path = getAdkPath() || (isWebMode() ? "opfs://naia-adk" : null);
+		const cfg = loadConfig() ?? existing;
+		if (!path || !cfg) throw new Error("workspace required");
+		const priorFields = Object.fromEntries(
+			Object.keys(patch).map((key) => [key, cfg[key as keyof AppConfig]]),
+		);
+		// Publish the pending selection before asynchronous persistence so another
+		// UI preference writer cannot enqueue the previous card as a full config.
+		saveConfig({ ...cfg, ...patch });
+		try {
+			await writeNaiaConfigAtPath(
+				{ ...cfg, ...patch } as unknown as Record<string, unknown>,
+				path,
+			);
+			if (
+				!isWebMode() &&
+				patch.uiPreferences &&
+				!(await writeNaiaUiConfig({ uiPreferences: patch.uiPreferences }, path))
+			) {
+				throw new Error("card preferences write failed");
+			}
+		} catch (error) {
+			if (!isWebMode()) {
+				if (getAdkPath() === path)
+					saveConfig({ ...loadConfig()!, ...priorFields });
+				// A partial config/UI write must not silently switch the active card.
+				await writeNaiaConfigAtPath(
+					cfg as unknown as Record<string, unknown>,
+					path,
+				).catch(() => {});
+				throw error;
+			}
+		}
+		if (!isWebMode() && getAdkPath() !== path)
+			throw new Error("workspace changed");
+		// Merge only our fields after the async write, preserving unrelated UI edits.
+		saveConfig({ ...(loadConfig() ?? cfg), ...patch });
+	}
+
+	async function applyCharacterTheme(
+		selected: CharacterTheme,
+		extra: Partial<AppConfig> = {},
+	) {
+		const bgRevision = ++bgSelectRevision.current;
+		const nvaRevision = ++nvaSelectRevision.current;
+		const isCurrent = () =>
+			bgRevision === bgSelectRevision.current && nvaRevision === nvaSelectRevision.current;
+		setPendingBgPath(null);
+		if (isWebMode()) {
+			const nvaInstalled =
+				WEB_NVA_ASSETS.includes(selected.nvaModel) ||
+				naiaNvas.some(
+					(path) => path.split(/[/\\]/).pop() === selected.nvaModel,
+				);
+			if (!nvaInstalled) throw new Error("NVA is not installed");
+			const resolvedBg = resolveWebThemeBackground(
+				selected.backgroundVideo,
+				naiaBgs,
+			);
+			// 사용자 배경은 전체 식별자로 저장해야 동명 번들과 겹치지 않는다.
+			const storedThemeBg = resolvedBg.url.startsWith(`${WEB_ADK_PATH}/`)
+				? resolvedBg.url
+				: resolvedBg.filename;
+			const bgUrl = await loadWebThemeBackgroundUrl(selected.backgroundVideo, naiaBgs);
+			try {
+				if (!isCurrent()) throw new Error("asset selection changed");
+				await persistCharacterSettings({
+					...themePatch(selected),
+					backgroundVideo: storedThemeBg,
+					...extra,
+				});
+				if (!isCurrent()) throw new Error("asset selection changed");
+			} catch (error) {
+				if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+				throw error;
+			}
+			setAvatarProvider("naia-video-avatar");
+			setNvaModel(selected.nvaModel);
+			setTtsProvider(selected.ttsProvider);
+			setTtsVoice(selected.ttsVoice);
+			setActiveBgPath(resolvedBg.url);
+			setBackgroundVideoFilename(storedThemeBg);
+			setBackgroundMediaType(getBackgroundMediaType(resolvedBg.url));
+			// 영속 식별자와 렌더링 URL을 구분한다. 사용자 OPFS 식별자는
+			// Blob URL로 변환해야 렌더러가 표시한다.
+			setBackgroundVideoUrl(bgUrl);
+			return;
+		}
+		const sourceAdk = getAdkPath();
+		if (
+			!naiaNvas.some((path) => path.split(/[/\\]/).pop() === selected.nvaModel)
+		)
+			throw new Error("NVA is not installed");
+		const bg = selected.backgroundVideo
+			? naiaBgs.find((p) => p.split(/[/\\]/).pop() === selected.backgroundVideo)
+			: undefined;
+		if (selected.backgroundVideo && !bg)
+			throw new Error("background is not installed");
+		// Keep the old renderer/voice/background active while validating candidates.
+		const { parseNvaManifest, resolveNvaAssetPath } = await import(
+			"../lib/nva"
+		);
+		const directory = `${sourceAdk}/naia-settings/nva-files/${selected.nvaModel}`;
+		const encoded = await invoke<string>("read_local_binary", {
+			path: `${directory}/manifest.json`,
+			allowedBase: sourceAdk,
+		});
+		const manifest = parseNvaManifest(
+			new TextDecoder().decode(
+				Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0)),
+			),
+		);
+		const clips = new Set<string>();
+		function collect(value: unknown): void {
+			if (!value || typeof value !== "object") return;
+			for (const [key, item] of Object.entries(value)) {
+				if (key === "clip" && typeof item === "string") clips.add(item);
+				else collect(item);
+			}
+		}
+		collect(manifest);
+		if (clips.size > 200) throw new Error("too many theme clips");
+		for (const clip of clips) {
+			if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+			const url = await toLocalBlobUrl(resolveNvaAssetPath(directory, clip));
+			try {
+				await probeThemeMedia(url, "video");
+			} finally {
+				if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+			}
+		}
+		const bgUrl = bg ? await toLocalBlobUrl(bg) : "";
+		try {
+			if (bg)
+				await probeThemeMedia(
+					bgUrl,
+					getBackgroundMediaType(bg) === "video" ? "video" : "image",
+				);
+		} catch (error) {
+			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+			throw error;
+		}
+		try {
+			if (getAdkPath() !== sourceAdk || !isCurrent()) throw new Error("asset selection changed");
+			await persistCharacterSettings({ ...themePatch(selected), ...extra });
+			if (getAdkPath() !== sourceAdk || !isCurrent()) throw new Error("asset selection changed");
+		} catch (error) {
+			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+			throw error;
+		}
+		setAvatarProvider("naia-video-avatar");
+		setNvaModel(selected.nvaModel);
+		setTtsProvider(selected.ttsProvider);
+		setTtsVoice(selected.ttsVoice);
+		setActiveBgPath(bg ?? "");
+		setBackgroundVideoFilename(selected.backgroundVideo);
+		setBackgroundMediaType(bg ? getBackgroundMediaType(bg) : "");
+		setBackgroundVideoUrl(bgUrl);
+	}
+
+	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high", "xhigh", "max"];
 
 	function handleThinkingChange(level: ThinkingLevel) {
+		if (isKioskDemo()) {
+			return;
+		}
 		setThinkingLevel(level);
+		const cfg = loadConfig();
+		const main = cfg ? readConfiguredLlmRoles(cfg).main : undefined;
 		persistConfig({
 			thinkingLevel: level,
 			enableThinking: level !== "off",
+			...(cfg && main ? { llmRoles: { ...cfg.llmRoles, main: { ...main, thinkingLevel: level } },
+				...(main.provider && main.model ? { mainModelThinkingLevels: { ...(cfg as ModelThinkingConfig).mainModelThinkingLevels, [modelThinkingKey(main.provider, main.model)]: level } } : {}) } : {}),
 		});
 	}
 
@@ -3156,17 +3818,136 @@ export function SettingsTab() {
 		}
 	}
 
-	function persistVideoAvatarSelection(nextNva?: string) {
+	async function persistVideoAvatarSelection(
+		nextNva?: string,
+		revision = ++nvaSelectRevision.current,
+	) {
+		if (revision !== nvaSelectRevision.current) return;
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
-		setAvatarProvider("naia-video-avatar");
-		setNvaModel(selectedNva);
-		persistConfig({
-			avatarProvider: "naia-video-avatar",
-			nvaModel: selectedNva,
+		try {
+			const workspace = getAdkPath();
+			const committed = await persistAssetSelection({
+				avatarProvider: "naia-video-avatar",
+				nvaModel: selectedNva,
+			});
+			if (revision !== nvaSelectRevision.current) return;
+			setAvatarProvider("naia-video-avatar");
+			setNvaModel(selectedNva);
+			if (workspace && committed) {
+				if (!isWebMode()) {
+					void writeSlotsManifest(
+						{ ...committed, ...(naiaKey ? { naiaKey } : {}) },
+						detectedVramGb ?? undefined,
+						workspace,
+					).catch((error: unknown) =>
+						Logger.warn("SettingsTab", "[nva] slots manifest write failed", {
+							error: String(error),
+						}),
+					);
+				}
+				void reloadPersistedAgentSettings().catch(() => {
+					if (revision === nvaSelectRevision.current) setError(t("settings.saveFailed"));
+				});
+			}
+		} catch (error) {
+			Logger.warn("SettingsTab", "[nva] selection write failed", { error: String(error) });
+			if (revision === nvaSelectRevision.current) setError(t("settings.saveFailed"));
+		}
+	}
+
+	async function applyWebMainModel(next: AppConfig, preference?: WebLlmModelId) {
+		const revision = ++webModelSelectionRevision.current;
+		const isLatest = () => revision === webModelSelectionRevision.current;
+		const isCurrent = () =>
+			isLatest() && loadConfig()?.provider === next.provider;
+		const previous = loadConfig();
+		const previousStatus = getWebModelStatus();
+		Logger.debug("SettingsTab", "Applying browser model selection", {
+			provider: next.provider,
+			model: next.model,
 		});
+		setError("");
+		if (next.provider === "webllm") {
+			setWebModelStatus({ phase: "checking", progress: 0 });
+		}
+		try {
+			saveConfig(next);
+			await writeNaiaConfig(next as unknown as Record<string, unknown>);
+		} catch (error) {
+			if (!isLatest()) return;
+			if (next.provider === "webllm") setWebModelStatus(previousStatus);
+			const current = loadConfig();
+			if (previous && current?.provider === next.provider && current?.model === next.model) {
+				saveConfig({
+					...current,
+					provider: previous.provider,
+					model: previous.model,
+					llmRoles: { ...current.llmRoles, main: previous.llmRoles?.main },
+					thinkingLevel: previous.thinkingLevel,
+					enableThinking: previous.enableThinking,
+					webAutoDefaultModel: previous.webAutoDefaultModel,
+				});
+			}
+			const restored = loadConfig();
+			if (restored) {
+				setProvider(restored.provider as ProviderId);
+				setModel(restored.model);
+				setThinkingLevel(resolveThinkingLevel(restored));
+			}
+			Logger.warn("SettingsTab", "Browser model selection could not be saved", {
+				error: String(error),
+			});
+			setError(t("settings.saveFailed"));
+			return;
+		}
+		if (!isCurrent()) return;
+		try {
+			const [{ startWebModel }, { getStartableAgentBridge }] = await Promise.all([
+				import("../lib/web-runtime/model-start"),
+				import("../lib/web-runtime/agent-bridge"),
+			]);
+			if (!isCurrent()) return;
+			const bridge = getStartableAgentBridge();
+			if (next.provider !== "webllm") {
+				bridge.start({ model: null });
+				return;
+			}
+			if (preference) {
+				try {
+					localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, preference);
+				} catch {
+					// The selected model is already recorded in the workspace.
+				}
+			}
+			await startWebModel({
+				gpu: readNavigatorGpu(),
+				storage: typeof localStorage !== "undefined" ? localStorage : null,
+				engineKind: import.meta.env.VITE_NAIA_WEB_LLM,
+				buildModel: import.meta.env.VITE_NAIA_WEB_LLM_MODEL,
+				preferredModel: preference,
+				isCurrent,
+				bridge,
+			});
+		} catch (error) {
+			if (!isCurrent()) return;
+			Logger.warn("SettingsTab", "Browser model could not be started", {
+				error: String(error),
+			});
+			if (next.provider === "webllm") {
+				setWebModelStatus({ phase: "error", errorKind: "load-failed" });
+			}
+			setError(t("settings.saveFailed"));
+		}
 	}
 
 	function handleProviderChange(id: ProviderId) {
+		if (isKioskDemo()) {
+			return;
+		}
+		if (isWebMode() && isNaiaConfigHydrationPending()) {
+			setError(t("settings.saveFailed"));
+			return;
+		}
 		ollamaPullSelectionRevisionRef.current += 1;
 		setProvider(id);
 		// Provider switch resets all CLI readiness state (#605 defect fix).
@@ -3184,22 +3965,50 @@ export function SettingsTab() {
 		}
 		// UC-MODEL-SELECT contract: persist the provider/model switch so the gRPC
 		// agent reloads with it (prev. only Save persisted → stale provider/model).
-		const selectedModel =
+		let selectedModel =
 			id !== "ollama"
 				? getDefaultLlmModel(id)
 				: ((loadConfig()?.model as string | undefined) ?? "");
+		if (isWebMode() && id !== provider) {
+			try {
+				if (provider === "nextain" && model)
+					localStorage.setItem("naia-web-nextain-model", model);
+				if (id === "nextain")
+					selectedModel =
+						localStorage.getItem("naia-web-nextain-model") || selectedModel;
+				if (id === "webllm") {
+					const saved = localStorage.getItem(WEB_LLM_MODEL_PREF_KEY);
+					if (isWebLlmModelId(saved)) selectedModel = saved;
+				}
+			} catch {
+				/* Storage can be unavailable. */
+			}
+		}
 		const legacySelection = applyModelSelectionToConfig(
 			loadConfig() as Record<string, unknown> | null,
 			id,
 			selectedModel,
 		);
-		const provSel = writeConfiguredLlmRole(
+		// No model yet (vLLM before discovery): keep the last valid selection on
+		// disk; Apply persists the switch once a model is chosen.
+		if (!selectedModel) return;
+		const provSel = writeMainModelSelection(
 			legacySelection as unknown as AppConfig,
-			"main",
 			{ provider: id, model: selectedModel },
+			loadConfig() ?? undefined,
 		);
-		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
-		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
+		if (isWebMode()) provSel.webAutoDefaultModel = false;
+		setThinkingLevel(resolveThinkingLevel(provSel));
+		if (
+			isWebMode() &&
+			id !== provider &&
+			(id === "webllm" || provider === "webllm")
+		) {
+			void applyWebMainModel(provSel);
+		} else {
+			saveConfig(provSel);
+			void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
+		}
 	}
 
 	async function checkCliReadiness(
@@ -3389,24 +4198,82 @@ export function SettingsTab() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Load background list from naia-settings
+	// Load background list from naia-settings (and refresh when web OPFS assets change)
 	useEffect(() => {
-		const savedFilename = existing?.backgroundVideo as string | undefined;
-		listNaiaAssets("background").then((paths) => {
-			setNaiaBgs(paths);
-			if (savedFilename) {
-				const match = paths.find((p) => p.endsWith(savedFilename));
-				if (match) setActiveBgPath(match);
-			}
-		});
+		const rawSavedFilename = existing?.backgroundVideo as string | undefined;
+		const savedFilename =
+			isWebMode() && isRetiredWebBackground(rawSavedFilename)
+				? WEB_DEFAULT_BACKGROUND
+				: (rawSavedFilename ??
+					(isWebMode() ? WEB_DEFAULT_BACKGROUND : undefined));
+		const refreshBgs = () => {
+			// 목록 조회가 실패하면 기존 목록·선택을 보존한다.
+			void listNaiaAssets("background")
+				.then((paths) => {
+					setNaiaBgs(paths);
+					if (savedFilename) {
+						// 끝부분 일치(endsWith)로는 동명 파일을 잘못 고른다.
+						const match =
+							resolveWebBackgroundSelection(savedFilename, paths) ??
+							(isWebMode()
+								? resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths)
+								: undefined);
+						if (match) setActiveBgPath(match);
+					}
+				})
+				.catch((listError: unknown) => {
+					Logger.warn("SettingsTab", "[background] list failed", {
+						error: String(listError),
+					});
+				});
+		};
+		refreshBgs();
+		if (!isWebMode() || typeof window === "undefined") return;
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, refreshBgs);
+		return () => {
+			window.removeEventListener(
+				WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+				refreshBgs,
+			);
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Load .nva directory list from naia-settings
 	useEffect(() => {
-		listNaiaAssets("nva-files").then((paths) => {
-			setNaiaNvas(paths);
-		});
+		if (!backgroundVideoFilename || naiaBgs.length === 0) return;
+		const match = resolveWebBackgroundSelection(backgroundVideoFilename, naiaBgs);
+		if (match) setActiveBgPath(match);
+	}, [backgroundVideoFilename, naiaBgs]);
+
+	// Load .nva directory list from naia-settings (and refresh when web OPFS assets change)
+	useEffect(() => {
+		const refreshNvas = () => {
+			void listNaiaAssets("nva-files")
+				.then((paths) => {
+					setNaiaNvas(paths);
+				})
+				.catch((listError: unknown) => {
+					Logger.warn("SettingsTab", "[nva] list failed", {
+						error: String(listError),
+					});
+				});
+			if (isWebMode()) {
+				void listWebUploadedNvaModels()
+					.then((uploaded) => {
+						setWebUploadedNvas(uploaded);
+					})
+					.catch(() => {});
+			}
+		};
+		refreshNvas();
+		if (!isWebMode() || typeof window === "undefined") return;
+		window.addEventListener(WEB_SETTINGS_ASSETS_CHANGED_EVENT, refreshNvas);
+		return () => {
+			window.removeEventListener(
+				WEB_SETTINGS_ASSETS_CHANGED_EVENT,
+				refreshNvas,
+			);
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -3422,11 +4289,15 @@ export function SettingsTab() {
 
 	// Persist TTS voice/provider changes immediately (without full handleSave)
 	function persistTtsVoice(voice: string) {
-		setTtsVoice(voice);
+		const nextVoice =
+			isKioskDemo() && ttsProvider === "nextain"
+				? KIOSK_DEMO_TTS_VOICE
+				: voice;
+		setTtsVoice(nextVoice);
 		// Provider changes are persisted immediately before this callback runs.
 		// Read the current config through the same path so a static or asynchronously
 		// fetched voice cannot write the render-time `existing` snapshot back over it.
-		persistConfig({ ttsVoice: voice });
+		persistConfig({ ttsVoice: nextVoice });
 		debouncedLabSync();
 	}
 	async function selectProfileTtsProvider(next: TtsProviderId) {
@@ -3458,36 +4329,89 @@ export function SettingsTab() {
 			// Resolve the effective TTS provider / voice / credentials, then
 			// synthesize shell-side (#363). The agent's skill_tts was never a real
 			// synthesizer, so preview routes through the same path as live voice.
+			if (isWebMode() && ttsProvider === "browser") {
+				if (
+					typeof window === "undefined" ||
+					!("speechSynthesis" in window) ||
+					typeof SpeechSynthesisUtterance === "undefined"
+				) {
+					throw new Error(t("webSpeech.synthesisUnsupported"));
+				}
+				window.speechSynthesis.cancel();
+				const utter = new SpeechSynthesisUtterance(getPreviewText(ttsVoice));
+				if (
+					ttsVoice &&
+					typeof window.speechSynthesis.getVoices === "function"
+				) {
+					const matched = window.speechSynthesis
+						.getVoices()
+						.find((v) => v.voiceURI === ttsVoice || v.name === ttsVoice);
+					if (matched) {
+						utter.voice = matched;
+						if (matched.lang) utter.lang = matched.lang;
+					}
+				}
+				window.speechSynthesis.speak(utter);
+				return;
+			}
+
 			let synthProvider: TtsProviderId;
 			let synthVoice: string | undefined;
 
 			if (isOmni && provider === "nextain") {
 				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
 				synthProvider = "nextain";
-				synthVoice =
-					voiceName === "hyunsu"
+				synthVoice = isKioskDemo()
+					? KIOSK_DEMO_TTS_VOICE
+					: voiceName === "hyunsu"
 						? "ko-KR-Hyunsu:DragonHDLatestNeural"
 						: "ko-KR-SunHi:DragonHDLatestNeural";
 			} else {
 				synthProvider = (ttsProvider || "edge") as TtsProviderId;
-				synthVoice = ttsVoice;
+				synthVoice =
+					isKioskDemo() && synthProvider === "nextain"
+						? KIOSK_DEMO_TTS_VOICE
+						: ttsVoice;
 			}
 
-			if (synthProvider === "nextain" && !naiaKey) {
+			const effectiveNaiaKey =
+				naiaKey ||
+				(isWebMode() && typeof localStorage !== "undefined"
+					? localStorage.getItem("naia-remote-key")?.trim() ?? ""
+					: "");
+			if (synthProvider === "nextain" && !effectiveNaiaKey) {
 				setError(t("settings.ttsPreviewLoginRequired"));
 				return;
 			}
 
-			const { audioBase64 } = await synthesizeTts({
-				text: getPreviewText(synthVoice),
-				voice: synthVoice,
-				provider: synthProvider,
-				naiaKey: naiaKey || undefined,
-				gatewayUrl: LAB_GATEWAY_URL,
-				vllmHost: existing?.vllmHost,
-			});
-			const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
-			await audio.play();
+			try {
+				const { audioBase64 } = await synthesizeTts({
+					text: getPreviewText(synthVoice),
+					voice: synthVoice,
+					provider: synthProvider,
+					naiaKey: effectiveNaiaKey || undefined,
+					gatewayUrl: LAB_GATEWAY_URL,
+					vllmHost: existing?.vllmHost,
+				});
+				const audioMime = audioBase64.startsWith("UklGR") ? "wav" : "mp3";
+				const audio = new Audio(`data:audio/${audioMime};base64,${audioBase64}`);
+				await audio.play();
+			} catch (synthErr) {
+				if (
+					isKioskDemo() &&
+					typeof window !== "undefined" &&
+					"speechSynthesis" in window &&
+					typeof SpeechSynthesisUtterance !== "undefined"
+				) {
+					window.speechSynthesis.cancel();
+					const utter = new SpeechSynthesisUtterance(
+						getPreviewText(synthVoice),
+					);
+					window.speechSynthesis.speak(utter);
+					return;
+				}
+				throw synthErr;
+			}
 		} catch (err) {
 			setError(
 				`${t("settings.ttsPreviewFailed")}: ${err instanceof Error ? err.message : String(err)}`,
@@ -3636,12 +4560,23 @@ export function SettingsTab() {
 			setError(t("settings.apiKeyRequired"));
 			return;
 		}
+		// An empty main model is an incomplete llmRoles.main the agent rejects
+		// (vLLM has no default; discovery may not have answered yet).
+		if (!model.trim()) {
+			setError(t("settings.modelRequired"));
+			return;
+		}
 		const defaultVrm = DEFAULT_AVATAR_MODEL;
 		const savedAvatarProvider: AppConfig["avatarProvider"] = avatarProvider;
+		const savedModelId =
+			isWebMode() && provider === "webllm" && webModelStatus.model
+				? webModelStatus.model
+				: model;
 		let newConfig: AppConfig = {
 			...existing,
 			provider,
-			model,
+			model: savedModelId,
+			webAutoDefaultModel: isWebMode() ? false : existing?.webAutoDefaultModel,
 			modelSortMode,
 			apiKey: isNextainProvider ? "" : resolvedApiKey,
 			naiaKey: naiaKey || undefined,
@@ -3662,7 +4597,10 @@ export function SettingsTab() {
 			sttModel: sttModel || undefined,
 			// Legacy focus is not persisted; the profile configures voice services only.
 			ttsEnabled,
-			ttsVoice,
+			ttsVoice:
+				isKioskDemo() && ttsProvider === "nextain"
+					? KIOSK_DEMO_TTS_VOICE
+					: ttsVoice,
 			ttsProvider,
 			persona:
 				persona.trim() !== DEFAULT_PERSONA.trim() ? persona.trim() : undefined,
@@ -3670,9 +4608,16 @@ export function SettingsTab() {
 			agentName: agentName.trim() || undefined,
 			honorific: honorific.trim() || undefined,
 			speechStyle,
-			enableTools,
-			thinkingLevel,
-			enableThinking: thinkingLevel !== "off",
+			enableTools: isKioskDemo() ? KIOSK_DEMO_ENABLE_TOOLS : enableTools,
+			thinkingLevel: isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : thinkingLevel,
+			enableThinking:
+				(isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : thinkingLevel) !== "off",
+			...(isKioskDemo()
+				? {
+						environmentAwareness: KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+						environmentTerminalInput: KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
+					}
+				: {}),
 			gatewayUrl:
 				enableTools &&
 				gatewayUrl.trim() &&
@@ -3687,10 +4632,12 @@ export function SettingsTab() {
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
-			voice: isOmniModel(provider, model) ? voice : existing?.voice,
+			voice: isOmniModel(provider, savedModelId) ? voice : existing?.voice,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
+			memoryEmbeddingRevision: memoryEmbeddingRevision.trim() || undefined,
+			memoryEmbeddingDimensions,
 			memoryAdapter,
 			memoryEmbeddingProvider,
 			memoryOfflineModel:
@@ -3726,8 +4673,8 @@ export function SettingsTab() {
 		const mainProviderUnchanged = persistedMainRole?.provider === provider;
 		const mainRole: LlmRoleConfig = {
 			provider,
-			model,
-			...(mainProviderUnchanged &&
+			model: savedModelId,
+						...(mainProviderUnchanged &&
 			persistedMainRole?.credentialRef !== undefined
 				? { credentialRef: persistedMainRole.credentialRef }
 				: {}),
@@ -3737,7 +4684,10 @@ export function SettingsTab() {
 		};
 		// 저장은 main 역할만 정본으로 갱신한다. 보조·전문가·기억 역할 편집기는
 		// 제거됐고(에픽 #589), 옛 config 의 해당 역할 필드는 roles.ts 가 무손실로 보존한다.
-		newConfig = writeConfiguredLlmRole(newConfig, "main", mainRole);
+		newConfig = writeMainModelSelection(newConfig, mainRole, persistedConfig ?? newConfig);
+		if (persistedConfig?.llmRoles?.sub || persistedConfig?.subLlmProvider) {
+			newConfig = writeConfiguredLlmRole(newConfig, "sub", readConfiguredLlmRoles(persistedConfig).sub!);
+		}
 		try {
 			await saveConfigSecure(newConfig);
 			// Agent reload resolves credentials from its OS-backed store. Commit all
@@ -3815,14 +4765,14 @@ export function SettingsTab() {
 			},
 			applyAdkPath,
 		);
-		// Push all per-session credentials (#260 follow-up). Empty strings
-		// clear the corresponding cached entry on the agent — keeps the cache
-		// in sync with what the user just saved.
+		// Naia account credentials are synced separately via sendAuthUpdate.
+		// Empty provider API keys clear the corresponding agent cache entry.
 		void sendCredsUpdate(
 			{
-				keys: newConfig.provider
-					? { [newConfig.provider]: newConfig.apiKey ?? "" }
-					: {},
+				keys:
+					newConfig.provider && !isNextainProvider
+						? { [newConfig.provider]: newConfig.apiKey ?? "" }
+						: {},
 				ttsKeys: {},
 				gatewayToken: newConfig.gatewayToken ?? "",
 			},
@@ -3843,7 +4793,25 @@ export function SettingsTab() {
 		}
 	}
 
-	const providerModels = dynamicModels[provider] ?? [];
+	const activeBrainModel =
+		isWebMode() && provider === "webllm" && webModelStatus.model
+			? webModelStatus.model
+			: model;
+	const providerModels = useMemo<LlmModelMeta[]>(() => {
+		const base = dynamicModels[provider] ?? [];
+		if (base.length > 0) return base;
+		if (isWebMode() && provider === "webllm") {
+			return (
+				getLlmProvider("webllm")?.models ??
+				WEB_LLM_MODEL_IDS.map((id) => ({
+					id,
+					label: formatWebLlmModelLabel(id),
+					capabilities: ["llm"],
+				}))
+			);
+		}
+		return base;
+	}, [dynamicModels, provider]);
 	const availableProviderModels = useMemo(
 		() =>
 			provider === "nextain"
@@ -3853,10 +4821,15 @@ export function SettingsTab() {
 	);
 	const displayedProviderModels = useMemo(
 		() =>
-			provider === "nextain"
-				? sortModels(availableProviderModels, modelSortMode)
+			provider === "nextain" && isWebMode()
+				? ["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"]
+					.map((id) => availableProviderModels.find((candidate) => candidate.id === id))
+					.filter((candidate): candidate is LlmModelMeta => Boolean(candidate))
+					.concat(availableProviderModels.filter((candidate) => !["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"].includes(candidate.id) && candidate.id === activeBrainModel))
+				: provider === "nextain"
+					? sortModels(availableProviderModels, modelSortMode)
 				: availableProviderModels,
-		[provider, availableProviderModels, modelSortMode],
+		[provider, availableProviderModels, modelSortMode, activeBrainModel],
 	);
 	// 선택기 숨김 규칙 (에픽 #589 할 일 2): 고를 수 있는 대화 모델이 하나뿐이면 모델
 	// 선택기를 그리지 않는다. 판정은 등록부(표시용 모델 목록)로 한다. ollama 는 동적
@@ -3866,9 +4839,29 @@ export function SettingsTab() {
 		(candidate) => !candidate.capabilities.includes("asr"),
 	);
 	const hideModelPicker =
-		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
+		isKioskDemo() ||
+		(provider !== "ollama" && shouldHideModelPicker(displayedProviderModels));
 	const singleProviderModel = selectableProviderModels[0];
-	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
+	// A config event can hydrate an empty legacy model after discovery finished.
+	// Keep the hidden control's actual value aligned with its displayed choice.
+	useEffect(() => {
+		if (
+			!isKioskDemo() &&
+			hideModelPicker &&
+			singleProviderModel &&
+			model !== singleProviderModel.id
+		) {
+			setModel(singleProviderModel.id);
+		}
+	}, [hideModelPicker, singleProviderModel?.id, model]);
+
+	const selectedModelMeta = availableProviderModels.find(
+		(m) => m.id === activeBrainModel,
+	);
+	const renderModelPrice = (usd: number) => {
+		const amount = formatModelPrice(usd, t);
+		return isWebMode() ? <span className="credit-amount">{amount}</span> : amount;
+	};
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const selectedOllamaPullCandidate = ollamaModelPolicy?.candidates.find(
 		(candidate) => candidate.tag === ollamaPullTag,
@@ -3896,49 +4889,9 @@ export function SettingsTab() {
 	);
 	const currentOllamaPullError =
 		ollamaPullError ?? ollamaPullSnapshot?.error ?? null;
-	const shouldReplaceUnavailableSelectedModel =
-		provider === "nextain" && Boolean(model) && !hasSelectedModel;
-	useEffect(() => {
-		if (
-			provider === "nextain" &&
-			configSecretsSettled &&
-			naiaModelsSettled &&
-			shouldReplaceUnavailableSelectedModel &&
-			displayedProviderModels[0]
-		) {
-			const replacement = displayedProviderModels[0];
-			setModel(replacement.id);
-			if (naiaKey) {
-				const legacySelection = applyModelSelectionToConfig(
-					loadConfig() as Record<string, unknown> | null,
-					provider,
-					replacement.id,
-				);
-				const nextSelection = writeConfiguredLlmRole(
-					legacySelection as unknown as AppConfig,
-					"main",
-					{ provider, model: replacement.id },
-				);
-				saveConfig(
-					nextSelection as unknown as Parameters<typeof saveConfig>[0],
-				);
-				void writeNaiaConfig(
-					nextSelection as unknown as Record<string, unknown>,
-				);
-			}
-		}
-	}, [
-		provider,
-		model,
-		naiaKey,
-		configSecretsSettled,
-		naiaModelsSettled,
-		shouldReplaceUnavailableSelectedModel,
-		displayedProviderModels,
-	]);
 	const isSelectedOmni =
 		selectedModelMeta?.capabilities.includes("omni") ?? false;
-	const modelIdLower = model?.toLowerCase() ?? "";
+	const modelIdLower = activeBrainModel?.toLowerCase() ?? "";
 	const isSelectedAsr =
 		(selectedModelMeta?.capabilities.includes("asr") ?? false) ||
 		(provider === "vllm" &&
@@ -3995,6 +4948,7 @@ export function SettingsTab() {
 		id: SlotId,
 	): "running" | "starting" | "blocked" | "error" | null {
 		if (id === "tts") {
+			if (isKioskDemo() || isWebMode()) return null;
 			if (slotSnapshot.tts.provider !== "naia-local-voice") return null;
 			if (voxcpm2Installation?.canStart === false) return "blocked";
 			return cascadeHealth?.tts_enabled && cascadeHealth.tts
@@ -4011,8 +4965,15 @@ export function SettingsTab() {
 
 	function slotValueDisplay(id: SlotId): string {
 		switch (id) {
-			case "main":
-				return `${slotSnapshot.main.provider || "—"} / ${slotSnapshot.main.model || model || "—"}`;
+			case "main": {
+				const effectiveMainModel =
+					isWebMode() &&
+					(slotSnapshot.main.provider === "webllm" || provider === "webllm") &&
+					webModelStatus.model
+						? webModelStatus.model
+						: slotSnapshot.main.model || activeBrainModel || "—";
+				return `${slotSnapshot.main.provider || "—"} / ${effectiveMainModel}`;
+			}
 			case "sub":
 				return slotSnapshot.sub.provider && slotSnapshot.sub.provider !== "none"
 					? `${slotSnapshot.sub.provider}${slotSnapshot.sub.model ? ` / ${slotSnapshot.sub.model}` : ""}`
@@ -4027,6 +4988,11 @@ export function SettingsTab() {
 					? String(slotSnapshot.stt.provider)
 					: t("settings.slot.notSet");
 			case "tts":
+				if (isWebMode()) {
+					return ttsProvider === "browser"
+						? t("webSpeech.synthesisProvider")
+						: "Naia Cloud TTS";
+				}
 				return slotSnapshot.tts.provider
 					? String(slotSnapshot.tts.provider)
 					: t("settings.slot.notSet");
@@ -4056,11 +5022,26 @@ export function SettingsTab() {
 		}
 		const current = loadConfig();
 		if (!current) return;
-		const next = applyNaiaSlotDefaults(current);
+		const rawNext = applyNaiaSlotDefaults(current, catalogModels.current);
+		const next = isKioskDemo()
+			? {
+					...rawNext,
+					ttsProvider: "nextain" as const,
+					ttsVoice: KIOSK_DEMO_TTS_VOICE,
+				}
+			: isWebMode()
+				? { ...rawNext, ttsProvider: "browser" as const }
+				: rawNext;
 		saveConfig(next);
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
 		setModel(next.model);
+		if (isKioskDemo()) {
+			setTtsProvider("nextain");
+			setTtsVoice(KIOSK_DEMO_TTS_VOICE);
+		} else if (isWebMode()) {
+			setTtsProvider("browser");
+		}
 		// 보조·기억 역할 편집기는 제거됨(에픽 #589) — main 슬롯만 스테이징에 반영한다.
 		if (next.memoryEmbeddingProvider)
 			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
@@ -4081,10 +5062,15 @@ export function SettingsTab() {
 	// selected (VoxCPM2 GPU voice cloning). Gemini Live is omni too but has no
 	// voice-clone surface, so mounting RefAudioSection there just 404s on
 	// GET /v1/ref-audio. Gate the section on this.
+	// R13: 정식 웹판은 Naia 계정에 목소리를 올릴 수 있다(게이트웨이 /v1/ref-audio).
+	// 게이트웨이는 올린 목소리를 Naia Omni 실시간 대화(/v1/realtime)에서만 쓰고
+	// 문장 읽기(/v1/audio/speech)는 쓰지 않으므로, 웹판은 그 사실을 함께 알린다.
+	const webRefAudio = isWebMode() && !isKioskDemo();
 	const supportsRefAudio =
 		(isSelectedOmni &&
 			(modelIdLower.startsWith("naia-") || provider === "vllm")) ||
-		ttsProvider === "naia-local-voice";
+		ttsProvider === "naia-local-voice" ||
+		(webRefAudio && !!naiaKey);
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
 	const proactiveSpeechSettings: ProactiveSpeechSettings = {
@@ -4198,33 +5184,40 @@ export function SettingsTab() {
 				>
 					{t("settings.tabPersona")}
 				</button>
-				<button
-					type="button"
-					data-settings-tab="memory"
-					className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
-					data-usage-event="settings-tab.set-active-settings-tab-11.click"
-					onClick={() => setActiveSettingsTab("memory")}
-				>
-					{t("settings.tabMemory")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="knowledge"
-					className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
-					data-usage-event="settings-tab.set-active-settings-tab-12.click"
-					onClick={() => setActiveSettingsTab("knowledge")}
-				>
-					{t("settings.tabKnowledge")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="skills"
-					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
-					data-usage-event="settings-tab.set-active-settings-tab-13.click"
-					onClick={() => setActiveSettingsTab("skills")}
-				>
-					{t("settings.tabSkills")}
-				</button>
+				{(import.meta.env.MODE !== "web" || isKioskDemo()) && (
+					<button
+						type="button"
+						data-settings-tab="memory"
+						className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
+						data-usage-event="settings-tab.set-active-settings-tab-11.click"
+						onClick={() => setActiveSettingsTab("memory")}
+					>
+						{t("settings.tabMemory")}
+					</button>
+				)}
+				{(import.meta.env.MODE !== "web" || isKioskDemo()) && (
+					<button
+						type="button"
+						data-settings-tab="knowledge"
+						className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
+						data-usage-event="settings-tab.set-active-settings-tab-12.click"
+						onClick={() => setActiveSettingsTab("knowledge")}
+					>
+						{t("settings.tabKnowledge")}
+					</button>
+				)}
+				{(import.meta.env.MODE !== "web" || isKioskDemo()) && (
+					<button
+						type="button"
+						data-settings-tab="skills"
+						className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+						data-usage-event="settings-tab.set-active-settings-tab-13.click"
+						onClick={() => setActiveSettingsTab("skills")}
+					>
+						{t("settings.tabSkills")}
+					</button>
+				)}
+
 				<button
 					type="button"
 					data-settings-tab="general"
@@ -4252,6 +5245,7 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "general" && (
 				<>
+					{isWebMode() && <WebPushSettings />}
 					<ProactiveSpeechSettingsSection
 						mode="exhibition"
 						value={proactiveSpeechSettings}
@@ -4343,21 +5337,39 @@ export function SettingsTab() {
 						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
 							<select
 								data-testid="settings-bg-select"
-								value={activeBgPath ?? ""}
+								value={pendingBgPath ?? activeBgPath ?? ""}
 								data-usage-event="settings-tab.handle-clear-naia-bg-18.select"
+
 								onChange={(e) => {
 									const v = e.target.value;
-									if (!v) handleClearNaiaBg();
-									else handleNaiaBgSelect(v);
+									if (!v) void handleClearNaiaBg();
+									else void handleNaiaBgSelect(v);
 								}}
 								style={{ flex: 1 }}
+								disabled={webAssetBusy !== null}
 							>
 								<option value="">{t("settings.bgNone")}</option>
 								{naiaBgs.map((path) => {
-									const label = (path.split(/[/\\]/).pop() ?? path).replace(
-										/\.[^.]+$/,
-										"",
-									);
+									const filename = path.split(/[/\\]/).pop() ?? path;
+									const isUserFile =
+										isWebMode() && path.startsWith(`${WEB_ADK_PATH}/`);
+									const webLabel = isWebMode()
+										? filename === "naia-autumn-office.webp"
+											? t("settings.bgAutumnOffice")
+											: filename === "naia-autumn-office-live.mp4"
+												? t("settings.bgAutumnOfficeLive")
+												: !isUserFile
+													? WEB_BACKGROUND_ASSETS.find(
+															(asset) =>
+																asset.url === path ||
+																asset.filename === filename,
+														)?.label
+													: undefined
+										: undefined;
+									// 사용자 파일과 내장 파일이 같은 이름이면 출처를 구분한다.
+									const label = isUserFile
+										? `${webLabel ?? filename.replace(/\.[^.]+$/, "")} (${t("settings.webAssetUserFile")})`
+										: (webLabel ?? filename.replace(/\.[^.]+$/, ""));
 									return (
 										<option key={path} value={path}>
 											{label}
@@ -4365,29 +5377,76 @@ export function SettingsTab() {
 									);
 								})}
 							</select>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								data-usage-event="settings-tab.handle-import-asset-19.click"
-								onClick={() => handleImportAsset("background")}
-							>
-								{t("settings.assetImport")}
-							</button>
-							{activeBgPath &&
-								(() => {
-									const fn = activeBgPath.split(/[/\\]/).pop();
-									return fn ? (
+							{/* WO-03: 데스크톱은 네이티브 대화상자+IPC, 웹은 파일 선택+브라우저 저장. */}
+							{!isWebMode() ? (
+								<>
+									<button
+										type="button"
+										className="voice-preview-btn"
+										data-usage-event="settings-tab.handle-import-asset-19.click"
+										onClick={() => handleImportAsset("background")}
+									>
+										{t("settings.assetImport")}
+									</button>
+									{activeBgPath &&
+										(() => {
+											const fn = activeBgPath.split(/[/\\]/).pop();
+											return fn ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													style={{ color: "var(--error-color, #f44)" }}
+													data-usage-event="settings-tab.handle-delete-asset-20.click"
+													onClick={() => handleDeleteAsset("background", fn)}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+								</>
+							) : (
+								!isKioskDemo() && (
+									<>
+										<input
+											ref={bgFileInputRef}
+											type="file"
+											accept="image/*,video/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.mp4"
+											hidden
+											data-testid="settings-bg-web-file-input"
+											onChange={(event) => {
+												const input = event.currentTarget;
+												const picked = input.files?.[0] ?? null;
+												input.value = "";
+												void handleWebImportAsset("background", picked);
+											}}
+										/>
 										<button
 											type="button"
 											className="voice-preview-btn"
-											style={{ color: "var(--error-color, #f44)" }}
-											data-usage-event="settings-tab.handle-delete-asset-20.click"
-											onClick={() => handleDeleteAsset("background", fn)}
+											data-testid="settings-bg-web-upload"
+											disabled={webAssetBusy !== null}
+											onClick={() => bgFileInputRef.current?.click()}
+
 										>
-											{t("settings.assetDelete")}
+											{t("settings.assetImport")}
 										</button>
-									) : null;
-								})()}
+										{activeBgPath.startsWith(`${WEB_ADK_PATH}/`) && (
+											<button
+												type="button"
+												className="voice-preview-btn"
+												data-testid="settings-bg-web-delete"
+												style={{ color: "var(--error-color, #f44)" }}
+												disabled={webAssetBusy !== null}
+												onClick={() =>
+													void handleWebDeleteAsset("background", activeBgPath)
+												}
+											>
+												{t("settings.assetDelete")}
+											</button>
+										)}
+									</>
+								)
+							)}
 						</div>
 					</div>
 
@@ -4397,7 +5456,8 @@ export function SettingsTab() {
 							<code style={{ flex: 1, overflowWrap: "anywhere" }}>
 								{workspaceRoot}
 							</code>
-							{adkRestartRequired ? (
+							{/* WO-03: Hide reset controls without an app restart path. */}
+							{import.meta.env.MODE === "web" ? null : adkRestartRequired ? (
 								<div
 									className="settings-error"
 									role="alertdialog"
@@ -4470,6 +5530,99 @@ export function SettingsTab() {
 						</div>
 					</div>
 
+					{isWebMode() && (
+						<>
+							<div
+								className="settings-field"
+								data-testid="web-storage-persist-section"
+							>
+								<label>{t("webStorage.title")}</label>
+								<div
+									className="settings-hint"
+									data-testid="web-storage-persist-status"
+								>
+									{formatWebStorageSummaryLine(webStorageState)}
+								</div>
+							</div>
+
+							<div className="settings-field" data-testid="web-account-section">
+								<label>{t("webAuth.account")}</label>
+								<div
+									style={{
+										display: "flex",
+										gap: 8,
+										alignItems: "center",
+										flexWrap: "wrap",
+									}}
+								>
+									<span
+										className="settings-hint"
+										data-testid="web-account-status"
+									>
+										{webAuthLoggedIn
+											? t("webAuth.signedIn", { user: webAuthUserId ? ` (${webAuthUserId})` : "" })
+											: t("webAuth.signedOut")}
+									</span>
+									{webAuthLoggedIn ? (
+										!isKioskDemo() ? (
+											<button
+												type="button"
+												className="voice-preview-btn"
+												data-testid="web-logout-btn"
+												onClick={() => {
+													logoutWebSession();
+													setWebAuthLoggedIn(false);
+													setWebAuthUserId("");
+													setNaiaKeyState("");
+													setNaiaUserIdState("");
+												}}
+											>
+												{t("settings.labDisconnect")}
+											</button>
+										) : null
+									) : (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="web-login-btn"
+											onClick={() => {
+												setWebAuthError(null);
+												try {
+													startWebLoginRedirect({ lang: locale });
+												} catch (err) {
+													setWebAuthError(
+														err instanceof Error && err.message
+															? err.message
+															: t("webAuth.startFailed"),
+													);
+												}
+											}}
+										>
+											{t("settings.labConnect")}
+										</button>
+									)}
+								</div>
+								{!webAuthLoggedIn && !isKioskDemo() && (
+									<div
+										className="settings-hint"
+										data-testid="web-account-credit-hint"
+									>
+										{t("webCredit.signupHint")}
+									</div>
+								)}
+								{webAuthError && (
+									<div
+										role="alert"
+										data-testid="web-login-error"
+										className="settings-hint"
+										style={{ color: "var(--color-error, #fc8181)" }}
+									>
+										{webAuthError}
+									</div>
+								)}
+							</div>
+						</>
+					)}
 					<BroadcastSettingsSection />
 				</>
 			)}
@@ -4481,7 +5634,7 @@ export function SettingsTab() {
 
 					{/* #6: Pre-baked NVA selection is independent of the voice runtime and GPU. */}
 					<div className="settings-field">
-						<label>{t("settings.avatarProvider")}</label>
+						<label htmlFor="avatar-provider">{t("settings.avatarProvider")}</label>
 						<select
 							id="avatar-provider"
 							value={effectiveAvatarProvider}
@@ -4489,21 +5642,29 @@ export function SettingsTab() {
 							onChange={(e) => {
 								const next = e.target.value as "vrm" | "naia-video-avatar";
 								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
-								setAvatarProvider(next);
 								// R6: 비디오 아바타인데 NVA 미지정이면 기본 번들로 채운다(빈 상태 방지).
 								const nextNva =
 									next === "naia-video-avatar"
 										? nvaModel || DEFAULT_NVA_MODEL
 										: nvaModel;
-								if (next === "naia-video-avatar" && !nvaModel)
-									setNvaModel(DEFAULT_NVA_MODEL);
 								// #auto-apply: 적용 버튼 없이 즉시 반영(saveConfig → naia-config-changed → App).
 								if (next === "naia-video-avatar") {
-									persistVideoAvatarSelection(nextNva);
+									void persistVideoAvatarSelection(nextNva);
 								} else {
+									nvaSelectRevision.current++;
+									setAvatarProvider(next);
+									const nextVrm =
+										vrmModel ||
+										(isWebMode() ? WEB_DEFAULT_VRM : (naiaVrms[0] ?? ""));
+									if (!vrmModel && nextVrm) {
+										setVrmModel(nextVrm);
+										setAvatarModelPath(nextVrm);
+										setSavedVrmModel(nextVrm);
+									}
 									persistConfig({
 										avatarProvider: next,
 										nvaModel: undefined,
+										...(nextVrm ? { vrmModel: nextVrm } : {}),
 									});
 								}
 							}}
@@ -4513,21 +5674,31 @@ export function SettingsTab() {
 								{t("settings.avatarProviderVideo")}
 							</option>
 						</select>
-						<div className="settings-nva-create">
-							<p className="settings-nva-create__description">
-								{t("settings.nvaCreateDesc")}
-							</p>
-							<button
-								type="button"
-								className="voice-preview-btn settings-nva-create__button"
-								aria-label={t("settings.nvaCreate")}
-								title={t("settings.nvaCreate")}
-								data-usage-event="settings-tab.open-nva-avatar-creator-24.click"
-								onClick={() => void openNvaAvatarCreator()}
+						{isWebMode() && effectiveAvatarProvider === "vrm" ? (
+							<a
+								className="voice-preview-btn settings-vroid-hub"
+								href="https://hub.vroid.com/"
+								target="_blank"
+								rel="noopener noreferrer"
 							>
-								{t("settings.nvaCreate")}
-							</button>
-						</div>
+								VRoid Hub <span aria-hidden="true">↗</span>
+							</a>
+						) : (
+							<div className="settings-nva-create">
+								<p className="settings-nva-create__description">
+									{t("settings.nvaCreateDesc")}
+								</p>
+								<button
+									type="button"
+									className="voice-preview-btn settings-nva-create__button"
+									aria-label={t("settings.nvaCreate")}
+									title={t("settings.nvaCreate")}
+									onClick={() => void openNvaAvatarCreator()}
+								>
+									{t("settings.nvaCreate")}
+								</button>
+							</div>
+						)}
 					</div>
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}
@@ -4583,32 +5754,35 @@ export function SettingsTab() {
 									);
 								})}
 							</div>
-							{/* #12/#13: 파일 추가 + 삭제 */}
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									data-usage-event="settings-tab.handle-import-asset-27.click"
-									onClick={() => handleImportAsset("vrm-files")}
-								>
-									{t("settings.assetImport")}
-								</button>
-								{vrmModel &&
-									(() => {
-										const fn = vrmModel.split(/[/\\]/).pop();
-										return fn ? (
-											<button
-												type="button"
-												className="voice-preview-btn"
-												style={{ color: "var(--error-color, #f44)" }}
-												data-usage-event="settings-tab.handle-delete-asset-28.click"
-												onClick={() => handleDeleteAsset("vrm-files", fn)}
-											>
-												{t("settings.assetDelete")}
-											</button>
-										) : null;
-									})()}
-							</div>
+							{/* #12/#13: File add/delete (WO-03: web mode uses the bundled catalog). */}
+							{import.meta.env.MODE !== "web" && (
+								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+									<button
+										type="button"
+										className="voice-preview-btn"
+										data-usage-event="settings-tab.handle-import-asset-27.click"
+										onClick={() => handleImportAsset("vrm-files")}
+									>
+										{t("settings.assetImport")}
+									</button>
+									{vrmModel &&
+										(() => {
+											const fn = vrmModel.split(/[/\\]/).pop();
+											return fn ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													style={{ color: "var(--error-color, #f44)" }}
+													data-usage-event="settings-tab.handle-delete-asset-28.click"
+													onClick={() => handleDeleteAsset("vrm-files", fn)}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+								</div>
+							)}
+
 						</div>
 					)}
 
@@ -4626,10 +5800,11 @@ export function SettingsTab() {
 									<button
 										key={name}
 										type="button"
-										className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
+										className={`vrm-list-item${resolveWebNvaSelection(nvaModel, [name]) === name ? " vrm-list-item--active" : ""}`}
 										data-usage-event="settings-tab.button-29.click"
+
 										onClick={() => {
-											persistVideoAvatarSelection(name);
+											void persistVideoAvatarSelection(name);
 											// #auto-apply: 즉시 반영. bare 이름 저장(절대경로 금지 — 뷰어가 경로 결합).
 										}}
 									>
@@ -4637,33 +5812,125 @@ export function SettingsTab() {
 									</button>
 								))}
 							</div>
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									data-usage-event="settings-tab.handle-import-asset-30.click"
-									onClick={() => handleImportAsset("nva-files")}
-								>
-									{t("settings.folderImport")}
-								</button>
-								{nvaModel && (
+							{/* WO-03: 데스크톱은 네이티브 대화상자+IPC, 웹은 파일 선택+브라우저 저장. */}
+							{!isWebMode() ? (
+								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
 										type="button"
 										className="voice-preview-btn"
-										style={{ color: "var(--error-color, #f44)" }}
-										data-usage-event="settings-tab.handle-delete-asset-31.click"
-										onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+										data-usage-event="settings-tab.handle-import-asset-30.click"
+										onClick={() => handleImportAsset("nva-files")}
+
 									>
-										{t("settings.assetDelete")}
+										{t("settings.folderImport")}
 									</button>
-								)}
-							</div>
+									{nvaModel && (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											style={{ color: "var(--error-color, #f44)" }}
+											onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+										>
+											{t("settings.assetDelete")}
+										</button>
+									)}
+								</div>
+							) : (
+								!isKioskDemo() && (
+									<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+										<input
+											ref={nvaFileInputRef}
+											type="file"
+											accept=".nva"
+											hidden
+											data-testid="settings-nva-web-file-input"
+											onChange={(event) => {
+												const input = event.currentTarget;
+												const picked = input.files?.[0] ?? null;
+												input.value = "";
+												void handleWebImportAsset("nva-files", picked);
+											}}
+										/>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="settings-nva-web-upload"
+											disabled={webAssetBusy !== null}
+											onClick={() => nvaFileInputRef.current?.click()}
+										>
+											{t("settings.folderImport")}
+										</button>
+										{(() => {
+											const selected = nvaModel
+												? resolveWebNvaSelection(nvaModel, webUploadedNvas)
+												: null;
+											return selected ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													data-testid="settings-nva-web-delete"
+													style={{ color: "var(--error-color, #f44)" }}
+													disabled={webAssetBusy !== null}
+													onClick={() =>
+														void handleWebDeleteAsset("nva-files", selected)
+													}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+									</div>
+								)
+							)}
 						</div>
 					)}
 				</>
 			)}
 			{activeSettingsTab === "persona" && (
 				<>
+					<Suspense fallback={null}>
+						<CharacterThemeSettings
+							key={getAdkPath()}
+							config={loadConfig() ?? existing!}
+							currentTheme={{
+								nvaModel:
+									avatarProvider === "naia-video-avatar"
+										? (nvaModel || DEFAULT_NVA_MODEL).split(/[/\\]/).pop()!
+										: "",
+								ttsProvider,
+								ttsVoice,
+								backgroundVideo: backgroundVideoFilename,
+							}}
+							onCard={async (patch, theme) => {
+								if (theme) await applyCharacterTheme(theme, patch);
+								else await persistCharacterSettings(patch);
+								setPersona(patch.persona ?? "");
+								setAgentName(patch.agentName ?? "");
+								setPersonaDisabled(false);
+							}}
+							onCardEdit={(patch) => {
+								if (patch.persona !== undefined) setPersona(patch.persona);
+								if (patch.agentName !== undefined)
+									setAgentName(patch.agentName);
+								setPersonaDisabled(false);
+							}}
+							onTheme={applyCharacterTheme}
+							onPreferences={async (patch) => {
+								await persistCharacterSettings({
+									uiPreferences: { ...loadConfig()?.uiPreferences, ...patch },
+								});
+							}}
+							onSaveThemes={async (themes) => {
+								await persistCharacterSettings({
+									uiPreferences: {
+										...loadConfig()?.uiPreferences,
+										b2cNvaThemes: themes,
+									},
+								});
+							}}
+						/>
+					</Suspense>
+
 					<div className="settings-section-divider">
 						<span>{t("settings.personaSection")}</span>
 					</div>
@@ -4769,6 +6036,35 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "profile" && (
 				<>
+					{isWebMode() && !isKioskDemo() && isSettingsActive && (
+						<Suspense fallback={null}>
+							<WebVisualAgentSlugSettings />
+						</Suspense>
+					)}
+					{isWebMode() && !isKioskDemo() && (
+						<div className="settings-field">
+							<button
+								type="button"
+								className="voice-preview-btn"
+								data-testid="memory-transfer-export"
+								disabled={transferStatus === "exporting"}
+								onClick={async () => {
+									setTransferStatus("exporting");
+									try {
+										const { downloadWebTransfer, loadTransfer } = await import("../lib/transfer/entry");
+										const transfer = await loadTransfer();
+										await downloadWebTransfer(transfer, resolveWebConversationsDir());
+										setTransferStatus("idle");
+									} catch {
+										setTransferStatus("error");
+									}
+								}}
+							>
+								{transferStatus === "exporting" ? "…" : t("settings.memoryTransferExport")}
+							</button>
+							{transferStatus === "error" && <span role="alert" className="settings-hint">{t("settings.memoryTransferError")}</span>}
+						</div>
+					)}
 					<div className="settings-section-divider">
 						<span>{t("settings.engineSection")}</span>
 					</div>
@@ -4850,13 +6146,13 @@ export function SettingsTab() {
 								)}
 								<div className="lab-balance-row">
 									<span className="lab-balance-label">
-										{t("settings.labBalance")}
+										{t(isWebMode() ? "cost.labBalance" : "settings.labBalance")}
 									</span>
 									<span
 										className="lab-balance-value"
 										title={
-											labBalance !== null && labBalance >= 1000
-												? `${formatCreditsExact(labBalance, 2)} ${t("cost.labCredits")}`
+											!isWebMode() && labBalance !== null && labBalance >= 1000
+												? formatCreditBalance(labBalance, true)
 												: undefined
 										}
 									>
@@ -4865,7 +6161,7 @@ export function SettingsTab() {
 											: labBalanceError
 												? t("cost.labError")
 												: labBalance !== null
-													? `${formatCredits(labBalance, 2)} ${t("cost.labCredits")}`
+															? formatCreditBalance(labBalance)
 													: "-"}
 									</span>
 									{!labBalanceLoading && labBalanceError && (
@@ -5042,7 +6338,7 @@ export function SettingsTab() {
 												</button>
 											</div>
 										</div>
-									) : (
+									) : !isKioskDemo() ? (
 										<button
 											type="button"
 											className="voice-preview-btn lab-disconnect-btn"
@@ -5051,7 +6347,7 @@ export function SettingsTab() {
 										>
 											{t("settings.labDisconnect")}
 										</button>
-									)}
+									) : null}
 								</div>
 							</div>
 						</div>
@@ -5154,53 +6450,89 @@ export function SettingsTab() {
 											)}
 											{group.id === "voice" && (
 												<>
-													<select
-														data-testid="profile-tts-provider"
-														aria-label={t("settings.ttsProvider")}
-														value={ttsProvider}
-														data-usage-event="settings-tab.select-profile-tts-provider-45.select"
-														onChange={(event) =>
-															void selectProfileTtsProvider(
-																event.target.value as TtsProviderId,
-															)
-														}
-													>
-														{listTtsProviderMetas().map((providerMeta) => (
-															<option
-																key={providerMeta.id}
-																value={providerMeta.id}
-																disabled={
-																	(providerMeta.requiresNaiaKey && !naiaKey) ||
-																	(providerMeta.id === "naia-local-voice" &&
-																		(detectedVramGb == null ||
-																			detectedVramGb < 6))
+													{isWebMode() ? (
+														<select
+															data-testid="profile-tts-provider"
+															aria-label={t("settings.ttsProvider")}
+															value={
+																ttsProvider === "browser"
+																	? "browser"
+																	: "nextain"
+															}
+															onChange={(event) => {
+																const next = (
+																	event.target.value === "browser"
+																		? "browser"
+																		: "nextain"
+																) as TtsProviderId;
+																setTtsProvider(next);
+																const nextVoice =
+																	next === "nextain" ? webCloudVoice : "";
+																setTtsVoice(nextVoice);
+																persistConfig({
+																	ttsProvider: next,
+																	ttsVoice: nextVoice,
+																});
+															}}
+														>
+															<option value="nextain">Naia Cloud TTS</option>
+															<option value="browser">
+																{t("webSpeech.synthesisProvider")}
+															</option>
+														</select>
+													) : (
+														<>
+															<select
+																data-testid="profile-tts-provider"
+																aria-label={t("settings.ttsProvider")}
+																value={ttsProvider}
+																data-usage-event="settings-tab.select-profile-tts-provider-45.select"
+																onChange={(event) =>
+																	void selectProfileTtsProvider(
+																		event.target.value as TtsProviderId,
+																	)
 																}
 															>
-																{providerMeta.name}
-															</option>
-														))}
-													</select>
-													{ttsProvider === "naia-local-voice" && (
-														<button
-															type="button"
-															className="voice-preview-btn"
-															data-testid="profile-local-voice-toggle"
-															data-usage-event="settings-tab.handle-toggle-cascade-46.click"
-															onClick={handleToggleCascade}
-															disabled={
-																cascadeBusy ||
-																!naiaKey ||
-																detectedVramGb == null ||
-																detectedVramGb < 6
-															}
-															aria-pressed={cascadeRunning}
-														>
-															{cascadeBusy
-																? t("settings.cascadeBusy")
-																: cascadeRunning
-																	? t("settings.cascadeStop")
-																	: t("settings.cascadeStart")}
-														</button>
+																{listTtsProviderMetas().map((providerMeta) => (
+																	<option
+																		key={providerMeta.id}
+																		value={providerMeta.id}
+																		disabled={
+																			(providerMeta.requiresNaiaKey &&
+																				!naiaKey) ||
+																			(providerMeta.id === "naia-local-voice" &&
+																				(detectedVramGb == null ||
+																					detectedVramGb < 6))
+																		}
+																	>
+																		{providerMeta.name}
+																	</option>
+																))}
+															</select>
+															{ttsProvider === "naia-local-voice" && (
+																<button
+																	type="button"
+																	className="voice-preview-btn"
+																	data-testid="profile-local-voice-toggle"
+																	data-usage-event="settings-tab.handle-toggle-cascade-46.click"
+																	onClick={handleToggleCascade}
+																	disabled={
+																		cascadeBusy ||
+																		!naiaKey ||
+																		detectedVramGb == null ||
+																		detectedVramGb < 6
+																	}
+																	aria-pressed={cascadeRunning}
+																>
+																	{cascadeBusy
+																		? t("settings.cascadeBusy")
+																		: cascadeRunning
+																			? t("settings.cascadeStop")
+																			: t("settings.cascadeStart")}
+																</button>
+															)}
+														</>
+
 													)}
 													<button
 														type="button"
@@ -5388,23 +6720,30 @@ export function SettingsTab() {
 
 					<div className="settings-field">
 						<label htmlFor="provider-select">{t("settings.provider")}</label>
-						<select
-							id="provider-select"
-							value={provider}
-							data-usage-event="settings-tab.handle-provider-change-50.select"
-							onChange={(e) =>
-								handleProviderChange(e.target.value as ProviderId)
-							}
-						>
-							{LLM_PROVIDERS.map((p) => (
-								<option key={p.id} value={p.id} disabled={p.disabled}>
-									{p.name}
-									{isRecommendedLocalValue(activeLocalTier, "main", p.id)
-										? ` · ${t("settings.tierRecommendBadge")}`
-										: ""}
-								</option>
-							))}
-						</select>
+						{isKioskDemo() ? (
+							<div id="provider-select" data-testid="provider-single">
+								{getLlmProvider("nextain")?.name ?? "Naia"}
+							</div>
+						) : (
+							<select
+								id="provider-select"
+								value={provider}
+								data-usage-event="settings-tab.handle-provider-change-50.select"
+								onChange={(e) =>
+									handleProviderChange(e.target.value as ProviderId)
+								}
+							>
+								{listLlmProviders().map((p) => (
+									<option key={p.id} value={p.id} disabled={p.disabled}>
+										{p.name}
+										{isRecommendedLocalValue(activeLocalTier, "main", p.id)
+											? ` · ${t("settings.tierRecommendBadge")}`
+											: ""}
+									</option>
+								))}
+							</select>
+						)}
+
 						{slotRecommendation(activeLocalTier, "main") && (
 							<div className="settings-hint" data-testid="main-tier-hint">
 								{t("settings.tierRecommendSummary")}: ollama (
@@ -5998,8 +7337,9 @@ export function SettingsTab() {
 							</div>
 						</div>
 					)}
+					<div className="settings-model-roles">
 					<div className="settings-field">
-						<label htmlFor="model-select">{t("settings.model")}</label>
+						<label htmlFor="model-select">{t("settings.mainModel")}</label>
 						{provider === "nextain" && !hideModelPicker ? (
 							<>
 								<label htmlFor="model-sort-mode">
@@ -6016,6 +7356,7 @@ export function SettingsTab() {
 										persistConfig({ modelSortMode: nextMode });
 									}}
 								>
+									<option value="recommended">{t("settings.modelSortRecommended")}</option>
 									<option value="price">{t("settings.modelSortPrice")}</option>
 									<option value="performance">
 										{t("settings.modelSortPerformance")}
@@ -6028,14 +7369,14 @@ export function SettingsTab() {
 									>
 										{t("settings.modelSortPriceBasis")}
 									</div>
-								) : (
+								) : modelSortMode === "performance" ? (
 									<div
 										className="settings-hint"
 										data-testid="model-performance-sort-basis"
 									>
 										{t("settings.modelSortPerformanceBasis")}
 									</div>
-								)}
+								) : null}
 							</>
 						) : null}
 						{provider === "ollama" ? (
@@ -6055,27 +7396,35 @@ export function SettingsTab() {
 											(candidate) => !candidate.capabilities.includes("asr"),
 										)
 										.map((candidate) => (
-											<option key={candidate.id} value={candidate.id} />
+											<option key={candidate.id} value={candidate.id} label={formatModelLabel(candidate, t)} />
 										))}
 								</datalist>
 							</>
 						) : hideModelPicker ? (
-							// 모델이 하나뿐 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
+							// 모델이 하나뿐이거나 키오스크 고정 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
 							<div id="model-select" data-testid="model-single">
-								{singleProviderModel
-									? formatModelLabel(singleProviderModel)
-									: (selectedModelMeta?.label ?? model)}
+								{isKioskDemo()
+									? (selectedModelMeta?.label ?? activeBrainModel)
+									: singleProviderModel
+										? formatModelLabel(singleProviderModel, t)
+										: (selectedModelMeta?.label ?? model)}
 							</div>
 						) : (
 							<select
 								key={`model-select-${modelSortMode}-${displayedProviderModels.map((candidate) => candidate.id).join(":")}`}
 								id="model-select"
-								value={hasSelectedModel ? model : "__custom__"}
+								value={hasSelectedModel ? activeBrainModel : "__custom__"}
 								data-usage-event="settings-tab.set-model-63.select"
+
 								onChange={(e) => {
 									if (e.target.value === "__custom__") return;
 									ollamaPullSelectionRevisionRef.current += 1;
-									setModel(e.target.value);
+									const nextModel = e.target.value;
+									if (isWebMode() && isNaiaConfigHydrationPending()) {
+										setError(t("settings.saveFailed"));
+										return;
+									}
+									setModel(nextModel);
 									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
 									// agent loads THIS model. Previously only Save persisted → a stale model
 									// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
@@ -6085,15 +7434,15 @@ export function SettingsTab() {
 										const legacySelection = applyModelSelectionToConfig(
 											persistedConfig as Record<string, unknown> | null,
 											provider,
-											e.target.value,
+											nextModel,
 										);
 										const persistedMainRole = persistedConfig
 											? readConfiguredLlmRoles(persistedConfig).main
 											: undefined;
 										const mainRole: LlmRoleConfig = {
 											provider,
-											model: e.target.value,
-											...(persistedMainRole?.provider === provider &&
+											model: nextModel,
+														...(persistedMainRole?.provider === provider &&
 											persistedMainRole.credentialRef !== undefined
 												? { credentialRef: persistedMainRole.credentialRef }
 												: {}),
@@ -6102,21 +7451,23 @@ export function SettingsTab() {
 												? { baseUrl: persistedMainRole.baseUrl }
 												: {}),
 										};
-										const nextSel = writeConfiguredLlmRole(
+										const nextSel = writeMainModelSelection(
 											legacySelection as unknown as AppConfig,
-											"main",
 											mainRole,
+											persistedConfig ?? undefined,
 										);
-										saveConfig(
-											nextSel as unknown as Parameters<typeof saveConfig>[0],
-										);
-										void writeNaiaConfig(
-											nextSel as unknown as Record<string, unknown>,
-										);
+										setThinkingLevel(resolveThinkingLevel(nextSel));
+										if (isWebMode()) nextSel.webAutoDefaultModel = false;
+										if (isWebMode() && provider === "webllm" && isWebLlmModelId(nextModel)) {
+											void applyWebMainModel(nextSel, nextModel);
+										} else {
+											saveConfig(nextSel);
+											void writeNaiaConfig(nextSel as unknown as Record<string, unknown>);
+										}
 									}
 									// When switching to an omni model, set default voice if not already set
 									const newMeta = providerModels.find(
-										(m) => m.id === e.target.value,
+										(m) => m.id === nextModel,
 									);
 									if (
 										newMeta?.capabilities.includes("omni") &&
@@ -6131,48 +7482,103 @@ export function SettingsTab() {
 									}
 								}}
 							>
-								{!hasSelectedModel && model ? (
-									<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+								{!hasSelectedModel && activeBrainModel ? (
+									<option value="__custom__">{t("settings.currentModel", { model: activeBrainModel, asr: isSelectedAsr ? " 🎤" : "" })}</option>
 								) : null}
 								{displayedProviderModels
-									.filter((m) => !m.capabilities.includes("asr"))
+									.filter((m) => !m.capabilities.includes("asr") && (modelSortMode !== "recommended" || (!/nano/i.test(m.id) && m.id !== "solar-mini") || m.id === activeBrainModel))
 									.map((m) => (
 										<option key={m.id} value={m.id}>
-											{formatModelLabel(m)}
+											{m.label}
 										</option>
 									))}
 							</select>
 						)}
-						<div className="settings-hint">
+						<div className="settings-hint settings-model-selected-label">
 							{provider === "nextain" && selectedModelMeta?.pricing ? (
 								<span style={{ color: "var(--accent-color, #64a0ff)" }}>
 									{t("settings.pricingPerMillionTokens")}:{" "}
 									{t("settings.priceInput")}{" "}
-									{formatCreditsFromUsd(selectedModelMeta.pricing[0])}{" "}
-									{t("cost.labCredits")} · {t("settings.priceOutput")}{" "}
-									{formatCreditsFromUsd(selectedModelMeta.pricing[1])}{" "}
-									{t("cost.labCredits")}
+									{renderModelPrice(selectedModelMeta.pricing[0])} · {t("settings.priceOutput")}{" "}
+									{renderModelPrice(selectedModelMeta.pricing[1])}
 									{selectedModelMeta.cachePricing ? (
 										<>
 											{" · "}
 											{t("settings.priceCacheRead")}{" "}
 											{selectedModelMeta.cachePricing.read === null
 												? "—"
-												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.read)} ${t("cost.labCredits")}`}
+												: renderModelPrice(selectedModelMeta.cachePricing.read)}
 											{" · "}
 											{t("settings.priceCacheWrite")}{" "}
 											{selectedModelMeta.cachePricing.write === null
 												? "—"
-												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.write)} ${t("cost.labCredits")}`}
+												: renderModelPrice(selectedModelMeta.cachePricing.write)}
 										</>
 									) : null}
 								</span>
 							) : provider === "nextain" ? (
 								t("settings.pricingUnavailable")
+							) : isWebMode() && provider === "webllm" ? (
+								formatWebLlmModelLabel(activeBrainModel)
 							) : (
-								(selectedModelMeta?.label ?? model)
+								(selectedModelMeta?.label ?? activeBrainModel)
 							)}
 						</div>
+					</div>
+					<div className="settings-field">
+						<label htmlFor="small-model-select">{t("settings.smallModel")}</label>
+						{isKioskDemo() ? (
+							<div id="small-model-select" data-testid="small-model-single">
+								{t("settings.smallModelInherit")}
+							</div>
+						) : (
+							<>
+								<label htmlFor="small-model-sort">{t("settings.modelSort")}</label>
+								<select id="small-model-sort" value={smallSortMode} onChange={(event) => setSmallSortMode(event.target.value as ModelSortMode)}>
+									<option value="recommended">{t("settings.modelSortRecommended")}</option>
+									<option value="price">{t("settings.modelSortPrice")}</option>
+									<option value="performance">{t("settings.modelSortPerformance")}</option>
+								</select>
+								<select id="small-model-select" data-testid="small-model-select"
+									value={!smallRole.inherit && smallRole.provider && smallRole.model ? JSON.stringify([smallRole.provider, smallRole.model]) : "__inherit__"}
+									onChange={(event) => {
+										const selected = event.target.value;
+										const [selectedProvider, selectedModel] = selected === "__inherit__" ? ["", ""] : JSON.parse(selected) as [ProviderId, string];
+										const choice: LlmRoleConfig = selected === "__inherit__" ? { inherit: "main" } : {
+											provider: selectedProvider, model: selectedModel,
+											...(smallRole.provider === selectedProvider && smallRole.baseUrl ? { baseUrl: smallRole.baseUrl } : selectedProvider === "ollama" ? { baseUrl: ollamaHost } : selectedProvider === "vllm" ? { baseUrl: vllmHost } : {}),
+											...(smallRole.provider === selectedProvider && smallRole.credentialRef ? { credentialRef: smallRole.credentialRef } : {}),
+											...(selectedProvider === "nextain" && (isWebMode() || /luna/i.test(selectedModel)) ? { thinkingLevel: "low" as const } : {}),
+										};
+										setSmallRole(choice);
+										const current = loadConfig();
+										if (current) {
+											const updated = writeConfiguredLlmRole(current, "sub", choice);
+											saveConfig(updated);
+											void writeNaiaConfig(updated as unknown as Record<string, unknown>);
+										}
+									}}>
+									<option value="__inherit__">{t("settings.smallModelInherit")}</option>
+									{!smallRole.inherit && smallRole.provider && smallRole.model && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
+									{Object.entries(dynamicModels).filter(([id]) => id === "nextain" || (!isWebMode() && ["ollama", "vllm", "codex", "grok", "claude-code-cli"].includes(id))).map(([id, models]) => <optgroup key={id} label={getLlmProvider(id)?.name ?? id}>
+										{(id === "nextain" && isWebMode()
+										? ["deepseek-v4.1-flash", "gpt-6-luna"]
+											.map((wanted) => smallModelChoices(models).find((candidate) => candidate.id === wanted))
+											.filter((candidate): candidate is LlmModelMeta => Boolean(candidate))
+										: sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode)).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
+									</optgroup>)}
+									{!isWebMode() && !(dynamicModels.ollama ?? []).some(m => m.id === LOCAL_SMALL_MODEL) && <option value={JSON.stringify(["ollama", LOCAL_SMALL_MODEL])}>Qwen 3.5 4B ({t("settings.smallModelLocal")})</option>}
+								</select>
+							</>
+						)}
+						<div className="settings-hint settings-model-selected-label" data-testid="small-model-selected-label">
+							{smallRole.inherit ? t("settings.smallModelInherit") : (() => {
+								const meta = (dynamicModels[smallRole.provider ?? ""] ?? []).find((item) => item.id === smallRole.model);
+								return meta ? formatModelLabel(meta, t) : `${smallRole.provider ?? ""}: ${smallRole.model ?? ""}`;
+							})()}
+						</div>
+						{!isWebMode() && <div className="settings-hint">{t("settings.smallModelLocalHint")}</div>}
+					</div>
 					</div>
 
 					{/* Omni model voice selection */}
@@ -6249,82 +7655,178 @@ export function SettingsTab() {
 					)}
 
 					{/* LLM options: tools + thinking (moved from general tab) */}
-					<div className="settings-field settings-toggle-row">
+					<div
+						className={
+							isKioskDemo()
+								? "settings-field"
+								: "settings-field settings-toggle-row"
+						}
+					>
 						<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
-						<input
-							id="tools-toggle"
-							type="checkbox"
-							checked={enableTools}
-							data-usage-event="settings-tab.set-enable-tools-66.select"
-							onChange={(e) => {
-								setEnableTools(e.target.checked);
-								persistConfig({ enableTools: e.target.checked });
-							}}
-						/>
+						{isKioskDemo() ? (
+							<div id="tools-toggle" data-testid="tools-single">
+								{KIOSK_DEMO_ENABLE_TOOLS
+									? t("settings.thinkingLevelOn")
+									: t("settings.thinkingLevelOff")}
+							</div>
+						) : (
+							<input
+								id="tools-toggle"
+								type="checkbox"
+								checked={enableTools}
+								data-usage-event="settings-tab.set-enable-tools-66.select"
+								onChange={(e) => {
+									setEnableTools(e.target.checked);
+									persistConfig({ enableTools: e.target.checked });
+								}}
+							/>
+						)}
+
 					</div>
-					{enableTools && <DevicePairingSection />}
+					{!isWebMode() && enableTools && <DevicePairingSection />}
 					<div className="settings-field" data-testid="thinking-level-section">
 						<label id="thinking-level-label">
 							{t("settings.thinkingLevel")}
 						</label>
-						<div
-							role="radiogroup"
-							aria-labelledby="thinking-level-label"
-							style={{
-								display: "flex",
-								gap: "4px",
-								width: "100%",
-								marginTop: "4px",
-							}}
-						>
-							{THINKING_LEVELS.map((level) => {
-								const active = thinkingLevel === level;
-								const label =
-									level === "off"
-										? t("settings.thinkingLevelOff")
-										: level === "low"
-											? t("settings.thinkingLevelLow")
-											: t("settings.thinkingLevelHigh");
-								return (
-									<button
-										key={level}
-										type="button"
-										role="radio"
-										aria-checked={active}
-										tabIndex={active ? 0 : -1}
-										data-testid={`thinking-level-${level}`}
-										data-usage-event="settings-tab.handle-thinking-change-67.click"
-										onClick={() => handleThinkingChange(level)}
-										onKeyDown={(e) => handleThinkingKeyDown(e, level)}
-										style={{
-											flex: "1 1 0",
-											minWidth: 0,
-											padding: "6px 8px",
-											borderRadius: "4px",
-											border: active
-												? "1px solid var(--accent, #2563eb)"
-												: "1px solid var(--border-color, #e2e8f0)",
-											backgroundColor: active
-												? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
-												: "var(--bg-surface, var(--espresso, #ffffff))",
-											color: active
-												? "var(--accent, #2563eb)"
-												: "var(--text-primary, var(--cream, #0f172a))",
-											fontWeight: active ? 600 : 400,
-											fontSize: scaledFontSize(13),
-											cursor: "pointer",
-											textAlign: "center",
-											whiteSpace: "nowrap",
-											overflow: "hidden",
-											textOverflow: "ellipsis",
-											transition: "all 0.15s ease",
-										}}
-									>
-										{label}
-									</button>
-								);
-							})}
-						</div>
+						{isKioskDemo() ? (
+							<div
+								id="thinking-level-select"
+								data-testid="thinking-level-single"
+								aria-labelledby="thinking-level-label"
+							>
+								{t("settings.thinkingLevelLow")}
+							</div>
+						) : (
+							<div
+								role="radiogroup"
+								aria-labelledby="thinking-level-label"
+								style={{
+									display: "flex",
+									gap: "4px",
+									width: "100%",
+									marginTop: "4px",
+								}}
+							>
+								{isWebMode() && provider === "webllm"
+									? (["off", "on"] as const).map((webStage) => {
+											const isOff = webStage === "off";
+											const active = isOff
+												? thinkingLevel === "off"
+												: thinkingLevel !== "off";
+											const label = isOff
+												? t("settings.thinkingLevelOff")
+												: t("settings.thinkingLevelOn");
+											const targetLevel: ThinkingLevel = isOff ? "off" : "high";
+											return (
+												<button
+													key={webStage}
+													type="button"
+													role="radio"
+													aria-checked={active}
+													tabIndex={active ? 0 : -1}
+													data-testid={`thinking-level-${webStage}`}
+													data-usage-event="settings-tab.handle-thinking-change-67.click"
+													onClick={() => handleThinkingChange(targetLevel)}
+													onKeyDown={(e) => {
+														if (
+															e.key === "ArrowRight" ||
+															e.key === "ArrowDown" ||
+															e.key === "ArrowLeft" ||
+															e.key === "ArrowUp"
+														) {
+															e.preventDefault();
+															const nextStage = isOff ? "on" : "off";
+															handleThinkingChange(isOff ? "high" : "off");
+															const parent = e.currentTarget.parentElement;
+															parent
+																?.querySelector<HTMLButtonElement>(
+																	`[data-testid="thinking-level-${nextStage}"]`,
+																)
+																?.focus();
+														}
+													}}
+													style={{
+														flex: "1 1 0",
+														minWidth: 0,
+														padding: "6px 8px",
+														borderRadius: "4px",
+														border: active
+															? "1px solid var(--accent, #2563eb)"
+															: "1px solid var(--border-color, #e2e8f0)",
+														backgroundColor: active
+															? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+															: "var(--bg-surface, var(--espresso, #ffffff))",
+														color: active
+															? "var(--accent, #2563eb)"
+															: "var(--text-primary, var(--cream, #0f172a))",
+														fontWeight: active ? 600 : 400,
+														fontSize: scaledFontSize(13),
+														cursor: "pointer",
+														textAlign: "center",
+														whiteSpace: "nowrap",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														transition: "all 0.15s ease",
+													}}
+												>
+													{label}
+												</button>
+											);
+										})
+									: THINKING_LEVELS.map((level) => {
+											const active = thinkingLevel === level;
+											const label =
+												level === "off"
+													? t("settings.thinkingLevelOff")
+													: level === "low"
+														? t("settings.thinkingLevelLow")
+														: level === "xhigh"
+															? t("settings.thinkingLevelXhigh")
+																: level === "max"
+																	? t("settings.thinkingLevelMax")
+															: t("settings.thinkingLevelHigh");
+											return (
+												<button
+													key={level}
+													type="button"
+													role="radio"
+													aria-checked={active}
+													tabIndex={active ? 0 : -1}
+													data-testid={`thinking-level-${level}`}
+													data-usage-event="settings-tab.handle-thinking-change-67.click"
+													onClick={() => handleThinkingChange(level)}
+													onKeyDown={(e) => handleThinkingKeyDown(e, level)}
+													style={{
+														flex: "1 1 0",
+														minWidth: 0,
+														padding: "6px 8px",
+														borderRadius: "4px",
+														border: active
+															? "1px solid var(--accent, #2563eb)"
+															: "1px solid var(--border-color, #e2e8f0)",
+														backgroundColor: active
+															? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+															: "var(--bg-surface, var(--espresso, #ffffff))",
+														color: active
+															? "var(--accent, #2563eb)"
+															: "var(--text-primary, var(--cream, #0f172a))",
+														fontWeight: active ? 600 : 400,
+														fontSize: scaledFontSize(13),
+														cursor: "pointer",
+														textAlign: "center",
+														whiteSpace: "nowrap",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														transition: "all 0.15s ease",
+													}}
+												>
+													{label}
+												</button>
+											);
+										})}
+							</div>
+						)}
+
 						<div className="settings-hint" style={{ marginTop: "4px" }}>
 							{t("settings.thinkingLevelHint")}
 						</div>
@@ -6336,81 +7838,98 @@ export function SettingsTab() {
 						<label htmlFor="environment-awareness">
 							{t("settings.environmentAwareness")}
 						</label>
-						<select
-							id="environment-awareness"
-							value={environmentAwareness}
-							data-usage-event="settings-tab.set-environment-awareness-68.select"
-							onChange={(e) => {
-								const next = e.target.value as EnvironmentAwareness;
-								setEnvironmentAwareness(next);
-								persistConfig({ environmentAwareness: next });
-								// 즉시 반영한다 — 다시 켤 때까지 기다리게 하지 않는다.
-								// 전달 여부를 확인한다. 버리면 사용자가 껐는데 도구 선언이 뇌에
-								// 남거나, 켰는데 나이아에게 도구가 없는 상태를 아무도 모른다
-								// (2026-08-28 16차 적대리뷰 지적). 켜는 쪽은 대화 턴마다 다시
-								// 등록하므로 실패해도 다음 턴에 복구된다.
-								if (next === "off") {
-									environmentSession.unwatch();
-									sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
-										.then((ok) => {
-											// 확인값을 상태에 반영한다. 로그로만 쓰면 셸이 낡은 참을
-											// 들고 있게 된다 (2026-08-28 18차 적대리뷰 지적).
-											noteEnvironmentClear(ok);
-											if (!ok)
-												Logger.warn(
-													"SettingsTab",
-													"environment skill clear not delivered",
-													{},
-												);
-										})
-										.catch(() => noteEnvironmentClear(false));
-								} else {
-									// #611: keep observation for always/auto, but never advertise
-									// skill_environment to the model.
-									sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
-										.then((ok) => {
-											noteEnvironmentClear(ok);
-											if (!ok)
-												Logger.warn(
-													"SettingsTab",
-													"environment skill clear not delivered",
-													{},
-												);
-										})
-										.catch(() => noteEnvironmentClear(false));
-								}
-							}}
-						>
-							<option value="off">
-								{t("settings.environmentAwarenessOff")}
-							</option>
-							<option value="auto">
-								{t("settings.environmentAwarenessAuto")}
-							</option>
-							<option value="always">
-								{t("settings.environmentAwarenessAlways")}
-							</option>
-						</select>
+						{isKioskDemo() ? (
+							<div
+								id="environment-awareness"
+								data-testid="environment-awareness-single"
+							>
+								{KIOSK_DEMO_ENVIRONMENT_AWARENESS === "off"
+									? t("settings.environmentAwarenessOff")
+									: KIOSK_DEMO_ENVIRONMENT_AWARENESS === "always"
+										? t("settings.environmentAwarenessAlways")
+										: t("settings.environmentAwarenessAuto")}
+							</div>
+						) : (
+							<select
+								id="environment-awareness"
+								value={environmentAwareness}
+								data-usage-event="settings-tab.set-environment-awareness-68.select"
+								onChange={(e) => {
+									const next = e.target.value as EnvironmentAwareness;
+									setEnvironmentAwareness(next);
+									persistConfig({ environmentAwareness: next });
+									// 즉시 반영한다 — 다시 켤 때까지 기다리게 하지 않는다.
+									// 전달 여부를 확인한다. 버리면 사용자가 껐는데 도구 선언이 뇌에
+									// 남거나, 켰는데 나이아에게 도구가 없는 상태를 아무도 모른다
+									// (2026-08-28 16차 적대리뷰 지적). 켜는 쪽은 대화 턴마다 다시
+									// 등록하므로 실패해도 다음 턴에 복구된다.
+									if (next === "off") {
+										environmentSession.unwatch();
+										sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+											.then((ok) => {
+												// 확인값을 상태에 반영한다. 로그로만 쓰면 셸이 낡은 참을
+												// 들고 있게 된다 (2026-08-28 18차 적대리뷰 지적).
+												noteEnvironmentClear(ok);
+												if (!ok)
+													Logger.warn(
+														"SettingsTab",
+														"environment skill clear not delivered",
+														{},
+													);
+											})
+											.catch(() => noteEnvironmentClear(false));
+									} else {
+										// #611: keep observation for always/auto, but never advertise
+										// skill_environment to the model.
+										sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+											.then((ok) => {
+												noteEnvironmentClear(ok);
+												if (!ok)
+													Logger.warn(
+														"SettingsTab",
+														"environment skill clear not delivered",
+														{},
+													);
+											})
+											.catch(() => noteEnvironmentClear(false));
+									}
+								}}
+							>
+								<option value="off">
+									{t("settings.environmentAwarenessOff")}
+								</option>
+								<option value="auto">
+									{t("settings.environmentAwarenessAuto")}
+								</option>
+								<option value="always">
+									{t("settings.environmentAwarenessAlways")}
+								</option>
+							</select>
+						)}
+
 						<span className="settings-hint">
 							{t("settings.environmentAwarenessHint")}
 						</span>
 					</div>
-					<div className="settings-field settings-toggle-row">
-						<label htmlFor="environment-terminal-input">
-							{t("settings.environmentTerminalInput")}
-						</label>
-						<input
-							id="environment-terminal-input"
-							type="checkbox"
-							checked={environmentTerminalInput}
-							disabled={environmentAwareness === "off"}
-							data-usage-event="settings-tab.set-environment-terminal-input-69.select"
-							onChange={(e) => {
-								setEnvironmentTerminalInput(e.target.checked);
-								persistConfig({ environmentTerminalInput: e.target.checked });
-							}}
-						/>
-					</div>
+					{!isKioskDemo() && (
+						<div className="settings-field settings-toggle-row">
+							<label htmlFor="environment-terminal-input">
+								{t("settings.environmentTerminalInput")}
+							</label>
+							<input
+								id="environment-terminal-input"
+								type="checkbox"
+								checked={environmentTerminalInput}
+								disabled={environmentAwareness === "off"}
+								data-usage-event="settings-tab.set-environment-terminal-input-69.select"
+								onChange={(e) => {
+									setEnvironmentTerminalInput(e.target.checked);
+									persistConfig({ environmentTerminalInput: e.target.checked });
+								}}
+							/>
+						</div>
+					)}
+
 
 					<div className="settings-actions">
 						<button
@@ -6501,31 +8020,61 @@ export function SettingsTab() {
 								data-testid="stt-provider-section"
 							>
 								<label>{t("settings.sttProvider")}</label>
-								<select
-									value={sttProvider}
-									data-usage-event="settings-tab.set-stt-provider-72.select"
-									onChange={(e) => {
-										const next = e.target.value as SttProviderId;
-										setSttProvider(next);
-										setSttModel("");
-										persistConfig({ sttProvider: next, sttModel: "" });
-									}}
-								>
-									<option value="">{t("settings.sttNone")}</option>
-									{listSttProviders().map((p) => (
-										<option
-											key={p.id}
-											value={p.id}
-											disabled={p.requiresNaiaKey && !naiaKey}
+								{isWebMode() ? (
+									<>
+										<select
+											data-testid="web-stt-provider-select"
+											value={sttProvider ? "web-speech" : ""}
+											data-usage-event="settings-tab.set-stt-provider-72.select"
+											disabled={!isWebSpeechAvailable()}
+											onChange={(e) => {
+												const next = e.target.value as SttProviderId;
+												setSttProvider(next);
+												setSttModel("");
+												persistConfig({ sttProvider: next, sttModel: "" });
+											}}
+
 										>
-											{p.name}
-											{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
-											{p.requiresNaiaKey && !naiaKey
-												? ` (${t("settings.ttsNaiaRequired")})`
-												: ""}
-										</option>
-									))}
-								</select>
+											<option value="web-speech">
+												{t("webSpeech.recognitionProvider")}
+											</option>
+											<option value="">{t("settings.sttNone")}</option>
+										</select>
+										{!isWebSpeechAvailable() && (
+											<div
+												className="settings-hint"
+												data-testid="web-stt-unsupported-hint"
+											>
+												{t("webSpeech.recognitionUnsupported")}
+											</div>
+										)}
+									</>
+								) : (
+									<select
+										value={sttProvider}
+										onChange={(e) => {
+											const next = e.target.value as SttProviderId;
+											setSttProvider(next);
+											setSttModel("");
+											persistConfig({ sttProvider: next, sttModel: "" });
+										}}
+									>
+										<option value="">{t("settings.sttNone")}</option>
+										{listSttProviders().map((p) => (
+											<option
+												key={p.id}
+												value={p.id}
+												disabled={p.requiresNaiaKey && !naiaKey}
+											>
+												{p.name}
+												{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
+												{p.requiresNaiaKey && !naiaKey
+													? ` (${t("settings.ttsNaiaRequired")})`
+													: ""}
+											</option>
+										))}
+									</select>
+								)}
 							</div>
 							{/* STT Model — current selection + manage button (offline engines only) */}
 							{/* vLLM ASR: endpoint URL + ASR model picker */}
@@ -6619,59 +8168,97 @@ export function SettingsTab() {
 						<label htmlFor="tts-provider-select">
 							{t("settings.ttsProvider")}
 						</label>
-						<select
-							id="tts-provider-select"
-							data-testid="gateway-tts-provider"
-							value={ttsProvider}
-							data-usage-event="settings-tab.select-profile-tts-provider-75.select"
-							onChange={async (e) => {
-								const next = e.target.value as TtsProviderId;
-								if (next === "naia-local-voice") {
-									await selectProfileTtsProvider(next);
-									return;
-								}
-								setTtsProvider(next);
-								setDynamicTtsVoices([]);
-								persistConfig({ ttsProvider: next });
-								setGatewayTtsApiKey("");
-								// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
-								// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
-								// Reset voice to provider default
-								const meta = listTtsProviderMetas().find((p) => p.id === next);
-								if (meta?.voices?.[0]) {
-									persistTtsVoice(meta.voices[0].id);
-								} else if (next === "edge") {
-									// Edge voice will be selected from gateway/hardcoded list
-									persistTtsVoice("");
-								} else if (next === "vllm") {
-									// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
-									// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
-									persistTtsVoice("default");
-								}
-							}}
-						>
-							{listTtsProviderMetas().map((p) => (
-								<option
-									key={p.id}
-									value={p.id}
-									disabled={
-										(p.requiresNaiaKey && !naiaKey) ||
-										(p.id === "naia-local-voice" &&
-											(detectedVramGb == null || detectedVramGb < 6))
-									}
-								>
-									{p.name}
-									{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
-									{p.requiresNaiaKey && !naiaKey
-										? ` (${t("settings.ttsNaiaRequired")})`
-										: ""}
-									{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
-										? ` · ${t("settings.tierRecommendBadge")}`
-										: ""}
+						{isWebMode() ? (
+							<>
+							<select
+								id="tts-provider-select"
+								data-testid="gateway-tts-provider"
+								value={ttsProvider === "browser" ? "browser" : "nextain"}
+								data-usage-event="settings-tab.select-profile-tts-provider-75.select"
+								onChange={(e) => {
+									const next = (
+										e.target.value === "browser" ? "browser" : "nextain"
+									) as TtsProviderId;
+									setTtsProvider(next);
+									const nextVoice =
+										next === "nextain" ? webCloudVoice : "";
+									setTtsVoice(nextVoice);
+									persistConfig({ ttsProvider: next, ttsVoice: nextVoice });
+								}}
+							>
+								<option value="nextain">Naia Cloud TTS</option>
+								<option value="browser">
+									{t("webSpeech.synthesisProvider")}
+
 								</option>
-							))}
-						</select>
-						{slotRecommendation(activeLocalTier, "tts") && (
+							</select>
+								{ttsProvider === "browser" &&
+									(typeof window === "undefined" ||
+									!("speechSynthesis" in window)) && (
+									<div
+										className="settings-hint"
+										data-testid="web-tts-unsupported-hint"
+									>
+										{t("webSpeech.synthesisUnsupported")}
+									</div>
+								)}
+							</>
+						) : (
+							<select
+								id="tts-provider-select"
+								data-testid="gateway-tts-provider"
+								value={ttsProvider}
+								onChange={async (e) => {
+									const next = e.target.value as TtsProviderId;
+									if (next === "naia-local-voice") {
+										await selectProfileTtsProvider(next);
+										return;
+									}
+									setTtsProvider(next);
+									setDynamicTtsVoices([]);
+									persistConfig({ ttsProvider: next });
+									setGatewayTtsApiKey("");
+									// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
+									// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
+									// Reset voice to provider default
+									const meta = listTtsProviderMetas().find(
+										(p) => p.id === next,
+									);
+									if (meta?.voices?.[0]) {
+										persistTtsVoice(meta.voices[0].id);
+									} else if (next === "edge") {
+										// Edge voice will be selected from gateway/hardcoded list
+										persistTtsVoice("");
+									} else if (next === "vllm") {
+										// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
+										// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
+										persistTtsVoice("default");
+									}
+								}}
+							>
+								{listTtsProviderMetas().map((p) => (
+									<option
+										key={p.id}
+										value={p.id}
+										disabled={
+											(p.requiresNaiaKey && !naiaKey) ||
+											(p.id === "naia-local-voice" &&
+												(detectedVramGb == null || detectedVramGb < 6))
+										}
+									>
+										{p.name}
+										{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
+										{p.requiresNaiaKey && !naiaKey
+											? ` (${t("settings.ttsNaiaRequired")})`
+											: ""}
+										{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
+											? ` · ${t("settings.tierRecommendBadge")}`
+											: ""}
+									</option>
+								))}
+							</select>
+						)}
+						{!isWebMode() && slotRecommendation(activeLocalTier, "tts") && (
 							<div className="settings-hint" data-testid="tts-tier-hint">
 								{t("settings.tierRecommendSummary")}: naia-local-voice (
 								{t("settings.tierRecommendLocalTag")})
@@ -6860,6 +8447,58 @@ export function SettingsTab() {
 
 					{/* TTS Voice picker — dynamic based on provider */}
 					{(() => {
+						if (isWebMode() && ttsProvider === "browser") {
+							const synthSupported =
+								typeof window !== "undefined" && "speechSynthesis" in window;
+							// R25-v: 현재 언어 목소리를 맨 앞 묶음에, 나머지는 언어별 묶음에 둔다.
+							const browserVoiceGroups = groupTtsVoicesForLocale(
+								browserVoicesToTtsVoiceMetas(browserSpeechVoices),
+								locale,
+							);
+							return (
+								<div className="settings-field">
+									<label htmlFor="tts-voice-select">
+										{t("settings.ttsVoice")}
+									</label>
+									<div className="voice-picker">
+										<select
+											id="tts-voice-select"
+											data-testid="browser-tts-voice"
+											value={ttsVoice}
+											disabled={!synthSupported}
+											onChange={(e) => persistTtsVoice(e.target.value)}
+										>
+											<option value="">{t("webSpeech.defaultVoice")}</option>
+											{browserVoiceGroups.map((group) => (
+												<optgroup
+													key={group.language || "other"}
+													label={group.label}
+													data-voice-language={group.language}
+													data-voice-current={group.current ? "true" : undefined}
+												>
+													{group.voices.map((v) => (
+														<option key={v.id} value={v.id}>
+															{v.label}
+														</option>
+													))}
+												</optgroup>
+											))}
+										</select>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="browser-tts-preview-btn"
+											onClick={handleVoicePreview}
+											disabled={isPreviewing || !synthSupported}
+										>
+											{isPreviewing
+												? t("settings.voicePreviewing")
+												: t("settings.voicePreview")}
+										</button>
+									</div>
+								</div>
+							);
+						}
 						const providerMeta = listTtsProviderMetas().find(
 							(p) => p.id === ttsProvider,
 						);
@@ -6901,11 +8540,23 @@ export function SettingsTab() {
 							) : null;
 						}
 						// Other providers: use dynamic voices (if fetched) or static registry voices
-						const voiceList =
-							dynamicTtsVoices.length > 0
+						const isKioskNextain = isKioskDemo() && ttsProvider === "nextain";
+						const voiceList = isKioskNextain
+							? [{ id: KIOSK_DEMO_TTS_VOICE, label: "지나 목소리" }]
+							: dynamicTtsVoices.length > 0
 								? dynamicTtsVoices
 								: (providerMeta?.voices ?? []);
 						if (voiceList.length > 0) {
+							const showSelectedVoice =
+								isWebMode() &&
+								!isKioskDemo() &&
+								ttsProvider === "nextain" &&
+								ttsVoice !== "" &&
+								!voiceList.some((voice) => voice.id === ttsVoice);
+							// R25-v: 언어 정보가 있으면 현재 언어 목소리를 맨 앞에 두고 언어별로 묶는다.
+							const voiceGroups = voiceList.some((v) => "language" in v && v.language)
+								? groupTtsVoicesForLocale(voiceList as readonly TtsVoiceMeta[], locale)
+								: null;
 							return (
 								<div className="settings-field">
 									<label htmlFor="tts-voice-select">
@@ -6914,15 +8565,40 @@ export function SettingsTab() {
 									<div className="voice-picker">
 										<select
 											id="tts-voice-select"
-											value={ttsVoice}
+											value={isKioskNextain ? KIOSK_DEMO_TTS_VOICE : ttsVoice}
 											data-usage-event="settings-tab.select-81.select"
-											onChange={(e) => persistTtsVoice(e.target.value)}
+											disabled={isKioskNextain}
+											onChange={(e) => {
+												if (isKioskNextain) return;
+												persistTtsVoice(e.target.value);
+											}}
+
 										>
-											{voiceList.map((v) => (
-												<option key={v.id} value={v.id}>
-													{v.label}
-												</option>
-											))}
+										{showSelectedVoice && (
+											<option value={ttsVoice}>
+												{ttsVoice.replace(/^naia-voice:/, "")}
+											</option>
+										)}
+											{voiceGroups
+												? voiceGroups.map((group) => (
+														<optgroup
+															key={group.language || "other"}
+															label={group.label}
+															data-voice-language={group.language}
+															data-voice-current={group.current ? "true" : undefined}
+														>
+															{group.voices.map((v) => (
+																<option key={v.id} value={v.id}>
+																	{v.label}
+																</option>
+															))}
+														</optgroup>
+													))
+												: voiceList.map((v) => (
+														<option key={v.id} value={v.id}>
+															{v.label}
+														</option>
+													))}
 										</select>
 										<button
 											type="button"
@@ -6943,6 +8619,16 @@ export function SettingsTab() {
 					})()}
 
 					{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
+					{webRefAudio && !supportsRefAudio && (
+						<p className="settings-hint" style={{ gridColumn: "1 / -1" }} data-testid="web-ref-audio-login">
+							{t("settings.webRefAudioLogin")}
+						</p>
+					)}
+					{supportsRefAudio && webRefAudio && !isSelectedOmni && (
+						<p className="settings-hint" style={{ gridColumn: "1 / -1" }} data-testid="web-ref-audio-notice">
+							{t("settings.webRefAudioNotice")}
+						</p>
+					)}
 					{supportsRefAudio && (
 						<RefAudioSection
 							ensureLocalVoiceReady={ensureLocalVoiceReady}
@@ -7045,7 +8731,16 @@ export function SettingsTab() {
 					</div>
 				</>
 			)}
-			{activeSettingsTab === "memory" && (
+			{activeSettingsTab === "memory" &&
+				(isWebMode() ? (
+					<div
+						role="status"
+						className="settings-coming-soon-banner"
+						data-testid="memory-web-notice"
+					>
+						나이아 메모리(naia-memory) 향후 통합 예정
+					</div>
+				) : (
 				<>
 					<div className="settings-section-divider">
 						<span>{t("settings.modelsEmbedding")}</span>
@@ -7197,6 +8892,8 @@ export function SettingsTab() {
 							>
 								<input
 									type="text"
+									aria-label={t("settings.memoryEmbeddingBaseUrl")}
+									data-testid="memory-embedding-url"
 									value={memoryEmbeddingBaseUrl}
 									onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
 									onBlur={(e) =>
@@ -7212,6 +8909,8 @@ export function SettingsTab() {
 								/>
 								<input
 									type="text"
+									aria-label={t("settings.memoryEmbeddingModel")}
+									data-testid="memory-embedding-model"
 									value={memoryEmbeddingModel}
 									onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
 									onBlur={(e) =>
@@ -7222,6 +8921,49 @@ export function SettingsTab() {
 							</div>
 						)}
 						{/* naia 임베딩: 계정 미연결 시 안내(parity) */}
+						{(memoryEmbeddingProvider === "vllm" ||
+							memoryEmbeddingProvider === "ollama" ||
+							memoryEmbeddingProvider === "naia") && (
+							<div className="settings-field">
+								<label>
+									{t("settings.embeddingRevision")}
+									<input
+										data-testid="memory-embedding-revision"
+										value={memoryEmbeddingRevision}
+										onChange={(e) => setMemoryEmbeddingRevision(e.target.value)}
+										onBlur={(e) =>
+											persistConfig({
+												memoryEmbeddingRevision:
+													e.target.value.trim() || undefined,
+											})
+										}
+									/>
+								</label>
+								{memoryEmbeddingProvider !== "naia" && (
+									<label>
+										{t("settings.embeddingDimensions")}
+										<input
+											data-testid="memory-embedding-dimensions"
+											type="number"
+											min="1"
+											max="65536"
+											value={memoryEmbeddingDimensions}
+											onChange={(e) =>
+												setMemoryEmbeddingDimensions(Number(e.target.value))
+											}
+											onBlur={() =>
+												persistConfig({ memoryEmbeddingDimensions })
+											}
+										/>
+									</label>
+								)}
+								{!memoryEmbeddingRevision.trim() && (
+									<div role="alert" className="settings-hint">
+										{t("settings.embeddingIdentityMissing")}
+									</div>
+								)}
+							</div>
+						)}
 						{memoryEmbeddingProvider === "naia" && !naiaKey && (
 							<div className="settings-field">
 								<span className="settings-hint">
@@ -7262,7 +9004,7 @@ export function SettingsTab() {
 						</button>
 					</div>
 				</>
-			)}
+				))}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
 			{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
@@ -7274,7 +9016,7 @@ export function SettingsTab() {
 					</SkillsTab>
 				</Suspense>
 			)}
-			{activeSettingsTab === "memory" && (
+			{activeSettingsTab === "memory" && !isWebMode() && (
 				<>
 					<div>
 						<div className="settings-section-divider">
@@ -7442,6 +9184,14 @@ export function SettingsTab() {
 						</div>
 
 						{/* Memory stats */}
+						<div role="status" data-testid="memory-pending">
+							{t("settings.memoryPending", { count: String(memoryPending) })}
+						</div>
+						{memoryReadError && (
+							<div className="settings-hint" role="alert">
+								{t("settings.memoryReadFailed")}
+							</div>
+						)}
 						{facts.length > 0 && (
 							<div className="settings-field">
 								<span className="settings-hint">
@@ -7745,7 +9495,7 @@ export function SettingsTab() {
 						className="sync-dialog-card"
 						style={{
 							maxWidth: "520px",
-							maxHeight: "85vh",
+							maxHeight: "calc(var(--naia-vh, 1vh) * 85)",
 							overflow: "auto",
 						}}
 						data-usage-event="settings-tab.stop-propagation-105.click"

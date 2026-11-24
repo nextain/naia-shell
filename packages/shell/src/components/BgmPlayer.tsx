@@ -12,6 +12,13 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import {
+	importWebBgmMusic,
+	isWebBgmImportSupported,
+	removeWebBgmMusic,
+	WebBgmImportError,
+} from "../lib/web-runtime/web-bgm-music";
+import { isWebMode } from "../lib/web-runtime/web-assets";
+import {
 	attachMediaElementToSharedContext,
 	isBroadcastActive,
 	useBroadcastBridge,
@@ -53,8 +60,14 @@ import {
 	getBgmRecentTracks,
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
+	searchWebYoutubeCatalog,
+	WEB_YOUTUBE_CATALOG,
 } from "../lib/bgm-skill";
-import { computeBgmAppPosition } from "../lib/bgm-app-position";
+import {
+	pickYoutubeStartTrack,
+	webCatalogStartTrack,
+	youtubeNeverStarted,
+} from "../lib/bgm-embed";
 import { Logger } from "../lib/logger";
 import { UI_FONT_SCALE_EVENT } from "../lib/ui-font-scale";
 import type { NaiaContextBridge } from "../lib/app-registry";
@@ -63,7 +76,8 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "../lib/ui-preferences";
-import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
+import { useAvatarStore } from "../stores/avatar";
+import { useAppStore } from "../stores/app";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
@@ -78,6 +92,16 @@ interface YtVideo {
 }
 
 async function ytSearch(query: string): Promise<YtVideo[]> {
+	if (import.meta.env.MODE === "web") {
+		return searchWebYoutubeCatalog(query).map((item) => ({
+			id: item.id,
+			title: item.title,
+			thumbnail:
+				item.thumbnail ?? `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`,
+			duration: String(item.duration ?? ""),
+			channel: item.channel ?? "YouTube",
+		}));
+	}
 	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
 		`${base}/yt/search?q=${encodeURIComponent(query)}&max=12`,
@@ -267,7 +291,11 @@ function localLibraryTrack(path: string, title: string): BgmLibraryTrack {
 }
 
 const YT_APP_H_KEY = "yt-app-height";
+// YouTube IFrame 치명 onError: 프레임 확정 전이라도 현 세대 것이면 곧장 넘긴다.
+const FATAL_YOUTUBE_ERROR_CODES = new Set(["2", "5", "100", "101", "150"]);
 const YT_APP_H_DEFAULT = 360;
+/** R36: 웹판 "재생 중" 카드가 새 곡 시작 뒤 떠 있는 시간. */
+export const WEB_NOW_PLAYING_CARD_MS = 4_000;
 const YT_APP_H_MIN = 200;
 const YT_APP_H_MAX = 700;
 // Marquee kicks in when track label exceeds this character count
@@ -358,14 +386,12 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Local BGM ─────────────────────────────────────────────────────────────
 	const bgmTrackUrl = useAvatarStore((s) => s.bgmTrackUrl);
 	const setBgmTrackUrl = useAvatarStore((s) => s.setBgmTrackUrl);
-	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
-	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
+	const bgmVideoUrl = useAvatarStore((s) => s.bgmVideoUrl);
+	const setBgmVideoUrl = useAvatarStore((s) => s.setBgmVideoUrl);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
 	const setBackgroundMediaType = useAvatarStore(
 		(s) => s.setBackgroundMediaType,
 	);
-	const prevBgVideoRef = useRef<string>("");
-	const prevBgMediaRef = useRef<BackgroundMediaType>("");
 	const [localTracks, setLocalTracks] = useState<string[]>([]);
 	const [localPaths, setLocalPaths] = useState<string[]>([]);
 	const [localNames, setLocalNames] = useState<string[]>([]);
@@ -379,7 +405,19 @@ export function BgmPlayer({ naia }: Props) {
 		(track: BgmLibraryTrack, index: number, playlistId: string) => void
 	>(() => {});
 
+	// R10: 웹판 로컬 탭은 브라우저 저장소에 올린 파일을 보여 준다. 올리거나
+	// 지우면 이 값을 올려 목록을 다시 읽는다.
+	const [localReload, setLocalReload] = useState(0);
+	const [localImportBusy, setLocalImportBusy] = useState(false);
+	const [localImportMessage, setLocalImportMessage] = useState<{
+		text: string;
+		error: boolean;
+	} | null>(null);
+	const localFileInputRef = useRef<HTMLInputElement | null>(null);
+	const webLocalImport = isWebMode() && isWebBgmImportSupported();
+
 	useEffect(() => {
+		void localReload;
 		listNaiaAssets("bgm-musics").then(async (paths) => {
 			const urls = await Promise.all(paths.map(toLocalBlobUrl));
 			const names = paths.map(
@@ -395,15 +433,70 @@ export function BgmPlayer({ naia }: Props) {
 			setLocalPaths(paths);
 			setLocalTracks(urls);
 			setLocalNames(names);
-			if (urls.length > 0 && !bgmTrackUrl) setBgmTrackUrl(urls[0]);
+			// 상점에서 바로 읽어 재생 곡이 바뀔 때마다 목록(blob URL)을 다시 만들지 않는다.
+			const current = useAvatarStore.getState().bgmTrackUrl;
+			if (urls.length > 0 && (!current || current.startsWith("blob:"))) {
+				if (!current || !urls.includes(current)) setBgmTrackUrl(urls[0]);
+			}
 		});
-	}, [bgmTrackUrl, setBgmTrackUrl]);
+	}, [localReload, setBgmTrackUrl]);
+
+	const importLocalFiles = async (files: FileList | null) => {
+		const picked = files ? Array.from(files) : [];
+		if (picked.length === 0) return;
+		setLocalImportBusy(true);
+		setLocalImportMessage(null);
+		let added = 0;
+		let failure: WebBgmImportError["code"] | null = null;
+		for (const file of picked) {
+			try {
+				await importWebBgmMusic(file);
+				added += 1;
+			} catch (error) {
+				failure = error instanceof WebBgmImportError ? error.code : "write_failed";
+				Logger.warn("BgmPlayer", "web bgm import failed", { name: file.name, code: failure });
+			}
+		}
+		setLocalImportBusy(false);
+		if (added > 0) setLocalReload((n) => n + 1);
+		if (failure) {
+			const key =
+				failure === "not_audio"
+					? "bgm.webUploadNotAudio"
+					: failure === "too_large"
+						? "bgm.webUploadTooLarge"
+						: failure === "quota"
+							? "bgm.webUploadQuota"
+							: "bgm.webUploadFailed";
+			setLocalImportMessage({ text: t(key), error: true });
+		} else {
+			setLocalImportMessage({
+				text: t("bgm.webUploadDone").replace("{count}", String(added)),
+				error: false,
+			});
+		}
+	};
+
+	const removeLocalFile = async (path: string) => {
+		try {
+			await removeWebBgmMusic(path);
+		} catch (error) {
+			Logger.warn("BgmPlayer", "web bgm remove failed", { error: String(error) });
+			setLocalImportMessage({ text: t("bgm.webUploadFailed"), error: true });
+		}
+		setLocalReload((n) => n + 1);
+	};
 
 	// ── Playback state (restored from persisted config) ───────────────────────
 	const [source, setSource] = useState<Source>(
 		() => (loadConfig()?.bgmSource as Source | undefined) ?? "youtube",
 	);
 	const [playing, setPlaying] = useState(false); // never auto-play on restore
+	const setBgmPlaying = useAvatarStore((s) => s.setBgmPlaying);
+	useEffect(() => {
+		setBgmPlaying(playing ? source : "");
+		return () => setBgmPlaying("");
+	}, [playing, source, setBgmPlaying]);
 	const [volume, setVolume] = useState(() => loadConfig()?.bgmVolume ?? 0.3);
 	const [showYoutubeBackground, setShowYoutubeBackground] = useState(
 		() => loadConfig()?.bgmYoutubeBackgroundVideo ?? true,
@@ -493,12 +586,22 @@ export function BgmPlayer({ naia }: Props) {
 	// appExpanded: the single app is open or closed
 	// appTab: which tab is currently shown in the app (independent of what's playing)
 	const [appExpanded, setAppExpanded] = useState(false);
+	useEffect(() => {
+		const handleBgmToggle = () => setAppExpanded((v) => !v);
+		window.addEventListener("naia:bgm-toggle", handleBgmToggle);
+		return () => {
+			window.removeEventListener("naia:bgm-toggle", handleBgmToggle);
+		};
+	}, []);
 	const [appTab, setAppTab] = useState<AppTab>("youtube");
 	const broadcastBridge = useBroadcastBridge();
 	const broadcasting = isBroadcastActive(broadcastBridge.state);
 	const broadcastingRef = useRef(broadcasting);
 	broadcastingRef.current = broadcasting;
 	const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+	// R31 — web only: YouTube refused or never started the requested song.
+	const [youtubeNotice, setYoutubeNotice] = useState<string | null>(null);
+	const webStartCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		if (audioRef.current) {
@@ -632,6 +735,42 @@ export function BgmPlayer({ naia }: Props) {
 		}
 	}
 
+	function clearWebStartCheck() {
+		if (!webStartCheckRef.current) return;
+		clearTimeout(webStartCheckRef.current);
+		webStartCheckRef.current = null;
+	}
+
+	// The web controls show ■ while the attempt is pending so it can be canceled.
+	// Playback is confirmed separately by the current iframe.
+	function beginWebStartCheck(playbackId: string) {
+		clearWebStartCheck();
+		setYoutubeNotice(null);
+		webStartCheckRef.current = setTimeout(() => {
+			webStartCheckRef.current = null;
+			const observed = observedIframeStateRef.current;
+			if (
+				!youtubeNeverStarted({
+					checkedPlaybackId: playbackId,
+					currentPlaybackId: bgmPlayback.current()?.playbackId ?? null,
+					observedPlaybackId: observed.playbackId,
+					lastCurrentTime: observed.lastCurrentTime,
+					manuallyStopped: manuallyStoppedPlaybackRef.current === playbackId,
+				})
+			)
+				return;
+			Logger.warn("BgmPlayer", "web YouTube playback never started", {
+				playbackId,
+			});
+			observePlayback("timeout", { playbackId, reason: "youtube_start_timeout" });
+			setPlaying(false);
+			setVideoLive(false);
+			setYoutubeNotice(t("bgm.webYoutubeNotPlaying"));
+		}, PLAYBACK_TIMEOUT_MS);
+	}
+
+	useEffect(() => clearWebStartCheck, []);
+
 	function observePlayback(
 		status: Exclude<BgmPlaybackStatus, "requested">,
 		options: {
@@ -673,6 +812,8 @@ export function BgmPlayer({ naia }: Props) {
 			playback_status: next.status,
 		});
 		if (status === "playing") {
+			clearWebStartCheck();
+			setYoutubeNotice(null);
 			if (observedIframeStateRef.current.playbackId === next.playbackId) {
 				observedIframeStateRef.current.hasPlayed = true;
 			}
@@ -681,6 +822,7 @@ export function BgmPlayer({ naia }: Props) {
 			status === "error" ||
 			status === "ended"
 		) {
+			clearWebStartCheck();
 			setVideoLive(false);
 		}
 		if (status === "playing" && current.status !== "playing") {
@@ -968,6 +1110,9 @@ export function BgmPlayer({ naia }: Props) {
 		reason: string,
 	) {
 		setPlaying(false);
+		if (import.meta.env.MODE === "web") {
+			setYoutubeNotice(t("bgm.webYoutubeNotPlaying"));
+		}
 		if (
 			eventPlaybackId &&
 			lastErroredPlaybackIdRef.current === eventPlaybackId
@@ -1085,7 +1230,7 @@ export function BgmPlayer({ naia }: Props) {
 	// #521 — Initiate the YouTube widget `listening` handshake as soon as the
 	// background iframe is mounted/loaded, polling until the player responds.
 	useEffect(() => {
-		if (backgroundMediaType !== "iframe" || !backgroundVideoUrl) {
+		if (!bgmVideoUrl) {
 			youtubeHandshakeRef.current.stop();
 			resetObservedIframeState(null);
 			return;
@@ -1122,7 +1267,7 @@ export function BgmPlayer({ naia }: Props) {
 			document.removeEventListener("load", onDocumentCaptureLoad, true);
 			youtubeHandshakeRef.current.stop();
 		};
-	}, [backgroundMediaType, backgroundVideoUrl]);
+	}, [bgmVideoUrl]);
 
 	// ── YouTube IFrame API bridge ──────────────────────────────────────────────
 	// The host window initiates `{event:"listening",id:1,channel:"widget"}` on
@@ -1512,6 +1657,12 @@ export function BgmPlayer({ naia }: Props) {
 							!msgVideoId &&
 							(!eventPlaybackId || eventPlaybackId === current.playbackId)
 						) {
+							// 치명 onError(2/5/100/101/150)는 프레임 확정 전이라도 현 세대 것이면
+							// 곧장 다음 곡으로 넘긴다. 대기만 하면 상단 바가 currentTime 0에 고착된다.
+							if (FATAL_YOUTUBE_ERROR_CODES.has(reason)) {
+								handleObservedTrackError(eventPlaybackId, reason);
+								return;
+							}
 							pendTerminalForCurrentGeneration(
 								current.playbackId,
 								eventPlaybackId,
@@ -1528,12 +1679,6 @@ export function BgmPlayer({ naia }: Props) {
 					msg.event === "onReady" ||
 					newlySubscribed
 				) {
-					if (
-						msg.event === "onReady" &&
-						bgmPlayback.current()?.status !== "playing"
-					) {
-						observePlayback("loading", { playbackId: eventPlaybackId });
-					}
 					const iframe = document.querySelector(
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
@@ -1546,6 +1691,9 @@ export function BgmPlayer({ naia }: Props) {
 						["requested", "loading", "timeout"].includes(current.status) &&
 						manuallyStoppedPlaybackRef.current !== eventPlaybackId
 					) {
+						if (msg.event === "onReady" && current.status === "requested") {
+							observePlayback("loading", { playbackId: eventPlaybackId });
+						}
 						iframe.contentWindow.postMessage(
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
 							"*",
@@ -1616,6 +1764,39 @@ export function BgmPlayer({ naia }: Props) {
 		currentYtRef.current = currentYt;
 	}, [currentYt]);
 
+	const settingsOpen = useAppStore((state) => state.activeApp === "settings");
+	const [nowPlayingCardShown, setNowPlayingCardShown] = useState(false);
+	const [nowPlayingCardHovered, setNowPlayingCardHovered] = useState(false);
+	const [nowPlayingCardFocused, setNowPlayingCardFocused] = useState(false);
+	const nowPlayingCardKey =
+		import.meta.env.MODE === "web" &&
+		playing &&
+		source === "youtube" &&
+		playbackSnapshot?.status === "playing"
+			? currentYt?.id
+			: undefined;
+	useEffect(() => {
+		if (nowPlayingCardKey) {
+			Logger.debug("BgmPlayer", "Showing web Now Playing card", {
+				videoId: nowPlayingCardKey,
+			});
+		}
+		setNowPlayingCardShown(Boolean(nowPlayingCardKey));
+	}, [nowPlayingCardKey]);
+	useEffect(() => {
+		if (nowPlayingCardKey && !settingsOpen) return;
+		setNowPlayingCardHovered(false);
+		setNowPlayingCardFocused(false);
+	}, [nowPlayingCardKey, settingsOpen]);
+	useEffect(() => {
+		if (!nowPlayingCardShown || nowPlayingCardHovered || nowPlayingCardFocused) return;
+		const timer = setTimeout(
+			() => setNowPlayingCardShown(false),
+			WEB_NOW_PLAYING_CARD_MS,
+		);
+		return () => clearTimeout(timer);
+	}, [nowPlayingCardShown, nowPlayingCardHovered, nowPlayingCardFocused, nowPlayingCardKey]);
+
 	useEffect(() => {
 		const handleBgmEvent = (e: { payload: string }) => {
 			try {
@@ -1665,12 +1846,7 @@ export function BgmPlayer({ naia }: Props) {
 					setPlaying(false);
 					resetObservedIframeState(null);
 					lastConfirmedPlayingTrackRef.current = null;
-					if (useAvatarStore.getState().backgroundMediaType === "iframe") {
-						setBackgroundVideoUrl(prevBgVideoRef.current);
-						setBackgroundMediaType(prevBgMediaRef.current);
-					}
-					prevBgVideoRef.current = "";
-					prevBgMediaRef.current = "";
+					setBgmVideoUrl("");
 					bgmPlayback.clearQueue();
 					observePlayback("ended");
 					setPlaybackSnapshot(bgmPlayback.current());
@@ -1705,11 +1881,22 @@ export function BgmPlayer({ naia }: Props) {
 						JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
 						"*",
 					);
+					if (import.meta.env.MODE === "web") {
+						clearWebStartCheck();
+						setPlaying(false);
+						observePlayback("paused");
+					}
 				} else if (msg.type === "bgm_youtube_resume") {
 					const iframe = document.querySelector(
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
-					if (!iframe && currentYtRef.current) {
+					const current = bgmPlayback.current();
+					if (
+						currentYtRef.current &&
+						(!iframe ||
+							(import.meta.env.MODE === "web" &&
+								(current?.status === "timeout" || current?.status === "error")))
+					) {
 						handleYtSelect(currentYtRef.current);
 					} else {
 						// Same deliberate-resume latch clear as the button path (#614).
@@ -1718,6 +1905,13 @@ export function BgmPlayer({ naia }: Props) {
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
 							"*",
 						);
+						if (
+							import.meta.env.MODE === "web" &&
+							iframe?.contentWindow &&
+							current
+						) {
+							beginWebResume(current);
+						}
 					}
 				} else if (msg.type === "bgm_youtube_next") {
 					if (!startNextQueuedTrack("ended")) {
@@ -1784,32 +1978,52 @@ export function BgmPlayer({ naia }: Props) {
 	// FR-UI-FONT-SCALE.3: 가로·세로 모두 창 안으로 가두고, 창 크기나 글자 배율이
 	// 바뀌면(음악 막대 폭·높이가 달라진다) 다시 잰다.
 	useEffect(() => {
-		const measure = () => {
+		const updateAppPos = () => {
 			if (!playerRef.current) {
 				setAppPos(null);
 				return;
 			}
 			const rect = playerRef.current.getBoundingClientRect();
-			const next = computeBgmAppPosition(rect, {
-				width: window.innerWidth,
-				height: window.innerHeight,
-			});
-			Logger.debug("BgmPlayer", "app panel position", {
-				anchorRight: rect.right,
-				anchorBottom: rect.bottom,
-				viewportWidth: window.innerWidth,
-				viewportHeight: window.innerHeight,
-				top: next.top,
-				left: next.left,
-			});
-			setAppPos({ top: next.top, left: next.left });
+			// CSS .bgm-yt-app 의 width(380px)와 반드시 같은 값 — 어긋나면 우측 정렬 계산이 밀린다.
+			const APP_W = Math.min(380, Math.max(240, window.innerWidth - 16));
+			// Right-align app to player's right edge, clamp so it doesn't overflow screen
+			const maxLeft = Math.max(8, window.innerWidth - APP_W - 8);
+			const safeLeft = Math.max(8, Math.min(rect.right - APP_W, maxLeft));
+
+			const trigger = document.querySelector<HTMLElement>(
+				".web-mobile-menu-trigger",
+			);
+			let triggerBottom = 0;
+			if (trigger) {
+				const style = getComputedStyle(trigger);
+				const r = trigger.getBoundingClientRect();
+				if (
+					style.display !== "none" &&
+					style.visibility !== "hidden" &&
+					r.width > 0 &&
+					r.height > 0
+				) {
+					triggerBottom = Math.ceil(r.bottom);
+				}
+			}
+
+			let top = rect.bottom + 4;
+			if (triggerBottom > 0) {
+				top = Math.max(top, triggerBottom + 8);
+			} else if (rect.bottom <= 0 && window.innerWidth <= 600) {
+				top = Math.max(top, 56);
+			}
+
+			setAppPos({ top, left: safeLeft });
 		};
-		measure();
-		window.addEventListener("resize", measure);
-		window.addEventListener(UI_FONT_SCALE_EVENT, measure);
+
+		updateAppPos();
+		if (!appExpanded) return;
+		window.addEventListener("resize", updateAppPos);
+		window.addEventListener(UI_FONT_SCALE_EVENT, updateAppPos);
 		return () => {
-			window.removeEventListener("resize", measure);
-			window.removeEventListener(UI_FONT_SCALE_EVENT, measure);
+				window.removeEventListener("resize", updateAppPos);
+			window.removeEventListener(UI_FONT_SCALE_EVENT, updateAppPos);
 		};
 	}, [appExpanded, ytAppHeight]);
 
@@ -1895,21 +2109,47 @@ export function BgmPlayer({ naia }: Props) {
 				playbackId: pending.playbackId,
 				status: pending.status,
 			});
+			const catalogItem =
+				import.meta.env.MODE === "web"
+					? searchWebYoutubeCatalog(pending.selected.videoId)[0]
+					: undefined;
 			const video: YtVideo = {
 				id: pending.selected.videoId,
-				title: pending.selected.title,
-				thumbnail: "",
-				duration: "",
-				channel: "",
+				title: pending.selected.title || catalogItem?.title || "",
+				thumbnail:
+					catalogItem?.thumbnail ||
+					(import.meta.env.MODE === "web"
+						? `https://i.ytimg.com/vi/${pending.selected.videoId}/hqdefault.jpg`
+						: ""),
+				duration: String(catalogItem?.duration ?? ""),
+				channel: catalogItem?.channel ?? "",
 			};
 			setPlaybackSnapshot(pending);
 			setCurrentYt(video);
 			lastYtRef.current = video;
 			setSource("youtube");
-			setPlaying(false);
-			if (pending.status === "requested" || pending.status === "loading") {
-				beginPlaybackTimeout(pending.playbackId);
+			if (import.meta.env.MODE === "web") {
+				const shouldPlay = pending.status !== "paused";
+				setPlaying(shouldPlay);
+				setVideoLive(pending.status === "playing");
+				if (pending.status === "requested" || pending.status === "loading") {
+					resetObservedIframeState(pending.playbackId);
+					beginWebStartCheck(pending.playbackId);
+				}
+			} else {
+				setPlaying(false);
+				if (pending.status === "requested" || pending.status === "loading") {
+					beginPlaybackTimeout(pending.playbackId);
+				}
+				setVideoLive(pending.status === "playing");
 			}
+			setBgmVideoUrl(
+				youtubeEmbedUrl(
+					pending.selected.videoId,
+					pending.playbackId,
+					captionsRef.current,
+				),
+			);
 			setBackgroundVideoUrl(
 				youtubeEmbedUrl(
 					pending.selected.videoId,
@@ -1917,8 +2157,6 @@ export function BgmPlayer({ naia }: Props) {
 					captionsRef.current,
 				),
 			);
-			setBackgroundMediaType("iframe");
-			setVideoLive(pending.status === "playing");
 			return;
 		}
 		const cfg = loadConfig();
@@ -2026,42 +2264,57 @@ export function BgmPlayer({ naia }: Props) {
 			failedVideoIdsRef.current.delete(video.id);
 		}
 		audioRef.current?.pause();
+		const catalogItem =
+			import.meta.env.MODE === "web"
+				? searchWebYoutubeCatalog(video.id)[0]
+				: undefined;
+		const resolvedVideo: YtVideo = {
+			...video,
+			title: video.title || catalogItem?.title || "",
+			thumbnail:
+				video.thumbnail ||
+				catalogItem?.thumbnail ||
+				(import.meta.env.MODE === "web"
+					? `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`
+					: ""),
+			duration: String(video.duration || catalogItem?.duration || ""),
+			channel: video.channel || catalogItem?.channel || "",
+		};
 		const current = bgmPlayback.current();
 		const snapshot =
 			requestedPlaybackId && current?.playbackId === requestedPlaybackId
 				? current
-				: bgmPlayback.request({ videoId: video.id, title: video.title });
+				: bgmPlayback.request({
+						videoId: resolvedVideo.id,
+						title: resolvedVideo.title,
+					});
 		resetObservedIframeState(snapshot.playbackId);
 		setPlaybackSnapshot(snapshot);
-		beginPlaybackTimeout(snapshot.playbackId);
-		setCurrentYt(video);
-		lastYtRef.current = video;
+		if (import.meta.env.MODE === "web") {
+			beginWebStartCheck(snapshot.playbackId);
+		} else {
+			beginPlaybackTimeout(snapshot.playbackId);
+		}
+		setCurrentYt(resolvedVideo);
+		lastYtRef.current = resolvedVideo;
 		setSource("youtube");
-		// Reflect the user's autoplay intent immediately in the controls and in
-		// the checked background surface. Agent truth remains observation-gated.
+		// Let the controls cancel a pending attempt. The web background waits for playback.
 		setPlaying(true);
-		setVideoLive(true);
+		setVideoLive(import.meta.env.MODE !== "web");
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_requested",
 			summary: "BGM: internal YouTube playback was requested; it is not playing until a later music_started event confirms it.",
 		});
 
-		if (!prevBgVideoRef.current && prevBgMediaRef.current === "") {
-			const { backgroundVideoUrl: curUrl, backgroundMediaType: curType } =
-				useAvatarStore.getState();
-			if (curType !== "iframe") {
-				prevBgVideoRef.current = curUrl;
-				prevBgMediaRef.current = curType;
-			}
-		}
 		// The playback id makes the URL and React iframe key unique. Selecting the
 		// same video again must create a fresh player instead of a Zustand no-op.
 		const embedUrl = youtubeEmbedUrl(
-			video.id,
+			resolvedVideo.id,
 			snapshot.playbackId,
 			captionsRef.current,
 		);
+		setBgmVideoUrl(embedUrl);
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 	}
@@ -2084,27 +2337,57 @@ export function BgmPlayer({ naia }: Props) {
 		return true;
 	}
 
+	function beginWebResume(current: BgmPlaybackSnapshot) {
+		setPlaying(true);
+		if (current.status === "playing") return;
+		observedIframeStateRef.current.lastCurrentTime = null;
+		observePlayback("loading", { playbackId: current.playbackId });
+		beginWebStartCheck(current.playbackId);
+	}
+
 	function togglePlay() {
 		if (source === "youtube") {
 			if (playing) {
 				manuallyStoppedPlaybackRef.current =
 					bgmPlayback.current()?.playbackId ?? null;
 				clearPlaybackTimeout();
+				clearWebStartCheck();
 				pendingNullTerminalRef.current = null;
 				observedIframeStateRef.current.requerySentForPending = false;
 				youtubeHandshakeRef.current.stop();
-				if (sendYtCmd("stopVideo")) {
+				if (sendYtCmd("stopVideo") || import.meta.env.MODE === "web") {
 					// iframe 이벤트가 늦거나 누락돼도 버튼이 다시 재생 상태로
 					// 즉시 바뀌도록 사용자 의도를 낙관적으로 반영한다.
 					setPlaying(false);
+					setVideoLive(false);
 					observePlayback("paused");
 				}
 			} else {
 				const iframe = document.querySelector(
 					".app-bg-iframe",
 				) as HTMLIFrameElement | null;
-				if (!iframe && currentYt) {
-					// No iframe yet (e.g. restored from config) — reload the video
+				const current = bgmPlayback.current();
+				if (!iframe) {
+					// No iframe yet (restored from config, or nothing chosen yet).
+					// R31: never flip to "playing" without loading a real track —
+					// resume the current/last song, else the playlist, else (web)
+					// the first catalog song.
+					const resume = pickYoutubeStartTrack(currentYt, lastYtRef.current);
+					if (resume) {
+						handleYtSelect(resume);
+					} else if (!playNext() && import.meta.env.MODE === "web") {
+						const first = webCatalogStartTrack(WEB_YOUTUBE_CATALOG);
+						if (first) handleYtSelect(first);
+					}
+				} else if (
+					import.meta.env.MODE === "web" &&
+					currentYt &&
+					(current?.status === "timeout" ||
+						current?.status === "error" ||
+						!((observedIframeStateRef.current.lastCurrentTime ?? 0) > 0))
+				) {
+					// R31: the player never started this song — resuming it is
+					// pointless, so load it again as a fresh attempt.
 					handleYtSelect(currentYt);
 				} else {
 					// A prior manual stop leaves this latch set so a stale PLAYING
@@ -2115,8 +2398,12 @@ export function BgmPlayer({ naia }: Props) {
 					// button can never leave "stopped" again (#614).
 					manuallyStoppedPlaybackRef.current = null;
 					if (sendYtCmd("playVideo")) {
-						setPlaying(true);
-						setVideoLive(true);
+						if (import.meta.env.MODE === "web" && current) {
+							beginWebResume(current);
+						} else {
+							setPlaying(true);
+							setVideoLive(true);
+						}
 					}
 				}
 			}
@@ -2162,13 +2449,8 @@ export function BgmPlayer({ naia }: Props) {
 		setSource("local");
 		setBgmTrackUrl(tracks[idx]);
 		setLocalIndex(idx);
-		// Restore YT background when switching to local
-		if (useAvatarStore.getState().backgroundMediaType === "iframe") {
-			setBackgroundVideoUrl(prevBgVideoRef.current);
-			setBackgroundMediaType(prevBgMediaRef.current);
-			prevBgVideoRef.current = "";
-			prevBgMediaRef.current = "";
-		}
+		// Drop the YouTube layer when switching to local
+		setBgmVideoUrl("");
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
@@ -2217,6 +2499,22 @@ export function BgmPlayer({ naia }: Props) {
 		// Restored metadata may outlive a local file. Keep the player usable by
 		// connecting to the first bundled/default naia-settings BGM when present.
 		if (paths.length > 0) playLocalAt(0, track.title);
+	}
+
+	function handleLocalEnded() {
+		if (!playing) return;
+		if (playNext()) return;
+		const tracks = localTracksRef.current;
+		if (source !== "local" || tracks.length === 0) return;
+		const excluded = new Set(loadConfig()?.bgmLocalLoopExclude ?? []);
+		const eligible = tracks.map((_, index) => index).filter((index) =>
+			!excluded.has(localPathsRef.current[index]?.split(/[\\/]/).pop() ?? ""),
+		);
+		const order = eligible.length > 0 ? eligible : tracks.map((_, index) => index);
+		const current = tracks.indexOf(bgmTrackUrl);
+		const next = order.find((index) => index > current) ?? order[0];
+		Logger.debug("BgmPlayer", "local playlist ended", { current, next, trackCount: tracks.length });
+		playLocalAt(next);
 	}
 
 	function playNext(): boolean {
@@ -2351,11 +2649,25 @@ export function BgmPlayer({ naia }: Props) {
 			<audio
 				ref={audioRef}
 				loop={source === "local" && localTracks.length <= 1}
-				onEnded={playNext}
+				onEnded={handleLocalEnded}
 				onError={() => setPlaying(false)}
 			>
 				<track kind="captions" />
 			</audio>
+			{youtubeNotice && !playing && (
+				<div className="bgm-yt-notice" role="status" aria-live="polite">
+					<span>{youtubeNotice}</span>
+					<button
+						type="button"
+						className="bgm-yt-notice-close"
+						onClick={() => setYoutubeNotice(null)}
+						aria-label={t("bgm.close")}
+						title={t("bgm.close")}
+					>
+						×
+					</button>
+				</div>
+			)}
 
 			{/* ── Compact bar ── */}
 			<div
@@ -2473,7 +2785,8 @@ export function BgmPlayer({ naia }: Props) {
 					type="button"
 					className={`bgm-track-name bgm-track-toggle${appExpanded ? " bgm-track-name--open" : ""}`}
 					title={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
-					aria-label={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
+					aria-label={`${t("bgm.appToggleTitle")}: ${trackLabel}`}
+					aria-expanded={appExpanded}
 					data-usage-event="bgm-player.set-app-expanded-7.click"
 					onClick={() => setAppExpanded((v) => !v)}
 				>
@@ -2509,13 +2822,16 @@ export function BgmPlayer({ naia }: Props) {
 				createPortal(
 					<div
 						className={`bgm-yt-app${appExpanded ? "" : " bgm-yt-app--hidden"}`}
-						// Hidden via CSS only, so keep its controls (e.g. the captions
-						// checkbox) out of the tab order while closed.
-						{...(appExpanded ? {} : { inert: "" })}
+						// R28: the collapsed panel is invisible (opacity 0, scaleY 0) but
+						// stays mounted; keep its ~30 controls (e.g. the captions
+						// checkbox) out of the Tab order and the accessibility tree
+						// until the user opens it.
+						{...(appExpanded ? {} : { inert: "", "aria-hidden": true })}
 						style={{
 							position: "fixed",
 							top: appPos.top,
 							left: appPos.left,
+							maxWidth: "calc(100vw - 16px)",
 							zIndex: 10001,
 							height: ytAppHeight,
 						}}
@@ -2782,8 +3098,46 @@ export function BgmPlayer({ naia }: Props) {
 						{/* ── Local tab ── */}
 						{appTab === "local" && (
 							<div className="bgm-yt-list">
+								{webLocalImport && (
+									<div className="bgm-local-import">
+										<input
+											ref={localFileInputRef}
+											type="file"
+											accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac,.weba"
+											multiple
+											hidden
+											data-testid="bgm-local-file-input"
+											onChange={(event) => {
+												const input = event.currentTarget;
+												void importLocalFiles(input.files).finally(() => {
+													input.value = "";
+												});
+											}}
+										/>
+										<button
+											type="button"
+											className="bgm-local-import-btn"
+											data-testid="bgm-local-upload"
+											disabled={localImportBusy}
+											onClick={() => localFileInputRef.current?.click()}
+										>
+											{localImportBusy ? t("bgm.webUploading") : t("bgm.webUpload")}
+										</button>
+										{localImportMessage && (
+											<div
+												className={`bgm-yt-status${localImportMessage.error ? " bgm-yt-status--error" : ""}`}
+												role={localImportMessage.error ? "alert" : "status"}
+												data-testid="bgm-local-import-message"
+											>
+												{localImportMessage.text}
+											</div>
+										)}
+									</div>
+								)}
 								{localTracks.length === 0 && (
-									<div className="bgm-yt-status">{t("bgm.noTracks")}</div>
+									<div className="bgm-yt-status">
+										{webLocalImport ? t("bgm.webNoTracks") : t("bgm.noTracks")}
+									</div>
 								)}
 								{localTracks.map((url, idx) => {
 									const isActive = source === "local" && localIndex === idx;
@@ -2819,6 +3173,21 @@ export function BgmPlayer({ naia }: Props) {
 											>
 												＋
 											</button>
+											{webLocalImport && (
+												<button
+													type="button"
+													className="bgm-yt-fav-btn"
+													title={t("bgm.webRemove")}
+													aria-label={`${t("bgm.webRemove")} ${localNames[idx]}`}
+													data-testid="bgm-local-remove"
+													onClick={(event) => {
+														event.stopPropagation();
+														void removeLocalFile(localPaths[idx]);
+													}}
+												>
+													✕
+												</button>
+											)}
 										</div>
 									);
 								})}
@@ -2868,6 +3237,75 @@ export function BgmPlayer({ naia }: Props) {
 							<span className="bgm-yt-drawer-handle__bar" />
 							<span className="bgm-yt-drawer-handle__arrow">▲</span>
 						</button>
+					</div>,
+					document.body,
+				)}
+			{nowPlayingCardKey &&
+				currentYt &&
+				nowPlayingCardShown &&
+				!settingsOpen &&
+				createPortal(
+					<div
+						className="bgm-web-now-playing"
+						data-testid="bgm-youtube-now-playing"
+						role="region"
+						aria-label="YouTube 재생 중"
+						onPointerEnter={() => setNowPlayingCardHovered(true)}
+						onPointerLeave={() => setNowPlayingCardHovered(false)}
+						onFocus={() => setNowPlayingCardFocused(true)}
+						onBlur={(event) => {
+							if (!event.currentTarget.contains(event.relatedTarget)) {
+								setNowPlayingCardFocused(false);
+							}
+						}}
+					>
+						<div className="bgm-web-now-playing__preview">
+							<img
+								className="bgm-web-now-playing__thumb"
+								src={
+									currentYt.thumbnail ||
+									`https://i.ytimg.com/vi/${currentYt.id}/hqdefault.jpg`
+								}
+								alt=""
+								onError={(e) => {
+									e.currentTarget.style.display = "none";
+								}}
+							/>
+							<span className="bgm-web-now-playing__badge">▶ YOUTUBE</span>
+						</div>
+						<div className="bgm-web-now-playing__meta">
+							<div
+								className="bgm-web-now-playing__title"
+								data-testid="bgm-youtube-now-playing-title"
+								title={currentYt.title}
+							>
+								{currentYt.title}
+							</div>
+							<div className="bgm-web-now-playing__sub">
+								{currentYt.channel || "YouTube BGM"} · 재생 중
+							</div>
+						</div>
+						<div className="bgm-web-now-playing__actions">
+							<button
+								type="button"
+								className="bgm-web-now-playing__btn"
+								onClick={() => setAppExpanded((prev) => !prev)}
+								title={t("bgm.appToggleTitle")}
+								aria-label={t("bgm.appToggleTitle")}
+							>
+								♫
+							</button>
+							<button
+								type="button"
+								className="bgm-web-now-playing__btn bgm-web-now-playing__btn--stop"
+								data-testid="bgm-web-stop-btn"
+								onClick={togglePlay}
+								title={t("bgm.stop")}
+								aria-label={t("bgm.stop")}
+							>
+								■
+							</button>
+						</div>
 					</div>,
 					document.body,
 				)}

@@ -1,4 +1,5 @@
 import { attachMediaElementToSharedContext } from "../lib/broadcast-audio-bridge";
+import { activeCharacterCard } from "../lib/character-greeting";
 import { loadConfig } from "../lib/config";
 import { environmentSession } from "../lib/environment-skill";
 import { getLocale } from "../lib/i18n";
@@ -17,7 +18,10 @@ export async function buildMemoryContext(): Promise<MemoryContext> {
 		ctx.locale = cfg?.locale || getLocale();
 		ctx.honorific = cfg?.honorific;
 		ctx.speechStyle = cfg?.speechStyle;
-		const appContexts = selectPromptAppContexts(useAppStore.getState());
+		const appContexts = selectPromptAppContexts(
+			useAppStore.getState(),
+			!cfg?.personaDisabled && !!activeCharacterCard(cfg),
+		);
 		if (appContexts.length > 0) ctx.appContexts = appContexts;
 	} catch (error) {
 		Logger.warn("ChatArea", "Failed to build memory context", {

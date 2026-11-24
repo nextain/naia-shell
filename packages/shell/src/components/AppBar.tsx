@@ -10,9 +10,7 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { getBridgeForApp } from "../lib/active-bridge";
-import { removeInstalledApp } from "../lib/app-loader";
-import { appRegistry } from "../lib/app-registry";
+import { closeRunningApp, isMiniAppRunning } from "../lib/app-lifecycle";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -28,9 +26,17 @@ import {
 	usePaymentLinksHidden,
 } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
+import { getBridgeForApp } from "../lib/active-bridge";
+import { removeInstalledApp } from "../lib/app-loader";
+import { appRegistry } from "../lib/app-registry";
+import { getPlatformAppStoreAdapter } from "../lib/app-store-adapter";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { AppStoreIcon } from "./AppStoreIcon";
+import { WebCreditChip } from "./WebCreditChip";
+import { WebRuntimeHarnessBar } from "./WebRuntimeHarnessBar";
 
 const BgmPlayer = lazy(() =>
 	import("./BgmPlayer").then((module) => ({
@@ -60,6 +66,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const {
 		activeApp,
 		setActiveApp,
+		activatedApps = [],
+		closedApps = [],
 		appListVersion,
 		bumpAppListVersion,
 		pushModal,
@@ -67,6 +75,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	} = useAppStore();
 
 	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
+	const [kioskStoreNotice, setKioskStoreNotice] = useState(false);
 	const [ctxMenu, setCtxMenu] = useState<{
 		x: number;
 		y: number;
@@ -85,6 +94,14 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const [iconEditing, setIconEditing] = useState<BrowserLink | null>(null);
 	const [iconInput, setIconInput] = useState("");
 	const [removeError, setRemoveError] = useState("");
+	// WO-03 / 지시서 #3: 웹판은 브라우저 탭·바로가기·설치 앱이 꺼져 있어 해당 메뉴와 진입점을 완전히 막는다.
+	const isWeb = isWebMode();
+	const musicAtEnd = isWeb && !isKioskDemo();
+	const musicPlayer = (
+		<Suspense fallback={null}>
+			<BgmPlayer naia={bgmBridge} />
+		</Suspense>
+	);
 
 	// Hide browser native webview while any dialog is open (webview renders above HTML z-index).
 	// Use a single boolean so transitioning between dialogs (addUrlDialog→urlInputDialog)
@@ -104,13 +121,19 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			appRegistry
 				.list()
 				.filter(
-					(p) => !["avatar", "settings", "browser", "workspace"].includes(p.id),
+					(p) =>
+						!["avatar", "settings", "browser", "workspace"].includes(p.id) &&
+						!(isKioskDemo() && p.id === "projects"),
 				),
 		// appListVersion is the reactive dependency — registry is not observable directly
 		[appListVersion],
 	);
 
 	useEffect(() => {
+		if (isWeb) {
+			setBrowserShortcuts([]);
+			return;
+		}
 		let alive = true;
 		const load = () => {
 			loadBrowserShortcuts()
@@ -129,7 +152,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			alive = false;
 			off();
 		};
-	}, []);
+	}, [isWeb]);
 
 	async function handleRemoveApp(
 		e: MouseEvent<HTMLButtonElement>,
@@ -165,14 +188,13 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			bumpAppListVersion();
 		}
 
-		if (activeApp === appId) {
-			setActiveApp(null);
-		}
+		closeRunningApp(appId);
 
 		Logger.debug("AppBar", `App removed: ${appId}`);
 	}
 
 	function openBrowserShortcut(url: string) {
+		if (isWebMode()) return;
 		setActiveApp("browser");
 		const navigate = () => {
 			appRegistry
@@ -189,7 +211,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		// The web app store sells apps for credits: not reachable from the Steam build.
 		if (paymentLinksHiddenNow()) return;
 		try {
-			if (!appStoreOpening) appStoreOpening = invoke("focus_or_create_app_store_window", { url: storeUrl });
+			if (!appStoreOpening) {
+				appStoreOpening =
+					isWebMode() && !isKioskDemo()
+						? getPlatformAppStoreAdapter().openStoreSurface(storeUrl)
+						: invoke("focus_or_create_app_store_window", { url: storeUrl });
+			}
 			await appStoreOpening;
 		} catch (error) {
 			Logger.warn("AppBar", "Failed to open app store window", {
@@ -210,6 +237,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					error: String(err),
 				});
 			});
+		setCtxMenu(null);
+	}
+
+	function handleCtxCloseApp() {
+		if (!ctxMenu?.appId) return;
+		closeRunningApp(ctxMenu.appId);
 		setCtxMenu(null);
 	}
 
@@ -241,7 +274,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			}
 			bumpAppListVersion();
 		}
-		if (activeApp === appId) setActiveApp(null);
+		closeRunningApp(appId);
 		setCtxMenu(null);
 	}
 
@@ -249,11 +282,13 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		(e: React.MouseEvent) => {
 			e.preventDefault();
 			const target = e.target as HTMLElement;
-			const shortcutEl = target.closest("[data-browser-shortcut]");
-			if (shortcutEl) {
-				const url = shortcutEl.getAttribute("data-browser-shortcut") ?? "";
-				setCtxMenu({ x: e.clientX, y: e.clientY, shortcutUrl: url });
-				return;
+			if (!isWeb) {
+				const shortcutEl = target.closest("[data-browser-shortcut]");
+				if (shortcutEl) {
+					const url = shortcutEl.getAttribute("data-browser-shortcut") ?? "";
+					setCtxMenu({ x: e.clientX, y: e.clientY, shortcutUrl: url });
+					return;
+				}
 			}
 			const appEl = target.closest("[data-app-id]");
 			if (appEl) {
@@ -264,9 +299,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					return;
 				}
 			}
+			if (isWeb) return;
 			setCtxMenu({ x: e.clientX, y: e.clientY });
 		},
-		[activeApp],
+		[activeApp, isWeb],
 	);
 
 	useEffect(() => {
@@ -373,81 +409,133 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				>
 					<span className="app-bar-tab-icon">🖥️</span>
 				</button>
-				<button
-					type="button"
-					className={`app-bar-tab${activeApp === "browser" ? " app-bar-tab--active" : ""}`}
-					data-app-id="browser"
-					aria-label={t("appbar.browser")}
-					data-usage-event="app-bar.set-active-app-3.click"
-					onClick={() => setActiveApp("browser")}
-				>
-					<span className="app-bar-tab-icon">🌐</span>
-				</button>
+				{!isWeb && (
+					<button
+						type="button"
+						className={`app-bar-tab${activeApp === "browser" ? " app-bar-tab--active" : ""}`}
+						data-app-id="browser"
+						aria-label={t("appbar.browser")}
+						data-usage-event="app-bar.set-active-app-3.click"
+						onClick={() => setActiveApp("browser")}
+					>
+						<span className="app-bar-tab-icon">🌐</span>
+					</button>
+				)}
 				<button
 					type="button"
 					className={`app-bar-tab${activeApp === "workspace" ? " app-bar-tab--active" : ""}`}
 					data-app-id="workspace"
 					aria-label={t("appbar.workspace")}
 					data-usage-event="app-bar.set-active-app-4.click"
-					onClick={() => setActiveApp("workspace")}
+					onClick={() =>
+						setActiveApp(
+							isWeb && activeApp === "workspace" ? null : "workspace",
+						)
+					}
 				>
 					<span className="app-bar-tab-icon">📁</span>
 				</button>
 				{/* External utility, not a switchable/removable app-registry entry. */}
-				{!paymentLinksHidden && (
-					<button
-						type="button"
-						className="app-bar-tab app-bar-tab--utility"
-						aria-label={t("appbar.appStore")}
-						title={t("appbar.appStore")}
-						data-usage-event="app-bar.open-app-store-5.click"
-						onClick={() => void openAppStore()}
-					>
-						<span className="app-bar-tab-icon app-bar-tab-icon--svg">
-							<AppStoreIcon />
-						</span>
-					</button>
-				)}
-				{modes.map((mode) => (
-					<div
-						key={mode.id}
-						className="app-bar-tab-wrapper"
-						data-app-id={mode.id}
-					>
+				{(!paymentLinksHidden || isKioskDemo()) && (
+					<>
 						<button
 							type="button"
-							className={`app-bar-tab${activeApp === mode.id ? " app-bar-tab--active" : ""}`}
-							data-app-id={mode.id}
-							title={mode.names?.[getLocale()] ?? mode.name}
-							data-usage-event="app-bar.set-active-app-6.click"
-							onClick={() =>
-								setActiveApp(activeApp === mode.id ? null : mode.id)
-							}
+							className="app-bar-tab app-bar-tab--utility"
+							aria-label={t("appbar.appStore")}
+							title={t("appbar.appStore")}
+							data-usage-event="app-bar.open-app-store-5.click"
+							onClick={() => {
+								if (isKioskDemo()) {
+									setKioskStoreNotice(true);
+									return;
+								}
+								void openAppStore();
+							}}
 						>
-							{mode.iconSvg ? (
-								<img
-									className="app-bar-tab-icon app-bar-tab-icon--svg"
-									alt=""
-									src={`data:image/svg+xml,${encodeURIComponent(mode.iconSvg)}`}
-								/>
-							) : mode.icon ? (
-								<span className="app-bar-tab-icon">{mode.icon}</span>
-							) : null}
+							<span className="app-bar-tab-icon app-bar-tab-icon--svg">
+								<AppStoreIcon />
+							</span>
 						</button>
-						{editMode && !mode.builtIn && (
+{isKioskDemo() &&
+						kioskStoreNotice &&
+						createPortal(
+							<div
+								className="app-bar-url-dialog-overlay"
+								role="dialog"
+								aria-modal="true"
+								aria-label={t("appbar.appStore")}
+								onClick={() => setKioskStoreNotice(false)}
+							>
+								<div
+									className="app-bar-url-dialog"
+									role="document"
+									onClick={(e) => e.stopPropagation()}
+								>
+									<p>앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.</p>
+									<button type="button" onClick={() => setKioskStoreNotice(false)}>
+										닫기
+									</button>
+								</div>
+							</div>,
+							document.body,
+						)}
+					</>
+				)}
+				{modes.map((mode) => {
+					const isRunning = isMiniAppRunning(
+						mode.id,
+						activeApp,
+						activatedApps,
+						closedApps,
+					);
+					return (
+						<div
+							key={mode.id}
+							className="app-bar-tab-wrapper"
+							data-app-id={mode.id}
+						>
 							<button
 								type="button"
-								className="app-bar-tab-remove app-bar-tab-remove--shortcut"
-								title={`${mode.names?.[getLocale()] ?? mode.name} 삭제`}
-								data-usage-event="app-bar.handle-remove-app-7.click"
-								onClick={(e) => handleRemoveApp(e, mode.id)}
+								className={`app-bar-tab${activeApp === mode.id ? " app-bar-tab--active" : ""}${isRunning ? " app-bar-tab--running" : ""}`}
+								data-app-id={mode.id}
+								title={mode.names?.[getLocale()] ?? mode.name}
+								data-usage-event="app-bar.set-active-app-6.click"
+								onClick={() =>
+									setActiveApp(activeApp === mode.id ? null : mode.id)
+								}
 							>
-								✕
+								{mode.iconSvg ? (
+									<img
+										className="app-bar-tab-icon app-bar-tab-icon--svg"
+										alt=""
+										src={`data:image/svg+xml,${encodeURIComponent(mode.iconSvg)}`}
+									/>
+								) : mode.icon ? (
+									<span className="app-bar-tab-icon">{mode.icon}</span>
+								) : null}
+								{isRunning && (
+									<span
+										className="app-bar-tab__running-dot"
+										aria-hidden="true"
+									/>
+								)}
 							</button>
-						)}
-					</div>
-				))}
-				{browserShortcuts.map((shortcut) => (
+							{editMode && !mode.builtIn && (
+								<button
+									type="button"
+									className="app-bar-tab-remove app-bar-tab-remove--shortcut"
+									title={`${mode.names?.[getLocale()] ?? mode.name} 삭제`}
+									onClick={(e) => handleRemoveApp(e, mode.id)}
+								>
+									✕
+								</button>
+							)}
+						</div>
+					);
+				})}
+				{/* WO-03: Hide browser shortcuts, which are disabled in web mode. */}
+				{!isWeb &&
+					browserShortcuts.map((shortcut) => (
 					<div
 						key={shortcut.url}
 						className={`app-bar-tab-wrapper${dragOverUrl === shortcut.url ? " app-bar-tab-wrapper--drag-over" : ""}`}
@@ -537,14 +625,36 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						</button>
 					)}
 					{ctxMenu.appId && (
-						<button
-							type="button"
-							className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
-							data-usage-event="app-bar.handle-ctx-remove-app-11.click"
-							onClick={handleCtxRemoveApp}
-						>
-							{t("appbar.removeApp")}
-						</button>
+						<>
+							{isMiniAppRunning(
+								ctxMenu.appId,
+								activeApp,
+								activatedApps,
+								closedApps,
+							) && (
+								<>
+									<button
+										type="button"
+										className="app-bar-ctx-menu__item"
+										onClick={handleCtxCloseApp}
+									>
+										{t("appbar.closeApp")}
+									</button>
+									<div
+										className="app-bar-ctx-menu__divider"
+										role="separator"
+									/>
+								</>
+							)}
+							<button
+								type="button"
+								className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
+								data-usage-event="app-bar.handle-ctx-remove-app-11.click"
+								onClick={handleCtxRemoveApp}
+							>
+								{t("appbar.removeApp")}
+							</button>
+						</>
 					)}
 				</div>
 			)}
@@ -675,16 +785,19 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					</div>,
 					document.body,
 				)}
-			<button
-				type="button"
-				className="app-bar-add"
-				data-usage-event="app-bar.set-add-url-dialog-21.click"
-				onClick={() => setAddUrlDialog(true)}
-				title={t("appbar.addItem")}
-			>
-				+
-			</button>
-			{(editMode || browserShortcuts.length > 0) && (
+			{/* WO-03: Hide app installation and shortcut controls in web mode. */}
+			{!isWeb && (
+				<button
+					type="button"
+					className="app-bar-add"
+					data-usage-event="app-bar.set-add-url-dialog-21.click"
+					onClick={() => setAddUrlDialog(true)}
+					title={t("appbar.addItem")}
+				>
+					+
+				</button>
+			)}
+			{!isWeb && (editMode || browserShortcuts.length > 0) && (
 				<button
 					type="button"
 					className={`app-bar-edit${editMode ? " app-bar-edit--active" : ""}`}
@@ -748,10 +861,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					</div>,
 					document.body,
 				)}
-			{/* ── BGM (right side of app-bar) ─── */}
-			<Suspense fallback={null}>
-				<BgmPlayer naia={bgmBridge} />
-			</Suspense>
+			<WebRuntimeHarnessBar />
+			<WebCreditChip />
+			{!musicAtEnd && musicPlayer}
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}
@@ -759,8 +871,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				onClick={() =>
 					setActiveApp(activeApp === "settings" ? null : "settings")
 				}
-				title="설정"
+				title={activeApp === "settings" ? t("appBar.closeSettings") : t("settings.title")}
+				aria-label={activeApp === "settings" ? t("appBar.closeSettings") : t("settings.title")}
 			>
+				{activeApp === "settings" && <span className="web-mobile-settings-close">✕</span>}
 				<svg
 					viewBox="0 0 20 20"
 					fill="currentColor"
@@ -775,6 +889,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					/>
 				</svg>
 			</button>
+			{musicAtEnd && musicPlayer}
 		</div>
 	);
 }

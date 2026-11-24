@@ -109,12 +109,12 @@ git clone https://github.com/nextain/naia-agent.git
 git clone https://github.com/nextain/naia-kb-compiler.git
 git clone https://github.com/nextain/naia-memory.git
 # agent-pairing.json pins the exact source revisions used by the shell.
-git -C naia-agent fetch --depth 1 origin cb4c8d71ae24bb7ff042e275026fae3905a91a00
-git -C naia-agent checkout --detach cb4c8d71ae24bb7ff042e275026fae3905a91a00
+git -C naia-agent fetch --depth 1 origin bfa2aa956fc356b50f853c03316faf1b773d0f9e
+git -C naia-agent checkout --detach bfa2aa956fc356b50f853c03316faf1b773d0f9e
 git -C naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
 git -C naia-kb-compiler checkout --detach 24f52c14ea906c250304f39d48866c7a47e1b596
-git -C naia-memory fetch --depth 1 origin 630a0d2f19b559e3f0101bb141048485167fb959
-git -C naia-memory checkout --detach 630a0d2f19b559e3f0101bb141048485167fb959
+git -C naia-memory fetch --depth 1 origin ab1f8002d31bffacf4779760eda727cc57a658a8
+git -C naia-memory checkout --detach ab1f8002d31bffacf4779760eda727cc57a658a8
 #  워크스페이스/
 #  ├── projects/
 #  │   ├── naia-shell/  ← 아래 명령은 여기서 실행
@@ -159,7 +159,7 @@ xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+taur
 KB·memory의 `dist/`를 대신 만들어 주지는 않는다. 새 clone에서는 위의 exact commit
 checkout과 sibling install/build를 먼저 수행해야 하며, 하나라도 빠지거나 clean checkout이
 아니면 `agent-pairing.json` 검증이 실행을 fail-closed 한다. Agent의 proto 핀은
-`71e4cb6b3d19f9df08c88e6225babc11e30fe445723badd440decdb2a33e6f42`, memory package
+`6fb0b1f9b249e41fc16c7a0f673bbb2a82f52cb7c0977773bf03e9e297e2b175`, memory package
 version은 `0.1.4`다.
 
 설치자 CI는 [build-installers.yml](.github/workflows/build-installers.yml)이 Windows·Ubuntu·macOS에서

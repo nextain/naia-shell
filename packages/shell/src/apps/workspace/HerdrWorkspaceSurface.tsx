@@ -57,8 +57,11 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 		setLazyEditor(lazy(editorLoader));
 		setEditorLoadAttempt((attempt) => attempt + 1);
 	};
+	// WO-03: 웹판은 PTY 터미널이 꺼져 있어 터미널 칸·경고를 통째로 감춘다.
+	const isWeb = import.meta.env.MODE === "web";
 	return (
 		<main className="herdr-workspace__main">
+			{!isWeb && (
 			<div
 				className="herdr-workspace__terminal-layer"
 				aria-hidden={props.surface !== "herdr"}
@@ -141,6 +144,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 					</div>
 				)}
 			</div>
+			)}
 			{props.surface === "viewer" && props.openFilePath && (
 				<div className="herdr-workspace__viewer" data-testid="workspace-viewer">
 					<div className="herdr-workspace__viewer-bar">
@@ -196,7 +200,8 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 					</div>
 				</div>
 			)}
-			{props.snapshotError && (
+			{/* WO-03: Web mode disables herdr_snapshot and hides its warning. */}
+			{!isWeb && props.snapshotError && (
 				<div className="herdr-workspace__warning">
 					{t("workspace.herdrSync")}: {props.snapshotError}
 				</div>

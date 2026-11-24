@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CharCardApp } from "../CharCardApp";
 import { parseCharacterCardJsonText } from "../card-parser";
 import {
+	CardStorageValueTooLargeError,
 	type CardStorageAdapter,
 	type StoredCardRecord,
 	createMemoryCardStorage,
@@ -337,6 +338,133 @@ describe("CharCardApp UI", () => {
 		// Dismissing returns cleanly
 		fireEvent.click(screen.getByTestId("charcard-error-dismiss"));
 		expect(screen.queryByTestId("charcard-error-panel")).toBeNull();
+	});
+
+	it.each([
+		["ko", "이번 실행 동안만 보관됩니다 (이 환경에서 IndexedDB를 쓸 수 없습니다)"],
+		["en", "Stored for this session only (IndexedDB is unavailable in this environment)"],
+	])(
+		"R11 describes temporary cards in %s when storage falls back to memory",
+		async (locale, expected) => {
+			render(
+				<CharCardApp
+					storage={createMemoryCardStorage()}
+					localeOverride={locale}
+				/>,
+			);
+			const notice = await screen.findByTestId("charcard-memory-banner");
+			expect(notice).toHaveAttribute("role", "status");
+			expect(notice).toHaveTextContent(expected);
+			expect(
+				screen.getByTestId("charcard-storage-hint").textContent,
+			).not.toMatch(/이 브라우저에 저장돼요|Saved in this browser/);
+			expect(screen.getByTestId("charcard-import-button")).toBeEnabled();
+		},
+	);
+
+	it.each([
+		["ko", "이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요."],
+		["en", "Saved in this browser; clearing browsing data removes them."],
+	])(
+		"R21-6 explains plain browser storage and clearing browsing data in %s when storage persists",
+		async (locale, expected) => {
+			render(
+				<CharCardApp
+					storage={{
+						...createMemoryCardStorage(),
+						mode: "host",
+					}}
+					localeOverride={locale}
+				/>,
+			);
+			await waitFor(() =>
+				expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
+			);
+			const hint = screen.getByTestId("charcard-storage-hint");
+			expect(hint).toHaveTextContent(expected);
+			expect(hint).not.toHaveTextContent("IndexedDB");
+			expect(
+				screen.queryByTestId("charcard-memory-banner"),
+			).not.toBeInTheDocument();
+		},
+	);
+
+	it("R11 tells users to choose a smaller file when the shell cannot fit a card", async () => {
+		render(
+			<CharCardApp
+				storage={{
+					...createMemoryCardStorage(),
+					mode: "host",
+					saveCard: async () => {
+						throw new CardStorageValueTooLargeError();
+					},
+				}}
+				localeOverride="ko"
+			/>,
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("charcard-import-button")).toBeEnabled(),
+		);
+		fireEvent.change(screen.getByTestId("charcard-file-input"), {
+			target: {
+				files: [
+					new File(['{"name":"큰 카드"}'], "large.json", {
+						type: "application/json",
+					}),
+				],
+			},
+		});
+
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("카드가 너무 큽니다");
+		expect(
+			within(alert).getByRole("button", { name: "다른 파일 고르기" }),
+		).toBeEnabled();
+		expect(screen.queryByTestId("charcard-memory-banner")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /^큰 카드/ })).not.toBeInTheDocument();
+	});
+
+	it("R40 creates and selects a card with an avatar while guarding concurrent writes", async () => {
+		const storage = createMemoryCardStorage();
+		let releaseSave!: () => void;
+		const writing = new Promise<void>((resolve) => {
+			releaseSave = resolve;
+		});
+		const saveCard = vi.fn(async (record: StoredCardRecord) => {
+			await writing;
+			await storage.saveCard(record);
+		});
+		render(
+			<CharCardApp storage={{ ...storage, saveCard }} localeOverride="en" />,
+		);
+		const create = screen.getByRole("button", { name: "Create" });
+		await waitFor(() => expect(create).toBeEnabled());
+		fireEvent.click(create);
+		fireEvent.change(screen.getByLabelText("Character name"), {
+			target: { value: "Mira" },
+		});
+		fireEvent.change(screen.getByLabelText("First greeting"), {
+			target: { value: "Hello from the card." },
+		});
+		const save = screen.getByRole("button", { name: "Save card" });
+		fireEvent.click(save);
+		expect(screen.getByText("Adding card…")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Add File" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+		fireEvent.click(save);
+		expect(saveCard).toHaveBeenCalledTimes(1);
+		await act(async () => releaseSave());
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"Mira",
+		);
+		const row = screen.getByRole("button", { name: /^Mira/ });
+		expect(row).toHaveAttribute("aria-pressed", "true");
+		expect(within(row).getByTestId("charcard-list-image")).toHaveAttribute(
+			"src",
+			"/avatars/03-OL_Woman.webp",
+		);
+		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent("M");
+		expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
 	});
 
 	it("handles storage save/delete failures without mutating card list until retry succeeds", async () => {

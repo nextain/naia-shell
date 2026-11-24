@@ -15,6 +15,8 @@ const payload = {
 	scriptName: "발표.md",
 	scriptText: "## 1. 제목\n대본",
 	scriptReadFailed: false,
+	videos: [{ name: "demo.mp4", mimeType: "video/mp4", base64: btoa("video") }],
+	videoReadFailures: ["missing.webm"],
 };
 beforeEach(() => vi.mocked(invoke).mockReset());
 afterEach(() => {
@@ -32,6 +34,10 @@ describe("Slides native file selection", () => {
 			name: "발표.md",
 			text: "## 1. 제목\n대본",
 		});
+		expect(selected.videos).toHaveLength(1);
+		expect(selected.videos[0].file.name).toBe("demo.mp4");
+		expect(selected.videos[0].file.type).toBe("video/mp4");
+		expect(selected.videoReadFailures).toEqual(["missing.webm"]);
 		expect(decodeSlidesPdf({ ...payload, scriptText: "" }).script?.text).toBe(
 			"",
 		);

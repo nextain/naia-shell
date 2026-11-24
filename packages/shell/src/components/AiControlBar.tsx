@@ -13,6 +13,12 @@ import {
 	saveConfig,
 } from "../lib/config";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import {
+	getStoredLayoutOrientation,
+	toggleLayoutOrientation,
+	useEffectiveLayoutOrientation,
+} from "../lib/ui-preferences";
 import { formatShortcutTextForPlatform } from "../lib/platform-shortcuts";
 import {
 	UI_PREFERENCE_KEYS,
@@ -33,12 +39,21 @@ function formatElapsedShort(seconds: number): string {
  * Rendered inside `.naia-overlay` so it stays within the avatar column.
  * Contains: AI interference toggle, TTS toggle, avatar joystick / pan / reset.
  */
-export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
+export function AiControlBar({
+	isNva = false,
+	showCameraControls = true,
+}: {
+	isNva?: boolean;
+	showCameraControls?: boolean;
+}) {
 	const controlsExpanded =
 		useUiPreference<boolean>(
 			UI_PREFERENCE_KEYS.avatarControlsExpanded,
 			false,
 		) === true;
+	const layoutOrientation = useEffectiveLayoutOrientation();
+	const manualOrientation = getStoredLayoutOrientation();
+	const kioskDemo = isKioskDemo();
 	const {
 		aiInterferenceEnabled,
 		toggleAiInterferenceEnabled,
@@ -160,6 +175,7 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 		<div className="ai-control-bar">
 			<button
 				type="button"
+				data-testid="ai-bar-interference-btn"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
 				data-usage-event="ai-control-bar.toggle-ai-interference-enabled-1.click"
 				onClick={toggleAiInterferenceEnabled}
@@ -182,6 +198,8 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 
 			<button
 				type="button"
+				data-testid="ai-bar-tts-btn"
+				data-control-state={ttsEnabled ? "on" : "off"}
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
 				data-usage-event="ai-control-bar.toggle-tts-enabled-2.click"
 				onClick={() => {
@@ -208,9 +226,59 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 					{!ttsEnabled && <path data-off-slash="true" d="M3 3l18 18" />}
 				</svg>
 			</button>
+			<button
+				type="button"
+				data-testid="layout-orientation-toggle"
+				data-layout-orientation={layoutOrientation}
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${manualOrientation !== null ? " bgm-ai-toggle--active" : ""}`}
+				aria-pressed={manualOrientation !== null}
+				aria-label={
+					layoutOrientation === "portrait"
+						? "가로 배치로 전환"
+						: "세로 배치로 전환"
+				}
+				title={
+					layoutOrientation === "portrait"
+						? "가로 배치로 전환"
+						: "세로 배치로 전환"
+				}
+				onClick={() => {
+					const next = toggleLayoutOrientation(layoutOrientation);
+					if (isKioskDemo()) {
+						const store = useAppStore.getState();
+						if (next === "landscape" && store.activeApp === null) {
+							store.setActiveApp("workspace");
+						} else if (next === "portrait" && store.activeApp === "workspace") {
+							store.setActiveApp(null);
+						}
+					}
+				}}
+			>
+				<span className="bgm-ai-toggle__dot" />
+				{layoutOrientation === "portrait" ? (
+					<svg
+						className="bgm-ai-toggle__icon"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+					>
+						<rect x="3" y="6" width="18" height="12" rx="2" />
+						<path d="M10 6v12" />
+					</svg>
+				) : (
+					<svg
+						className="bgm-ai-toggle__icon"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+					>
+						<rect x="6" y="3" width="12" height="18" rx="2" />
+						<path d="M6 14h12" />
+					</svg>
+				)}
+			</button>
 
 			<button
 				type="button"
+				data-testid="ai-bar-proactive-btn"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
 				data-usage-event="ai-control-bar.toggle-proactive-3.click"
 				onClick={toggleProactive}
@@ -246,13 +314,23 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 				</span>
 			</button>
 
-			<button
-				type="button"
-				data-testid="ai-bar-broadcast-btn"
+			{!kioskDemo && (
+				<button
+					type="button"
+					data-testid="ai-bar-broadcast-btn"
 				data-broadcast-state={broadcastBridge.state}
-				className={`bgm-ai-toggle${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
+				className={`bgm-ai-toggle bgm-ai-toggle--icon${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
 				disabled={!broadcastBridge.hasStreamKey && !broadcastActive}
 				aria-pressed={broadcastActive}
+				aria-label={
+					!broadcastBridge.hasStreamKey && !broadcastActive
+						? t("broadcast.keyRequiredHint")
+						: broadcastBridge.state === "live"
+							? `${t("broadcast.btnLabel")} ${formatElapsedShort(broadcastBridge.elapsedSeconds)}`
+							: broadcastBridge.state === "disconnected"
+								? `${t("broadcast.btnLabel")} · ${t("broadcast.disconnectedLabel")}`
+								: t("broadcast.btnLabel")
+				}
 				title={
 					!broadcastBridge.hasStreamKey && !broadcastActive
 						? t("broadcast.keyRequiredHint")
@@ -281,9 +359,12 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 					: broadcastBridge.state === "disconnected"
 						? ` · ${t("broadcast.disconnectedLabel")}`
 						: ""}
-			</button>
+				</button>
+			)}
 
-			<div className="ai-control-bar__sep" />
+			{showCameraControls && (
+				<>
+					<div className="ai-control-bar__sep" />
 
 			<button
 				type="button"
@@ -386,7 +467,9 @@ export function AiControlBar({ isNva = false }: { isNva?: boolean }) {
 					>
 						<span className="bgm-ai-toggle__dot" />⌂
 					</button>
-				</div>
+					</div>
+					)}
+				</>
 			)}
 		</div>
 	);

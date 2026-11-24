@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { resolveKioskEvidenceFiles } from "../components/chat-presentation";
+import { isKioskLocalAnswerEnabled } from "../lib/config-seed";
 import { isNaiaAccountProvider } from "../lib/credits";
+import { cardGreeting } from "../lib/character-greeting";
+import { loadConfig } from "../lib/config";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import type {
 	ChatMessage,
@@ -43,8 +48,10 @@ interface ChatState {
 	sessionOverlays: Record<string, SessionOverlay>;
 	messages: ChatMessage[];
 	isStreaming: boolean;
+	characterTransitionPending: boolean;
 	streamingContent: string;
 	streamingAppName?: string;
+	streamingEvidenceFiles?: string[];
 	/** A tool event occurred; separate the next visible text round once. */
 	streamingToolBoundaryPending: boolean;
 	streamingThinking: string;
@@ -62,7 +69,17 @@ interface ChatState {
 	setMessages: (messages: ChatMessage[]) => void;
 	addMessage: (
 		msg: Pick<ChatMessage, "role" | "content"> &
-			Partial<Pick<ChatMessage, "cost" | "failure" | "appName">>,
+			Partial<
+				Pick<
+					ChatMessage,
+					| "cost"
+					| "failure"
+					| "appName"
+					| "toolCalls"
+					| "evidenceFiles"
+					| "localAnswer"
+				>
+			>,
 	) => void;
 	recordVoiceCostSummary: (
 		targetLocalSessionId: string,
@@ -72,6 +89,7 @@ interface ChatState {
 	deleteSessionOverlay: (key: string) => void;
 	updateLastMessage: (role: ChatMessage["role"], content: string) => void;
 	startStreaming: (appName?: string) => void;
+	setStreamingEvidenceFiles: (files: string[] | undefined) => void;
 	appendStreamChunk: (text: string) => void;
 	markStreamingToolBoundary: () => void;
 	appendThinkingChunk: (text: string) => void;
@@ -92,7 +110,7 @@ interface ChatState {
 	setProvider: (provider: ProviderId) => void;
 	setPendingApproval: (approval: PendingApproval) => void;
 	clearPendingApproval: () => void;
-	newConversation: () => void;
+	newConversation: (greeting?: string | null) => void;
 	enqueueMessage: (text: string) => void;
 	dequeueMessage: () => string | undefined;
 }
@@ -101,8 +119,9 @@ interface ChatState {
 export const CHAT_LOCAL_SESSION_KEY = "naia-chat-session-id";
 
 export function getStoredLocalSessionId(): string | null {
-	if (typeof sessionStorage === "undefined") return null;
+	// Reading `sessionStorage` itself throws in opaque-origin (sandboxed) frames.
 	try {
+		if (typeof sessionStorage === "undefined") return null;
 		const val = sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY);
 		return val && val.trim() ? val.trim() : null;
 	} catch {
@@ -111,15 +130,15 @@ export function getStoredLocalSessionId(): string | null {
 }
 
 export function setStoredLocalSessionId(id: string): void {
-	if (typeof sessionStorage === "undefined") return;
 	try {
+		if (typeof sessionStorage === "undefined") return;
 		sessionStorage.setItem(CHAT_LOCAL_SESSION_KEY, id);
 	} catch {}
 }
 
 export function clearStoredLocalSessionId(): void {
-	if (typeof sessionStorage === "undefined") return;
 	try {
+		if (typeof sessionStorage === "undefined") return;
 		sessionStorage.removeItem(CHAT_LOCAL_SESSION_KEY);
 	} catch {}
 }
@@ -187,6 +206,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionOverlays: {},
 	messages: [],
 	isStreaming: false,
+	characterTransitionPending: false,
 	streamingContent: "",
 	streamingToolBoundaryPending: false,
 	streamingThinking: "",
@@ -208,8 +228,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	setMessages: (messages) =>
 		set((s) => {
 			const overlay = s.sessionOverlays[s.localSessionId];
-			const baseCost = messages.reduce((sum, m) => sum + (m.cost?.cost ?? 0), 0);
-			const baseNaia = messages.reduce((sum, m) => sum + naiaPortion(m.cost), 0);
+			const baseCost = messages.reduce(
+				(sum, m) => sum + (m.cost?.cost ?? 0),
+				0,
+			);
+			const baseNaia = messages.reduce(
+				(sum, m) => sum + naiaPortion(m.cost),
+				0,
+			);
 			if (overlay && !overlay.deleted && overlay.messages.length > 0) {
 				const existingIds = new Set(messages.map((m) => m.id));
 				const extra = overlay.messages.filter((m) => !existingIds.has(m.id));
@@ -310,12 +336,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	startStreaming: (appName) =>
 		set({
 			streamingAppName: appName,
+			streamingEvidenceFiles: undefined,
 			isStreaming: true,
 			streamingContent: "",
 			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
 		}),
+
+	setStreamingEvidenceFiles: (files) => set({ streamingEvidenceFiles: files }),
 
 	appendStreamChunk: (text) => {
 		if (!text) return;
@@ -384,6 +413,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			isStreaming,
 			streamingContent,
 			streamingAppName,
+			streamingEvidenceFiles,
 			streamingThinking,
 			streamingToolCalls,
 			pendingApproval,
@@ -395,10 +425,23 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		}
 		const toolCalls =
 			streamingToolCalls.length > 0 ? streamingToolCalls : undefined;
+		const resolvedEvidenceFiles =
+			streamingEvidenceFiles && streamingEvidenceFiles.length > 0
+				? streamingEvidenceFiles
+				: isKioskDemo() && streamingContent.trim()
+					? resolveKioskEvidenceFiles({
+							id: "",
+							role: "assistant",
+							content: streamingContent,
+							timestamp: 0,
+							toolCalls,
+						})
+					: undefined;
 		set((s) => ({
 			isStreaming: false,
 			streamingContent: "",
 			streamingAppName: undefined,
+			streamingEvidenceFiles: undefined,
 			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
@@ -410,9 +453,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 					role: "assistant" as const,
 					content: streamingContent,
 					appName: streamingAppName,
+					evidenceFiles:
+						resolvedEvidenceFiles && resolvedEvidenceFiles.length > 0
+							? resolvedEvidenceFiles
+							: undefined,
 					thinking: streamingThinking || undefined,
 					timestamp: Date.now(),
 					toolCalls,
+					localAnswer:
+						s.provider === "webllm" || isKioskLocalAnswerEnabled()
+							? true
+							: undefined,
 				},
 			],
 		}));
@@ -493,7 +544,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set({ pendingApproval: null });
 	},
 
-	newConversation: () => {
+	newConversation: (greeting = cardGreeting(loadConfig())) => {
 		// If approval was pending and browser is active, re-show WebView2 before clearing
 		if (
 			get().pendingApproval &&
@@ -506,7 +557,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set({
 			sessionId: null,
 			localSessionId: nextSessionId,
-			messages: [],
+			messages: greeting
+				? [
+						{
+							id: crypto.randomUUID(),
+							role: "assistant",
+							content: greeting,
+							timestamp: Date.now(),
+						},
+					]
+				: [],
 			isStreaming: false,
 			streamingContent: "",
 			streamingToolBoundaryPending: false,
@@ -521,7 +581,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	},
 
 	enqueueMessage: (text) =>
-		set((s) => ({ messageQueue: [...s.messageQueue, text] })),
+		set((s) =>
+			// 직전에 쌓인 글과 같으면 연타로 보고 버린다.
+			s.messageQueue[s.messageQueue.length - 1] === text
+				? s
+				: { messageQueue: [...s.messageQueue, text] },
+		),
 
 	dequeueMessage: () => {
 		const { messageQueue } = get();

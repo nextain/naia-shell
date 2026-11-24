@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { SEED_ADK_PATH } from "./helpers/tauri-base-mock";
+import { SEED_ADK_PATH, TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
 
 /**
  * S05 (sessions 관리 — 대화 transcript 영속/로드) UC E2E. 실 셸 UI(ChatApp 탭 → HistoryTab →
@@ -56,7 +56,7 @@ const MOCK_SCRIPT = `
     if (cmd === "list_conversations") return SESSIONS_JSON;
     if (cmd === "read_conversation") return (args && args.sessionId === "chat-1") ? TRANSCRIPT : "";
     if (cmd === "delete_conversation") { window.__E2E_DELETED__.push(args && args.sessionId); return null; }
-    if (cmd === "read_naia_config" || cmd === "read_naia_ui_config") return null;
+    if (cmd === "read_naia_config" || cmd === "read_naia_ui_config") return undefined;
     if (cmd === "list_naia_assets" || cmd === "list_skills" || cmd === "list_stt_models") return [];
     if (cmd === "plugin:store|load") return 1;
     if (cmd === "plugin:store|get") return [null, false];
@@ -76,6 +76,7 @@ function configScript(cfg: Record<string, unknown>): string {
 async function boot(page: Page) {
 	await page.addInitScript(FLAGS);
 	await page.addInitScript({ content: MOCK_SCRIPT });
+	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 	await page.addInitScript({ content: SEED_ADK_PATH });
 	await page.addInitScript({
 		content: configScript({ provider: "gemini", model: "gemini-2.5-flash", apiKey: "e2e-mock-key", enableTools: false, locale: "ko", onboardingComplete: true }),

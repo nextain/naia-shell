@@ -23,6 +23,7 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         type: "chat_request",
         requestId: out.requestId,
         ...(out.sessionId !== undefined ? { sessionId: out.sessionId } : {}),
+        ...(out.appName !== undefined ? { appName: out.appName } : {}),
         provider: { ...out.provider }, // verbatim(secret 없음)
         ...(out.gatewayUrl !== undefined ? { gatewayUrl: out.gatewayUrl } : {}),
         messages: out.messages,
@@ -33,7 +34,9 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         ...(out.thinking !== undefined &&
         (out.thinking.level === "off" ||
           out.thinking.level === "low" ||
-          out.thinking.level === "high")
+          out.thinking.level === "high" ||
+          out.thinking.level === "xhigh" ||
+          out.thinking.level === "max")
           ? { thinking: out.thinking }
           : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),

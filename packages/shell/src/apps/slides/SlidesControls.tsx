@@ -1,5 +1,5 @@
-import type { SlidePresenterState } from "../../lib/slide-presenter";
 import { t } from "../../lib/i18n";
+import type { SlidePresenterState } from "../../lib/slide-presenter";
 
 export type SlidesControlAction =
 	| "start"
@@ -14,6 +14,7 @@ export interface SlidesControlsProps {
 	fullscreen: boolean;
 	recording: boolean;
 	editing: boolean;
+	kioskMode?: boolean;
 	onAction: (action: SlidesControlAction) => void;
 	onRangeChange: (start: number, end: number) => void;
 	onGoto: (page: number) => void;
@@ -27,6 +28,7 @@ export function SlidesControls({
 	fullscreen,
 	recording,
 	editing,
+	kioskMode = false,
 	onAction,
 	onRangeChange,
 	onGoto,
@@ -34,11 +36,70 @@ export function SlidesControls({
 	onToggleFullscreen,
 	onToggleRecording,
 }: SlidesControlsProps) {
+	const activeVideoIndex = state.activeVideoIndex;
+	const hasNextVideo =
+		activeVideoIndex !== null &&
+		state.videoCues.some(
+			(cue, index) =>
+				index > activeVideoIndex && cue.page === state.page && cue.available,
+		);
+	if (kioskMode) {
+		return (
+			<footer
+				className="slides-app__controls slides-app__controls--kiosk"
+				aria-label={t("slides.controls")}
+			>
+				<button
+					type="button"
+					onClick={() => onAction("previous")}
+					disabled={editing || state.totalPages === 0 || state.page <= 1}
+					aria-label="이전"
+				>
+					이전
+				</button>
+				<button
+					type="button"
+					className="slides-app__primary"
+					onClick={() =>
+						onAction(
+							state.mode === "presenting"
+								? "pause"
+								: state.mode === "paused" || state.mode === "answering"
+									? "resume"
+									: "start",
+						)
+					}
+					disabled={editing || state.totalPages === 0}
+				>
+					{state.mode === "presenting"
+						? "멈춤"
+						: state.mode === "paused" || state.mode === "answering"
+							? "이어 가기"
+							: t("slides.start")}
+				</button>
+				<button
+					type="button"
+					onClick={() => onAction("next")}
+					disabled={
+						editing || state.totalPages === 0 || state.page >= state.totalPages
+					}
+					aria-label="다음"
+				>
+					다음
+				</button>
+				<button
+					type="button"
+					onClick={() => onAction("stop")}
+					disabled={editing || state.totalPages === 0}
+					aria-label="끝내기"
+				>
+					끝내기
+				</button>
+			</footer>
+		);
+	}
 	return (
-		<footer
-			className="slides-app__controls"
-			aria-label={t("slides.controls")}
-		>
+		<footer className="slides-app__controls" aria-label={t("slides.controls")}>
 			<label className="slides-app__page-input">
 				{t("slides.rangeStart")}
 				<input
@@ -71,7 +132,11 @@ export function SlidesControls({
 				type="button"
 				data-usage-event="slides-controls.on-action-1.click"
 				onClick={() => onAction("previous")}
-				disabled={editing || state.totalPages === 0 || state.page <= 1}
+				disabled={
+					editing ||
+					state.totalPages === 0 ||
+					(state.page <= 1 && state.activeVideoIndex === null)
+				}
 				aria-label={t("slides.previous")}
 			>
 				←
@@ -119,7 +184,11 @@ export function SlidesControls({
 				type="button"
 				data-usage-event="slides-controls.on-action-5.click"
 				onClick={() => onAction("next")}
-				disabled={editing || state.totalPages === 0 || state.page >= state.totalPages}
+				disabled={
+					editing ||
+					state.totalPages === 0 ||
+					(state.page >= state.totalPages && !hasNextVideo)
+				}
 				aria-label={t("slides.next")}
 			>
 				→
@@ -149,7 +218,9 @@ export function SlidesControls({
 				data-usage-event="slides-controls.on-toggle-recording-7.click"
 				onClick={onToggleRecording}
 				disabled={editing || state.totalPages === 0}
-				aria-label={recording ? t("slides.recordStop") : t("slides.recordStart")}
+				aria-label={
+					recording ? t("slides.recordStop") : t("slides.recordStart")
+				}
 			>
 				{recording ? t("slides.recordStop") : t("slides.recordStart")}
 			</button>

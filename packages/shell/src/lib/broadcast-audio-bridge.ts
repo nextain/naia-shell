@@ -70,7 +70,7 @@ export function isBroadcastActive(
 
 let sharedAudioContext: AudioContext | null = null;
 let broadcastTapNode: AudioNode | null = null;
-const attachedMediaElements = new WeakMap<HTMLMediaElement, AudioNode>();
+const attachedMediaElements = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
 const activeMediaNodes = new Set<AudioNode>();
 
 /**
@@ -123,14 +123,14 @@ export function connectSourceNodeToSharedContext(
 export function attachMediaElementToSharedContext(
 	audio: HTMLMediaElement,
 	options: { transient?: boolean } = {},
-): void {
+): MediaElementAudioSourceNode | undefined {
 	if (typeof AudioContext !== "function") return;
 	const existing = attachedMediaElements.get(audio);
 	if (existing) {
 		if (sharedAudioContext?.state === "suspended") {
 			sharedAudioContext.resume().catch(() => {});
 		}
-		return;
+		return existing;
 	}
 	try {
 		const ctx = getSharedAudioContext();
@@ -158,6 +158,7 @@ export function attachMediaElementToSharedContext(
 			audio.addEventListener("ended", cleanup, { once: true });
 			audio.addEventListener("error", cleanup, { once: true });
 		}
+		return mediaNode;
 	} catch {
 		/* ignore in test/non-WebAudio environments */
 	}

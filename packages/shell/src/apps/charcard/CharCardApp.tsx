@@ -2,14 +2,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Logger } from "../../lib/logger";
 import {
 	type CardParseErrorCode,
+	MAX_CARD_FILE_BYTES,
+	type NormalizedCharacterCard,
+	createCharacterCardV2,
 	isImageWithinLimits,
 	parseCharacterCardBytes,
 	readImageDimensions,
 } from "./card-parser";
 import {
+	CardStorageValueTooLargeError,
 	type CardStorageAdapter,
 	type StoredCardRecord,
 	createCardStorage,
+	createMemoryCardStorage,
 } from "./card-store";
 import {
 	type CharCardMessageKey,
@@ -29,7 +34,10 @@ import "./charcard.css";
 
 const TAG = "CharCardApp";
 
-export type CharCardUiErrorCode = CardParseErrorCode | "CONTEXT_TOO_LARGE";
+export type CharCardUiErrorCode =
+	| CardParseErrorCode
+	| "CONTEXT_TOO_LARGE"
+	| "STORAGE_VALUE_TOO_LARGE";
 
 export interface CharCardContextBridge {
 	pushContext: (context: RoleplayContextPayload | null) => void;
@@ -39,6 +47,7 @@ export interface CharCardAppProps {
 	bridge?: CharCardContextBridge;
 	storage?: CardStorageAdapter;
 	localeOverride?: string;
+	avatarImageUrl?: string;
 }
 
 interface PendingStorageError {
@@ -56,6 +65,69 @@ function getInitialChar(name: string): string {
 	const trimmed = name.trim();
 	if (!trimmed) return "?";
 	return Array.from(trimmed)[0]?.toUpperCase() ?? "?";
+}
+
+function CardPortrait({
+	record,
+	fallback,
+	thumbnail = false,
+}: { record: StoredCardRecord; fallback: string; thumbnail?: boolean }) {
+	const [imageUrl, setImageUrl] = useState<string | null>(null);
+	const [fallbackFailed, setFallbackFailed] = useState(false);
+	useEffect(() => {
+		if (!record.imageBlob || typeof URL.createObjectURL !== "function") return;
+		const url = URL.createObjectURL(record.imageBlob);
+		setImageUrl(url);
+		return () => URL.revokeObjectURL(url);
+	}, [record.imageBlob]);
+	const src = (record.imageBlob && imageUrl) || fallback;
+
+	return (
+		<span
+			className={
+				thumbnail ? "charcard-app__card-picture" : "charcard-app__avatar"
+			}
+			data-testid={thumbnail ? undefined : "charcard-avatar"}
+		>
+			{fallbackFailed && src === fallback ? (
+				<span aria-hidden="true" className="charcard-app__avatar-letter">
+					{getInitialChar(record.card.name)}
+				</span>
+			) : (
+				<img
+					src={src}
+					alt={thumbnail ? "" : record.card.name}
+					className="charcard-app__avatar-img"
+					data-testid={
+						thumbnail ? "charcard-list-image" : "charcard-avatar-img"
+					}
+					onError={(event) => {
+						if (event.currentTarget.getAttribute("src") === fallback)
+							setFallbackFailed(true);
+						else event.currentTarget.src = fallback;
+					}}
+				/>
+			)}
+		</span>
+	);
+}
+
+function newStoredCard(
+	card: NormalizedCharacterCard,
+	fileName: string,
+	imageBlob: Blob | null = null,
+	imageOmitted = false,
+): StoredCardRecord {
+	return {
+		id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+		fileName,
+		importedAt: Date.now(),
+		card,
+		rawJson: card.rawJson,
+		imageBlob,
+		imageOmitted,
+		builtIn: false,
+	};
 }
 
 async function readFileBytes(file: Blob): Promise<Uint8Array> {
@@ -82,6 +154,7 @@ export function CharCardApp({
 	bridge = defaultBridge,
 	storage: injectedStorage,
 	localeOverride,
+	avatarImageUrl = "/avatars/03-OL_Woman.webp",
 }: CharCardAppProps) {
 	const locale = resolveCharCardLocale(localeOverride);
 	const msg = (
@@ -91,7 +164,7 @@ export function CharCardApp({
 
 	const samples = useMemo(() => getBundledSampleCardRecords(), []);
 	const [importedCards, setImportedCards] = useState<StoredCardRecord[]>([]);
-	const [storageMode, setStorageMode] = useState<"indexeddb" | "memory">(
+	const [storageMode, setStorageMode] = useState<CardStorageAdapter["mode"]>(
 		"indexeddb",
 	);
 	const [selectedCardId, setSelectedCardId] = useState<string>(
@@ -110,6 +183,9 @@ export function CharCardApp({
 		useState<StoredCardRecord | null>(null);
 	const [dragOver, setDragOver] = useState<boolean>(false);
 	const [storageReady, setStorageReady] = useState<boolean>(false);
+	const [creating, setCreating] = useState(false);
+	const [writing, setWriting] = useState(false);
+	const writePending = useRef(false);
 
 	const storageRef = useRef<CardStorageAdapter | null>(injectedStorage ?? null);
 	const storageInitPromiseRef = useRef<Promise<CardStorageAdapter> | null>(
@@ -127,11 +203,7 @@ export function CharCardApp({
 		let cancelled = false;
 		setStorageReady(false);
 		const initPromise = (async () => {
-			const store = injectedStorage ?? (await createCardStorage());
-			if (!cancelled) {
-				storageRef.current = store;
-				setStorageMode(store.mode);
-			}
+			let store = injectedStorage ?? (await createCardStorage());
 			try {
 				const saved = await Promise.all(
 					(await store.listCards()).map(async (record) => {
@@ -169,8 +241,11 @@ export function CharCardApp({
 				Logger.warn(TAG, "failed to load stored cards", {
 					error: String(err),
 				});
+				if (store.mode === "host") store = createMemoryCardStorage();
 			} finally {
 				if (!cancelled) {
+					storageRef.current = store;
+					setStorageMode(store.mode);
 					setStorageReady(true);
 				}
 			}
@@ -315,7 +390,11 @@ export function CharCardApp({
 				Logger.warn(TAG, "failed saving card to storage", {
 					error: String(err),
 				});
-				setStorageError({ kind: "save", record });
+				if (err instanceof CardStorageValueTooLargeError) {
+					setErrorCode("STORAGE_VALUE_TOO_LARGE");
+				} else {
+					setStorageError({ kind: "save", record });
+				}
 				return;
 			}
 		}
@@ -327,6 +406,39 @@ export function CharCardApp({
 		]);
 		setSelectedCardId(record.id);
 		setGreetingIndex(0);
+		setCreating(false);
+	}
+
+	async function writeCard(write: () => Promise<void>) {
+		if (writePending.current) return;
+		writePending.current = true;
+		setWriting(true);
+		setErrorCode(null);
+		setStorageError(null);
+		try {
+			await write();
+		} catch {
+			Logger.warn(TAG, "could not process card");
+			setErrorCode("NOT_PNG_OR_JSON");
+		} finally {
+			writePending.current = false;
+			setWriting(false);
+		}
+	}
+
+	async function createCard(fields: FormData) {
+		const name = String(fields.get("name") ?? "").trim();
+		const result = createCharacterCardV2(
+			name,
+			String(fields.get("description") ?? "").trim(),
+			String(fields.get("greeting") ?? "").trim(),
+		);
+		if (!result.ok) {
+			setErrorCode(result.code);
+			return;
+		}
+		Logger.debug(TAG, "saving newly created card");
+		await persistImportedRecord(newStoredCard(result.card, `${name}.json`));
 	}
 
 	async function handleFileImport(file: File) {
@@ -336,7 +448,7 @@ export function CharCardApp({
 		});
 		setErrorCode(null);
 		setStorageError(null);
-		if (file.size > 20 * 1024 * 1024) {
+		if (file.size > MAX_CARD_FILE_BYTES) {
 			setErrorCode("FILE_TOO_LARGE");
 			return;
 		}
@@ -359,7 +471,7 @@ export function CharCardApp({
 			return;
 		}
 
-		const id = `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 		const imageBlob =
 			result.card.sourceFormat === "png" && !result.imageOmitted
 				? new Blob([new Uint8Array(bytes)], { type: "image/png" })
@@ -369,22 +481,13 @@ export function CharCardApp({
 						})
 					: null;
 
-		const record: StoredCardRecord = {
-			id,
-			fileName: file.name,
-			importedAt: Date.now(),
-			card: result.card,
-			rawJson: result.card.rawJson,
-			imageBlob,
-			imageOmitted: result.imageOmitted,
-			builtIn: false,
-		};
-
-		await persistImportedRecord(record);
+		await persistImportedRecord(
+			newStoredCard(result.card, file.name, imageBlob, result.imageOmitted),
+		);
 	}
 
 	function triggerFilePicker() {
-		if (!storageReady) return;
+		if (!storageReady || writePending.current) return;
 		setErrorCode(null);
 		if (fileInputRef.current) {
 			fileInputRef.current.value = "";
@@ -503,7 +606,7 @@ export function CharCardApp({
 		if (!storageError) return;
 		const { kind, record } = storageError;
 		if (kind === "save") {
-			await persistImportedRecord(record);
+			await writeCard(() => persistImportedRecord(record));
 		} else {
 			await executeDeleteCard(record);
 		}
@@ -521,21 +624,57 @@ export function CharCardApp({
 			<header className="charcard-app__header">
 				<div>
 					<h1>{msg("charcard.title")}</h1>
-					<p>{msg("charcard.subtitle")}</p>
+					<p data-testid="charcard-storage-hint">
+						{msg(
+							storageMode === "memory"
+								? "charcard.subtitleMemoryOnly"
+								: "charcard.subtitle",
+						)}
+					</p>
 				</div>
-				<div className="charcard-app__header-actions">
+				<div
+					className="charcard-app__header-actions"
+					aria-busy={!storageReady || writing}
+				>
+					<button
+						type="button"
+						className="charcard-app__btn"
+						aria-expanded={creating}
+						disabled={!storageReady || writing}
+						onClick={() => setCreating((open) => !open)}
+					>
+						{msg("charcard.createButton")}
+					</button>
 					<button
 						ref={importButtonRef}
 						type="button"
-						className="charcard-app__btn charcard-app__btn--primary"
-						disabled={!storageReady}
-						aria-busy={!storageReady}
-						data-usage-event="char-card-app.main-merge-1.click" onClick={triggerFilePicker}
+						className="charcard-app__btn"
+						disabled={!storageReady || writing}
+						aria-busy={!storageReady || writing}
+						data-usage-event="char-card-app.main-merge-1.click"
+						onClick={triggerFilePicker}
 						data-testid="charcard-import-button"
 					>
-						{storageReady
-							? msg("charcard.importButton")
-							: msg("charcard.importPreparing")}
+						{msg(
+							storageReady
+								? "charcard.importButton"
+								: "charcard.importPreparing",
+						)}
+					</button>
+					<button
+						type="button"
+						className="charcard-app__btn charcard-app__btn--primary"
+						disabled={!storageReady || writing || creating || !selectedRecord}
+						title={msg(
+							isCurrentCardActive
+								? "charcard.updateRoleplay"
+								: "charcard.startRoleplay",
+						)}
+						data-usage-event="char-card-app.main-merge-10.click"
+						onClick={handleStartRoleplay}
+						data-testid="charcard-start-button"
+					>
+						{msg("charcard.apply")}
 					</button>
 					<input
 						ref={fileInputRef}
@@ -545,16 +684,58 @@ export function CharCardApp({
 						data-testid="charcard-file-input"
 						onChange={(e) => {
 							const file = e.target.files?.[0];
-							if (file) void handleFileImport(file);
+							if (file) void writeCard(() => handleFileImport(file));
 						}}
 					/>
 				</div>
 			</header>
+			{writing && (
+				<output className="charcard-app__notice" aria-live="polite">
+					{msg("charcard.saving")}
+				</output>
+			)}
+			{creating && (
+				<form
+					className="charcard-app__create-form"
+					aria-label={msg("charcard.createButton")}
+					onSubmit={(event) => {
+						event.preventDefault();
+						const fields = new FormData(event.currentTarget);
+						void writeCard(() => createCard(fields));
+					}}
+				>
+					<label className="charcard-app__field-row">
+						{msg("charcard.name")}
+						<input name="name" required maxLength={100} disabled={writing} />
+					</label>
+					<label className="charcard-app__field-row">
+						{msg("charcard.descriptionField")}
+						<textarea
+							name="description"
+							rows={2}
+							maxLength={4000}
+							disabled={writing}
+						/>
+					</label>
+					<label className="charcard-app__field-row">
+						{msg("charcard.greetingField")}
+						<input name="greeting" maxLength={1000} disabled={writing} />
+					</label>
+					<button
+						className="charcard-app__btn charcard-app__btn--primary"
+						type="submit"
+						disabled={writing}
+					>
+						{msg("charcard.save")}
+					</button>
+				</form>
+			)}
 
 			{storageMode === "memory" ? (
 				<div
 					className="charcard-app__notice charcard-app__notice--warn"
 					data-testid="charcard-memory-banner"
+					role="status"
 				>
 					{msg("charcard.memoryOnlyBanner")}
 				</div>
@@ -577,7 +758,8 @@ export function CharCardApp({
 					<button
 						type="button"
 						className="charcard-app__btn charcard-app__btn--danger"
-						data-usage-event="char-card-app.main-merge-2.click" onClick={handleStopRoleplay}
+						data-usage-event="char-card-app.main-merge-2.click"
+						onClick={handleStopRoleplay}
 						data-testid="charcard-stop-banner-button"
 					>
 						{msg("charcard.stopRoleplay")}
@@ -591,7 +773,7 @@ export function CharCardApp({
 					aria-label={msg("charcard.cardListLabel")}
 					onDragOver={(e) => {
 						e.preventDefault();
-						if (!storageReady) return;
+						if (!storageReady || writing) return;
 						setDragOver(true);
 					}}
 					onDragLeave={() => setDragOver(false)}
@@ -599,15 +781,16 @@ export function CharCardApp({
 						e.preventDefault();
 						setDragOver(false);
 						const file = e.dataTransfer?.files?.[0];
-						if (file) void handleFileImport(file);
+						if (file) void writeCard(() => handleFileImport(file));
 					}}
 				>
 					<button
 						type="button"
 						className="charcard-app__dropzone"
-						disabled={!storageReady}
-						aria-busy={!storageReady}
-						data-usage-event="char-card-app.main-merge-3.click" onClick={triggerFilePicker}
+						disabled={!storageReady || writing}
+						aria-busy={!storageReady || writing}
+						data-usage-event="char-card-app.main-merge-3.click"
+						onClick={triggerFilePicker}
 					>
 						<span>
 							{storageReady
@@ -636,17 +819,21 @@ export function CharCardApp({
 											}
 										}}
 										type="button"
+										aria-pressed={isSelected}
 										className={`charcard-app__card-row ${isSelected ? "charcard-app__card-row--selected" : ""}`}
-										data-usage-event="char-card-app.main-merge-4.click" onClick={() => {
+										data-usage-event="char-card-app.main-merge-4.click"
+										onClick={() => {
 											setErrorCode(null);
 											setSelectedCardId(item.id);
 											setGreetingIndex(0);
 										}}
 										data-testid={`charcard-item-${item.id}`}
 									>
-										<span className="charcard-app__card-initial">
-											{getInitialChar(item.card.name)}
-										</span>
+										<CardPortrait
+											record={item}
+											fallback={avatarImageUrl}
+											thumbnail
+										/>
 										<span className="charcard-app__card-meta">
 											<span className="charcard-app__card-name">
 												{item.card.name}
@@ -681,13 +868,20 @@ export function CharCardApp({
 							role="alert"
 							data-testid="charcard-error-panel"
 						>
-							<h2>{msg("charcard.errorTitle")}</h2>
+							<h2>
+								{msg(
+									errorCode === "STORAGE_VALUE_TOO_LARGE"
+										? "charcard.storageErrorSave"
+										: "charcard.errorTitle",
+								)}
+							</h2>
 							<p>{msg(`charcard.error.${errorCode}`)}</p>
 							<div className="charcard-app__error-actions">
 								<button
 									type="button"
 									className="charcard-app__btn charcard-app__btn--primary"
-									data-usage-event="char-card-app.main-merge-5.click" onClick={triggerFilePicker}
+									data-usage-event="char-card-app.main-merge-5.click"
+									onClick={triggerFilePicker}
 									data-testid="charcard-error-retry"
 								>
 									{msg("charcard.errorChooseAnother")}
@@ -695,7 +889,8 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn"
-									data-usage-event="char-card-app.main-merge-6.click" onClick={() => setErrorCode(null)}
+									data-usage-event="char-card-app.main-merge-6.click"
+									onClick={() => setErrorCode(null)}
 									data-testid="charcard-error-dismiss"
 								>
 									{msg("charcard.errorDismiss")}
@@ -721,7 +916,8 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn charcard-app__btn--primary"
-									data-usage-event="char-card-app.main-merge-7.click" onClick={() => void handleRetryStorageAction()}
+									data-usage-event="char-card-app.main-merge-7.click"
+									onClick={() => void handleRetryStorageAction()}
 									data-testid="charcard-storage-retry"
 								>
 									{msg("charcard.storageErrorRetry")}
@@ -729,7 +925,8 @@ export function CharCardApp({
 								<button
 									type="button"
 									className="charcard-app__btn"
-									data-usage-event="char-card-app.main-merge-8.click" onClick={() => setStorageError(null)}
+									data-usage-event="char-card-app.main-merge-8.click"
+									onClick={() => setStorageError(null)}
 									data-testid="charcard-storage-dismiss"
 								>
 									{msg("charcard.storageErrorDismiss")}
@@ -825,7 +1022,8 @@ export function CharCardApp({
 										<select
 											id="charcard-greeting-select"
 											value={safeGreetingIndex}
-											data-usage-event="char-card-app.main-merge-9.select" onChange={(e) => setGreetingIndex(Number(e.target.value))}
+											data-usage-event="char-card-app.main-merge-9.select"
+											onChange={(e) => setGreetingIndex(Number(e.target.value))}
 											data-testid="charcard-greeting-select"
 										>
 											{greetingsList.map((opt) => (
@@ -842,22 +1040,13 @@ export function CharCardApp({
 								) : null}
 
 								<div className="charcard-app__action-buttons">
-									<button
-										type="button"
-										className="charcard-app__btn charcard-app__btn--primary"
-										data-usage-event="char-card-app.main-merge-10.click" onClick={handleStartRoleplay}
-										data-testid="charcard-start-button"
-									>
-										{isCurrentCardActive
-											? msg("charcard.updateRoleplay")
-											: msg("charcard.startRoleplay")}
-									</button>
 
 									{isCurrentCardActive ? (
 										<button
 											type="button"
 											className="charcard-app__btn charcard-app__btn--danger"
-											data-usage-event="char-card-app.main-merge-11.click" onClick={handleStopRoleplay}
+											data-usage-event="char-card-app.main-merge-11.click"
+											onClick={handleStopRoleplay}
 											data-testid="charcard-stop-button"
 										>
 											{msg("charcard.stopRoleplay")}
@@ -869,7 +1058,8 @@ export function CharCardApp({
 											ref={deleteTriggerButtonRef}
 											type="button"
 											className="charcard-app__btn charcard-app__btn--secondary"
-											data-usage-event="char-card-app.main-merge-12.click" onClick={() => requestDeleteCard(selectedRecord)}
+											data-usage-event="char-card-app.main-merge-12.click"
+											onClick={() => requestDeleteCard(selectedRecord)}
 											data-testid="charcard-delete-button"
 										>
 											{msg("charcard.deleteCard")}
@@ -1019,7 +1209,8 @@ export function CharCardApp({
 								ref={cancelDeleteButtonRef}
 								type="button"
 								className="charcard-app__btn"
-								data-usage-event="char-card-app.main-merge-13.click" onClick={cancelDeleteCard}
+								data-usage-event="char-card-app.main-merge-13.click"
+								onClick={cancelDeleteCard}
 								data-testid="charcard-delete-cancel"
 							>
 								{msg("charcard.deleteCancelAction")}
@@ -1027,7 +1218,8 @@ export function CharCardApp({
 							<button
 								type="button"
 								className="charcard-app__btn charcard-app__btn--danger"
-								data-usage-event="char-card-app.main-merge-14.click" onClick={() => void executeDeleteCard(pendingDeleteRecord)}
+								data-usage-event="char-card-app.main-merge-14.click"
+								onClick={() => void executeDeleteCard(pendingDeleteRecord)}
 								data-testid="charcard-delete-confirm"
 							>
 								{msg("charcard.deleteConfirmAction")}

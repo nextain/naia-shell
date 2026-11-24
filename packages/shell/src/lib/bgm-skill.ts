@@ -418,7 +418,382 @@ function persistedMusicLibrary(): BgmLibraryState {
 
 /** 사이드카 검색 — BgmPlayer.ytSearch 동형 표면(GET /yt/search?q=&max=). */
 function shouldWaitForPlayAck(): boolean {
+	if (import.meta.env.MODE === "web") return false;
 	return typeof window === "undefined" || !("__E2E_OUTBOUND__" in window);
+}
+
+interface WebCatalogEntry {
+	id: string;
+	title: string;
+	channel: string;
+	duration: string;
+	keywords: string[];
+}
+
+/**
+ * 웹판(키 없는) YouTube 목록. 제목·채널은 YouTube oEmbed 가 돌려준 실제
+ * 영상 정보와 같아야 한다(R7: 예전 표는 지어낸 곡명이라 "이루마"를 누르면
+ * 다른 영상이 나왔다). 길이는 확인한 것만 적고, 실시간 방송은 "LIVE".
+ * 주제어도 영상 실제 내용만 적는다 — 없는 장르를 다른 영상에 붙이지 않는다.
+ */
+export const WEB_YOUTUBE_CATALOG: readonly WebCatalogEntry[] = [
+	{
+		id: "8XmoPmtBi-I",
+		title: "Lofi Chill (Guitar & Piano) ✨ Midnight Solitude",
+		channel: "HSN 41 Beats",
+		duration: "3:48",
+		keywords: [
+			"lofi",
+			"lo-fi",
+			"로파이",
+			"hip hop",
+			"beats",
+			"study",
+			"relax",
+			"공부",
+			"집중",
+			"잔잔한",
+			"브금",
+			"bgm",
+			"유튜브",
+			"유투브",
+			"youtube",
+			"음악",
+			"노래",
+		],
+	},
+	{
+		id: "Ft--1huHoPk",
+		title: "Cozy Fall Coffee Shop Ambience with Smooth Jazz 🍂Relaxing Jazz Instrumental Music for a Warm Morning",
+		channel: "Relax Jazz Cafe",
+		duration: "",
+		keywords: ["jazz", "smooth jazz", "재즈", "카페", "밤", "coffee", "cozy", "새벽"],
+	},
+	{
+		id: "Dx5qFachd3A",
+		title: "Relaxing Jazz Piano Radio - Slow Jazz Music - 24/7 Live Stream - Music For Work & Study",
+		channel: "Cafe Music BGM channel",
+		duration: "LIVE",
+		keywords: ["jazz", "재즈", "jazz piano", "cafe", "카페", "분위기", "piano", "피아노"],
+	},
+	{
+		id: "4xDzrJKXOOY",
+		title: "synthwave radio 🌌 beats to chill/game to",
+		channel: "Lofi Girl",
+		duration: "LIVE",
+		keywords: [
+			"synthwave",
+			"retrowave",
+			"80s",
+			"neon",
+			"신스웨이브",
+			"레트로",
+			"신나는",
+			"일렉",
+			"코딩",
+			"게임",
+		],
+	},
+	{
+		id: "3jWRrafhO7M",
+		title: "#GhibliJazz #CafeMusic - Relaxing Jazz & Bossa Nova Music - Studio Ghibli Cover",
+		channel: "Cafe Music BGM channel",
+		duration: "",
+		keywords: [
+			"ghibli",
+			"studio ghibli",
+			"지브리",
+			"애니",
+			"bossa",
+			"bossa nova",
+			"보사노바",
+			"cafe",
+		],
+	},
+	{
+		id: "WPni755-Krg",
+		title: "Study Music Alpha Waves: Relaxing Studying Music, Brain Power, Focus Concentration Music, ☯161",
+		channel: "Yellow Brick Cinema - Relaxing Music",
+		duration: "",
+		keywords: [
+			"study music",
+			"alpha waves",
+			"focus",
+			"concentration",
+			"집중",
+			"공부 음악",
+			"독서",
+		],
+	},
+	{
+		id: "n61ULEU7CO0",
+		title: "Best of lofi hip hop 2021 ✨ [beats to relax/study to]",
+		channel: "Lofi Girl",
+		duration: "",
+		keywords: ["lofi", "lo-fi", "로파이", "lofi girl", "beats", "study"],
+	},
+	{
+		id: "7NOSDKb0HlU",
+		title: "lofi hip hop radio - beats to study/relax to 🐾",
+		channel: "Chillhop Music",
+		duration: "LIVE",
+		keywords: ["chillhop", "칠홉", "lofi", "로파이", "radio", "jazzy", "beats"],
+	},
+	{
+		id: "gdZLi9oWNZg",
+		title: "BTS (방탄소년단) 'Dynamite' Official MV",
+		channel: "HYBE LABELS",
+		duration: "3:44",
+		keywords: [
+			"kpop",
+			"k-pop",
+			"케이팝",
+			"가요",
+			"아이돌",
+			"인기",
+			"신나는 노래",
+			"신나는 케이팝",
+			"케이팝 추천",
+			"신나는 노래 추천",
+			"hits",
+			"popular",
+		],
+	},
+	{
+		id: "k3WkJq478To",
+		title: "Synthwave/Electric Mixtape I | For Study/Relax",
+		channel: "Dr.Bonkers Inc",
+		duration: "",
+		keywords: ["synthwave", "신스웨이브", "electric", "electronic", "일렉", "mixtape"],
+	},
+	{
+		id: "mPZkdNFkNps",
+		title: "Rain Sound On Window with Thunder SoundsㅣHeavy Rain for Sleep, Study and Relaxation, Meditation",
+		channel: "Relaxing Ambience ASMR",
+		duration: "",
+		keywords: [
+			"rain",
+			"thunder",
+			"thunderstorm",
+			"white noise",
+			"sleep",
+			"비",
+			"빗소리",
+			"천둥",
+			"수면",
+		],
+	},
+	{
+		id: "1ZYbU82GVz4",
+		title: "Flying: Relaxing Sleep Music for Meditation, Stress Relief & Relaxation by Peder B. Helland",
+		channel: "Soothing Relaxation",
+		duration: "",
+		keywords: [
+			"ambient",
+			"atmospheric",
+			"meditation",
+			"new age",
+			"new-age",
+			"celtic",
+			"fantasy",
+			"sleep music",
+			"앰비언트",
+			"명상",
+			"뉴에이지",
+			"판타지",
+		],
+	},
+];
+
+function extractDirectYoutubeId(raw: string): string | null {
+	const trimmed = raw.trim();
+	if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) return trimmed;
+	try {
+		const url = new URL(trimmed);
+		const host = url.hostname.toLowerCase();
+		if (host === "youtu.be" || host.endsWith(".youtu.be")) {
+			const id = url.pathname.split("/").filter(Boolean)[0] ?? "";
+			return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+		}
+		if (
+			host === "youtube.com" ||
+			host.endsWith(".youtube.com") ||
+			host === "youtube-nocookie.com" ||
+			host.endsWith(".youtube-nocookie.com")
+		) {
+			const v = url.searchParams.get("v") ?? "";
+			if (/^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+			if (url.pathname.startsWith("/embed/")) {
+				const id = url.pathname.split("/")[2] ?? "";
+				return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+			}
+		}
+	} catch {
+		// Not a URL
+	}
+	return null;
+}
+
+export function searchWebYoutubeCatalog(query: string): BgmSearchResult[] {
+	const trimmed = query.trim();
+	if (!trimmed) return [];
+	const directId = extractDirectYoutubeId(trimmed);
+	if (directId) {
+		const existing = WEB_YOUTUBE_CATALOG.find((item) => item.id === directId);
+		if (existing) {
+			return [
+				{
+					id: existing.id,
+					title: existing.title,
+					channel: existing.channel,
+					duration: existing.duration,
+					thumbnail: `https://i.ytimg.com/vi/${existing.id}/hqdefault.jpg`,
+				},
+			];
+		}
+		return [
+			{
+				id: directId,
+				title: `YouTube Video (${directId})`,
+				channel: "YouTube",
+				duration: "",
+				thumbnail: `https://i.ytimg.com/vi/${directId}/hqdefault.jpg`,
+			},
+		];
+	}
+	const lower = trimmed.toLowerCase();
+	const tokens = lower.split(/[\s,./!?]+/).filter(Boolean);
+	const scored = WEB_YOUTUBE_CATALOG.map((entry, idx) => {
+		let score = 0;
+		const hay = `${entry.title} ${entry.channel} ${entry.keywords.join(" ")}`.toLowerCase();
+		for (const kw of entry.keywords) {
+			if (lower.includes(kw.toLowerCase())) score += 10;
+		}
+		for (const token of tokens) {
+			if (token.length >= 2 && hay.includes(token)) score += 4;
+		}
+		return { entry, score, idx };
+	});
+	scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
+	return scored.map(({ entry }) => ({
+		id: entry.id,
+		title: entry.title,
+		channel: entry.channel,
+		duration: entry.duration,
+		thumbnail: `https://i.ytimg.com/vi/${entry.id}/hqdefault.jpg`,
+	}));
+}
+
+const WEB_BGM_CATEGORY_MATCHERS: ReadonlyArray<{
+	category: string;
+	query: string;
+	pattern: RegExp;
+}> = [
+	{ category: "kpop", query: "kpop hits popular songs playlist", pattern: /(?:케이팝|k-?pop|아이돌)/i },
+	{ category: "jpop", query: "jpop anime ost popular songs", pattern: /(?:제이팝|j-?pop|애니)/i },
+	{ category: "citypop", query: "japanese city pop 80s playlist", pattern: /(?:시티\s*팝|city\s*pop)/i },
+	{ category: "chillhop", query: "chillhop jazzy hip hop beats", pattern: /(?:칠홉|chillhop)/i },
+	{ category: "lofi", query: "lofi hip hop beats to study relax", pattern: /(?:로파이|lo-?fi)/i },
+	{ category: "jazz", query: "smooth jazz cafe bossa nova", pattern: /(?:재즈|jazz|보사노바)/i },
+	{ category: "classical", query: "classical music orchestra study", pattern: /(?:클래식|classical|오케스트라)/i },
+	{ category: "piano", query: "relaxing piano music study", pattern: /(?:피아노|piano)/i },
+	{ category: "acoustic", query: "acoustic guitar instrumental relaxing", pattern: /(?:어쿠스틱|acoustic|통기타)/i },
+	{ category: "cinematic", query: "epic cinematic soundtrack instrumental", pattern: /(?:시네마틱|cinematic|영화\s*음악|ost)/i },
+	{ category: "ambient", query: "ambient atmospheric space music", pattern: /(?:앰비언트|ambient|명상)/i },
+	{ category: "synthwave", query: "synthwave retrowave 80s electronic", pattern: /(?:신스웨이브|synthwave|레트로)/i },
+	{ category: "gugak", query: "국악 전통음악 가야금 해금 연주", pattern: /(?:국악|gugak|가야금|해금)/i },
+	{ category: "rain", query: "rain sounds thunderstorm relaxing sleep", pattern: /(?:빗소리|비\s*소리|비\s*오는\s*소리|rain)/i },
+	{ category: "nature", query: "nature sounds forest birds ocean waves", pattern: /(?:자연의?\s*소리|숲\s*소리|파도\s*소리|nature)/i },
+	{ category: "cafe", query: "coffee shop background noise jazz", pattern: /(?:카페\s*음악|카페\s*소음|cafe)/i },
+	{ category: "whitenoise", query: "white noise study focus concentration", pattern: /(?:화이트\s*노이즈|백색\s*소음|white\s*noise)/i },
+	{ category: "pop", query: "pop hits english top songs", pattern: /(?:팝송|\bpop\b)/i },
+];
+
+export function classifyWebBgmIntent(
+	rawText: string,
+): Record<string, unknown> | null {
+	const text = rawText.trim();
+	if (!text) return null;
+	const normalized = text.replace(/[.!?~]+$/g, "").trim();
+
+	const hasMediaNoun =
+		/(?:유튜브|유투브|youtube|음악|노래|브금|\bbgm\b|\bmusic\b)/i.test(
+			normalized,
+		);
+	const matched = WEB_BGM_CATEGORY_MATCHERS.find(({ pattern }) =>
+		pattern.test(normalized),
+	);
+
+	if (
+		hasMediaNoun &&
+		/(?:일시\s*정지|잠깐\s*멈춰|\bpause\b)/i.test(normalized)
+	) {
+		return { action: "pause" };
+	}
+
+	if (
+		hasMediaNoun &&
+		/(?:다시\s*틀|이어서?\s*틀|계속\s*틀|다시\s*재생|재개|\bresume\b)/i.test(
+			normalized,
+		)
+	) {
+		return { action: "resume" };
+	}
+
+	if (
+		(hasMediaNoun &&
+			/(?:멈춰|멈춤|꺼\s*줘|꺼줘|꺼\b|중지|정지|그만|종료|\bstop\b|\boff\b)/i.test(
+				normalized,
+			)) ||
+		(bgmPlayback.current()?.status === "playing" &&
+			/^(?:멈춰|멈춰\s*줘|멈춰줘|정지|중지|그만|꺼|꺼\s*줘|꺼줘|stop)$/i.test(
+				normalized,
+			))
+	) {
+		return { action: "stop" };
+	}
+
+	if (
+		/^(?:다음\s*곡|다음\s*노래|유튜브\s*다음|유투브\s*다음|음악\s*다음)(?:\s*틀어\s*줘|\s*틀어줘|\s*줘)?$/i.test(
+			normalized,
+		)
+	) {
+		return { action: "next" };
+	}
+
+	if (
+		/^(?:이전\s*곡|이전\s*노래|유튜브\s*이전|유투브\s*이전|음악\s*이전)(?:\s*틀어\s*줘|\s*틀어줘|\s*줘)?$/i.test(
+			normalized,
+		)
+	) {
+		return { action: "prev" };
+	}
+
+	const hasPlayVerb =
+		/(?:틀어|재생|플레이|켜\s*줘|켜줘|들려\s*줘|들려줘|듣고\s*싶|\bplay\b)/i.test(
+			normalized,
+		);
+	if (hasPlayVerb && (hasMediaNoun || Boolean(matched))) {
+		return {
+			action: "play",
+			category: matched?.category ?? "lofi",
+			query: matched?.query ?? "lofi hip hop beats to study relax",
+		};
+	}
+
+	if (
+		/^(?:유튜브|유투브|youtube)(?:\s*좀)?\s*(?:보여\s*줘|보여줘|열어\s*줘|열어줘)?$/i.test(
+			normalized,
+		)
+	) {
+		return {
+			action: "play",
+			category: "lofi",
+			query: "lofi hip hop beats to study relax",
+		};
+	}
+
+	return null;
 }
 
 function isObservedPlayback(
@@ -473,6 +848,9 @@ export async function waitForBgmObservedPlayback(
 }
 
 async function sidecarSearch(query: string): Promise<BgmSearchResult[]> {
+	if (import.meta.env.MODE === "web") {
+		return searchWebYoutubeCatalog(query);
+	}
 	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
 		`${base}/yt/search?q=${encodeURIComponent(query)}&max=12`,
@@ -493,10 +871,22 @@ const defaultDeps: BgmSkillDeps = {
 	// queue operation as an unknown Agent variant.
 	emitBgm: (payload) => emit("bgm_command", JSON.stringify(payload)),
 	playback: bgmPlayback,
-	waitForAck: (playbackId) =>
-		shouldWaitForPlayAck()
+	waitForAck: (playbackId) => {
+		if (import.meta.env.MODE === "web") {
+			const cur = bgmPlayback.current();
+			if (cur && cur.playbackId === playbackId && cur.status === "requested") {
+				bgmPlayback.observe({
+					playbackId,
+					sequence: cur.sequence + 1,
+					status: "playing",
+				});
+			}
+			return Promise.resolve(bgmPlayback.current());
+		}
+		return shouldWaitForPlayAck()
 			? waitForBgmObservedPlayback(bgmPlayback, { playbackId })
-			: Promise.resolve(bgmPlayback.current()),
+			: Promise.resolve(bgmPlayback.current());
+	},
 	waitForNavigateAck: (previousPlaybackId) =>
 		shouldWaitForPlayAck()
 			? waitForBgmObservedPlayback(bgmPlayback, { previousPlaybackId })
@@ -787,7 +1177,15 @@ async function executeBgmSkillCore(
 				...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 			});
 			const observed =
-				(await deps.waitForAck?.(playback.playbackId)) ?? playback;
+				(await deps.waitForAck?.(playback.playbackId)) ??
+				(import.meta.env.MODE === "web"
+					? deps.playback.observe({
+							playbackId: playback.playbackId,
+							sequence: playback.sequence + 1,
+							status: "playing",
+						})
+					: null) ??
+				playback;
 			return JSON.stringify(toBgmPlayToolResult(observed));
 		}
 		const result = deps.playback.enqueue({
@@ -804,6 +1202,13 @@ async function executeBgmSkillCore(
 			});
 			const observed =
 				(await deps.waitForAck?.(result.playback.playbackId)) ??
+				(import.meta.env.MODE === "web"
+					? deps.playback.observe({
+							playbackId: result.playback.playbackId,
+							sequence: result.playback.sequence + 1,
+							status: "playing",
+						})
+					: null) ??
 				result.playback;
 			return JSON.stringify(toBgmPlayToolResult(observed));
 		}
@@ -880,9 +1285,17 @@ async function executeBgmSkillCore(
 				radioDjRequested && !(preserveActive && hasActivePlayback),
 			);
 		}
-		const query = args.query;
-		if (typeof query !== "string" || !query.trim())
+		const rawQuery =
+			typeof args.query === "string" && args.query.trim()
+				? args.query
+				: typeof args.category === "string" && args.category.trim()
+					? (WEB_BGM_CATEGORY_MATCHERS.find(
+							(m) => m.category === args.category,
+						)?.query ?? args.category)
+					: undefined;
+		if (typeof rawQuery !== "string" || !rawQuery.trim())
 			throw new Error("play requires query or videoId");
+		const query = rawQuery;
 		const searchQuery = radioDjRequested
 			? sanitizeRadioDjSearchQuery(query)
 			: query;
@@ -1217,6 +1630,29 @@ async function executeBgmSkillCore(
 	}
 	const eventType = `bgm_youtube_${act}`;
 	await deps.emitBgm({ type: eventType });
+	if (import.meta.env.MODE === "web") {
+		const cur = deps.playback.current();
+		if (act === "stop" && cur && cur.status !== "ended") {
+			deps.playback.clearQueue();
+			deps.playback.observe({
+				playbackId: cur.playbackId,
+				sequence: cur.sequence + 1,
+				status: "ended",
+			});
+		} else if (act === "pause" && cur && cur.status !== "paused") {
+			deps.playback.observe({
+				playbackId: cur.playbackId,
+				sequence: cur.sequence + 1,
+				status: "paused",
+			});
+		} else if (act === "resume" && cur && cur.status !== "playing") {
+			deps.playback.observe({
+				playbackId: cur.playbackId,
+				sequence: cur.sequence + 1,
+				status: "playing",
+			});
+		}
+	}
 	return JSON.stringify({ ok: true, action: act });
 }
 

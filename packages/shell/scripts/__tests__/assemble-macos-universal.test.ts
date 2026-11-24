@@ -39,7 +39,7 @@ describe("macOS Universal Binary assembly", () => {
 		);
 		expect(workflow).toContain("os: macos-15\n            arch: arm64");
 		expect(workflow).toContain("macos-universal-smoke:");
-		expect(workflow).toContain("Naia_universal.app.tar.gz");
+		expect(workflow).toContain("${{ env.NAIA_INSTALLER_NAME }}_universal.app.tar.gz");
 		expect(workflow).toContain("verify-installed-smoke.mjs");
 	});
 

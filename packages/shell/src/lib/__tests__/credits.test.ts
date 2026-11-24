@@ -1,16 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
+	WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY,
 	formatCredits,
 	formatCreditsExact,
 	formatCreditsFromUsd,
+	formatWebCredits,
+	formatWebCreditsFromUsd,
 	isNaiaAccountProvider,
+	isWebCloudCreditNoticeDismissed,
+	markWebCloudCreditNoticeDismissed,
 	usdToCredits,
 } from "../credits";
 import {
+	formatByProviderStats,
+	formatCreditBalance,
+	formatProviderCostStat,
+	formatSavedVoiceCostSummary,
 	formatUsageCost,
 	formatUsageTotal,
 	formatUsdEstimate,
+	isLocalFreeProvider,
 } from "../credits-usage";
+import { setLocale, t } from "../i18n";
+import { formatModelLabel } from "../llm/model-label";
+import { setWebAssetsModeForTests } from "../web-runtime/web-assets";
 
 describe("formatCredits", () => {
 	it("formats examples from specification correctly", () => {
@@ -111,5 +124,86 @@ describe("USD to credit display (#727)", () => {
 		expect(formatUsageTotal(0.05, 0.02)).toBe(
 			"≈ 50 credits + $0.020 (provider price est.)",
 		);
+	});
+});
+
+describe("R42 web credit display", () => {
+	it("groups credits and keeps the existing USD conversion and small-charge precision", () => {
+		expect(formatWebCredits(0)).toBe("0 Cr");
+		expect(formatWebCredits(1234.5)).toBe("1,234.5 Cr");
+		expect(formatWebCreditsFromUsd(1.234)).toBe("1,234 Cr");
+		expect(formatWebCreditsFromUsd(0.000254)).toBe("0.254 Cr");
+	});
+
+	it.each(["ko", "en"] as const)("uses Cr for balances, models and usage in %s", async (locale) => {
+		setWebAssetsModeForTests(true);
+		await setLocale(locale);
+		try {
+			expect(formatCreditBalance(1234)).toBe("1,234 Cr");
+			expect(formatUsageCost(1.234, "nextain")).toBe("1,234 Cr");
+			expect(formatUsageTotal(1.234, 0)).toBe("1,234 Cr");
+			expect(formatModelLabel({ id: "test", label: "Test", capabilities: ["llm"], pricing: [1.234, 0.002] }, t))
+				.toMatch(/1,234 Cr .*2 Cr/);
+			expect(formatSavedVoiceCostSummary("🎙️ 1m 10s · 약 1.23K 크레딧 (TTS)", 1.234))
+				.toBe("🎙️ 1m 10s · 1,234 Cr (TTS)");
+			expect(formatSavedVoiceCostSummary("🎙️ 8s · ≈ 1.23K credits (TTS)", 1.234))
+				.toBe("🎙️ 8s · 1,234 Cr (TTS)");
+		} finally {
+			setWebAssetsModeForTests(null);
+			await setLocale("en");
+		}
+	});
+
+	it("R21-3 remembers cloud pre-send credit notice dismissal in browser storage", () => {
+		const map = new Map<string, string>();
+		const fakeStorage = {
+			getItem: (k: string) => map.get(k) ?? null,
+			setItem: (k: string, v: string) => {
+				map.set(k, v);
+			},
+		};
+		expect(isWebCloudCreditNoticeDismissed(fakeStorage)).toBe(false);
+		markWebCloudCreditNoticeDismissed(fakeStorage);
+		expect(map.get(WEB_CLOUD_CREDIT_NOTICE_DISMISSED_KEY)).toBe("1");
+		expect(isWebCloudCreditNoticeDismissed(fakeStorage)).toBe(true);
+	});
+});
+
+describe("local WebLLM free cost formatting", () => {
+	it("identifies webllm as a local free provider without affecting cloud or ollama/vllm", () => {
+		expect(isLocalFreeProvider("webllm")).toBe(true);
+		expect(isLocalFreeProvider("nextain")).toBe(false);
+		expect(isLocalFreeProvider("gemini")).toBe(false);
+		expect(isLocalFreeProvider("ollama")).toBe(false);
+		expect(isLocalFreeProvider(null)).toBe(false);
+		expect(isLocalFreeProvider(undefined)).toBe(false);
+	});
+
+	it.each([
+		{ locale: "ko", expected: "무료" },
+		{ locale: "en", expected: "Free" },
+	] as const)("formats webllm usage and provider stats as $expected in $locale without dollar zero", async ({ locale, expected }) => {
+		await setLocale(locale);
+		try {
+			const usageText = formatUsageCost(0, "webllm");
+			const statText = formatProviderCostStat("webllm", 0);
+			const groupedText = formatByProviderStats(
+				[{ provider: "webllm", cost: 0 }],
+				0,
+				"webllm",
+			);
+			const fallbackText = formatByProviderStats([], 0, "webllm");
+
+			for (const text of [usageText, statText, groupedText, fallbackText]) {
+				expect(text).toBe(expected);
+				expect(text).not.toContain("$0.000000");
+			}
+
+			// Keep R47 nextain and cloud provider formatting unchanged
+			expect(formatUsageCost(0.0123, "nextain")).toMatch(/12\.3/);
+			expect(formatUsageCost(0.0123, "gemini")).toContain("$0.012");
+		} finally {
+			await setLocale("en");
+		}
 	});
 });

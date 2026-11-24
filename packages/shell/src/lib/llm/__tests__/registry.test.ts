@@ -48,6 +48,12 @@ describe("registry — provider registration", () => {
 	});
 
 	it("Naia offline fallbacks keep every selectable model skill-capable without claiming live provenance", () => {
+		for (const id of ["deepseek-v4.1-flash", "gpt-6-luna"]) {
+			const model = getLlmModel("nextain", id);
+			expect(model).toMatchObject({ supportsTools: true });
+			expect(model?.upstreamProvider ?? "unknown").toBe("unknown");
+			expect(model?.lifecycle ?? "unknown").toBe("unknown");
+		}
 		expect(getLlmModel("nextain", "deepseek-v4-flash")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "solar-pro4")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "solar-mini")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
@@ -55,13 +61,16 @@ describe("registry — provider registration", () => {
 		expect(getLlmModel("nextain", "gpt-5.6-luna")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		const selectable = getLlmProvider("nextain")!.models.filter((model) => !model.comingSoon);
 		expect(selectable.map((model) => model.id)).toEqual([
+			"deepseek-v4.1-flash",
+			"gpt-6.1-terra",
+			"gpt-6-luna",
 			"deepseek-v4-flash",
 			"solar-pro4",
 			"solar-mini",
 			"motif-3",
 			"gpt-5.6-luna",
 		]);
-		expect(selectable.every((model) => model.supportsTools === true)).toBe(true);
+		expect(selectable.filter((model) => model.id !== "gpt-6.1-terra").every((model) => model.supportsTools === true)).toBe(true);
 	});
 });
 
@@ -135,7 +144,7 @@ describe("registry — Naia (nextain) provider models", () => {
 	});
 
 	it("default model is deepseek-v4-flash", () => {
-		expect(getDefaultLlmModel("nextain")).toBe("deepseek-v4-flash");
+		expect(getDefaultLlmModel("nextain")).toBe("deepseek-v4.1-flash");
 	});
 });
 
@@ -379,7 +388,7 @@ describe("registry — formatModelLabel", () => {
 	it("returns base label when no pricing", () => {
 		const model = getLlmModel("nextain", "gpt-5.6-luna")!;
 		const label = formatModelLabel(model);
-		expect(label).toBe("Naia Luna");
+		expect(label).toBe("Naia Luna (Cost saving)");
 	});
 
 	it("formats label with pricing when provided", () => {
@@ -427,6 +436,16 @@ describe("registry — sortModels", () => {
 			"solar-mini",
 			"motif-3",
 			"gpt-5.6-luna",
+			"deepseek-v4.1-flash",
+			"gpt-6.1-terra",
+			"gpt-6-luna",
 		]);
 	});
+});
+
+
+describe("recommended order", () => {
+ it("ranks product recommendations before other models", () => {
+  expect(sortModels(getLlmProvider("nextain")!.models, "recommended").map(m => m.id).slice(0, 3)).toEqual(["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna"]);
+ });
 });

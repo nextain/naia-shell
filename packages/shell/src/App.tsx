@@ -5,6 +5,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
+import { WebAppInstallLink } from "./components/WebAppInstallLink";
+import { WebLoginPromptModal } from "./components/WebLoginPromptModal";
+import { WebLoginScreen } from "./components/WebLoginScreen";
+import { WebSlugOwnerGuard } from "./components/WebSlugOwnerGuard";
 import { useAgentAuthSync } from "./hooks/useAgentAuthSync";
 import {
 	applyTheme,
@@ -40,15 +44,44 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
-import { selectBackground } from "./lib/background-selection";
-import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
+
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
+import {
+	resolveInitialShellChatLayout,
+	resolveShellAvatarSelection,
+} from "./lib/config-seed";
+import { isKioskDemo } from "./lib/kiosk-demo/flag";
+import {
+	WEB_DEFAULT_BACKGROUND,
+	WEB_DEFAULT_VRM,
+	isWebMode,
+} from "./lib/web-runtime/web-assets";
+import { resolveWebBackgroundSelection } from "./lib/web-runtime/web-settings-assets";
+import {
+	readWebAppInstallId,
+	WEB_APP_INSTALL_PARAM,
+} from "./lib/web-runtime/web-app-install-link";
+import {
+	consumeWebAuthCallbackFromLocation,
+	isWebAuthenticated,
+	isWebLoginRequired,
+} from "./lib/web-runtime/web-auth";
+import {
+	type SlugOwnershipDecision,
+	extractWebSlugFromLocation,
+	verifyWebSlugOwnership,
+} from "./lib/web-runtime/web-slug-guard";
+import {
+	STUDIO_PENDING_CHARACTER_STORAGE_KEY,
+	consumePendingStudioCharacterCard,
+} from "./lib/web-runtime/web-studio-handoff";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
 	type AppConfig,
 	isOnboardingComplete,
+	CONFIG_STORAGE_KEY,
 	loadConfig,
 	loadConfigWithSecrets,
 	mergeBootConfig,
@@ -88,12 +121,142 @@ import {
 import "./apps/browser/index"; // register browser app
 import "./apps/workspace/index"; // register workspace app
 import "./apps/settings/index"; // register settings app
+import "./apps/slides/index"; // register slides app in kiosk demo mode
 // sample-note app removed — will be replaced by a proper memo app later
 import { useAppStore } from "./stores/app";
+import { useCharcardChatStart } from "./lib/charcard-chat-start";
 
-const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
+const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
+let startupBackgroundRestoreSeq = 0;
+
+export interface StartupBackgroundFallback {
+	requested: string;
+	fallback: string;
+	reason: string;
+}
+
+/**
+ * 데스크톱 저장 배경 식별자를 현재 목록에서 정확히 푼다. 파일명 끝부분
+ * 일치(`endsWith`)가 아니라 끝 이름 완전 일치로만 판정하므로
+ * `xmy-photo.webp` 가 `my-photo.webp` 로 잘못 골라지지 않는다. 실제 상위
+ * 구간(`..`)이 있으면 거부한다. 파일명 안의 점(`photo..png`)은 통과한다.
+ */
+export function resolveDesktopBackgroundSelection(
+	saved: string | undefined,
+	paths: readonly string[],
+): string | null {
+	const trimmed = typeof saved === "string" ? saved.trim() : "";
+	if (
+		!trimmed ||
+		trimmed.split(/[/\\]/).some((part) => part === "..")
+	) {
+		return null;
+	}
+	const leaf = trimmed.split(/[/\\]/).filter(Boolean).pop() ?? trimmed;
+	if (!leaf || leaf === "." || leaf === ".." || leaf.includes("\0")) return null;
+	return (
+		paths.find((path) => (path.split(/[/\\]/).filter(Boolean).pop() ?? path) === leaf) ??
+		null
+	);
+}
+
+export async function restoreStartupBackground(options: {
+	isCancelled?: () => boolean;
+	setBackgroundMediaType: (type: "iframe" | "image" | "video" | "") => void;
+	setBackgroundVideoUrl: (url: string) => void;
+	onFallback?: (info: StartupBackgroundFallback) => void;
+}): Promise<void> {
+	const seq = ++startupBackgroundRestoreSeq;
+	const isStale = () =>
+		(options.isCancelled?.() ?? false) || seq !== startupBackgroundRestoreSeq;
+	// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
+	const config = loadConfig();
+	const saved =
+		(config?.backgroundVideo as string | undefined) ??
+		(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
+	let paths: string[];
+	try {
+		paths = await listNaiaAssets("background");
+	} catch (error) {
+		// 목록 조회 자체가 실패하면 기존 선택을 보존하고 원인을 알린다.
+		// 빈 목록으로 접어 소실 복구로 위장하지 않는다.
+		if (isStale()) return;
+		const reason = error instanceof Error ? error.message : String(error);
+		Logger.warn("App", "background list failed; keeping current selection", {
+			requestedBackground: saved,
+			reason,
+		});
+		options.onFallback?.({ requested: saved, fallback: "", reason });
+		return;
+	}
+	if (isStale() || paths.length === 0) return;
+	// 파일명 끝부분 일치(endsWith)로는 `xmy-photo.webp` 가 `my-photo.webp` 로
+	// 잘못 골라진다. 양쪽 모두 정확한 식별자로만 푼다.
+	let match: string | undefined;
+	if (isWebMode()) {
+		match = resolveWebBackgroundSelection(saved, paths) ?? undefined;
+	} else {
+		match = resolveDesktopBackgroundSelection(saved, paths) ?? undefined;
+	}
+	if (!match) {
+		if (isStale() || !isWebMode()) return;
+		Logger.warn(
+			"App",
+			"saved background not found in web assets; falling back to default background",
+			{
+				requestedBackground: saved,
+				fallbackBackground: WEB_DEFAULT_BACKGROUND,
+			},
+		);
+		match =
+			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ??
+			undefined;
+		if (!match || isStale()) return;
+		options.onFallback?.({
+			requested: saved,
+			fallback: match,
+			reason: "not-found",
+		});
+	}
+	if (isStale()) return;
+	let blobUrl: string;
+	try {
+		blobUrl = await toLocalBlobUrl(match);
+	} catch (error) {
+		// 데스크톱은 기존 동작(호출자 책임)을 유지한다.
+		if (!isWebMode()) throw error;
+		if (isStale()) return;
+		const reason = error instanceof Error ? error.message : String(error);
+		Logger.warn(
+			"App",
+			"saved background unreadable; falling back to default background",
+			{
+				requestedBackground: match,
+				fallbackBackground: WEB_DEFAULT_BACKGROUND,
+				reason,
+			},
+		);
+		const fallbackMatch =
+			resolveWebBackgroundSelection(WEB_DEFAULT_BACKGROUND, paths) ?? undefined;
+		if (!fallbackMatch || isStale()) return;
+		let fallbackUrl: string;
+		try {
+			fallbackUrl = await toLocalBlobUrl(fallbackMatch);
+		} catch {
+			return;
+		}
+		if (isStale()) return;
+		options.setBackgroundMediaType(getBackgroundMediaType(fallbackMatch));
+		options.setBackgroundVideoUrl(fallbackUrl);
+		options.onFallback?.({ requested: match, fallback: fallbackMatch, reason });
+		return;
+	}
+	if (isStale()) return;
+	options.setBackgroundMediaType(getBackgroundMediaType(match));
+	options.setBackgroundVideoUrl(blobUrl);
+}
 
 function applyPersistedPresentationConfig(
 	config: ReturnType<typeof loadConfig>,
@@ -214,6 +377,83 @@ export function App() {
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [configHydrated, setConfigHydrated] = useState(false);
 	const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+	const [webAuthenticated, setWebAuthenticated] = useState(() =>
+		isWebAuthenticated(),
+	);
+	const [webAuthError, setWebAuthError] = useState<string | null>(null);
+	const [slugGuardDecision, setSlugGuardDecision] = useState<
+		SlugOwnershipDecision | "checking"
+	>(() =>
+		isWebMode() && !isKioskDemo() && extractWebSlugFromLocation() !== null
+			? "checking"
+			: { status: "none" },
+	);
+
+	useEffect(() => {
+		if (!isWebMode()) return;
+		let alive = true;
+		const checkSlug = async () => {
+			if (isKioskDemo()) {
+				if (alive) setSlugGuardDecision({ status: "none" });
+				return;
+			}
+			const decision = await verifyWebSlugOwnership();
+			if (!alive) return;
+			if (
+				decision.status === "authorized" &&
+				decision.redirectToSlug &&
+				typeof window !== "undefined"
+			) {
+				const target = new URL(
+					`/u/${encodeURIComponent(decision.redirectToSlug)}`,
+					window.location.origin,
+				);
+				const appId = readWebAppInstallId(new URLSearchParams(window.location.search));
+				if (appId) target.searchParams.set(WEB_APP_INSTALL_PARAM, appId);
+				window.location.replace(target.pathname + target.search);
+				return;
+			}
+			setSlugGuardDecision(decision);
+		};
+		const syncAuth = () => {
+			setWebAuthenticated(isWebAuthenticated());
+			void checkSlug();
+		};
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		void consumeWebAuthCallbackFromLocation()
+			.then((res) => {
+				if (!alive) return;
+				if (res.handled) {
+					if (res.ok) {
+						setWebAuthError(null);
+						setWebAuthenticated(true);
+						const postLoginCfg = loadConfig();
+						if (postLoginCfg) {
+							setShowOnboarding(postLoginCfg.onboardingComplete !== true);
+							if (postLoginCfg.ttsEnabled !== undefined) {
+								useAppStore.getState().setTtsEnabled(postLoginCfg.ttsEnabled);
+							}
+							void writeNaiaConfig({
+								...(postLoginCfg as unknown as Record<string, unknown>),
+								...buildNaiaConfigEnv(postLoginCfg),
+							}).catch(() => {});
+						}
+						window.dispatchEvent(new CustomEvent("naia-config-changed"));
+					} else if (res.error === "state_mismatch") {
+						setWebAuthError(t("webAuth.stateFailed"));
+					} else if (res.error === "invalid_key") {
+						setWebAuthError(t("webAuth.invalidKey"));
+					}
+				}
+			})
+			.finally(() => {
+				void checkSlug();
+			});
+		return () => {
+			alive = false;
+			window.removeEventListener("naia-web-auth-changed", syncAuth);
+		};
+	}, []);
 	// Start the E2E native bind after commit. Starting it during render lets
 	// React StrictMode invoke the native command twice before the ref from the
 	// first render is retained.
@@ -247,14 +487,32 @@ export function App() {
 	}, [e2eAdkPath]);
 	useAgentAuthSync(showAdkSetup, showOnboarding, configHydrated);
 	const [naiaVisible, setNaiaVisible] = useState(true);
-	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
+	const [naiaWidth, setNaiaWidth] = useState(
+		() =>
+			resolveInitialShellChatLayout(window.innerHeight, window.innerWidth)
+				.naiaWidth,
+	);
 	const [appTitle, setAppTitle] = useState(
 		() => loadConfig()?.agentName?.trim() || "Naia",
 	);
 	const [chatVisible, setChatVisible] = useState(true);
-	const [chatHeight, setChatHeight] = useState(() =>
-		Math.round(window.innerHeight * 0.4),
+	const [chatHeight, setChatHeight] = useState(
+		() =>
+			resolveInitialShellChatLayout(window.innerHeight, window.innerWidth)
+				.chatHeight,
 	);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const syncLayoutOnResize = () => {
+			const next = resolveInitialShellChatLayout(
+				window.innerHeight,
+				window.innerWidth,
+			);
+			setChatHeight(next.chatHeight);
+		};
+		window.addEventListener("resize", syncLayoutOnResize);
+		return () => window.removeEventListener("resize", syncLayoutOnResize);
+	}, []);
 	// 챗 레이아웃 2-way 수동 override. 이전 "home" 중앙 모드는 읽을 때
 	// 좌측 소형(app)으로 마이그레이션한다.
 	const persistedChatMode = useUiPreference<"workspace" | "app">(
@@ -308,6 +566,7 @@ export function App() {
 	const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
 	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
+	const bgmVideoUrl = useAvatarStore((s) => s.bgmVideoUrl);
 	const backgroundFallback = useBackgroundFallback(
 		backgroundVideoUrl,
 		backgroundMediaType,
@@ -319,8 +578,10 @@ export function App() {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>("vrm");
-	const [nvaModel, setNvaModel] = useState(() => loadConfig()?.nvaModel ?? "");
+	>(() => resolveShellAvatarSelection(loadConfig()).avatarProvider);
+	const [nvaModel, setNvaModel] = useState(
+		() => resolveShellAvatarSelection(loadConfig()).nvaModel,
+	);
 	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
 
 	useEffect(() => {
@@ -335,11 +596,25 @@ export function App() {
 			try {
 				const cfg = await loadConfigWithSecrets();
 				if (!active || currentRevision !== revision) return;
-				setAvatarProvider(
-					effectiveAvatarProviderFromConfig(cfg, detectedVramGb),
-				);
-				setNvaModel(cfg?.nvaModel ?? "");
-				const nextAvatarModelPath = cfg?.vrmModel ?? "";
+				const resolvedAvatar = resolveShellAvatarSelection(cfg, detectedVramGb);
+				setAvatarProvider(resolvedAvatar.avatarProvider);
+				setNvaModel(resolvedAvatar.nvaModel);
+				// WO-03: 웹판은 dist 번들 VRM이 항상 있으므로, VRM 미선택 상태를
+				// 기본 아바타로 채운다 (NVA 선택 provider는 건드리지 않는다).
+				// 공개 config에만 영속한다 (cfg는 secret 복원본일 수 있음).
+				let nextAvatarModelPath = cfg?.vrmModel ?? "";
+				if (
+					import.meta.env.MODE === "web" &&
+					!isKioskDemo() &&
+					!nextAvatarModelPath &&
+					cfg?.avatarProvider !== "naia-video-avatar"
+				) {
+					nextAvatarModelPath = WEB_DEFAULT_VRM;
+					const pub = loadConfig();
+					if (pub && !pub.vrmModel) {
+						saveConfig({ ...pub, vrmModel: WEB_DEFAULT_VRM });
+					}
+				}
 				if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
 					setAvatarModelPath(nextAvatarModelPath);
 				}
@@ -399,10 +674,12 @@ export function App() {
 		prevAppRef.current = activeApp;
 
 		if (prev && prev !== activeApp) {
-			// keepAlive apps stay mounted — don't clear their skills so the
-			// LLM can still call them (e.g. skill_browser_navigate from Chat).
+			// keepAlive apps stay mounted — don't clear their skills on ordinary
+			// switch so the LLM can still call them; clear when explicitly closed.
 			const prevDescriptor = appRegistry.get(prev);
-			if (!prevDescriptor?.keepAlive) {
+			const prevClosed =
+				useAppStore.getState().closedApps?.includes(prev) === true;
+			if (!prevDescriptor?.keepAlive || prevClosed) {
 				sendAppSkillsClear(prev).catch(() => {});
 			}
 			prevDescriptor?.onDeactivate?.();
@@ -452,7 +729,9 @@ export function App() {
 				}),
 			)
 			.catch((err) =>
-				Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
+				Logger.warn("App", "startup bgm skill failed", {
+					error: String(err),
+				}),
 			);
 		// #611: skill_environment is not model-facing. Clear any stale registration
 		// from older shells; observation still hydrates for `always` awareness.
@@ -488,8 +767,10 @@ export function App() {
 		}
 		const all = appRegistry.list();
 		for (const descriptor of all) {
+			if (isWebMode() && descriptor.id === "browser") continue;
 			if (
 				descriptor.keepAlive &&
+				!descriptor.deferMountUntilActive &&
 				descriptor.tools &&
 				descriptor.tools.length > 0
 			) {
@@ -512,19 +793,21 @@ export function App() {
 
 	// Load background from naia-settings/background/. May be a video (.mp4) or a
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
-	// Keep saved background paths intact; use the new still for fresh settings.
+	// #342 / #447-3: default to the naia-dawn-city still when no saved preference
+	// (this default had regressed back to morning-coffee).
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
-		void listNaiaAssets("background").then(async (paths) => {
-			if (cancelled || paths.length === 0) return;
-			const config = loadConfig();
-			const match = selectBackground(paths, config?.backgroundVideo);
-			if (!match || cancelled) return;
-			const blobUrl = await toLocalBlobUrl(match);
-			if (cancelled) return;
-			setBackgroundMediaType(getBackgroundMediaType(match));
-			setBackgroundVideoUrl(blobUrl);
+		void restoreStartupBackground({
+			isCancelled: () => cancelled,
+			setBackgroundMediaType,
+			setBackgroundVideoUrl,
+			onFallback: (info) =>
+				showGlobalToast(
+					info.reason && info.reason !== "not-found"
+						? `${t("settings.webAssetMissing")} (${info.reason})`
+						: t("settings.webAssetMissing"),
+				),
 		});
 		return () => {
 			cancelled = true;
@@ -534,11 +817,12 @@ export function App() {
 		showAdkSetup,
 		setBackgroundMediaType,
 		setBackgroundVideoUrl,
+		showGlobalToast,
 	]);
 
 	// Hydrate localStorage FROM naia-settings files on startup — files are SoT,
 	// localStorage is a render cache (UC-CONFIG-SOT / FR-CONFIG-SOT.1).
-	// The only authoritative localStorage key is "naia-adk-path"; "naia-config"
+	// The native adk-path was restored before render; "naia-adk-path" is its cache; "naia-config"
 	// is derived from the files here. `mergeBootConfig` drops the `...local` base
 	// that previously let a stale persona (알파) overwrite config.json while
 	// retaining file-owned onboarding and UI values.
@@ -582,7 +866,26 @@ export function App() {
 				if (!fileConfig && !uiConfig) {
 					setTtsEnabled(false);
 					if (adkPath) {
+						const preservedWebBackgroundVideo = isWebMode()
+							? (() => {
+									const cached = loadConfig() as unknown as Record<
+										string,
+										unknown
+									> | null;
+									return typeof cached?.backgroundVideo === "string"
+										? cached.backgroundVideo
+										: undefined;
+								})()
+							: undefined;
 						localStorage.removeItem("naia-config");
+						if (isWebMode() && preservedWebBackgroundVideo) {
+							localStorage.setItem(
+								"naia-config",
+								JSON.stringify({
+									backgroundVideo: preservedWebBackgroundVideo,
+								}),
+							);
+						}
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: false,
@@ -595,7 +898,12 @@ export function App() {
 						// onboarding seed. The wizard's eventual complete config write
 						// persists it; never write a partial config snapshot here.
 						const detectedLocale = getLocale();
-						saveConfig({ locale: detectedLocale } as AppConfig);
+						saveConfig({
+							locale: detectedLocale,
+							...(preservedWebBackgroundVideo
+								? { backgroundVideo: preservedWebBackgroundVideo }
+								: {}),
+						} as AppConfig);
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: true,
@@ -614,18 +922,31 @@ export function App() {
 					canPersist: false,
 				});
 				if (cancelled || getAdkPath() !== adkPath) return;
+				const localBeforeMerge = loadConfig() as unknown as Record<
+					string,
+					unknown
+				> | null;
 				const merged = mergeBootConfig(
-					loadConfig() as unknown as Record<string, unknown> | null,
+					localBeforeMerge,
 					fileConfig ?? null,
 					uiConfig ?? null,
 				);
 				let detectedLocaleConfig: Record<string, unknown> | null = null;
 				if (merged) {
-					// `naia-adk-path` is the only authoritative bootstrap pointer.
+					const mergedForBoot =
+						isWebMode() &&
+						typeof localBeforeMerge?.backgroundVideo === "string" &&
+						merged.backgroundVideo === undefined
+							? {
+									...merged,
+									backgroundVideo: localBeforeMerge.backgroundVideo,
+								}
+							: merged;
+					// `naia-adk-path` mirrors the native bootstrap pointer.
 					// Never let a stale render-cache workspaceRoot redirect the next
 					// file read/write cycle to another workspace.
 					const reconciled = reconcileExplicitLocalProfile({
-						...merged,
+						...mergedForBoot,
 						...(adkPath ? { workspaceRoot: adkPath } : {}),
 					} as unknown as Parameters<typeof reconcileExplicitLocalProfile>[0]);
 					if (!reconciled.locale) {
@@ -684,11 +1005,27 @@ export function App() {
 					error: error instanceof Error ? error.message : String(error),
 				});
 				setLocaleHydrated(true);
+				if (isWebMode() && !configHydratedRef.current) {
+					void restoreStartupBackground({
+						isCancelled: () =>
+							cancelled ||
+							configHydratedRef.current ||
+							getAdkPath() !== adkPathAtRead,
+						setBackgroundMediaType,
+						setBackgroundVideoUrl,
+						onFallback: (info) =>
+							showGlobalToast(
+								info.reason && info.reason !== "not-found"
+									? `${t("settings.webAssetMissing")} (${info.reason})`
+									: t("settings.webAssetMissing"),
+							),
+					});
+				}
 			});
 		return () => {
 			cancelled = true;
 		};
-	}, [showAdkSetup]);
+	}, [showAdkSetup, showGlobalToast]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
 	// Same pattern as BrowserCenterArea auto-allowing browser tools on mount.
@@ -705,6 +1042,29 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		if (!isWebMode() || isKioskDemo()) return;
+		const installList = (value: string | null): string => {
+			try {
+				const config = value ? JSON.parse(value) : null;
+				return JSON.stringify([config?.installedWebApps, config?.deletedApps]);
+			} catch {
+				return "";
+			}
+		};
+		const onStoreStorage = (event: StorageEvent) => {
+			if (
+				event.key === CONFIG_STORAGE_KEY &&
+				event.storageArea === window.localStorage &&
+				installList(event.oldValue) !== installList(event.newValue)
+			) {
+				void loadInstalledApps();
+			}
+		};
+		window.addEventListener("storage", onStoreStorage);
+		return () => window.removeEventListener("storage", onStoreStorage);
+	}, []);
+
+	useEffect(() => {
 		let disposed = false;
 		let refreshTimer: number | undefined;
 		let unlistenStoreChanged: (() => void) | undefined;
@@ -713,20 +1073,28 @@ export function App() {
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(() => {
 				void refreshInstalledAppsIfChanged().catch((error: unknown) => {
-					Logger.warn("App", "Failed to reload installed apps after App Store change", {
-						error: error instanceof Error ? error.message : String(error),
-					});
+					Logger.warn(
+						"App",
+						"Failed to reload installed apps after App Store change",
+						{
+							error: error instanceof Error ? error.message : String(error),
+						},
+					);
 				});
 			}, 300);
 		};
-		void listen("installed-apps-changed", refreshAfterStoreChange).then((unlisten) => {
-			if (disposed) unlisten();
-			else unlistenStoreChanged = unlisten;
-		});
-		void listen("app-store-closed", refreshAfterStoreChange).then((unlisten) => {
-			if (disposed) unlisten();
-			else unlistenStoreClosed = unlisten;
-		});
+		void listen("installed-apps-changed", refreshAfterStoreChange).then(
+			(unlisten) => {
+				if (disposed) unlisten();
+				else unlistenStoreChanged = unlisten;
+			},
+		);
+		void listen("app-store-closed", refreshAfterStoreChange).then(
+			(unlisten) => {
+				if (disposed) unlisten();
+				else unlistenStoreClosed = unlisten;
+			},
+		);
 		return () => {
 			disposed = true;
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
@@ -754,15 +1122,8 @@ export function App() {
 
 		const config = loadConfig();
 		const adkPath = getAdkPath();
-		// UC-ADK-PATH contract: the agent reads the ADK root from ~/.naia/adk-path
-		// (Rust, set only by setAdkPath→write_naia_path_cache), while the shell saves
-		// config to getAdkPath() (localStorage). These are SEPARATE sources and can
-		// diverge (the agent's path file pointing at a different root than the shell's
-		// saved config → the agent loads a stale config and UI model selections never
-		// reach it). The branch above only re-syncs when workspaceRoot (localStorage)
-		// differs from adkPath (localStorage) — it never touches the agent's file.
-		// Force-resync the agent's path file to the shell's ADK on every boot so the
-		// save-path and the load-path can never silently diverge.
+		// main.tsx restored the native pointer before mounting App. Bind the
+		// startup replay scope to that snapshot; never resurrect a WebView path.
 		const e2eBinding = e2eAdkBindingRef.current;
 		const bindAdk =
 			e2eBinding &&
@@ -936,11 +1297,13 @@ export function App() {
 				})
 				.catch(() => {});
 		}
-		fetchUnreadAnnouncements()
-			.then((list) => {
-				if (active && list.length > 0) setAnnouncements(list);
-			})
-			.catch(() => {});
+		if (import.meta.env.MODE !== "web") {
+			fetchUnreadAnnouncements()
+				.then((list) => {
+					if (active && list.length > 0) setAnnouncements(list);
+				})
+				.catch(() => {});
+		}
 		return () => {
 			active = false;
 		};
@@ -968,6 +1331,14 @@ export function App() {
 			return next;
 		});
 	}, []);
+
+	// R12 (web): starting a character-card roleplay opens the chat with its greeting.
+	const openChatForCharcard = useCallback(() => {
+		setNaiaVisible(true);
+		setChatVisible(true);
+		setRailCollapsed(false);
+	}, []);
+	useCharcardChatStart(openChatForCharcard);
 
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
@@ -1108,20 +1479,72 @@ export function App() {
 		return () => window.clearTimeout(retryTimer);
 	}, [pendingOpenFiles, showAdkSetup, showOnboarding, showSplash]);
 
+	// Studio -> Web Shell SillyTavern V2/V3 Character Card direct handoff
+	useEffect(() => {
+		if (!isWebMode() || isKioskDemo() || !configHydrated) return;
+		let cancelled = false;
+		const applyPending = async () => {
+			const res = await consumePendingStudioCharacterCard();
+			if (cancelled || !res.handled) return;
+			if (res.ok && res.characterName) {
+				setShowOnboarding(false);
+				setAppTitle(res.characterName);
+				showGlobalToast(
+					getLocale() === "ko"
+						? `캐릭터 카드 적용됨: ${res.characterName}`
+						: `Character card applied: ${res.characterName}`,
+				);
+			}
+		};
+		void applyPending();
+		const onStorage = (event: StorageEvent) => {
+			if (
+				event.key === STUDIO_PENDING_CHARACTER_STORAGE_KEY &&
+				event.newValue
+			) {
+				void applyPending();
+			}
+		};
+		window.addEventListener("storage", onStorage);
+		return () => {
+			cancelled = true;
+			window.removeEventListener("storage", onStorage);
+		};
+	}, [configHydrated, showGlobalToast]);
+
 	// The persisted two-way preference controls chat placement across apps.
 	const uiMode = showOnboarding
 		? "onboarding"
 		: showAdkSetup
 			? "setup"
 			: chatModeOverride;
+	if (slugGuardDecision === "checking") {
+		return (
+			<main
+				data-testid="web-slug-checking"
+				style={{ minHeight: "100dvh", background: "#060d14" }}
+			/>
+		);
+	}
+	if (
+		slugGuardDecision.status !== "none" &&
+		slugGuardDecision.status !== "authorized"
+	) {
+		return <WebSlugOwnerGuard decision={slugGuardDecision} />;
+	}
+	if (isWebLoginRequired() && !webAuthenticated) {
+		return <WebLoginScreen authError={webAuthError} />;
+	}
 	return (
 		<>
 			<AppShellFrame
+				showMacSafariNotice={!webAuthenticated}
 				appReady={appReady}
 				bootComplete={appReady && installedAppsReady}
 				backgroundFallback={backgroundFallback}
 				backgroundMediaType={backgroundMediaType}
 				backgroundVideoUrl={backgroundVideoUrl}
+				bgmVideoUrl={bgmVideoUrl}
 				onSplashDone={onSplashDone}
 				setNaiaWidth={setNaiaWidth}
 				mainContent={{
@@ -1172,6 +1595,8 @@ export function App() {
 					updateInfo,
 				}}
 			/>
+			<WebLoginPromptModal />
+			<WebAppInstallLink ready={configHydrated && !showAdkSetup && !showOnboarding} />
 			{globalToast && (
 				<div
 					className="workspace-app__idle-toast"

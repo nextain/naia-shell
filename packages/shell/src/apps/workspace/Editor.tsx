@@ -36,6 +36,7 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "../../lib/ui-preferences";
+import { isNarrowPortraitScreen } from "../../lib/web-runtime/web-assets";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { AUTOSAVE_DEBOUNCE_MS } from "./constants";
 import {
@@ -826,7 +827,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		>
 			{/* Header bar */}
 			<div className="workspace-editor__header">
-				<span className="workspace-editor__filename" title={filePath}>{filePath}</span>
+				<span className="workspace-editor__filename" title={filePath}>
+					{filePath.startsWith("opfs://")
+						? (filePath.split("/").filter(Boolean).pop() ?? filePath)
+						: filePath}
+				</span>
 				<button
 					type="button"
 					className="workspace-editor__view-btn workspace-editor__copy-path-btn"
@@ -861,7 +866,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						type="button"
 						className="workspace-editor__view-btn"
 						data-usage-event="editor.set-view-mode-5.click"
-						onClick={() => setViewMode("split")}
+						onClick={() =>
+							setViewMode(isNarrowPortraitScreen() ? "editor" : "split")
+						}
 						title="편집 모드로 전환"
 					>
 						편집

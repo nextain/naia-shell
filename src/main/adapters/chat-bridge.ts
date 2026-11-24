@@ -18,11 +18,12 @@ export interface ChatSubmitInput {
   readonly provider: ProviderSelect;
   readonly messages: readonly ChatMessage[];
   readonly sessionId?: string;
+  readonly appName?: string;
   readonly gatewayUrl?: string;
   readonly systemPrompt?: string;
   readonly enableTools?: boolean;
   readonly enableThinking?: boolean;
-  readonly thinking?: { readonly level: "off" | "low" | "high" };
+  readonly thinking?: { readonly level: "off" | "low" | "high" | "xhigh" | "max" };
   readonly disabledSkills?: readonly string[];
   readonly enabledClis?: readonly string[];
   readonly channel?: ChatRequest["channel"];
@@ -43,6 +44,7 @@ export class ChatBridge {
       provider: input.provider,
       messages: input.messages,
       ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+        ...(input.appName !== undefined ? { appName: input.appName } : {}),
       ...(input.gatewayUrl !== undefined ? { gatewayUrl: input.gatewayUrl } : {}),
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(input.enableTools !== undefined ? { enableTools: input.enableTools } : {}),
@@ -50,7 +52,9 @@ export class ChatBridge {
       ...(input.thinking !== undefined &&
       (input.thinking.level === "off" ||
         input.thinking.level === "low" ||
-        input.thinking.level === "high")
+        input.thinking.level === "high" ||
+        input.thinking.level === "xhigh" ||
+        input.thinking.level === "max")
         ? { thinking: input.thinking }
         : {}),
       ...(input.disabledSkills !== undefined ? { disabledSkills: input.disabledSkills } : {}),

@@ -313,4 +313,25 @@ describe("CostDashboard", () => {
 		fireEvent.click(chargeBtn);
 		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/billing"));
 	});
+
+	it("renders local WebLLM rows and totals as Free instead of $0.000000", () => {
+		const localOnly: ChatMessage[] = [
+			{
+				id: "w1",
+				role: "assistant",
+				content: "local",
+				timestamp: 1,
+				cost: {
+					inputTokens: 1200,
+					outputTokens: 1046,
+					cost: 0,
+					provider: "webllm",
+					model: "Qwen3-4B-q4f32_1-MLC",
+				},
+			},
+		];
+		render(<CostDashboard messages={localOnly} />);
+		expect(screen.getAllByText("Free").length).toBeGreaterThanOrEqual(2);
+		expect(screen.queryByText(/\$0\.000000/)).toBeNull();
+	});
 });

@@ -1,4 +1,5 @@
 import {
+	Fragment,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -9,9 +10,16 @@ import {
 import type { AppCenterProps } from "../../lib/app-registry";
 import { appRegistry } from "../../lib/app-registry";
 import { t } from "../../lib/i18n";
+import { isKioskDemo } from "../../lib/kiosk-demo/flag";
+import {
+	getKioskIrSlide,
+	getKioskIrSlides,
+	registerKioskSlidesController,
+} from "../../lib/kiosk-demo/slides";
 import { Logger } from "../../lib/logger";
 import {
 	EMPTY_SLIDE_PRESENTER_STATE,
+	type SlideVideoCue,
 	boundedDeckContext,
 	narrationForPage,
 	parseSlideSpeakerNotes,
@@ -24,20 +32,25 @@ import {
 	cancelSlidePresenterSpeech,
 	requestSlidePresenterSpeech,
 } from "../../lib/slide-presenter-events";
-import { useTabSkills } from "../../lib/tab-skills";
 import {
+	parseSlideVideoDirectives,
+	replaceSlideScriptPage,
+} from "../../lib/slide-script";
+import {
+	type SlidesOpenedPdf,
 	openSlidesDocument,
 	watchSlidesPickerAvailable,
-	type SlidesOpenedPdf,
 } from "../../lib/slides-files";
-import { replaceSlideScriptPage } from "../../lib/slide-script";
-import { startSlidesRecording, stopSlidesRecording } from "../../lib/slides-host";
+import { importPptxInBrowser, isPptxFile } from "../../lib/slides-pptx-browser";
+import {
+	isRecordingLost,
+	startSlidesRecording,
+	stopSlidesRecording,
+} from "../../lib/slides-host";
+import { useTabSkills } from "../../lib/tab-skills";
 import { useAppStore } from "../../stores/app";
 import { SlidesControls } from "./SlidesControls";
-import {
-	SlidesErrorNotice,
-	type SlidesFileError,
-} from "./SlidesErrorNotice";
+import { SlidesErrorNotice, type SlidesFileError } from "./SlidesErrorNotice";
 import { SlidesFileActions } from "./SlidesFileActions";
 import { SlidesScriptPanel } from "./SlidesScriptPanel";
 import { SlidesStatus } from "./SlidesStatus";
@@ -46,6 +59,63 @@ import "./slides.css";
 
 export { resolveSlidesPdfWorkerUrl } from "./SlidesViewer";
 const TAG = "SlidesCenterArea";
+
+interface SlideVideoAsset {
+	name: string;
+	file: File;
+	url: string;
+}
+
+function videoContentForScript(
+	markdown: string,
+	assets: readonly SlideVideoAsset[],
+	readFailures: readonly string[] = [],
+): { cues: SlideVideoCue[]; errors: string[] } {
+	const directives = parseSlideVideoDirectives(markdown);
+	const assetNames = new Set(assets.map((asset) => asset.name));
+	const errors = new Set(readFailures);
+	const cues = directives.map((directive, index) => {
+		const available = directive.validName && assetNames.has(directive.fileName);
+		if (!available)
+			errors.add(directive.fileName || t("slides.videoNoFileName"));
+		return {
+			id: `${directive.page}-${directive.order}-${index}`,
+			page: directive.page,
+			order: directive.order,
+			fileName: directive.fileName,
+			available,
+		};
+	});
+	Logger.debug(TAG, "demo video directives resolved", {
+		directives: cues.map(({ page, order, fileName, available }) => ({
+			page,
+			order,
+			fileName,
+			available,
+		})),
+		loadedFileCount: assets.length,
+	});
+	return { cues, errors: [...errors] };
+}
+
+function createVideoAssets(selection: SlidesOpenedPdf): SlideVideoAsset[] {
+	const assets: SlideVideoAsset[] = [];
+	for (const video of selection.videos ?? []) {
+		try {
+			assets.push({
+				name: video.name,
+				file: video.file,
+				url: URL.createObjectURL(video.file),
+			});
+		} catch (error) {
+			Logger.warn(TAG, "demo video Blob URL creation failed", {
+				fileName: video.name,
+				error: String(error),
+			});
+		}
+	}
+	return assets;
+}
 
 export interface SlidesAppApi {
 	start: () => void;
@@ -77,6 +147,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	stateRef.current = state;
 	const [pdfFile, setPdfFile] = useState<File | null>(null);
 	const [pdfName, setPdfName] = useState("");
+	const [videoAssets, setVideoAssets] = useState<SlideVideoAsset[]>([]);
+	const [videoErrors, setVideoErrors] = useState<string[]>([]);
+	const videoAssetsRef = useRef<SlideVideoAsset[]>([]);
+	const videoReadFailuresRef = useRef<string[]>([]);
+	const videoElementsRef = useRef(new Map<string, HTMLVideoElement>());
+	const lastVideoAttemptRef = useRef(new Map<string, number>());
 	const [scriptName, setScriptName] = useState("");
 	const [nativePickerAvailable, setNativePickerAvailable] = useState(false);
 	const [pickingPdf, setPickingPdf] = useState(false);
@@ -86,6 +162,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const scriptRevisionRef = useRef(0);
 	const pickerAbortRef = useRef<AbortController | null>(null);
 	const [scriptMarkdown, setScriptMarkdown] = useState("");
+	const scriptMarkdownRef = useRef("");
 	const [scriptEditorOpen, setScriptEditorOpen] = useState(false);
 	const [editingPage, setEditingPage] = useState<number | null>(null);
 	const [draftText, setDraftText] = useState("");
@@ -107,12 +184,39 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [focusMode, setFocusMode] = useState(false);
 	const [notesVisible, setNotesVisible] = useState(true);
 	const activeSpeechRef = useRef<string | null>(null);
+	const prefetchTicketRef = useRef<{
+		id: string;
+		page: number;
+		text: string;
+	} | null>(null);
+	const prefetchSerialRef = useRef(0);
 	const notesRef = useRef(speakerNotes);
 	const pageTextsRef = useRef(pageTexts);
+	const companionTextsRef = useRef<string[] | undefined>(undefined);
 	notesRef.current = speakerNotes;
 	pageTextsRef.current = pageTexts;
 	const hasUnsavedScript = draftDirty || unexportedScript;
 	scriptDirtyRef.current = hasUnsavedScript;
+	videoAssetsRef.current = videoAssets;
+
+	const registerVideoElement = useCallback(
+		(url: string, element: HTMLVideoElement | null) => {
+			if (element) videoElementsRef.current.set(url, element);
+			else videoElementsRef.current.delete(url);
+		},
+		[],
+	);
+	const videoRefCallbacks = useMemo(
+		() =>
+			new Map(
+				videoAssets.map((asset) => [
+					asset.url,
+					(element: HTMLVideoElement | null) =>
+						registerVideoElement(asset.url, element),
+				]),
+			),
+		[registerVideoElement, videoAssets],
+	);
 
 	useTabSkills(viewerRef, naia);
 
@@ -146,6 +250,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		},
 		[],
 	);
+	useEffect(
+		() => () => {
+			for (const asset of videoAssets) URL.revokeObjectURL(asset.url);
+		},
+		[videoAssets],
+	);
 
 	useEffect(() => {
 		if (!hasUnsavedScript) return;
@@ -165,12 +275,15 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	}
 
 	function documentErrorKey(error: unknown): SlidesFileError {
-		const code = String(error).replace(/^Error:\s*/u, "").toLowerCase();
+		const code = String(error)
+			.replace(/^Error:\s*/u, "")
+			.toLowerCase();
 		if (code.includes("converter_unavailable")) return "converter";
 		if (code.includes("invalid_pptx")) return "invalidPptx";
 		if (code.includes("conversion_timeout")) return "conversionTimeout";
 		if (code.includes("conversion_failed")) return "conversionFailed";
-		if (code.includes("picker_busy") || code.includes("import_busy")) return "busy";
+		if (code.includes("picker_busy") || code.includes("import_busy"))
+			return "busy";
 		return "import";
 	}
 
@@ -187,10 +300,49 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const cancelSpeech = useCallback(() => {
 		const requestId = activeSpeechRef.current;
 		activeSpeechRef.current = null;
+		const prefetchId = prefetchTicketRef.current?.id;
+		prefetchTicketRef.current = null;
 		cancelSlidePresenterSpeech({
 			requestId: requestId ?? undefined,
 			generation: stateRef.current.generation,
+			prefetchId,
+			invalidateGeneration: true,
 		});
+	}, []);
+
+	const cancelPrefetch = useCallback(() => {
+		const ticket = prefetchTicketRef.current;
+		prefetchTicketRef.current = null;
+		if (!ticket) return;
+		cancelSlidePresenterSpeech({
+			generation: stateRef.current.generation,
+			prefetchId: ticket.id,
+			invalidateGeneration: false,
+		});
+	}, []);
+
+	const pauseActiveVideo = useCallback(() => {
+		const index = stateRef.current.activeVideoIndex;
+		if (index === null) return;
+		const cue = stateRef.current.videoCues[index];
+		const asset = cue
+			? videoAssetsRef.current.find(
+					(candidate) => candidate.name === cue.fileName,
+				)
+			: undefined;
+		if (asset) videoElementsRef.current.get(asset.url)?.pause();
+	}, []);
+
+	const kioskMode = isKioskDemo();
+	const kioskDeckLoadingRef = useRef(false);
+	const kioskAutoStartRef = useRef(false);
+	const autoResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const clearAutoResumeTimer = useCallback(() => {
+		if (autoResumeTimerRef.current) {
+			clearTimeout(autoResumeTimerRef.current);
+			autoResumeTimerRef.current = null;
+		}
 	}, []);
 
 	const runAction = useCallback(
@@ -205,25 +357,37 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				| "question",
 		) => {
 			if (scriptEditorOpen) return;
+			if (action !== "resume" && action !== "start") pauseActiveVideo();
+			clearAutoResumeTimer();
 			if (["pause", "stop", "next", "previous", "question"].includes(action)) {
 				cancelSpeech();
 			}
 			dispatch({ type: action });
+			if (kioskMode && action === "stop") {
+				useAppStore.getState().setActiveApp(null);
+			}
 			Logger.info(TAG, "presentation action", {
 				action,
 				page: stateRef.current.page,
 			});
 		},
-		[cancelSpeech, scriptEditorOpen],
+		[
+			cancelSpeech,
+			clearAutoResumeTimer,
+			kioskMode,
+			pauseActiveVideo,
+			scriptEditorOpen,
+		],
 	);
 
 	const gotoPage = useCallback(
 		(page: number) => {
 			if (scriptEditorOpen) return;
+			pauseActiveVideo();
 			cancelSpeech();
 			dispatch({ type: "goto", page });
 		},
-		[cancelSpeech, scriptEditorOpen],
+		[cancelSpeech, pauseActiveVideo, scriptEditorOpen],
 	);
 
 	useEffect(() => {
@@ -243,12 +407,44 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			return;
 		}
 		const requestId = `slides-${state.generation}-${state.page}`;
+		let prefetchId: string | undefined;
+		const priorPrefetch = prefetchTicketRef.current;
+		prefetchTicketRef.current = null;
+		if (priorPrefetch?.page === state.page && priorPrefetch.text === text) {
+			prefetchId = priorPrefetch.id;
+		} else if (priorPrefetch) {
+			cancelPrefetch();
+		}
+		const nextPage =
+			state.page < state.rangeEnd
+				? state.page + 1
+				: state.repeat
+					? state.rangeStart
+					: null;
+		let nextPrefetch: { id: string; page: number; text: string } | undefined;
+		if (nextPage !== null) {
+			const nextText = narrationForPage(
+				nextPage,
+				notesRef.current,
+				pageTextsRef.current,
+			).trim();
+			if (nextText) {
+				nextPrefetch = {
+					id: `slides-prefetch-${++prefetchSerialRef.current}`,
+					page: nextPage,
+					text: nextText,
+				};
+				prefetchTicketRef.current = nextPrefetch;
+			}
+		}
 		activeSpeechRef.current = requestId;
 		requestSlidePresenterSpeech({
 			requestId,
 			generation: state.generation,
 			page: state.page,
 			text,
+			prefetchId,
+			nextPrefetch,
 		});
 		dispatch({ type: "speech-requested", generation: state.generation });
 		Logger.info(TAG, "narration requested", {
@@ -261,7 +457,112 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		state.generation,
 		state.mode,
 		state.page,
+		state.rangeEnd,
+		state.rangeStart,
+		state.repeat,
 		state.speech,
+		cancelSpeech,
+		cancelPrefetch,
+	]);
+
+	const activeVideo =
+		state.activeVideoIndex === null
+			? null
+			: (state.videoCues[state.activeVideoIndex] ?? null);
+	const preloadVideo =
+		activeVideo ??
+		(state.mode === "presenting"
+			? (state.videoCues.find(
+					(cue) => cue.page === state.page && cue.available,
+				) ?? null)
+			: null);
+
+	useEffect(() => {
+		if (
+			state.mode !== "presenting" ||
+			state.activeVideoIndex === null ||
+			!activeVideo
+		)
+			return;
+		const index = state.activeVideoIndex;
+		const generation = state.generation;
+		const attempt = state.videoAttempt;
+		const asset = videoAssets.find(
+			(candidate) => candidate.name === activeVideo.fileName,
+		);
+		const element = asset ? videoElementsRef.current.get(asset.url) : undefined;
+		let live = true;
+		const fail = (error: string) => {
+			if (!live) return;
+			Logger.warn(TAG, "demo video playback failed; skipping segment", {
+				page: activeVideo.page,
+				order: activeVideo.order,
+				fileName: activeVideo.fileName,
+				generation,
+				error,
+			});
+			setVideoErrors((current) =>
+				current.includes(activeVideo.fileName)
+					? current
+					: [...current, activeVideo.fileName],
+			);
+			dispatch({ type: "video-failed", generation, index, error });
+		};
+		if (!asset || !element) {
+			fail("video_asset_unavailable");
+			return () => {
+				live = false;
+			};
+		}
+		const onEnded = () => dispatch({ type: "video-ended", generation, index });
+		const onError = () => fail("media_element_error");
+		element.volume = 1;
+		element.muted = false;
+		element.addEventListener("ended", onEnded);
+		element.addEventListener("error", onError);
+		const previousAttempt = lastVideoAttemptRef.current.get(asset.url);
+		if (previousAttempt !== attempt) {
+			if (previousAttempt !== undefined) {
+				try {
+					element.currentTime = 0;
+				} catch (error) {
+					fail(`seek_failed: ${String(error)}`);
+				}
+			}
+			lastVideoAttemptRef.current.set(asset.url, attempt);
+		}
+		Logger.info(TAG, "demo video playback started", {
+			page: activeVideo.page,
+			order: activeVideo.order,
+			fileName: activeVideo.fileName,
+			generation,
+			attempt,
+			volume: element.volume,
+			muted: element.muted,
+		});
+		try {
+			const playback = element.play();
+			void playback?.catch((error) => fail(String(error)));
+		} catch (error) {
+			fail(String(error));
+		}
+		return () => {
+			live = false;
+			element.removeEventListener("ended", onEnded);
+			element.removeEventListener("error", onError);
+			try {
+				element.pause();
+			} catch {
+				// The document may be unloading its WebKit media pipeline.
+			}
+		};
+	}, [
+		activeVideo,
+		state.activeVideoIndex,
+		state.generation,
+		state.mode,
+		state.videoAttempt,
+		videoAssets,
 	]);
 
 	useEffect(() => {
@@ -295,13 +596,20 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	useEffect(() => {
 		const element = viewerRef.current;
 		if (!element) return;
-		const update = () =>
+		const update = () => {
+			if (kioskMode && element.clientHeight > 0) {
+				const maxByWidth = element.clientWidth - 12;
+				const maxByHeight = Math.floor((element.clientHeight - 12) * (16 / 9));
+				setViewerWidth(Math.max(280, Math.min(maxByWidth, maxByHeight)));
+				return;
+			}
 			setViewerWidth(Math.max(280, element.clientWidth - 32));
+		};
 		update();
 		const observer = new ResizeObserver(update);
 		observer.observe(element);
 		return () => observer.disconnect();
-	}, []);
+	}, [kioskMode]);
 
 	useEffect(() => {
 		if (window.parent === window) return;
@@ -475,7 +783,23 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	}, [gotoPage, runAction]);
 
 	function loadPdf(file: File, companion?: SlidesOpenedPdf) {
+		pauseActiveVideo();
 		cancelSpeech();
+		const nextAssets = companion ? createVideoAssets(companion) : [];
+		videoAssetsRef.current = nextAssets;
+		videoReadFailuresRef.current = companion?.videoReadFailures ?? [];
+		scriptMarkdownRef.current = companion?.script?.text ?? "";
+		companionTextsRef.current = companion?.pageTexts;
+		setVideoAssets(nextAssets);
+		const videoContent = videoContentForScript(
+			companion?.script?.text ?? "",
+			nextAssets,
+			companion?.videoReadFailures ?? [],
+		);
+		setVideoErrors(videoContent.errors);
+		for (const fileName of videoContent.errors) {
+			Logger.warn(TAG, "demo video unavailable or rejected", { fileName });
+		}
 		scriptRevisionRef.current++;
 		selectedFileRef.current = file;
 		setPdfFile(file);
@@ -503,6 +827,86 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		});
 	}
 
+	const loadKioskDeck = useCallback(
+		async (autoStart: boolean) => {
+			if (autoStart) {
+				kioskAutoStartRef.current = true;
+			}
+			if (kioskDeckLoadingRef.current) return;
+			kioskDeckLoadingRef.current = true;
+			try {
+				const selection = await openSlidesDocument();
+				if (!selection) return;
+				loadPdf(selection.file, selection);
+				const irSlides = getKioskIrSlides();
+				const texts = irSlides.map((slide) => slide.title);
+				const notes = selection.script
+					? parseSlideSpeakerNotes(selection.script.text)
+					: new Map<number, string>();
+				notesRef.current = notes;
+				pageTextsRef.current = texts;
+				setPageTexts(texts);
+				dispatch({
+					type: "loaded",
+					totalPages: irSlides.length,
+					range: presentationRangeForNotes(notes, irSlides.length),
+				});
+				if (kioskAutoStartRef.current) {
+					kioskAutoStartRef.current = false;
+					dispatch({ type: "goto", page: 1 });
+					dispatch({ type: "start" });
+				}
+			} catch (error) {
+				Logger.warn(TAG, "kiosk deck load failed", { error: String(error) });
+			} finally {
+				kioskDeckLoadingRef.current = false;
+			}
+		},
+		[cancelSpeech],
+	);
+
+	useEffect(() => {
+		if (!kioskMode) return;
+		const unregister = registerKioskSlidesController({
+			isPresenting: () => stateRef.current.mode === "presenting",
+			isAnsweringQuestion: () => stateRef.current.mode === "answering",
+			getCurrentPage: () => stateRef.current.page,
+			performAction: async (action) => {
+				clearAutoResumeTimer();
+				if (action === "start") {
+					if (!selectedFileRef.current || stateRef.current.totalPages === 0) {
+						await loadKioskDeck(true);
+						return;
+					}
+					cancelSpeech();
+					dispatch({ type: "goto", page: 1 });
+					dispatch({ type: "start" });
+					return;
+				}
+				runAction(action);
+			},
+			onTurnSettled: () => {
+				clearAutoResumeTimer();
+				autoResumeTimerRef.current = setTimeout(() => {
+					autoResumeTimerRef.current = null;
+					if (
+						stateRef.current.mode === "answering" &&
+						stateRef.current.resumeAfterAnswer
+					) {
+						runAction("resume");
+					}
+				}, 1200);
+			},
+		});
+		if (!selectedFileRef.current && !kioskDeckLoadingRef.current) {
+			void loadKioskDeck(false);
+		}
+		return () => {
+			clearAutoResumeTimer();
+			unregister();
+		};
+	}, [cancelSpeech, clearAutoResumeTimer, kioskMode, loadKioskDeck, runAction]);
+
 	async function pickPdf() {
 		if (pickerAbortRef.current) return;
 		const abort = new AbortController();
@@ -526,6 +930,35 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		}
 	}
 
+	// Web runtime (R27): a PPTX from the browser file input is converted here.
+	async function importBrowserPptx(file: File) {
+		if (pickerAbortRef.current) return;
+		if (!confirmScriptReplacement()) return;
+		const abort = new AbortController();
+		pickerAbortRef.current = abort;
+		setPickingPdf(true);
+		setImportPhase("reading");
+		try {
+			const selection = await importPptxInBrowser(
+				file,
+				setImportPhase,
+				abort.signal,
+			);
+			if (!abort.signal.aborted) loadPdf(selection.file, selection);
+		} catch (error) {
+			if (!abort.signal.aborted) {
+				setFileError(documentErrorKey(error));
+				setImportPhase(null);
+				Logger.warn(TAG, "browser PPTX import failed", {
+					error: String(error),
+				});
+			}
+		} finally {
+			if (pickerAbortRef.current === abort) pickerAbortRef.current = null;
+			setPickingPdf(false);
+		}
+	}
+
 	function cancelImport() {
 		const abort = pickerAbortRef.current;
 		if (!abort) return;
@@ -542,14 +975,26 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			if (revision !== scriptRevisionRef.current) return;
 			if (!confirmScriptReplacement()) return;
 			const notes = parseSlideSpeakerNotes(markdown);
+			const videoContent = videoContentForScript(
+				markdown,
+				videoAssetsRef.current,
+				videoReadFailuresRef.current,
+			);
+			scriptMarkdownRef.current = markdown;
 			setScriptMarkdown(markdown);
 			setSpeakerNotes(notes);
+			setVideoErrors(videoContent.errors);
+			for (const fileName of videoContent.errors) {
+				Logger.warn(TAG, "demo video unavailable or rejected", { fileName });
+			}
 			if (stateRef.current.totalPages) {
+				pauseActiveVideo();
 				cancelSpeech();
 				dispatch({
 					type: "set-range",
 					...presentationRangeForNotes(notes, stateRef.current.totalPages),
 				});
+				dispatch({ type: "set-video-cues", videoCues: videoContent.cues });
 			}
 			setScriptName(file.name);
 			setScriptEditorOpen(false);
@@ -567,10 +1012,11 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	}
 
 	function beginScriptEdit() {
+		pauseActiveVideo();
 		cancelSpeech();
 		if (stateRef.current.mode === "presenting") dispatch({ type: "pause" });
 		const initial = speakerNotes.has(state.page)
-			? speakerNotes.get(state.page) ?? ""
+			? (speakerNotes.get(state.page) ?? "")
 			: currentNarration;
 		draftOriginalRef.current = initial;
 		setEditingPage(state.page);
@@ -588,6 +1034,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 
 	function applyScriptEdit() {
 		if (!scriptEditorOpen) return;
+		pauseActiveVideo();
 		cancelSpeech();
 		if (stateRef.current.mode === "presenting") dispatch({ type: "pause" });
 		const nextMarkdown = replaceSlideScriptPage(
@@ -596,8 +1043,17 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			draftText,
 		);
 		const nextNotes = parseSlideSpeakerNotes(nextMarkdown);
+		const videoContent = videoContentForScript(
+			nextMarkdown,
+			videoAssetsRef.current,
+			videoReadFailuresRef.current,
+		);
+		scriptMarkdownRef.current = nextMarkdown;
 		setScriptMarkdown(nextMarkdown);
 		setSpeakerNotes(nextNotes);
+		setVideoErrors(videoContent.errors);
+		if (stateRef.current.totalPages)
+			dispatch({ type: "set-video-cues", videoCues: videoContent.cues });
 		setUnexportedScript(true);
 		setFileError(null);
 		cancelScriptEdit();
@@ -628,7 +1084,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			setFileError(null);
 		} catch (error) {
 			setFileError("export");
-			Logger.warn(TAG, "edited script download failed", { error: String(error) });
+			Logger.warn(TAG, "edited script download failed", {
+				error: String(error),
+			});
 		} finally {
 			if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
 		}
@@ -647,8 +1105,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			const fileName = output.split(/[\\/]/).pop();
 			if (fileName) await naia.openInWorkspace?.(`video/${fileName}`);
 		} catch (error) {
-			// A failed stop retains native ownership, so keep Stop available to retry.
-			setRecordingError(String(error));
+			// A failed stop retains native ownership, so keep Stop available to
+			// retry — unless the host reports the recording as lost.
+			if (recording && isRecordingLost(error)) setRecording(false);
+			setRecordingError(
+				`${t("slides.recordingFailed")} (${String(error).replace(/^Error: /, "")})`,
+			);
 		}
 	}
 
@@ -673,7 +1135,8 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					notesVisible={notesVisible}
 					onPickNative={() => void pickPdf()}
 					onPdfSelected={(file) => {
-						if (confirmScriptReplacement()) loadPdf(file);
+						if (isPptxFile(file)) void importBrowserPptx(file);
+						else if (confirmScriptReplacement()) loadPdf(file);
 					}}
 					onScriptSelected={(file) => void loadScript(file)}
 					onToggleFocus={() => setFocusMode((focused) => !focused)}
@@ -710,22 +1173,85 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					viewerRef={viewerRef}
 					viewerWidth={viewerWidth}
 					totalPages={state.totalPages}
+					hidden={activeVideo !== null}
+					slideCard={kioskMode ? getKioskIrSlide(state.page) : null}
 					onReady={(file, totalPages, texts) => {
 						if (selectedFileRef.current !== file) return;
+						if (kioskMode) {
+							return;
+						}
 						dispatch({
 							type: "loaded",
 							totalPages,
 							range: presentationRangeForNotes(notesRef.current, totalPages),
+							videoCues: videoContentForScript(
+								scriptMarkdownRef.current,
+								videoAssetsRef.current,
+								videoReadFailuresRef.current,
+							).cues,
 						});
-						setPageTexts(texts);
+						setPageTexts(
+							texts.some(Boolean)
+								? texts
+								: (companionTextsRef.current ?? texts),
+						);
 						Logger.info(TAG, "PDF ready", { pages: totalPages });
 					}}
 					onError={(file, error) => {
 						if (selectedFileRef.current !== file) return;
+						if (kioskMode && stateRef.current.totalPages > 0) {
+							return;
+						}
 						dispatch({ type: "fail", error: String(error) });
 						Logger.warn(TAG, "PDF load failed", { error: String(error) });
 					}}
 				/>
+				<div
+					className="slides-app__viewer slides-app__video-viewer"
+					data-testid="slides-video-viewer"
+					hidden={activeVideo === null}
+				>
+					{videoAssets.map((asset) => (
+						<Fragment key={asset.url}>
+							{/* biome-ignore lint/a11y/useMediaCaption: selected media is authored externally and the script contract supplies no caption track. */}
+							<video
+								ref={videoRefCallbacks.get(asset.url)}
+								src={asset.url}
+								preload={
+									preloadVideo?.fileName === asset.name ? "auto" : "metadata"
+								}
+								playsInline
+								tabIndex={-1}
+								aria-hidden={activeVideo?.fileName !== asset.name}
+								aria-label={
+									activeVideo?.fileName === asset.name
+										? t("slides.videoLabel", {
+												position: `${activeVideo.page}-${activeVideo.order}`,
+												name: asset.name,
+											})
+										: undefined
+								}
+								className={
+									activeVideo?.fileName === asset.name
+										? "slides-app__video slides-app__video--active"
+										: "slides-app__video"
+								}
+								data-testid={`slides-video-${encodeURIComponent(asset.name)}`}
+							/>
+						</Fragment>
+					))}
+					{activeVideo ? (
+						<output
+							className="slides-app__video-indicator"
+							data-testid="slides-video-indicator"
+							aria-live="polite"
+						>
+							{t("slides.videoIndicator", {
+								position: `${activeVideo.page}-${activeVideo.order}`,
+							})}
+						</output>
+					) : null}
+				</div>
 
 				{notesVisible ? (
 					<SlidesScriptPanel
@@ -754,13 +1280,16 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				fullscreen={fullscreen}
 				recording={recording}
 				editing={scriptEditorOpen}
+				kioskMode={kioskMode}
 				onAction={runAction}
 				onRangeChange={(start, end) => {
 					cancelSpeech();
+					pauseActiveVideo();
 					dispatch({ type: "set-range", start, end });
 				}}
 				onGoto={gotoPage}
 				onToggleRepeat={() => {
+					cancelPrefetch();
 					dispatch({ type: "toggle-repeat" });
 					Logger.info(TAG, "presentation repeat toggled", {
 						enabled: !state.repeat,
@@ -774,6 +1303,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				recordingError={recordingError}
 				fullscreenError={fullscreenError}
 				fileError={fileError}
+				videoErrors={videoErrors}
 			/>
 		</section>
 	);

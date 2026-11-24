@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AppContext } from "../lib/app-registry";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { usage, usageAppScreen } from "../lib/usage-runtime";
 
 function requestBrowserVisibilitySync() {
@@ -22,6 +24,14 @@ interface AppState {
 	/** Currently active app id. null = default avatar view. */
 	activeApp: string | null;
 	setActiveApp: (id: string | null) => void;
+	/** Non-closed apps that have been activated in this session. */
+	activatedApps: string[];
+	/** Apps explicitly terminated via closeApp until opened again. */
+	closedApps: string[];
+	/** Per-app mount generation incremented on closeApp so reopening starts fresh. */
+	appInstanceEpoch: Record<string, number>;
+	/** Terminate an app instance (unmount keepAlive slot, clear owned context, return to desktop if active). */
+	closeApp: (id: string) => void;
 	/** Latest context pushed by the active (switchable) app. Cleared on switch. */
 	activeAppContext: AppContext | null;
 	/** App id that owns the current activeAppContext. Cleared on switch or null push. */
@@ -65,22 +75,67 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
 	activeApp: null,
+	activatedApps: [],
+	closedApps: [],
+	appInstanceEpoch: {},
 	setActiveApp: (id) => {
-		const current = get().activeApp;
+		if (
+			(isWebMode() && id === "browser") ||
+			(isKioskDemo() && id === "projects")
+		) {
+			return;
+		}
+		const state = get();
+		const current = state.activeApp;
 		if (current !== id) usage.record("app.screen.view", usageAppScreen(id));
-		if (current === "browser" && id !== "browser") {
+		if (!isWebMode() && current === "browser" && id !== "browser") {
 			invoke("browser_wv_hide").catch(() => {});
 		}
+		const nextActivated =
+			id && !state.activatedApps.includes(id)
+				? [...state.activatedApps, id]
+				: state.activatedApps;
+		const nextClosed =
+			id && state.closedApps.includes(id)
+				? state.closedApps.filter((item) => item !== id)
+				: state.closedApps;
 		// Clear only the transient active-app slot; persistent contexts (bgm)
 		// must survive the switch so background music favorites stay available.
 		set({
 			activeApp: id,
+			activatedApps: nextActivated,
+			closedApps: nextClosed,
 			activeAppContext: null,
 			activeAppContextOwnerId: null,
 		});
-		if (id === "browser" && current !== "browser") {
+		if (!isWebMode() && id === "browser" && current !== "browser") {
 			requestBrowserVisibilitySync();
 		}
+	},
+	closeApp: (id) => {
+		const state = get();
+		const wasActive = state.activeApp === id;
+		if (wasActive && !isWebMode() && id === "browser") {
+			invoke("browser_wv_hide").catch(() => {});
+		}
+		const ownsTransientContext =
+			wasActive ||
+			state.activeAppContextOwnerId === id ||
+			state.activeAppContext?.type === id;
+		set({
+			activeApp: wasActive ? null : state.activeApp,
+			activatedApps: state.activatedApps.filter((item) => item !== id),
+			closedApps: state.closedApps.includes(id)
+				? state.closedApps
+				: [...state.closedApps, id],
+			appInstanceEpoch: {
+				...state.appInstanceEpoch,
+				[id]: (state.appInstanceEpoch[id] ?? 0) + 1,
+			},
+			...(ownsTransientContext
+				? { activeAppContext: null, activeAppContextOwnerId: null }
+				: {}),
+		});
 	},
 	activeAppContext: null,
 	activeAppContextOwnerId: null,
@@ -111,7 +166,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 	modalCount: 0,
 	pushModal: () => {
 		const { modalCount } = get();
-		if (modalCount === 0) {
+		if (modalCount === 0 && !isWebMode()) {
 			invoke("browser_wv_hide").catch(() => {});
 		}
 		set((s) => ({ modalCount: s.modalCount + 1 }));
@@ -119,7 +174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 	popModal: () => {
 		const next = Math.max(0, get().modalCount - 1);
 		set({ modalCount: next });
-		if (next === 0 && get().activeApp === "browser") {
+		if (!isWebMode() && next === 0 && get().activeApp === "browser") {
 			requestBrowserVisibilitySync();
 		}
 	},
@@ -139,9 +194,10 @@ export const useAppStore = create<AppState>((set, get) => ({
  * type collides, and we skip large/all-app injection — only active +
  * persistent, never every app that has ever pushed.
  */
-export function selectPromptAppContexts(state: AppState): AppContext[] {
+export function selectPromptAppContexts(state: AppState, nativeCardActive = false): AppContext[] {
 	const out: AppContext[] = [];
-	if (state.activeAppContext) out.push(state.activeAppContext);
+	if (state.activeAppContext && !(nativeCardActive &&
+		(state.activeAppContext.type === "charcard" || state.activeAppContextOwnerId === "land.naia.charcard"))) out.push(state.activeAppContext);
 	for (const ctx of Object.values(state.persistentAppContexts)) {
 		if (ctx && ctx.type !== state.activeAppContext?.type) out.push(ctx);
 	}

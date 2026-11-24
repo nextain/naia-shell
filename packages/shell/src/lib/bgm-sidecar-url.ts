@@ -32,7 +32,7 @@ function isE2eHarness(): boolean {
 
 /** Ensure the Shell-owned sidecar is alive and return the URL the UI must use. */
 export async function ensureBgmSidecar(): Promise<string> {
-	if (isE2eHarness()) {
+	if (isE2eHarness() || import.meta.env.MODE === "web") {
 		const base = BGM_SIDECAR_BASE_URL;
 		cachedBase = base;
 		return base;

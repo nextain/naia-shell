@@ -1,0 +1,386 @@
+/**
+ * Shell host for the canonical NVA SpeechPlayer (naia-shell#760).
+ *
+ * The player bytes live in ./vendor and are identical to naia-video-avatar
+ * (VENDOR.json + vendor hash test). This stage only supplies what the player
+ * needs from the Shell: bundle assets as Blobs, an offscreen canvas, a body
+ * <video>, two speech <video>s, and a silent audio element (the Shell never
+ * hands its sound to the player; aligned plans run on the Shell's audio clock).
+ *
+ *  - aligned plan      → loadAudioClock + playAudioClock(clock of the sound)
+ *  - browser-timed plan → loadExternal + playExternal(time since onstart),
+ *                         revised by updateExternalPlan on boundary events
+ *
+ * Anything else is refused and the caller keeps the idle clip (SoT 8).
+ */
+import type { NvaManifest } from "../../nva";
+import type {
+	AvatarSpeechTiming,
+	PreparedSpeech,
+	SpeechPlan,
+} from "./speech-timing";
+import {
+	type SpeechMotionManifest,
+	speechBundlePaths,
+} from "./vendor/speech-bundle.js";
+import { SpeechPlayer } from "./vendor/speech-player.js";
+import { localMediaUrlApi } from "../../local-media-url";
+import { Logger } from "../../logger";
+import { isWebMode } from "../../web-runtime/web-assets";
+import { NvaStackedAlphaGL } from "../nva-stacked-alpha-gl";
+
+export interface CanonicalSpeechStageConfig {
+	manifest: NvaManifest;
+	/** Reads one bundle-relative asset as bytes. */
+	loadAsset: (path: string) => Promise<Blob>;
+	/** Mounted decode element; the stage's own media become hidden siblings. */
+	host: HTMLVideoElement;
+	/** Test seam; defaults to the WebGL stacked color/alpha decoder. */
+	createStackedAlpha?: () => StackedBodyDecoder;
+	/** Test seam; defaults to the canonical player. */
+	createPlayer?: (
+		options: ConstructorParameters<typeof SpeechPlayer>[0],
+	) => SpeechPlayerLike;
+}
+
+/** The subset of SpeechPlayer the stage drives (lets tests inject a fake). */
+export interface SpeechPlayerLike {
+	readonly state: string;
+	loadAudioClock(input: {
+		manifest: unknown;
+		assets: Map<string, Blob>;
+		plan: SpeechPlan;
+	}): Promise<unknown>;
+	loadExternal(input: {
+		manifest: unknown;
+		assets: Map<string, Blob>;
+		plan: SpeechPlan;
+	}): Promise<unknown>;
+	updateExternalPlan(plan: SpeechPlan): unknown;
+	playAudioClock(clock: () => number): Promise<void>;
+	playExternal(clock: () => number): Promise<void>;
+	stop(outcome?: "complete" | "cancel" | "error"): void;
+	dispose(): void;
+}
+
+type ManifestWithSpeech = NvaManifest & {
+	speech_motion?: SpeechMotionManifest;
+};
+
+/** True only when the NVA bundle carries the canonical speech set. */
+export function hasCanonicalSpeechMotion(manifest: NvaManifest): boolean {
+	return Boolean((manifest as ManifestWithSpeech).speech_motion);
+}
+
+function safeError(error: unknown): string {
+	const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+	return message
+		.replace(/https?:\/\/[^\s"'<>]+/giu, "[url]")
+		.replace(/\b(authorization|api[-_ ]?key|token|secret|password)\b\s*[:=]\s*[^,\s]+/giu, "$1=[redacted]")
+		.slice(0, 240);
+}
+
+/** Every file the canonical player validates or reads. */
+export function canonicalSpeechAssetPaths(manifest: NvaManifest): string[] {
+	const speech = (manifest as ManifestWithSpeech).speech_motion;
+	const paths = new Set<string>();
+	for (const animation of Object.values(manifest.animations ?? {}))
+		if (animation?.clip) paths.add(animation.clip);
+	for (const path of speechBundlePaths(speech)) paths.add(path);
+	return [...paths];
+}
+
+export interface StackedBodyDecoder {
+	readonly canvas: HTMLCanvasElement;
+	draw(video: HTMLVideoElement): boolean;
+	dispose(): void;
+}
+
+/**
+ * True when a body frame is a stacked `.stacked.mp4` (color on top, alpha below)
+ * being drawn over a whole canvas: twice as tall, relative to its width, as the canvas.
+ */
+export function isStackedBodyFrame(
+	image: CanvasImageSource,
+	width: number,
+	height: number,
+): boolean {
+	const video = image as HTMLVideoElement;
+	const vw = video.videoWidth ?? 0;
+	const vh = video.videoHeight ?? 0;
+	if (!(vw > 0 && vh > 0 && width > 0 && height > 0)) return false;
+	return vh / vw > 1.5 * (height / width);
+}
+
+export class CanonicalSpeechStage {
+	readonly canvas: HTMLCanvasElement;
+	private readonly player: SpeechPlayerLike;
+	private readonly media: HTMLMediaElement[] = [];
+	private assets: Promise<Map<string, Blob>> | null = null;
+	private assetsLoadedFlag = false;
+	private mode: "aligned" | "browser-timed" | null = null;
+	private generation = 0;
+	/** Player loads are serialized; the vendored media elements are not reloaded concurrently. */
+	private prepareQueue: Promise<void> = Promise.resolve();
+	private disposed = false;
+	private stackedBody: StackedBodyDecoder | null = null;
+	private stackedBodyFailed = false;
+
+	constructor(private readonly config: CanonicalSpeechStageConfig) {
+		const host = config.host;
+		const doc = host.ownerDocument;
+		this.canvas = doc.createElement("canvas");
+		const hidden = (element: HTMLMediaElement) => {
+			element.muted = true;
+			element.setAttribute("aria-hidden", "true");
+			element.style.cssText =
+				"position:absolute;width:1px;height:1px;opacity:0;pointer-events:none";
+			host.parentNode?.insertBefore(element, host.nextSibling);
+			this.media.push(element);
+			return element;
+		};
+		const video = () => {
+			const element = doc.createElement("video");
+			element.playsInline = true;
+			return hidden(element) as HTMLVideoElement;
+		};
+		// The Shell owns the sound; this element is never given a source.
+		const audio = hidden(doc.createElement("audio")) as HTMLAudioElement;
+		const options = {
+			// Linux webm clips past ~2 MB only decode through MediaSource on WebKitGTK.
+			...(isWebMode() ? {} : { urlApi: localMediaUrlApi }),
+			audio,
+			canvas: this.playerCanvas(),
+			bodyVideo: video(),
+			speechVideos: [video(), video()] as [HTMLVideoElement, HTMLVideoElement],
+		};
+		this.player = config.createPlayer
+			? config.createPlayer(options)
+			: new SpeechPlayer(options);
+	}
+
+	/** True while the player is drawing a plan onto `canvas`. */
+	get speaking(): boolean {
+		return !this.disposed && this.player.state === "speaking";
+	}
+
+	/** True once the canonical speech bundle assets have finished loading. */
+	get assetsLoaded(): boolean {
+		return !this.disposed && this.assetsLoadedFlag;
+	}
+
+	/**
+	 * Load and start one plan. Resolves false when the plan kind is not
+	 * allowed, the load fails, or a newer start/stop superseded this one.
+	 */
+	async start(timing: AvatarSpeechTiming): Promise<boolean> {
+		if (typeof timing.clock !== "function") return false;
+		const prepared = await this.prepare(timing.plan);
+		return prepared ? prepared.play(timing.clock) : false;
+	}
+
+	/**
+	 * Load one plan into the player without starting it, so the first mouth
+	 * frame can appear together with the first sound (no load wait after the
+	 * sound starts). `play(clock)` must be called with the clock of the very
+	 * sound the plan was made for; a newer prepare/start/stop supersedes it.
+	 */
+	async prepare(plan: SpeechPlan): Promise<PreparedSpeech | null> {
+		if (this.disposed) return null;
+		const mode = plan?.quality_mode;
+		if (mode !== "aligned" && mode !== "browser-timed") return null;
+		const generation = ++this.generation;
+		const operation = this.prepareQueue.then(async (): Promise<PreparedSpeech | null> => {
+			if (generation !== this.generation || this.disposed) return null;
+			this.player.stop("cancel");
+			this.mode = null;
+			try {
+				const assets = await this.loadAssets();
+				if (generation !== this.generation || this.disposed) return null;
+				const input = { manifest: this.config.manifest, assets, plan };
+				if (mode === "aligned") await this.player.loadAudioClock(input);
+				else await this.player.loadExternal(input);
+				if (generation !== this.generation || this.disposed) {
+					this.player.stop("cancel");
+					return null;
+				}
+			} catch (error) {
+				Logger.warn("CanonicalSpeechStage", "speech plan load failed", {
+					generation,
+					error: safeError(error),
+				});
+				if (generation === this.generation) this.player.stop("error");
+				return null;
+			}
+			let used = false;
+			return {
+				play: async (clock) => {
+					if (used || typeof clock !== "function") return false;
+					used = true;
+					if (generation !== this.generation || this.disposed) return false;
+					try {
+						if (mode === "aligned") await this.player.playAudioClock(clock);
+						else await this.player.playExternal(clock);
+						if (generation !== this.generation || this.disposed) {
+							this.player.stop("cancel");
+							return false;
+						}
+						this.mode = mode;
+						return true;
+					} catch (error) {
+						Logger.warn("CanonicalSpeechStage", "speech plan playback failed", {
+							generation,
+							error: safeError(error),
+						});
+						if (generation === this.generation) this.player.stop("error");
+						return false;
+					}
+				},
+			};
+		});
+		this.prepareQueue = operation.then(
+			() => undefined,
+			() => undefined,
+		);
+		return operation;
+	}
+
+	/** Revise the running browser-timed plan (boundary events). */
+	update(plan: SpeechPlan): boolean {
+		if (this.disposed || this.mode !== "browser-timed") return false;
+		if (plan?.quality_mode !== "browser-timed") return false;
+		try {
+			this.player.updateExternalPlan(plan);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** Pre-fetch canonical speech assets (`speech/atlas.bin`, `speech/atlas-index.json`, etc.) in the background after initial greeting. */
+	warmAssets(): Promise<void> {
+		if (this.disposed) return Promise.resolve();
+		return this.loadAssets().then(
+			() => undefined,
+			() => undefined,
+		);
+	}
+
+	stop(): void {
+		this.generation++;
+		this.mode = null;
+		if (!this.disposed) this.player.stop("cancel");
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.stop();
+		this.disposed = true;
+		this.player.dispose();
+		for (const element of this.media.splice(0)) {
+			element.pause?.();
+			element.remove();
+		}
+		this.assets = null;
+		this.stackedBody?.dispose();
+		this.stackedBody = null;
+	}
+
+	/**
+	 * The canvas handed to the vendored player. Web mode resolves the talking
+	 * body clip to its `.stacked.mp4` (VideoAvatarCanvas resolveAssetUrl), and the
+	 * player draws the body frame whole, which shows the alpha half and the color
+	 * half's edge padding. Its 2D context unpacks such a frame before drawing;
+	 * every other call goes straight to `canvas`.
+	 */
+	private playerCanvas(): HTMLCanvasElement {
+		const canvas = this.canvas;
+		const context = canvas.getContext("2d", { alpha: true });
+		if (!context) return canvas;
+		const drawImage = (image: CanvasImageSource, ...args: number[]) => {
+			if (args.length === 4 && isStackedBodyFrame(image, args[2], args[3])) {
+				this.drawStackedBody(
+					context,
+					image as HTMLVideoElement,
+					args as [number, number, number, number],
+				);
+				return;
+			}
+			(context.drawImage as (...a: unknown[]) => void)(image, ...args);
+		};
+		const proxied = new Proxy(context, {
+			get(target, prop) {
+				if (prop === "drawImage") return drawImage;
+				const value = Reflect.get(target, prop, target);
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+			set(target, prop, value) {
+				return Reflect.set(target, prop, value, target);
+			},
+		});
+		return {
+			get width() {
+				return canvas.width;
+			},
+			set width(value: number) {
+				canvas.width = value;
+			},
+			get height() {
+				return canvas.height;
+			},
+			set height(value: number) {
+				canvas.height = value;
+			},
+			getContext: () => proxied,
+		} as unknown as HTMLCanvasElement;
+	}
+
+	private drawStackedBody(
+		context: CanvasRenderingContext2D,
+		video: HTMLVideoElement,
+		[dx, dy, dw, dh]: [number, number, number, number],
+	): void {
+		if (!this.stackedBodyFailed) {
+			try {
+				if (!this.stackedBody)
+					this.stackedBody = this.config.createStackedAlpha
+						? this.config.createStackedAlpha()
+						: new NvaStackedAlphaGL();
+				if (!this.stackedBody.draw(video))
+					throw new Error("stacked-alpha context lost");
+				context.drawImage(this.stackedBody.canvas, dx, dy, dw, dh);
+				return;
+			} catch (error) {
+				this.stackedBodyFailed = true;
+				this.stackedBody?.dispose();
+				this.stackedBody = null;
+				Logger.warn(
+					"CanonicalSpeechStage",
+					"stacked body WebGL failed; drawing color half only",
+					{ error: String(error) },
+				);
+			}
+		}
+		const half = Math.max(1, Math.floor(video.videoHeight / 2));
+		context.drawImage(video, 0, 0, video.videoWidth, half, dx, dy, dw, dh);
+	}
+
+	private loadAssets(): Promise<Map<string, Blob>> {
+		if (!this.assets) {
+			const paths = canonicalSpeechAssetPaths(this.config.manifest);
+			this.assets = Promise.all(
+				paths.map(
+					async (path) => [path, await this.config.loadAsset(path)] as const,
+				),
+			).then((entries) => {
+				if (!this.disposed) this.assetsLoadedFlag = true;
+				return new Map(entries);
+			});
+			this.assets.catch(() => {
+				this.assets = null;
+				this.assetsLoadedFlag = false;
+			});
+		}
+		return this.assets;
+	}
+}

@@ -59,6 +59,7 @@ const TAURI_MOCK = `
 		if (cmd === "plugin:updater|check") return undefined;
 		if (cmd === "plugin:path|resolve_directory") return "/tmp/naia-mock-home";
 		if (cmd === "plugin:path|join") return (args.paths || []).filter(Boolean).join("/");
+		if (cmd === "read_naia_path_cache") return "/tmp/mock-naia-adk-workspace";
 		if (cmd === "workspace_detect_adk_root") return null;
 		if (cmd === "app_list_installed") return [];
 		if (cmd === "send_to_agent_command") return undefined;
@@ -138,7 +139,9 @@ async function measure(page: import("@playwright/test").Page): Promise<number> {
 	return elapsed;
 }
 
-test("셸 첫 화면이 콜드·웜 한도 안에 뜬다 (UC-PERF-STARTUP-LATENCY)", async ({ page }) => {
+test("셸 첫 화면이 콜드·웜 한도 안에 뜬다 (UC-PERF-STARTUP-LATENCY)", async ({
+	page,
+}) => {
 	const cold = await measure(page);
 
 	const warm: number[] = [];

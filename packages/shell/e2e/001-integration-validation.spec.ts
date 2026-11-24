@@ -63,6 +63,9 @@ const TAURI_MOCK = `
 		if (cmd === "frontend_log") return undefined;
 		// Rust read_naia_settings_file: a missing ADK settings file reads as "".
 		if (cmd === "read_naia_config" || cmd === "read_naia_ui_config") return "";
+		// Native adk-path is the boot authority (bootstrapAdkPath wipes the
+		// localStorage cache first), so the seeded path must come from here.
+		if (cmd === "read_naia_path_cache") return window.__E2E_NATIVE_ADK_PATH__ || null;
 		if (cmd === "read_text_file") return "";
 		if (cmd === "list_directory") return [];
 		if (cmd === "exists") return false;
@@ -73,6 +76,7 @@ const TAURI_MOCK = `
 `;
 
 const SET_ADK_PATH = `
+window.__E2E_NATIVE_ADK_PATH__ = "/tmp/mock-naia-adk-workspace";
 localStorage.setItem("naia-adk-path", "/tmp/mock-naia-adk-workspace");
 `;
 

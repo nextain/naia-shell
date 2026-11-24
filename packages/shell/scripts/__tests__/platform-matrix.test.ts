@@ -389,6 +389,37 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(rust).toContain("entry.unix_mode()");
 	});
 
+	it("both installers turn off tensorrt-cu12's nested pip so it cannot write into the artifact (#842)", () => {
+		// tensorrt-cu12's setup.py runs `pip install` of the bindings and
+		// libraries into the bundled interpreter, ignoring --target. On 3090
+		// that put 2.9G inside the artifact and the next install failed
+		// verify_artifact. The NVIDIA step already stages both packages.
+		const linux = readFileSync(
+			resolve(SHELL, "src-tauri/linux/prepare-voxcpm2-model.sh"),
+			"utf8",
+		);
+		expect(linux).toMatch(
+			/NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP=1 PYTHONPATH="\$NVIDIA_PENDING" run_python "Pinned TensorRT Python package acquisition failed"/,
+		);
+		const windows = readFileSync(
+			resolve(SHELL, "src-tauri/windows/prepare-voxcpm2-model.ps1"),
+			"utf8",
+		);
+		const flagAt = windows.indexOf(
+			'$env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP = "1"',
+		);
+		const metapackageAt = windows.indexOf(
+			"\"tensorrt-cu12==$($InstallerPackageLock.packages.'tensorrt-cu12')\"",
+		);
+		// The finally block puts back whatever value the caller had.
+		const clearAt = windows.indexOf(
+			"$env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP = $PriorTrtInternalPip",
+		);
+		expect(flagAt).toBeGreaterThan(-1);
+		expect(metapackageAt).toBeGreaterThan(flagAt);
+		expect(clearAt).toBeGreaterThan(metapackageAt);
+	});
+
 	it("darwin icon = 전체 배열 (base 5원소 + icns — 부분 델타 금지, RFC 7386 배열 대체)", () => {
 		expect(matrix.os.darwin.icon).toEqual([
 			...baseConf.bundle.icon,
@@ -852,18 +883,9 @@ describe("vosk 빌드 순서 불변식 (FR-INSTALL.2 — links 키 게이트)", 
 
 describe("agent production staging", () => {
 	it("keeps the Rust build gate synchronized with the pairing manifest", () => {
-		const pairing = JSON.parse(
-			readFileSync(resolve(SHELL, "agent-pairing.json"), "utf8"),
-		) as { agentCommit: string; protoSha256: string };
-		const buildScript = readFileSync(
-			resolve(SHELL, "src-tauri/build.rs"),
-			"utf8",
-		);
-
-		expect(buildScript).toContain(
-			`const REQUIRED_AGENT_COMMIT: &str = "${pairing.agentCommit}";`,
-		);
-		expect(buildScript).toContain(`"${pairing.protoSha256}";`);
+		const buildScript = readFileSync(resolve(SHELL, "src-tauri/build.rs"), "utf8");
+		expect(buildScript).toContain('manifest["agentCommit"]');
+		expect(buildScript).toContain('manifest["protoSha256"]');
 	});
 
 	it("builds local runtime dependencies before building the agent", () => {
@@ -966,7 +988,7 @@ describe("clean-checkout build order", () => {
 		);
 		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT, coreEnv)');
 		const preserveNativeRuntime = source.indexOf(
-			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1" }',
+			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1",',
 		);
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
@@ -1020,16 +1042,8 @@ describe("installer workflow integration contracts", () => {
 	});
 
 	it("clones the exact Agent revision declared by the pairing manifest", () => {
-		const pairing = readJson("agent-pairing.json") as {
-			agentCommit: string;
-			memoryCommit: string;
-		};
-		expect(workflow).toContain(
-			`git -C ../naia-agent fetch --depth 1 origin ${pairing.agentCommit}`,
-		);
-		expect(workflow).toContain(
-			`git -C ../naia-memory fetch --depth 1 origin ${pairing.memoryCommit}`,
-		);
+		expect(workflow).toContain('require("./packages/shell/agent-pairing.json").agentCommit');
+		expect(workflow).toContain('require("./packages/shell/agent-pairing.json").memoryCommit');
 	});
 
 	it("keeps Agent file dependencies and installer checkouts as siblings", () => {
@@ -1182,7 +1196,7 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain("NSIS uninstall registry entry remains");
 		expect(workflow).toContain('-ArgumentList "/S" -Wait -PassThru');
 		expect(workflow).toContain("--resource-dir $steamDepot");
-		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
+		expect(workflow).toContain("naia-shell-steam-win32${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}");
 		expect(workflow).toContain("steps.steam.outputs.depot");
 		expect(matrix.os.win32.steamDepot).toEqual({
 			path: "steam/windows",

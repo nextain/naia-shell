@@ -1,3 +1,4 @@
+import { installInstalledAppContextBridge } from "./installed-app-context-bridge";
 import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -6,11 +7,12 @@ import {
 	validateAppToolParameters,
 } from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
+import { getPlatformAppStoreAdapter } from "../../lib/app-store-adapter";
 import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
-import { installInstalledAppContextBridge } from "./installed-app-context-bridge";
+import { isWebMode } from "../../lib/web-runtime/web-assets";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -43,8 +45,31 @@ const TOOL_TIMEOUT_MS = 15_000;
  * `http://asset.localhost` 만 허용한다 → 설치 앱 iframe 이 빈 화면으로 남는다
  * (2026-09-11 Linux 실측). AvatarCanvas 와 같은 정규화를 적용한다.
  */
-function installedAppFrameSrc(htmlEntry: string): string {
+export function installedAppFrameSrc(htmlEntry: string): string {
+	if (isWebMode()) {
+		return getPlatformAppStoreAdapter().resolveFrameSrc(htmlEntry);
+	}
 	return normalizeTauriAssetUrl(convertFileSrc(htmlEntry));
+}
+
+/**
+ * Resolve `<iframe sandbox>` policy for installed mini-apps.
+ *
+ * Security boundary (Stage-1 Web App Store): any web mini-app or `/hosted-apps/*`
+ * entry MUST omit `allow-same-origin` so the browser places the iframe into an
+ * opaque `null` origin — physically blocking cookie, `localStorage`, and OPFS
+ * access on `naia.land` / `dev.naia.land`.
+ */
+export function resolveInstalledAppSandboxAttr(
+	frameSrc: string,
+	trustedSlides: boolean,
+): string {
+	if (isWebMode() || /\/hosted-apps\//.test(frameSrc)) {
+		return "allow-scripts allow-forms allow-downloads allow-popups";
+	}
+	return trustedSlides
+		? "allow-scripts allow-same-origin allow-downloads allow-modals"
+		: "allow-scripts allow-same-origin";
 }
 
 export function createGenericInstalledApp(
@@ -57,21 +82,25 @@ export function createGenericInstalledApp(
 		const iframeRef = useRef<HTMLIFrameElement>(null);
 		const frameSrc = htmlEntry ? installedAppFrameSrc(htmlEntry) : "";
 		const trustedSlides = htmlEntry ? isTrustedSlidesEntry(htmlEntry) : false;
+		const sandboxAttr = frameSrc
+			? resolveInstalledAppSandboxAttr(frameSrc, trustedSlides)
+			: "allow-scripts";
+		const isOpaqueSandbox = !/\ballow-same-origin\b/i.test(sandboxAttr);
 
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
-			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, frameSrc);
+			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, htmlEntry);
 			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
 			return () => {
+				disposeContextBridge();
 				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
-				disposeContextBridge();
 			};
 		}, [htmlEntry, frameSrc, appId, permissions]);
 
@@ -88,7 +117,9 @@ export function createGenericInstalledApp(
 					if (!iframe || !contentWindow) {
 						return "(app not loaded yet)";
 					}
-					const targetOrigin = resolveAppToolTargetOrigin(iframe.src);
+					const targetOrigin = isOpaqueSandbox
+						? "*"
+						: resolveAppToolTargetOrigin(iframe.src);
 					if (!targetOrigin) {
 						throw new Error("Cannot send app tool call: invalid target origin");
 					}
@@ -147,12 +178,8 @@ export function createGenericInstalledApp(
 					src={frameSrc}
 					title="App"
 					allow={permissions.includes("clipboard.write") ? "clipboard-write" : undefined}
-					sandbox={
-						trustedSlides
-							? "allow-scripts allow-same-origin allow-downloads allow-modals"
-							: "allow-scripts allow-same-origin"
-					}
-					allowFullScreen={trustedSlides}
+					sandbox={sandboxAttr}
+					allowFullScreen={trustedSlides || isWebMode()}
 				/>
 			);
 		}

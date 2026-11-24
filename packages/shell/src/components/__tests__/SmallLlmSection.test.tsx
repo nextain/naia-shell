@@ -190,9 +190,7 @@ describe("SmallLlmSection", () => {
 			},
 		});
 		const onPersist = vi.fn();
-		const fetchCatalog = vi
-			.fn()
-			.mockRejectedValue(new Error("network error"));
+		const fetchCatalog = vi.fn().mockRejectedValue(new Error("network error"));
 		render(
 			<SmallLlmSection
 				config={config}
@@ -232,7 +230,9 @@ describe("SmallLlmSection", () => {
 		const ollamaRadio = screen.getByTestId("small-llm-choice-ollama");
 		fireEvent.click(ollamaRadio);
 
-		const modelInput = screen.getByTestId("small-llm-model") as HTMLInputElement;
+		const modelInput = screen.getByTestId(
+			"small-llm-model",
+		) as HTMLInputElement;
 		fireEvent.change(modelInput, { target: { value: "qwen" } });
 
 		expect(ollamaRadio).toBeChecked();
@@ -249,7 +249,9 @@ describe("SmallLlmSection", () => {
 		);
 
 		const ollamaRadioAfter = screen.getByTestId("small-llm-choice-ollama");
-		const modelInputAfter = screen.getByTestId("small-llm-model") as HTMLInputElement;
+		const modelInputAfter = screen.getByTestId(
+			"small-llm-model",
+		) as HTMLInputElement;
 		expect(ollamaRadioAfter).toBeChecked();
 		expect(modelInputAfter.value).toBe("qwen");
 	});
@@ -439,7 +441,9 @@ describe("SmallLlmSection", () => {
 				naiaKeyPresent={true}
 				gatewayHttpUrl="http://localhost:1420"
 				onPersist={onPersist}
-				fetchCatalog={vi.fn().mockResolvedValue(new Map([["gpt-5.4-nano", {}]]))}
+				fetchCatalog={vi
+					.fn()
+					.mockResolvedValue(new Map([["gpt-5.4-nano", {}]]))}
 			/>,
 		);
 
@@ -464,7 +468,9 @@ describe("SmallLlmSection", () => {
 				naiaKeyPresent={true}
 				gatewayHttpUrl="http://localhost:1420"
 				onPersist={onPersist}
-				fetchCatalog={vi.fn().mockResolvedValue(new Map([["gpt-5.4-nano", {}]]))}
+				fetchCatalog={vi
+					.fn()
+					.mockResolvedValue(new Map([["gpt-5.4-nano", {}]]))}
 			/>,
 		);
 
@@ -507,4 +513,52 @@ describe("SmallLlmSection", () => {
 
 		expect(container.firstChild).toBeNull();
 	});
+});
+
+it("R17 persists a main-model default and local selection immediately without blur", async () => {
+	const onPersist = vi.fn();
+	const config = makeConfig({
+		provider: "vllm",
+		model: "qwen3.8-27b-uncensored",
+		vllmHost: "http://127.0.0.1:8031/v1",
+		memoryEmbeddingProvider: "none",
+	});
+	render(
+		<SmallLlmSection
+			config={config}
+			naiaKeyPresent={false}
+			gatewayHttpUrl="http://localhost:1420"
+			onPersist={onPersist}
+			fetchCatalog={vi.fn().mockResolvedValue(null)}
+		/>,
+	);
+	expect(screen.getByTestId("small-llm-choice-main")).toBeChecked();
+	expect(onPersist).toHaveBeenCalledWith(
+		expect.objectContaining({ llmRoles: { memory: { inherit: "main" } } }),
+	);
+	expect(screen.getByTestId("memory-embedding-warning")).toHaveAttribute(
+		"role",
+		"alert",
+	);
+	fireEvent.click(screen.getByTestId("small-llm-choice-vllm"));
+	expect(screen.getByTestId("small-llm-base-url")).toHaveValue(
+		"http://127.0.0.1:8031/v1",
+	);
+	expect(screen.getByTestId("small-llm-model")).toHaveValue(
+		"qwen3.8-27b-uncensored",
+	);
+	expect(onPersist).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			memoryLlmBaseUrl: "http://127.0.0.1:8031/v1",
+			memoryLlmModel: "qwen3.8-27b-uncensored",
+		}),
+	);
+	fireEvent.change(screen.getByTestId("small-llm-model"), {
+		target: { value: "" },
+	});
+	fireEvent.blur(screen.getByTestId("small-llm-model"));
+	expect(onPersist).toHaveBeenLastCalledWith(
+		expect.objectContaining({ llmRoles: { memory: { inherit: "main" } } }),
+	);
+	cleanup();
 });

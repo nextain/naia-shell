@@ -1,5 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	collectNvaManifestClipPaths,
 	defaultClipOf,
 	parseNvaManifest,
 	resolveDefaultAnimation,
@@ -215,5 +218,162 @@ describe("NVA manifest contract (v0.2)", () => {
 		expect(() => parseNvaManifest(JSON.stringify(noIdle))).toThrow(
 			/no playable default clip/,
 		);
+	});
+
+	it("collects all renderer-accessible clip paths including animations, vrm_slots, prebaked_speech, speech_clips, by_locale, and stacked_alpha", () => {
+		const paths = collectNvaManifestClipPaths({
+			nva_version: "0.2",
+			canvas: { width: 720, height: 1280 },
+			animations: {
+				idle: { clip: "clips/idle.webm", loop: true, can_talk: false },
+				talking: { clip: "clips/talking.webm", loop: true, can_talk: true },
+			},
+			vrm_slots: {
+				visemes: { aiueo: { clip: "clips/viseme-aiueo.webm" } },
+				motions: { wave: { clip: "clips/motion-wave.webm" } },
+				speech: {
+					greet: {
+						clip: "clips/vrm-speech-default.webm",
+						by_locale: {
+							"ko-KR": { clip: "clips/vrm-speech-ko.webm" },
+							"en-US": { clip: "clips/vrm-speech-en.webm" },
+						},
+					},
+				},
+			},
+			prebaked_speech: {
+				utterances: {
+					hello: {
+						clip: "clips/prebaked-default.webm",
+						by_locale: {
+							"ja-JP": { clip: "clips/prebaked-ja.webm" },
+						},
+					},
+				},
+			},
+			speech_clips: {
+				"speech-ko": {
+					clip: "clips/speech-clip-ko.webm",
+					by_locale: {
+						"en-US": { clip: "clips/speech-clip-en.webm" },
+					},
+				},
+			},
+			stacked_alpha: {
+				layout: "color-top-alpha-bottom",
+				clips: {
+					"clips/idle.webm": "clips/idle.stacked.mp4",
+				},
+			},
+		});
+
+		expect(paths).toEqual([
+			"clips/idle.webm",
+			"clips/talking.webm",
+			"clips/viseme-aiueo.webm",
+			"clips/motion-wave.webm",
+			"clips/vrm-speech-default.webm",
+			"clips/vrm-speech-ko.webm",
+			"clips/vrm-speech-en.webm",
+			"clips/prebaked-default.webm",
+			"clips/prebaked-ja.webm",
+			"clips/speech-clip-ko.webm",
+			"clips/speech-clip-en.webm",
+			"clips/idle.webm",
+			"clips/idle.stacked.mp4",
+		]);
+	});
+
+	it("validates public/nva/{naia,jina,jina-anime} canonical studio bundles, multi-motion clips, and speech atlas assets", () => {
+		const publicNvaRoot = path.resolve(__dirname, "../../../public/nva");
+		expect(existsSync(path.join(publicNvaRoot, "naia-anime"))).toBe(false);
+
+		const expectedBundles: Array<{
+			dirName: string;
+			metaName: string;
+			styleLabel: string;
+			animations: string[];
+			clips: string[];
+			removedFiles: string[];
+		}> = [
+			{
+				dirName: "naia",
+				metaName: "Naia (기본 캐릭터)",
+				styleLabel: "2D 셀 애니",
+				animations: ["greeting", "happy"],
+				clips: ["idle", "talking-ko", "greeting", "happy"],
+				removedFiles: [
+					"idle.stacked.mp4",
+					"keyboard-idle.webm",
+					"singing-keyboard.webm",
+				],
+			},
+			{
+				dirName: "jina",
+				metaName: "Jina",
+				styleLabel: "기본 화풍",
+				animations: ["greeting", "idea"],
+				clips: ["idle", "talking-ko", "greeting", "idea"],
+				removedFiles: ["motion.webm"],
+			},
+			{
+				dirName: "jina-anime",
+				metaName: "Jina",
+				styleLabel: "애니 화풍",
+				animations: ["guidance", "idea"],
+				clips: ["idle", "talking-ko", "guidance", "idea"],
+				removedFiles: ["idle.stacked.mp4", "motion.webm"],
+			},
+		];
+
+		for (const bundle of expectedBundles) {
+			const bundleDir = path.join(publicNvaRoot, bundle.dirName);
+			const raw = readFileSync(path.join(bundleDir, "manifest.json"), "utf8");
+			const parsed = JSON.parse(raw) as {
+				speech_motion?: {
+					version?: string;
+					representation?: string;
+					atlas?: string;
+					atlas_index?: string;
+					neutral_head?: string;
+				};
+			};
+			const manifest = parseNvaManifest(raw);
+			expect(manifest.meta?.name).toBe(bundle.metaName);
+			expect(manifest.meta?.style_label).toBe(bundle.styleLabel);
+			expect(Object.keys(manifest.animations)).toEqual([
+				"idle",
+				"talking",
+				...bundle.animations,
+			]);
+			expect(parsed.speech_motion?.version).toBe("1");
+			expect(parsed.speech_motion?.representation).toBe("whole-head-layer");
+			expect(parsed.speech_motion?.atlas).toBe("speech/atlas.bin");
+			expect(parsed.speech_motion?.atlas_index).toBe("speech/atlas-index.json");
+			expect(parsed.speech_motion?.neutral_head).toBe(
+				"speech/neutral-head.png",
+			);
+
+			for (const clip of bundle.clips) {
+				expect(
+					existsSync(path.join(bundleDir, "clips", `${clip}.webm`)),
+				).toBe(true);
+			}
+			for (const removed of bundle.removedFiles) {
+				expect(existsSync(path.join(bundleDir, "clips", removed))).toBe(false);
+			}
+			for (const stacked of Object.values(manifest.stacked_alpha?.clips ?? {})) {
+				expect(existsSync(path.join(bundleDir, stacked))).toBe(true);
+			}
+			expect(existsSync(path.join(bundleDir, "speech", "atlas.bin"))).toBe(
+				true,
+			);
+			expect(
+				existsSync(path.join(bundleDir, "speech", "atlas-index.json")),
+			).toBe(true);
+			expect(
+				existsSync(path.join(bundleDir, "speech", "neutral-head.png")),
+			).toBe(true);
+		}
 	});
 });

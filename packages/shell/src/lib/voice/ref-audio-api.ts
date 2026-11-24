@@ -23,6 +23,7 @@ import {
 	getNaiaKeySecure,
 } from "../config";
 import { Logger } from "../logger";
+import { isWebMode } from "../web-runtime/web-assets";
 import {
 	fetchLocalVoiceAuthenticated,
 	localVoiceAuthHeaders,
@@ -77,6 +78,9 @@ function isCurrentAdkPath(adkPath: string): boolean {
 
 /** Persist the local reference voice in the selected ADK and refresh the cache. */
 export async function persistLocalRefAudioB64(b64: string): Promise<void> {
+	// R13: 웹판은 게이트웨이가 올린 목소리를 보관한다. 브라우저에는 Tauri ADK 파일이
+	// 없어 invoke 가 던지면, 이미 차감된 올리기가 "알 수 없는 오류"로 보였다.
+	if (isWebMode()) return;
 	const adkPath = getAdkPath();
 	if (!adkPath) throw new Error("ADK path is not configured");
 	await invoke("write_naia_ref_audio", {
@@ -94,6 +98,7 @@ export async function persistLocalRefAudioB64(b64: string): Promise<void> {
  * 확인이 걸렸는지 보는 검사도 둘을 구분하지 못한다. 이름으로 갈라 둔다.
  */
 export async function clearLocalRefAudio(): Promise<void> {
+	if (isWebMode()) return;
 	const adkPath = getAdkPath();
 	if (!adkPath) throw new Error("ADK path is not configured");
 	await invoke("delete_naia_ref_audio", { adkPath });
@@ -104,6 +109,7 @@ export async function clearLocalRefAudio(): Promise<void> {
 export async function hydrateLocalRefAudioB64(): Promise<string | null> {
 	const adkPath = getAdkPath();
 	setLocalRefAudioB64(null);
+	if (isWebMode()) return null;
 	if (!adkPath) {
 		return null;
 	}

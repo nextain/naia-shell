@@ -31,6 +31,7 @@ vi.mock("../secure-store", () => ({
 }));
 
 import {
+	bootstrapAdkPath,
 	applyModelSelectionToConfig,
 	applyWorkspaceConfigToLocal,
 	beginNaiaConfigHydration,
@@ -46,6 +47,7 @@ import {
 	resetNaiaPersistedSettings,
 	setAdkPath,
 	toAssetUrl,
+	toLocalBlobUrl,
 	writeAgentKeyStrict,
 	writeNaiaConfig,
 	writeNaiaConfigAtPath,
@@ -53,6 +55,12 @@ import {
 } from "../adk-store";
 import { mergeBootConfig } from "../config";
 import { buildSystemPrompt } from "../persona";
+import {
+	WEB_BACKGROUND_ASSETS,
+	WEB_NVA_ASSETS,
+	WEB_VRM_ASSETS,
+	setWebAssetsModeForTests,
+} from "../web-runtime/web-assets";
 
 // ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
 // Regression guard for 2026-06-17: UI model selection MUST become the agent's
@@ -412,6 +420,100 @@ describe("listNaiaAssets", () => {
 		const result = await listNaiaAssets("bgm-musics");
 		expect(result[0]).toContain("bgm-musics");
 		expect(result[0]).toContain("Afternoon Whispers.mp3");
+	});
+});
+
+// ── listNaiaAssets / toLocalBlobUrl (웹판: dist 번들 카탈로그) ─────────────────
+// 데스크톱 invoke 경로를 타지 않고 번들 URL을 그대로 돌려준다.
+
+describe("web bundled assets (WO-03)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+	});
+
+	it("lists bundled VRM URLs without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("vrm-files");
+		expect(result).toEqual(WEB_VRM_ASSETS.map((asset) => asset.url));
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("lists bundled background URLs (including live MP4 videos) without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("background");
+		expect(result).toEqual(WEB_BACKGROUND_ASSETS.map((asset) => asset.url));
+		expect(result).toContain("/backgrounds/naia-starlight-lake-live.mp4");
+		expect(result).toContain("/backgrounds/naia-rainy-studio-live.mp4");
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("lists 5 bundled NVA names without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("nva-files");
+		expect(result).toEqual([
+			"naia",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]);
+		expect(result).toEqual(WEB_NVA_ASSETS);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("returns empty arrays for non-bundled subdirs in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		await expect(listNaiaAssets("bgm-musics")).resolves.toEqual([]);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("returns bundled/remote URLs as-is in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		await expect(
+			toLocalBlobUrl("/backgrounds/naia-dawn-city-uhd.webp"),
+		).resolves.toBe("/backgrounds/naia-dawn-city-uhd.webp");
+		await expect(toLocalBlobUrl("/avatars/03-OL_Woman.vrm")).resolves.toBe(
+			"/avatars/03-OL_Woman.vrm",
+		);
+		await expect(toLocalBlobUrl("avatars/03-OL_Woman.vrm")).resolves.toBe(
+			"/avatars/03-OL_Woman.vrm",
+		);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("propagates storage errors from the web background list instead of hiding them", async () => {
+		setWebAssetsModeForTests(true);
+		const quota = new DOMException("full", "QuotaExceededError");
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => {
+					throw quota;
+				},
+			},
+		});
+		try {
+			await expect(listNaiaAssets("background")).rejects.toBe(quota);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("keeps the bundled list when the web background folder is simply absent", async () => {
+		setWebAssetsModeForTests(true);
+		vi.stubGlobal("navigator", {
+			storage: {
+				getDirectory: async () => {
+					throw new DOMException("missing", "NotFoundError");
+				},
+			},
+		});
+		try {
+			await expect(listNaiaAssets("background")).resolves.toEqual(
+				WEB_BACKGROUND_ASSETS.map((asset) => asset.url),
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });
 
@@ -810,6 +912,45 @@ describe("writeNaiaConfig", () => {
 		expect(
 			JSON.parse((configWrites[0]?.[1] as { json: string }).json).model,
 		).toBe("selected-adk-model");
+	});
+
+	it("keeps max thinking levels when persisting the agent config", async () => {
+		await setAdkPath(WIN_ADK);
+		await writeNaiaConfigAtPath(
+			{
+				provider: "nextain",
+				model: "deepseek-v4.1-flash",
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6-luna",
+						thinkingLevel: "max",
+					},
+					sub: {
+						provider: "nextain",
+						model: "deepseek-v4.1-flash",
+						thinkingLevel: "low",
+					},
+				},
+				mainModelThinkingLevels: {
+					'["nextain","gpt-6-luna"]': "max",
+				},
+			},
+			WIN_ADK,
+		);
+
+		const configWrites = mockInvoke.mock.calls.filter(
+			([command]) => command === "write_naia_config",
+		);
+		expect(configWrites).toHaveLength(1);
+		const agentJson = JSON.parse(
+			(configWrites[0]?.[1] as { json: string }).json,
+		);
+		expect(agentJson.llmRoles?.main?.thinkingLevel).toBe("max");
+		expect(agentJson.llmRoles?.sub?.thinkingLevel).toBe("low");
+		expect(agentJson.mainModelThinkingLevels).toEqual({
+			'["nextain","gpt-6-luna"]': "max",
+		});
 	});
 
 	it("does not borrow the newly selected ADK credential for a queued old-path manifest", async () => {
@@ -1345,3 +1486,178 @@ describe("copyBundledAssets", () => {
 });
 // #602: openai 커스텀 호스트(syncMainRoleOpenAiBaseUrl, #515)는 타사 직결 openai
 // 공급자와 함께 제거됐다 — 관련 회귀 가드도 삭제한다.
+
+// UC-B2C-026-R7: workspace binding must preserve original card bytes on failure.
+describe("B2C card/theme ADK switch server regression", () => {
+	it("keeps exact card/theme and locale bytes during pending and rejected rebind", async () => {
+		await setAdkPath(UNIX_ADK);
+		const config = {
+			workspaceRoot: UNIX_ADK,
+			provider: "ollama",
+			model: "local",
+			locale: "ko",
+			persona: "gardener",
+			uiPreferences: {
+				b2cActiveCardId: "card-a",
+				b2cCardLibrary: [
+					{
+						id: "card-a",
+						sourceBase64: "eyJuYW1lIjoiQSJ9",
+						rawJson: { name: "A", extension: { keep: true } },
+					},
+				],
+				b2cNvaThemes: [{ id: "theme-a", nvaModel: "naia" }],
+			},
+		};
+		const original = JSON.stringify(config);
+		localStorage.setItem("naia-config", original);
+		let release!: () => void;
+		const wait = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "write_naia_path_cache") {
+				await wait;
+				throw new Error("rebind denied");
+			}
+			return "";
+		});
+		const next = setAdkPath(WIN_ADK);
+		const rejection = expect(next).rejects.toThrow("rebind denied");
+		await Promise.resolve();
+		expect(getAdkPath()).toBe(UNIX_ADK);
+		expect(localStorage.getItem("naia-config")).toBe(original);
+		release();
+		await rejection;
+		expect(getAdkPath()).toBe(UNIX_ADK);
+		expect(localStorage.getItem("naia-config")).toBe(original);
+	});
+});
+
+describe("UC-B2C-026-R10 restore lifetime", () => {
+	it.each(["switch", "roundtrip", "newer-restore"])(
+		"discards stale reads after %s",
+		async (mode) => {
+			await setAdkPath(UNIX_ADK);
+			let release!: (value: string) => void;
+			let reads = 0;
+			mockInvoke.mockImplementation(async (cmd: string) => {
+				if (cmd === "read_naia_config" && reads++ === 0)
+					return new Promise<string>((resolve) => {
+						release = resolve;
+					});
+				if (cmd === "read_naia_config")
+					return JSON.stringify({ persona: "new" });
+				if (cmd === "read_naia_ui_config") return "{}";
+			});
+			const old = applyWorkspaceConfigToLocal();
+			if (mode !== "newer-restore") {
+				await setAdkPath(WIN_ADK);
+				if (mode === "roundtrip") await setAdkPath(UNIX_ADK);
+			}
+			await applyWorkspaceConfigToLocal();
+			const latest = localStorage.getItem("naia-config");
+			release(
+				JSON.stringify({
+					persona: "stale",
+					uiPreferences: { b2cActiveCardId: "old" },
+				}),
+			);
+			await old;
+			expect(localStorage.getItem("naia-config")).toBe(latest);
+			expect(JSON.parse(latest!).persona).toBe("new");
+		},
+	);
+	it("restores each workspace after cache loss and preserves cache on read failure", async () => {
+		const cards = new Map(
+			[UNIX_ADK, WIN_ADK].map((path, i) => [
+				path,
+				{
+					b2cActiveCardId: `card-${i}`,
+					b2cCardLibrary: [
+						{
+							sourceBase64: `original-${i}`,
+							rawJson: { extension: { keep: i } },
+						},
+					],
+					b2cNvaThemes: [{ id: `theme-${i}` }],
+				},
+			]),
+		);
+		mockInvoke.mockImplementation(
+			async (cmd: string, args: { adkPath: string }) => {
+				if (cmd === "read_naia_config")
+					return JSON.stringify({ persona: args.adkPath });
+				if (cmd === "read_naia_ui_config")
+					return JSON.stringify({
+						locale: "ko",
+						uiPreferences: cards.get(args.adkPath),
+					});
+			},
+		);
+		for (const path of [UNIX_ADK, WIN_ADK, UNIX_ADK]) {
+			await setAdkPath(path);
+			localStorage.removeItem("naia-config");
+			await applyWorkspaceConfigToLocal();
+			const restored = JSON.parse(localStorage.getItem("naia-config")!);
+			expect(restored.uiPreferences).toEqual(cards.get(path));
+			expect(restored.workspaceRoot).toBe(path);
+		}
+		const prior = localStorage.getItem("naia-config");
+		mockInvoke.mockRejectedValue(new Error("disk denied"));
+		await expect(applyWorkspaceConfigToLocal()).rejects.toThrow("disk denied");
+		expect(localStorage.getItem("naia-config")).toBe(prior);
+	});
+});
+
+it("UC-B2C-026-R10 cannot resurrect settings after binding reset", async () => {
+	await setAdkPath(UNIX_ADK);
+	let release!: (value: string) => void;
+	mockInvoke.mockImplementation(async (cmd: string) => {
+		if (cmd === "read_naia_config")
+			return new Promise<string>((resolve) => {
+				release = resolve;
+			});
+		return "{}";
+	});
+	const restore = applyWorkspaceConfigToLocal();
+	clearAdkPath();
+	localStorage.removeItem("naia-config");
+	release(JSON.stringify({ persona: "retired" }));
+	await restore;
+	expect(getAdkPath()).toBeNull();
+	expect(localStorage.getItem("naia-config")).toBeNull();
+});
+
+describe("UC-B2C-026-R12 native bootstrap authority", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		mockInvoke.mockReset();
+	});
+	it("replaces home A webview state with home B before any config read/write", async () => {
+		localStorage.setItem("naia-adk-path", "/home-a/adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ workspaceRoot: "/home-a/adk", agentName: "private A" }),
+		);
+		mockInvoke.mockResolvedValue("/home-b/adk");
+		await bootstrapAdkPath();
+		expect(getAdkPath()).toBe("/home-b/adk");
+		expect(localStorage.getItem("naia-config")).toBeNull();
+		expect(
+			mockInvoke.mock.calls.filter(([command]) => command !== "frontend_log"),
+		).toEqual([["read_naia_path_cache"]]);
+	});
+	it("empty isolated home never falls back to the webview path", async () => {
+		localStorage.setItem("naia-adk-path", "/home-a/adk");
+		mockInvoke.mockResolvedValue(null);
+		await bootstrapAdkPath();
+		expect(getAdkPath()).toBeNull();
+	});
+	it("read errors clear stale state and stop boot", async () => {
+		localStorage.setItem("naia-adk-path", "/home-a/adk");
+		mockInvoke.mockRejectedValue(new Error("denied"));
+		await expect(bootstrapAdkPath()).rejects.toThrow("denied");
+		expect(getAdkPath()).toBeNull();
+	});
+});

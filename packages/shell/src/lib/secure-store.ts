@@ -6,8 +6,40 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
+import { isKioskDemo } from "./kiosk-demo/flag";
+import { isWebMode } from "./web-runtime/web-assets";
+import { WEB_REMOTE_KEY_STORAGE_KEY } from "./web-runtime/web-auth";
 
 const ADK_PATH_KEY = "naia-adk-path";
+const WEB_SECRETS_STORAGE_KEY = "naia-web-secrets";
+
+function isWebSecureStorePath(expectedStorePath: string): boolean {
+	return isWebMode() || expectedStorePath.startsWith("opfs://");
+}
+
+function readWebSecretsMap(): Record<string, string> {
+	if (typeof localStorage === "undefined") return {};
+	try {
+		const raw = localStorage.getItem(WEB_SECRETS_STORAGE_KEY);
+		if (!raw) return {};
+		const parsed: unknown = JSON.parse(raw);
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as Record<string, string>;
+		}
+	} catch {
+		// ignore malformed storage
+	}
+	return {};
+}
+
+function writeWebSecretsMap(next: Record<string, string>): void {
+	if (typeof localStorage === "undefined") return;
+	try {
+		localStorage.setItem(WEB_SECRETS_STORAGE_KEY, JSON.stringify(next));
+	} catch {
+		// ignore quota errors
+	}
+}
 /** Receipt kept in the pre-ADK app-data store, never in localStorage. */
 const FIRST_ADK_BINDING_RECEIPT_KEY = "__naia_secure_store_first_adk";
 const PRIVATE_DATA_DIR = "data-private";
@@ -55,6 +87,23 @@ async function nativeSecureStoreGet(
 	name: string,
 	expectedStorePath: string,
 ): Promise<string | null> {
+	if (isWebSecureStorePath(expectedStorePath)) {
+		if (typeof localStorage === "undefined") return null;
+		if (name === "naiaKey") {
+			return localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY) || null;
+		}
+		const map = readWebSecretsMap();
+		if (map[name]) return map[name];
+		try {
+			const cfg = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			if (cfg && typeof cfg[name] === "string" && cfg[name]) {
+				return cfg[name];
+			}
+		} catch {
+			// ignore malformed config
+		}
+		return null;
+	}
 	return (
 		(await invoke<string | null>("secure_store_get", {
 			name,
@@ -68,6 +117,19 @@ async function nativeSecureStoreSet(
 	value: string,
 	expectedStorePath: string,
 ): Promise<void> {
+	if (isWebSecureStorePath(expectedStorePath)) {
+		if (typeof localStorage === "undefined") return;
+		if (name === "naiaKey") {
+			if (value) {
+				localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, value);
+			}
+			return;
+		}
+		const map = readWebSecretsMap();
+		map[name] = value;
+		writeWebSecretsMap(map);
+		return;
+	}
 	await invoke<void>("secure_store_set", {
 		name,
 		value,
@@ -79,6 +141,21 @@ async function nativeSecureStoreDelete(
 	name: string,
 	expectedStorePath: string,
 ): Promise<void> {
+	if (isWebSecureStorePath(expectedStorePath)) {
+		if (typeof localStorage === "undefined") return;
+		if (name === "naiaKey") {
+			if (!isKioskDemo()) {
+				localStorage.removeItem(WEB_REMOTE_KEY_STORAGE_KEY);
+			}
+			return;
+		}
+		const map = readWebSecretsMap();
+		if (name in map) {
+			delete map[name];
+			writeWebSecretsMap(map);
+		}
+		return;
+	}
 	await invoke<void>("secure_store_delete", {
 		name,
 		expectedStorePath,

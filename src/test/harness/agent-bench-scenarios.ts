@@ -121,6 +121,8 @@ const HEADING = /^###\s+(UC-[A-Z0-9-]+)/gm;
 // UC-PERF- 는 #431 성능 줄기다. 범용 에이전트 에픽(#497)이 소유하지 않으므로
 // 그 하네스의 계열에 자리가 없다 — 검사기가 안내한 대로 여기 적는다.
 const NOT_OWNED_BY_EPIC: readonly string[] = [
+  // Shell card import and avatar/theme settings; deterministic UI/config tests.
+  "UC-B2C-026",
   // 셸의 동의·UI 사용 통계이며 에이전트 능력 축이 아니다. P02 표의 시험으로 검증한다.
   "UC-USAGE-EVENTS",
   "UC-DISCORD-",
@@ -133,6 +135,9 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   // 이다. 접두사를 UC-VOICE- 로 넓히지 않는 이유는, 그러면 앞으로 생길 로컬 음성
   // 런타임 같은 UC 까지 말없이 빠지기 때문이다 — 그때는 이 판정을 다시 하게 둔다.
   "UC-VOICE-TEXT-",
+  // 웹 화면 문구 번역(#824)은 에이전트 능력이 아니라 UI 문자열이 로케일 키로 나오느냐다.
+  // 검증 수단은 결정론 단위 테스트(i18n-web-strings, i18n-user-facing)다.
+  "UC-WEB-025-I18N-",
   // 품질 축 UC(#549)는 에이전트가 무엇을 하느냐가 아니라 이 저장소가 스스로를
   // 어떻게 재느냐다. 위 계열들이 재는 능력 축 어디에도 걸리지 않는다.
   "UC-QUALITY-",
@@ -142,6 +147,12 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-BGM-",
   // 예전 설정 필드의 메인 모델 이관(#707). 설정 해석이다.
   "UC-NAIA-LEGACY-MAIN-MODEL",
+  // 모델 선택·아이콘·파일 경로는 앱 설정과 표시이며 에이전트 능력 축이 아니다.
+  "UC-RECOMMENDED-MODELS-ICON-WEB-PATH",
+  // 메인·작은 모델 선택과 저장(0.2.5). 설정 해석과 저장이다.
+  "UC-SM-01",
+  // 웹·앱 사이 이관 묶음 왕복(0.2.5). 파일 묶음 형식과 검증이다.
+  "UC-TRANSFER-01",
   // QA 회차 운영은 사람의 검사 절차다.
   "UC-QA-",
   // 인스턴스별 land·API 호스트 선택(#653). 빌드 모드 설정이다.
@@ -169,6 +180,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
+  // 0.2.6 OBS 없이 쉘에서 바로 방송 송출. 셸 미디어·프로세스·UI 표면 기능이다.
+  "UC-BROADCAST-STREAM-026",
   // 회귀 실행자의 기계 바인딩 검사(#853). 회귀 기록을 쓰기 전 host 필드를 거르는 운영
   // 계약이고, 결정론 계약 시험(regression-host-privacy.contract)이 검증 수단이다.
   "UC-REGRESSION-HOST-BINDING",
@@ -196,6 +209,72 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-UI-FONT-SCALE-20261105",
   // macOS 데스크톱 WKWebView NVA 폴백·TCC 권한·종료 정리·폰트·PipeWire 방어(2026-11-16). 플랫폼 미디어·패키징 품질 수리다.
   "UC-MACOS-NVA-AND-QUALITY-20261116",
+
+  // 2026-11-24 웹 셸 UI 흐름 62종 — 에이전트 능력 축이 아니라 브라우저 화면·조작이다.
+  // 검증 수단은 각 UC 절의 P02 Test Coverage Map 행(결정론 vitest·Playwright)이다.
+  // 이름 전체로 적는다: 접두사로 넓히면 앞으로 생길 동족 UC 까지 말없이 빠진다.
+  "UC-KIOSK-KNOWLEDGE-S1",
+  "UC-KIOSK-MEMORY-S2",
+  "UC-WEB-A-R1",
+  "UC-WEB-A-R11",
+  "UC-WEB-A-R12",
+  "UC-WEB-A-R2",
+  "UC-WEB-A-R28",
+  "UC-WEB-A-R5",
+  "UC-WEB-A-R6",
+  "UC-WEB-A-R8",
+  "UC-WEB-APP-CATALOG",
+  "UC-WEB-APP-TOOLS-20261114",
+  "UC-WEB-AVATAR-CLIP",
+  "UC-WEB-BGM-CATALOG-TRUTH",
+  "UC-WEB-BGM-LOCAL-IMPORT",
+  "UC-WEB-BGM-NOWPLAYING",
+  "UC-WEB-BGM-TOPBAR-PLAY",
+  "UC-WEB-BOOT-RUNTIME-SEPARATION",
+  "UC-WEB-CHARCARD",
+  "UC-WEB-CHARCARD-STORAGE-COPY",
+  "UC-WEB-CHAT-MODEL-ERROR",
+  "UC-WEB-CHAT-MODEL-SUMMARY",
+  "UC-WEB-CHAT-START",
+  "UC-WEB-CREDIT-CONTEXT",
+  "UC-WEB-CREDIT-FORMAT",
+  "UC-WEB-HOSTED-APPS",
+  "UC-WEB-KIOSK-ADK-LOCAL",
+  "UC-WEB-KIOSK-APP-STORE",
+  "UC-WEB-KIOSK-FIX",
+  "UC-WEB-KIOSK-FIX7B",
+  "UC-WEB-KIOSK-FIX7C",
+  "UC-WEB-KIOSK-FIX7D",
+  "UC-WEB-KIOSK-FIX7F",
+  "UC-WEB-KIOSK-FIX7G",
+  "UC-WEB-KIOSK-FIX7J",
+  "UC-WEB-KIOSK-MOBILE-FIX",
+  "UC-WEB-KIOSK-PW",
+  "UC-WEB-KIOSK-R12",
+  "UC-WEB-KIOSK-R13-KL",
+  "UC-WEB-KIOSK-R3",
+  "UC-WEB-KIOSK-S3",
+  "UC-WEB-KIOSK-S4",
+  "UC-WEB-KIOSK-S5",
+  "UC-WEB-KIOSK-S6",
+  "UC-WEB-KIOSK-STUDIO-NVA",
+  "UC-WEB-MAC-SAFARI-CHROME",
+  "UC-WEB-MAIN-MODEL-AUTH",
+  "UC-WEB-MAIN-MODEL-LIVE",
+  "UC-WEB-REF-AUDIO-UPLOAD",
+  "UC-WEB-SETTINGS-FILES",
+  "UC-WEB-SETTINGS-MUSIC",
+  "UC-WEB-SETTINGS-TABS-THINKING",
+  "UC-WEB-SLIDES-PPTX",
+  "UC-WEB-STUDIO-VOICE-APPLY",
+  "UC-WEB-USAGE-COST",
+  "UC-WEB-VISUAL-AGENT-SLUG",
+  "UC-WEB-VOICE-LANG-GROUP",
+  "UC-WEB-VOICE-MIC-ERROR",
+  "UC-WEB-VRM-HUB",
+  "UC-WEB-VRM-LIP-SYNC",
+  "UC-WEB-WORKSPACE-IMPORT",
+  "UC-WEBGPU-MODEL-DEFAULTS-20261124",
 ];
 
 export function ownedByEpic(uc: string): boolean {

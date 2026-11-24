@@ -19,6 +19,8 @@ if [ -n "$unstaged" ]; then
   exit 1
 fi
 
+node scripts/check-file-anchors.mjs
+
 # ── ② 컴파일 무결성(코어+셸 src tsc, 테스트-타입 노이즈 제외) ──
 if [ -f scripts/check-compile-integrity.mjs ]; then
   if ! node scripts/check-compile-integrity.mjs; then

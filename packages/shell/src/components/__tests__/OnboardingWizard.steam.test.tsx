@@ -2,6 +2,11 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../lib/llm/registry", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/llm/registry")>()),
+	fetchGatewayModelCatalog: vi.fn().mockResolvedValue(null),
+}));
+
 const eventListeners = vi.hoisted(
 	() => new Map<string, (event: { payload: any }) => void>(),
 );

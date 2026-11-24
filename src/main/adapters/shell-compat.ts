@@ -18,12 +18,13 @@ export interface ShellSendOptions {
   onChunk: (chunk: Record<string, unknown>) => void; // wire AgentResponseChunk
   requestId: string;
   sessionId?: string;
+  appName?: string;
   systemPrompt?: string;
   /** S4 — 셸 환경고유 세그먼트(아바타 감정·앱·표면). 코어가 persona+workspace 뒤 머지. */
   environmentSegments?: readonly EnvironmentSegment[];
   enableTools?: boolean;
   enableThinking?: boolean;
-  thinking?: { level: "off" | "low" | "high" };
+  thinking?: { level: "off" | "low" | "high" | "xhigh" | "max" };
   gatewayUrl?: string;
   disabledSkills?: readonly string[];
   /** Enabled coding CLI names from Skills tab (#605). */
@@ -108,6 +109,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
           ...(opts.attachments !== undefined ? { attachments: opts.attachments } : {}),
         }],
         ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+        ...(opts.appName !== undefined ? { appName: opts.appName } : {}),
         ...(opts.systemPrompt !== undefined ? { systemPrompt: opts.systemPrompt } : {}),
         ...(opts.environmentSegments !== undefined ? { environmentSegments: opts.environmentSegments } : {}),
         ...(opts.enableTools !== undefined ? { enableTools: opts.enableTools } : {}),
@@ -115,7 +117,9 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.thinking !== undefined &&
         (opts.thinking.level === "off" ||
           opts.thinking.level === "low" ||
-          opts.thinking.level === "high")
+          opts.thinking.level === "high" ||
+          opts.thinking.level === "xhigh" ||
+          opts.thinking.level === "max")
           ? { thinking: { level: opts.thinking.level } }
           : {}),
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),

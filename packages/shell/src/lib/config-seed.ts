@@ -1,4 +1,18 @@
+import { isLegacyBundledVrmModel } from "./avatar-presets";
+import { effectiveAvatarProviderFromConfig } from "./avatar/nva-gate";
+// character-theme(카드 파서·문구 묶음)는 시연판 시드에서만 필요하므로
+// 첫 번들에서 빼고 buildKioskDemoConfigSeed 안에서 동적 로드한다.
 import type { AppConfig } from "./config";
+import { isKioskDemo } from "./kiosk-demo/flag";
+import {
+	WEB_DEFAULT_NVA,
+	isLegacyWebNaiaSelection,
+	isWebMode,
+} from "./web-runtime/web-assets";
+import {
+	WEB_LLM_MODEL_ID,
+	isWebLlmModelId,
+} from "./web-runtime/webllm-model";
 
 /**
  * FR-VOICE.15 (#418): retired config fields that the safety migration strips
@@ -34,4 +48,311 @@ export function buildSeedShellConfig(
 		}
 	}
 	return seed;
+}
+
+export const KIOSK_DEMO_LLM_PROVIDER = "nextain" as const;
+export const KIOSK_DEMO_LLM_MODEL = "gpt-5.6-luna" as const;
+export const KIOSK_DEMO_THINKING_LEVEL = "low" as const;
+export const KIOSK_DEMO_ENABLE_TOOLS = true as const;
+export const KIOSK_DEMO_ENVIRONMENT_AWARENESS = "off" as const;
+export const KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT = false as const;
+export const KIOSK_DEMO_LLM_FALLBACK_MODELS = [
+	"deepseek-v4-pro",
+	"deepseek-v4-flash",
+	"solar-pro4",
+	"solar-mini",
+] as const;
+export const KIOSK_DEMO_TTS_PROVIDER = "nextain" as const;
+// 지나 고유 목소리: 키오스크 nva/jina/manifest.json 의 meta.voice.id 와 같은 값이다.
+export const KIOSK_DEMO_TTS_VOICE = "naia-voice:tpl-jina" as const;
+// 게이트웨이가 지나 목소리를 거절하거나 오디오를 풀 수 없을 때 문장 단위로 한 번 다시 요청하는 구글 기본 여성.
+export const KIOSK_DEMO_TTS_FALLBACK_VOICE = "ko-KR-Neural2-A" as const;
+export const KIOSK_DEMO_NVA_MODEL = "jina";
+export const DEFAULT_SHELL_NAIA_WIDTH = 320;
+export const KIOSK_SHELL_NAIA_WIDTH = 520;
+export const KIOSK_SHELL_CHAT_HEIGHT_MIN = 540;
+export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.76;
+export const KIOSK_SHELL_AVATAR_AREA_RATIO = 0.24;
+
+let kioskGatewayServedModels: ReadonlySet<string> | null = null;
+
+export function setKioskDemoGatewayServedModels(
+	gatewayServed: ReadonlySet<string> | null,
+): void {
+	kioskGatewayServedModels = gatewayServed;
+}
+
+/**
+ * 키오스크 시연의 주 모델은 크레딧 보호를 위해 gpt-5.6-luna로 고정하고,
+ * 게이트웨이 /v1/models 목록에 luna가 없을 때만 대체 모델로 내린다.
+ */
+export function resolveKioskDemoMainModel(
+	gatewayServed?: ReadonlySet<string> | null,
+): string {
+	const served =
+		gatewayServed === undefined ? kioskGatewayServedModels : gatewayServed;
+	if (!served || served.has(KIOSK_DEMO_LLM_MODEL)) {
+		return KIOSK_DEMO_LLM_MODEL;
+	}
+	return (
+		KIOSK_DEMO_LLM_FALLBACK_MODELS.find((id) => served.has(id)) ??
+		KIOSK_DEMO_LLM_MODEL
+	);
+}
+
+/**
+ * 키오스크 시연 판에서는 저장값(terra·다른 프로바이더·생각 세기·도구·작업 표면 설정 등)과 무관하게
+ * 주 공급자("nextain"), 주 모델(resolveKioskDemoMainModel), 생각 세기(KIOSK_DEMO_THINKING_LEVEL = "low"),
+ * 도구 사용(KIOSK_DEMO_ENABLE_TOOLS = true), 작업 표면 인지(KIOSK_DEMO_ENVIRONMENT_AWARENESS = "off"),
+ * 터미널 직접 입력(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT = false)을 한 곳에서 강제한다.
+ */
+export const KIOSK_LOCAL_ANSWER_STORAGE_KEY = "naia-kiosk-local-answer" as const;
+
+export const isKioskLocalAnswerEnabled = (): boolean => {
+	if (!isKioskDemo()) return false;
+	try {
+		if (typeof localStorage === "undefined") return false;
+		return localStorage.getItem(KIOSK_LOCAL_ANSWER_STORAGE_KEY) === "1";
+	} catch {
+		return false;
+	}
+};
+
+export const setKioskLocalAnswerEnabled = (enabled: boolean): void => {
+	try {
+		if (typeof localStorage === "undefined") return;
+		if (enabled) {
+			localStorage.setItem(KIOSK_LOCAL_ANSWER_STORAGE_KEY, "1");
+		} else {
+			localStorage.removeItem(KIOSK_LOCAL_ANSWER_STORAGE_KEY);
+		}
+	} catch {
+		// ignore storage errors
+	}
+};
+
+export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
+	config: T,
+	gatewayServed?: ReadonlySet<string> | null,
+): T {
+	if (!isKioskDemo()) return config;
+	const useLocalWebLlm =
+		isKioskLocalAnswerEnabled() && config.provider === "webllm";
+	const provider = useLocalWebLlm ? "webllm" : KIOSK_DEMO_LLM_PROVIDER;
+	const model = useLocalWebLlm
+		? typeof config.model === "string" && isWebLlmModelId(config.model)
+			? config.model
+			: WEB_LLM_MODEL_ID
+		: resolveKioskDemoMainModel(gatewayServed);
+	const currentMain =
+		config.llmRoles?.main && typeof config.llmRoles.main === "object"
+			? config.llmRoles.main
+			: undefined;
+	const { inherit: _ignoredInherit, ...restMain } = currentMain ?? {};
+	const next = {
+		...config,
+		provider,
+		model,
+		enableTools: KIOSK_DEMO_ENABLE_TOOLS,
+		thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+		enableThinking: (KIOSK_DEMO_THINKING_LEVEL as string) !== "off",
+		environmentAwareness: KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+		environmentTerminalInput: KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
+		llmRoles: {
+			...config.llmRoles,
+			main: {
+				...restMain,
+				provider,
+				model,
+				thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+			},
+		},
+	};
+	if ("mainModelThinkingLevels" in (next as Record<string, unknown>)) {
+		delete (next as Record<string, unknown>).mainModelThinkingLevels;
+	}
+	return next;
+}
+
+export function resolveShellAvatarSelection(
+	config: AppConfig | null | undefined,
+	detectedVramGb: number | null = null,
+): {
+	avatarProvider: "vrm" | "naia-video-avatar";
+	nvaModel: string;
+} {
+	if (isKioskDemo()) {
+		const saved = config?.nvaModel?.trim() ?? "";
+		const activeCardId =
+			typeof config?.uiPreferences?.b2cActiveCardId === "string"
+				? config.uiPreferences.b2cActiveCardId
+				: "";
+		if (
+			activeCardId &&
+			config?.avatarProvider === "vrm" &&
+			typeof config.vrmModel === "string" &&
+			config.vrmModel.trim().length > 0 &&
+			!isLegacyBundledVrmModel(config.vrmModel)
+		) {
+			return {
+				avatarProvider: "vrm",
+				nvaModel: "",
+			};
+		}
+		if (activeCardId && saved) {
+			return {
+				avatarProvider: "naia-video-avatar",
+				nvaModel: saved,
+			};
+		}
+		return {
+			avatarProvider: "naia-video-avatar",
+			nvaModel:
+				saved && saved !== WEB_DEFAULT_NVA ? saved : KIOSK_DEMO_NVA_MODEL,
+		};
+	}
+	const legacyWebNaia = isWebMode() && isLegacyWebNaiaSelection(config);
+	return {
+		avatarProvider: legacyWebNaia
+			? "naia-video-avatar"
+			: effectiveAvatarProviderFromConfig(config, detectedVramGb),
+		nvaModel: legacyWebNaia ? WEB_DEFAULT_NVA : (config?.nvaModel ?? ""),
+	};
+}
+
+function readStoredChatHeightRatioForSeed(): number | null {
+	try {
+		if (typeof localStorage === "undefined") return null;
+		const raw = localStorage.getItem("naia-chat-height-ratio");
+		const val = raw === null ? Number.NaN : Number(raw);
+		return Number.isFinite(val) && val >= 0.2 && val <= 0.92 ? val : null;
+	} catch {
+		return null;
+	}
+}
+
+function readStoredNaiaWidthForSeed(): number | null {
+	try {
+		if (typeof localStorage === "undefined") return null;
+		const raw = localStorage.getItem("naia-layout-width");
+		const val = raw === null ? Number.NaN : Number(raw);
+		return Number.isFinite(val) && val >= 120 && val <= 1200
+			? Math.round(val)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+export function resolveInitialShellChatLayout(
+	viewportHeight: number,
+	viewportWidth?: number,
+): {
+	naiaWidth: number;
+	chatHeight: number;
+} {
+	const safeHeight =
+		Number.isFinite(viewportHeight) && viewportHeight > 0
+			? viewportHeight
+			: 800;
+	const safeWidth =
+		Number.isFinite(viewportWidth) && (viewportWidth as number) > 0
+			? (viewportWidth as number)
+			: null;
+	const storedRatio = readStoredChatHeightRatioForSeed();
+	const storedWidth = readStoredNaiaWidthForSeed();
+	if (isKioskDemo()) {
+		const ratio = storedRatio ?? KIOSK_SHELL_CHAT_HEIGHT_RATIO;
+		const rawHeight = Math.round(safeHeight * ratio);
+		const maxUnclippedHeight = Math.max(180, safeHeight - 88);
+		const chatHeight =
+			storedRatio !== null
+				? Math.min(maxUnclippedHeight, Math.max(160, rawHeight))
+				: safeHeight < 620
+					? Math.min(maxUnclippedHeight, Math.max(220, rawHeight))
+					: Math.min(
+							maxUnclippedHeight,
+							Math.max(KIOSK_SHELL_CHAT_HEIGHT_MIN, rawHeight),
+						);
+		// 손님이 저장한 폭이 없을 때 대화창은 가로 40%에 맞춘다(채팅창 = 폭 - 32).
+		// 저장된 폭·너비 미전달(옛 호출)은 예전 고정값을 유지한다.
+		const proportionalWidth =
+			safeWidth === null
+				? KIOSK_SHELL_NAIA_WIDTH
+				: Math.round(
+						Math.min(820, Math.max(520, safeWidth * 0.4 + 32)),
+					);
+		return {
+			naiaWidth: storedWidth ?? proportionalWidth,
+			chatHeight,
+		};
+	}
+	return {
+		naiaWidth: storedWidth ?? DEFAULT_SHELL_NAIA_WIDTH,
+		chatHeight: Math.round(safeHeight * (storedRatio ?? 0.4)),
+	};
+}
+
+/** OFF는 빈 패치: 일반판의 모든 기본값과 온보딩 선택을 보존한다. */
+export async function buildKioskDemoConfigSeed(): Promise<SeedableShellConfig> {
+	kioskGatewayServedModels = null;
+	if (!isKioskDemo()) return {};
+	setKioskLocalAnswerEnabled(false);
+	const model = resolveKioskDemoMainModel(null);
+	// 카드 파서·문구 묶음은 시연판에서만 쓰이므로 첫 번들 밖에 둔다.
+	// 호출자는 이미 비동기 부팅 흐름(게이트·온보딩)이라 대기해도 첫 화면이 밀리지 않는다.
+	const {
+		KIOSK_JINA_CARD_ID,
+		KIOSK_JINA_SAVED_CARD,
+		KIOSK_JINA_THEME,
+		characterCardPatch,
+		libraryCard,
+	} = await import("./character-theme");
+	const jinaCardPatch = characterCardPatch(
+		libraryCard(KIOSK_JINA_SAVED_CARD),
+		"게스트",
+		"ko",
+	);
+	return buildSeedShellConfig({
+		agentName: jinaCardPatch.patch.agentName,
+		userName: "게스트",
+		honorific: "님",
+		speechStyle: "formal",
+		locale: "ko",
+		persona: jinaCardPatch.patch.persona,
+		personaDisabled: false,
+		onboardingComplete: true,
+		ttsEnabled: true,
+		ttsProvider: KIOSK_DEMO_TTS_PROVIDER,
+		ttsVoice: KIOSK_DEMO_TTS_VOICE,
+		avatarProvider: "naia-video-avatar",
+		nvaModel: KIOSK_DEMO_NVA_MODEL,
+		backgroundVideo: KIOSK_JINA_THEME.backgroundVideo,
+		uiPreferences: {
+			b2cCardLibrary: [KIOSK_JINA_SAVED_CARD],
+			b2cActiveCardId: KIOSK_JINA_CARD_ID,
+			b2cNvaThemes: [KIOSK_JINA_THEME],
+			b2cGreetingAutoplay: true,
+		},
+		// 능동 발화 버튼이 잠기지 않게 프로필과 허용을 미리 정해 둔다. 아래쪽은
+		// config.proactiveSpeechPermitted === true 로 엄격히 비교하므로 빠지면
+		// 첫 화면부터 꺼진 채 시작한다. 웹판 지나가 실제로 하는 능동 발화는 라디오 DJ 뿐이다.
+		proactiveSpeechProfile: "personal_radio_dj",
+		proactiveSpeechPermitted: true,
+		provider: KIOSK_DEMO_LLM_PROVIDER,
+		model,
+		enableTools: KIOSK_DEMO_ENABLE_TOOLS,
+		thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+		enableThinking: (KIOSK_DEMO_THINKING_LEVEL as string) !== "off",
+		environmentAwareness: KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+		environmentTerminalInput: KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
+		webAutoDefaultModel: false,
+		llmRoles: {
+			main: {
+				provider: KIOSK_DEMO_LLM_PROVIDER,
+				model,
+				thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+			},
+		},
+	});
 }

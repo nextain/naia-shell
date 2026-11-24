@@ -1,6 +1,6 @@
 [package]
 name = "naia-shell"
-version = "0.2.5"
+version = "0.2.6"
 description = "Naia Shell - AI Avatar Desktop"
 authors = ["Luke"]
 edition = "2021"
@@ -22,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 tonic-build = "0.12"
 protoc-bin-vendored = "3"
 sha2 = "0.10"
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["image-png", "unstable", "protocol-asset"] }
@@ -89,6 +90,7 @@ gtk = "0.18"
 webkit2gtk = "2.0"
 x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
+gdkx11 = "0.18"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Console", "Win32_Security", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime"] }

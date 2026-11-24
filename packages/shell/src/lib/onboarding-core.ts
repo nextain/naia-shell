@@ -1,3 +1,8 @@
+import {
+	type StepInput,
+	makeShellOnboarding,
+	toNaiaConfig,
+} from "@nextain/naia-os-core/shell-compat";
 // ── new-naia 이식 코어 결선 (UC12 온보딩 graft seam) ──
 // chat-service.ts(UC1) 와 동일 패턴: isNewCore() 일 때 OnboardingWizard 가 이 seam 을 경유 →
 // 새 core OnboardingController 로 flow(단계/assets/게이트) + 완료(completeWith §D) 처리.
@@ -7,20 +12,32 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-	makeShellOnboarding,
-	type StepInput,
-	toNaiaConfig,
-} from "@nextain/naia-os-core/shell-compat";
+	applyKioskDemoMainModel,
+	buildKioskDemoConfigSeed,
+	setKioskDemoGatewayServedModels,
+} from "./config-seed";
+import { isKioskDemo } from "./kiosk-demo/flag";
+import { seedKioskAdkWorkspace } from "./kiosk-demo/knowledge";
+import {
+	fetchNaiaModelMetadata,
+	gatewayServedModelIds,
+} from "./llm/registry";
+import { Logger } from "./logger";
+import { installDefaultWebAdk } from "./web-runtime/web-adk";
+import { webAdkOpfsPath } from "./web-runtime/web-adk-path";
+import { getWebFs } from "./web-runtime/web-fs";
+import { INITIAL_WEB_WORKSPACE_CONFIG } from "./web-runtime/web-workspace-commands";
 
 // 셸 OnboardingWizard 가 submit 입력을 구성할 때 쓰는 타입(type-only 재노출, 직교).
 export type { StepInput };
 import { getAdkPath, setAdkPath } from "./adk-store";
 import {
 	type AppConfig,
+	LAB_GATEWAY_URL,
+	NAIA_WEB_BASE_URL,
 	isOnboardingComplete,
 	loadConfig,
 	loadConfigWithSecrets,
-	NAIA_WEB_BASE_URL,
 	saveConfig,
 } from "./config";
 
@@ -128,4 +145,71 @@ export async function completeOnboardingNewCore(
 	flat: FlatConfig,
 ): Promise<void> {
 	await makeOnboardingSession().completeWith(flat);
+}
+
+/** Prepare before App mounts so hydration sees the same persona as the worker. */
+export async function prepareKioskDemoOnboarding(): Promise<void> {
+	if (!isKioskDemo()) return;
+	Logger.debug("Onboarding", "preparing kiosk workspace");
+	const fs = getWebFs();
+	const result = await installDefaultWebAdk({ fs });
+	if (!result.ok) throw new Error("kiosk_workspace_unavailable");
+	await seedKioskAdkWorkspace(fs);
+	const path = webAdkOpfsPath("naia-settings/config.json");
+	const existing = JSON.parse(
+		(await fs.readText(path)) || JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG),
+	);
+	const seed = await buildKioskDemoConfigSeed();
+	// FR-WEB-KIOSK-FIX.10: 키오스크 시연 주 모델은 applyKioskDemoMainModel 하나로만 정하고,
+	//   게이트웨이 /v1/models 목록에 luna가 없을 때만 살아 있는 대체 모델로 내린다.
+	if (seed.provider === "nextain") {
+		const metadata = await fetchNaiaModelMetadata(LAB_GATEWAY_URL).catch(
+			() => null,
+		);
+		const served = gatewayServedModelIds(metadata);
+		setKioskDemoGatewayServedModels(served);
+		Object.assign(seed, applyKioskDemoMainModel(seed, served));
+	}
+	const config = {
+		...existing,
+		...seed,
+		...(typeof existing.vllmTtsHost === "string" && existing.vllmTtsHost.trim()
+			? { vllmTtsHost: existing.vllmTtsHost }
+			: {}),
+		// 손님이 같은 방문 중에 직접 끈 능동 발화는 새로고침 뒤에도 꺼진 채로 둔다.
+		// 새 방문은 방문 초기화(resetKioskVisit)가 시드로 되돌리므로 여기서는 손님 선택만 살린다.
+		...(typeof existing.proactiveSpeechPermitted === "boolean"
+			? { proactiveSpeechPermitted: existing.proactiveSpeechPermitted }
+			: {}),
+	};
+	const uiPath = webAdkOpfsPath("naia-settings/ui-config.json");
+	const ui = JSON.parse((await fs.readText(uiPath)) || "{}");
+	// Older versions also put persona/provider/avatar fields in UI config; remove
+	// those overrides so kiosk mode always renders Jina while retaining voice and layout selections.
+	// proactiveSpeechPermitted is a visitor's per-visit choice, not a persona default:
+	// a manual off survives reloads within the visit; a fresh visit is restored to
+	// the seed ON by resetKioskVisit, which rewrites ui-config wholesale.
+	for (const key of Object.keys(seed)) {
+		if (key === "proactiveSpeechPermitted") continue;
+		delete ui[key];
+	}
+	delete ui.vrmModel;
+	ui.naiaKey = undefined;
+	ui.naiaUserId = undefined;
+	ui.apiKey = undefined;
+	ui.ttsEnabled = true;
+	ui.onboardingComplete = true;
+	await fs.writeBytes(uiPath, JSON.stringify(ui));
+	// Credentials belong exclusively to web-auth, never the workspace/persona.
+	delete config.vrmModel;
+	config.naiaKey = undefined;
+	config.naiaUserId = undefined;
+	config.apiKey = undefined;
+	await fs.writeBytes(path, JSON.stringify(config));
+	saveConfig({
+		...config,
+		apiKey: "",
+		naiaKey: undefined,
+		naiaUserId: undefined,
+	});
 }

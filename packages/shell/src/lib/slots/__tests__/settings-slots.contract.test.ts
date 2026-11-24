@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../../config";
+import { readConfiguredLlmRoles } from "../../llm/roles";
 import {
 	type GateMode,
 	NAIA_SLOT_DEFAULTS,
@@ -217,19 +218,21 @@ describe("S-SLOT · FR-SLOT.5 sub/memory SoT separation", () => {
 });
 
 describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, §9 #5 해결)", () => {
-	it("NAIA_SLOT_DEFAULTS main = nextain / deepseek-v4-flash (2026-08-08 기본모델 변경)", () => {
+	it("NAIA_SLOT_DEFAULTS main = nextain / deepseek-v4.1-flash + xhigh (webgpu 기본모델)", () => {
 		expect(NAIA_SLOT_DEFAULTS.main).toEqual({
 			provider: "nextain",
-			model: "deepseek-v4-flash",
+			model: "deepseek-v4.1-flash",
+			thinkingLevel: "xhigh",
 		});
 		// stale hardcode gemini-2.5-flash 회귀 금지
 		expect(NAIA_SLOT_DEFAULTS.main.model).not.toBe("gemini-2.5-flash");
 	});
 
-	it("NAIA_SLOT_DEFAULTS sub = naia / gemini-3.1-flash-lite", () => {
+	it("NAIA_SLOT_DEFAULTS sub = nextain / deepseek-v4.1-flash + low (webgpu 보조 기본값)", () => {
 		expect(NAIA_SLOT_DEFAULTS.sub).toEqual({
-			provider: "naia",
-			model: "gemini-3.1-flash-lite",
+			provider: "nextain",
+			model: "deepseek-v4.1-flash",
+			thinkingLevel: "low",
 		});
 	});
 
@@ -249,22 +252,25 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 		expect(NAIA_SLOT_DEFAULTS.tts.provider).toBe("nextain");
 	});
 
-	it("applyNaiaSlotDefaults 는 미설정 슬롯에만 기본값 적용 — 사용자 override 보존", () => {
-		// 빈 config → 전 슬롯 기본값
-		const filled = applyNaiaSlotDefaults({} as AppConfig);
+	it("UT-SM-03 목록이 도착한 빈 설정의 모델과 나머지 슬롯 기본값", () => {
+		const filled = applyNaiaSlotDefaults({} as AppConfig, [
+			{ id: "deepseek-v4.1-flash", label: "DeepSeek", capabilities: ["llm"] },
+			{ id: "gpt-6.1-terra", label: "Terra", capabilities: ["llm"] },
+			{ id: "gpt-6-luna", label: "Luna", capabilities: ["llm"] },
+			{ id: "gpt-5.6-luna", label: "Old Luna", capabilities: ["llm"] },
+		]);
 		expect(filled.provider).toBe("nextain");
-		expect(filled.model).toBe("deepseek-v4-flash");
-		expect(filled.subLlmProvider).toBe("naia");
-		expect(filled.subLlmModel).toBe("gemini-3.1-flash-lite");
+		expect(filled.model).toBe("deepseek-v4.1-flash");
+		expect(filled.llmRoles?.main?.thinkingLevel).toBe("xhigh");
+		expect(filled.subLlmProvider).toBe("nextain");
+		expect(filled.subLlmModel).toBe("deepseek-v4.1-flash");
 		expect(filled.llmRoles?.sub).toMatchObject({
-			provider: "naia",
-			model: "gemini-3.1-flash-lite",
-		});
-		expect(filled.memoryLlmProvider).toBe("nextain");
-		expect(filled.llmRoles?.memory).toMatchObject({
 			provider: "nextain",
-			model: "gpt-5.4-nano",
+			model: "deepseek-v4.1-flash",
+			thinkingLevel: "low",
 		});
+		expect(filled.memoryLlmProvider).toBeUndefined();
+		expect(readConfiguredLlmRoles(filled).memory).toEqual({ inherit: "sub" });
 		expect(filled.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(filled.memoryOfflineModel).toBe("multilingual-e5-large");
@@ -272,26 +278,18 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 		expect(filled.ttsProvider).toBe("nextain");
 	});
 
-	it("applyNaiaSlotDefaults on a config without a memory role sets memory nextain/gpt-5.4-nano", () => {
+	it("UT-SM-03 unset memory inherits sub without writing nano", () => {
 		const after = applyNaiaSlotDefaults({} as AppConfig);
-		expect(after.llmRoles?.memory).toEqual({
-			provider: "nextain",
-			model: "gpt-5.4-nano",
-		});
-		expect(after.memoryLlmProvider).toBe("nextain");
-		expect(after.memoryLlmModel).toBe("gpt-5.4-nano");
+		expect(readConfiguredLlmRoles(after).memory).toEqual({ inherit: "sub" });
+		expect(after.memoryLlmProvider).toBeUndefined();
 	});
 
-	it("applyNaiaSlotDefaults with llmRoles.memory = { inherit: 'sub' } sets memory nextain/gpt-5.4-nano", () => {
+	it("UT-SM-03 keeps explicit memory inheritance", () => {
 		const after = applyNaiaSlotDefaults({
 			llmRoles: { memory: { inherit: "sub" } },
 		} as AppConfig);
-		expect(after.llmRoles?.memory).toEqual({
-			provider: "nextain",
-			model: "gpt-5.4-nano",
-		});
-		expect(after.memoryLlmProvider).toBe("nextain");
-		expect(after.memoryLlmModel).toBe("gpt-5.4-nano");
+		expect(after.llmRoles?.memory).toEqual({ inherit: "sub" });
+		expect(after.memoryLlmProvider).toBeUndefined();
 	});
 
 	it("applyNaiaSlotDefaults with an explicit memory role keeps it", () => {
@@ -327,7 +325,7 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 		expect(after.provider).toBe("ollama"); // 보존
 		expect(after.model).toBe("llama3"); // 보존
 		expect(after.memoryLlmProvider).toBe("ollama"); // memory 보존
-		expect(after.subLlmProvider).toBe("naia"); // 미설정 sub 기본값
+		expect(after.subLlmProvider).toBeUndefined(); // 기존 기억 설정을 가리지 않는다
 		expect(after.sttProvider).toBe("whisper"); // 보존
 		// 설정 안 한 슬롯은 기본값
 		expect(after.memoryEmbeddingProvider).toBe("offline");

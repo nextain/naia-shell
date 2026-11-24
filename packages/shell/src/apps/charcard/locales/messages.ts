@@ -1,13 +1,25 @@
 import { Logger } from "../../../lib/logger";
 
-Logger.debug("CharCardLocale", "loading character card app locale strings");
+let charCardLocaleLogged = false;
 
 export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.imageOmitted": "Image not shown because it is too large.",
 	"charcard.title": "Character Card Roleplay",
 	"charcard.subtitle":
-		"Import PNG, JSON, or CHARX character cards (V2/V3) and roleplay with Naia. Cards stay on this device, and starting roleplay sends the card content to your Naia chat model.",
-	"charcard.importButton": "Import Card",
+		"Import PNG, JSON, or CHARX character cards (V2/V3) to roleplay with Naia. Saved in this browser; clearing browsing data removes them.",
+	"charcard.subtitleMemoryOnly":
+		"Import PNG, JSON, or CHARX character cards (V2/V3) to roleplay with Naia. Starting roleplay sends the card content to your chat model.",
+	"charcard.createButton": "Create",
+	"charcard.apply": "Apply",
+	"charcard.name": "Character name",
+	"charcard.newName": "New character",
+	"charcard.descriptionField": "Description",
+	"charcard.greetingField": "First greeting",
+	"charcard.save": "Save card",
+	"charcard.saving": "Adding card…",
+	"charcard.error.STORAGE_VALUE_TOO_LARGE":
+		"This card is too large to save. Choose a smaller card file.",
+	"charcard.importButton": "Add File",
 	"charcard.importPreparing": "Preparing storage…",
 	"charcard.importDropHint":
 		"Drop a .png, .json, or .charx card file here, or click Import Card",
@@ -109,8 +121,20 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.imageOmitted": "그림이 너무 커서 표시하지 않음",
 	"charcard.title": "캐릭터 카드 설정놀이",
 	"charcard.subtitle":
-		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화합니다. 카드는 기기 안에만 보관되며, 연기를 시작하면 카드 내용이 나이아 대화 모델에 함께 보내집니다.",
-	"charcard.importButton": "카드 불러오기",
+		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)로 나이아와 대화해요. 이 브라우저에 저장돼요. 브라우저 기록을 지우면 사라져요.",
+	"charcard.subtitleMemoryOnly":
+		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)로 나이아와 대화해요. 연기를 시작하면 카드 내용이 대화 모델에 함께 보내져요.",
+	"charcard.createButton": "만들기",
+	"charcard.apply": "적용",
+	"charcard.name": "캐릭터 이름",
+	"charcard.newName": "새 캐릭터",
+	"charcard.descriptionField": "설명",
+	"charcard.greetingField": "첫 인사",
+	"charcard.save": "카드 저장",
+	"charcard.saving": "카드를 추가하는 중…",
+	"charcard.error.STORAGE_VALUE_TOO_LARGE":
+		"카드가 너무 큽니다. 더 작은 카드 파일을 골라 주세요.",
+	"charcard.importButton": "파일 추가",
 	"charcard.importPreparing": "보관함 준비 중…",
 	"charcard.importDropHint":
 		".png, .json, .charx 카드 파일을 여기에 끌어다 놓거나 카드 불러오기를 누르세요",
@@ -282,6 +306,10 @@ export function charCardText(
 	params?: Readonly<Record<string, string | number>>,
 	localeOverride?: string,
 ): string {
+	if (!charCardLocaleLogged) {
+		charCardLocaleLogged = true;
+		Logger.debug("CharCardLocale", "loading character card app locale strings");
+	}
 	const lang = resolveCharCardLocale(localeOverride);
 	const table = CHARCARD_MESSAGES_BY_LOCALE[lang] ?? CHARCARD_ENGLISH_MESSAGES;
 	const template = table[key] ?? CHARCARD_ENGLISH_MESSAGES[key];

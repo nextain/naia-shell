@@ -1,7 +1,17 @@
+import { ResilientVideo } from "./ResilientVideo";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { bgmIframeIsolationAttrs } from "../lib/bgm-embed";
 import { loadConfig, saveConfig } from "../lib/config";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { resolveWebPublicAssetUrl } from "../lib/web-runtime/web-assets";
+import { isMediaSourceUrl } from "../lib/local-media-url";
+import {
+	setStoredNaiaWidth,
+	useEffectiveLayoutOrientation,
+} from "../lib/ui-preferences";
 import { AppMainContent, type AppMainContentProps } from "./AppMainContent";
+import { MacSafariNotice } from "./MacSafariNotice";
 import { SplashScreen } from "./SplashScreen";
 
 const NAIA_WIDTH_MIN = 120;
@@ -15,6 +25,7 @@ type MainContentProps = Omit<
 >;
 
 interface AppShellFrameProps {
+	showMacSafariNotice?: boolean;
 	appReady: boolean;
 	/**
 	 * 부팅의 마지막까지 끝났는가. `appReady` 는 스플래시를 걷는 시점이고,
@@ -25,6 +36,7 @@ interface AppShellFrameProps {
 	backgroundFallback: { url: string; type: "image" | "video" } | null;
 	backgroundMediaType: "iframe" | "image" | "video" | "";
 	backgroundVideoUrl: string;
+	bgmVideoUrl: string;
 	mainContent: MainContentProps;
 	onSplashDone: () => void;
 	setNaiaWidth: (width: number) => void;
@@ -39,15 +51,28 @@ const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
 
 export function AppShellFrame({
+	showMacSafariNotice = false,
 	appReady,
 	bootComplete,
 	backgroundFallback,
 	backgroundMediaType,
 	backgroundVideoUrl,
+	bgmVideoUrl,
 	mainContent,
 	onSplashDone,
 	setNaiaWidth,
 }: AppShellFrameProps) {
+	const [failedVideoUrl, setFailedVideoUrl] = useState("");
+	const layoutOrientation = useEffectiveLayoutOrientation();
+	const autumnPosterUrl = resolveWebPublicAssetUrl(
+		"/backgrounds/naia-autumn-office.webp",
+	);
+	const autumnVideoUrl = resolveWebPublicAssetUrl(
+		"/backgrounds/naia-autumn-office-live.mp4",
+	);
+	const autumnVideo =
+		backgroundVideoUrl === "/backgrounds/naia-autumn-office-live.mp4" ||
+		backgroundVideoUrl === autumnVideoUrl;
 	const widthDragRef = useRef<{
 		startX: number;
 		startW: number;
@@ -93,6 +118,7 @@ export function AppShellFrame({
 		widthDragRef.current = null;
 		document.body.classList.remove("resizing-col");
 		if (!drag?.moved) return;
+		setStoredNaiaWidth(drag.currentW);
 		const config = loadConfig();
 		if (config)
 			saveConfig({
@@ -101,32 +127,58 @@ export function AppShellFrame({
 			});
 	};
 
+	// YouTube BGM is its own layer, not the background: changing the
+	// background must not unmount the player and stop the music.
+	const bgmLayer = bgmVideoUrl ? (
+		<iframe
+			key={bgmVideoUrl}
+			className="app-bg-iframe"
+			{...bgmIframeIsolationAttrs(
+				typeof window !== "undefined" && window.crossOriginIsolated === true,
+			)}
+			src={bgmVideoUrl}
+			allow="autoplay"
+			referrerPolicy="origin"
+			sandbox="allow-scripts allow-same-origin allow-presentation"
+			title="BGM"
+			style={{ zIndex: 1 }}
+		/>
+	) : null;
+
 	const foreground =
-		backgroundMediaType === "iframe" && backgroundVideoUrl ? (
-			<iframe
-				key={backgroundVideoUrl}
-				className="app-bg-iframe"
-				src={backgroundVideoUrl}
-				allow="autoplay"
-				referrerPolicy="origin"
-				sandbox="allow-scripts allow-same-origin allow-presentation"
-				title="BGM"
-				style={{ zIndex: 1 }}
-			/>
-		) : backgroundVideoUrl &&
+		backgroundVideoUrl &&
 			(backgroundMediaType === "video" ||
 				(!backgroundMediaType &&
 					isMediaFile(backgroundVideoUrl, VIDEO_EXTENSIONS))) ? (
-			<video
-				key={backgroundVideoUrl}
-				className="app-bg-video"
-				src={backgroundVideoUrl}
-				autoPlay
-				loop
-				muted
-				playsInline
-				style={{ zIndex: 1 }}
-			/>
+			failedVideoUrl === backgroundVideoUrl && autumnVideo ? (
+				<img
+					className="app-bg-image"
+					src={autumnPosterUrl}
+					alt=""
+					style={{ zIndex: 1 }}
+				/>
+			) : failedVideoUrl === backgroundVideoUrl ? null : (
+				<ResilientVideo
+					key={backgroundVideoUrl}
+					className="app-bg-video"
+					src={backgroundVideoUrl}
+					autoPlay
+					loop
+					muted
+					playsInline
+					preload="none"
+					poster={autumnVideo ? autumnPosterUrl : undefined}
+					onCanPlay={(event) => {
+						if (autumnVideo) {
+							void event.currentTarget
+								.play()
+								.catch(() => setFailedVideoUrl(backgroundVideoUrl));
+						}
+					}}
+					onError={() => setFailedVideoUrl(backgroundVideoUrl)}
+					style={{ zIndex: 1 }}
+				/>
+			)
 		) : backgroundVideoUrl &&
 			(backgroundMediaType === "image" ||
 				(!backgroundMediaType &&
@@ -144,6 +196,8 @@ export function AppShellFrame({
 		<div
 			className="app-root"
 			data-ui-mode={mainContent.uiMode}
+			data-layout-orientation={layoutOrientation}
+			data-kiosk-demo={isKioskDemo() ? "true" : undefined}
 			data-rail-collapsed={
 				mainContent.uiMode === "workspace" && mainContent.railCollapsed
 					? "true"
@@ -159,27 +213,44 @@ export function AppShellFrame({
 				{ "--naia-width": `${mainContent.naiaWidth}px` } as React.CSSProperties
 			}
 		>
-			{backgroundFallback?.type === "video" ? (
-				<video
-					className="app-bg-video"
-					src={backgroundFallback.url}
-					autoPlay
-					loop
-					muted
-					playsInline
-					style={{ zIndex: 0 }}
-				/>
-			) : backgroundFallback ? (
-				<img
-					className="app-bg-image"
-					src={backgroundFallback.url}
-					alt=""
-					style={{ zIndex: 0 }}
-				/>
-			) : (
-				<div className="app-bg-fallback" aria-hidden="true" />
-			)}
+			{showMacSafariNotice && <MacSafariNotice reserveMenuSpace />}
+			{/* A MediaSource URL (Linux webm) attaches to one element only; when the
+			    foreground already shows it, the layer under it would fail. */}
+			{(!foreground || backgroundMediaType === "iframe") &&
+				(backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ||
+				backgroundFallback?.url === autumnVideoUrl ? (
+					<img
+						className="app-bg-image"
+						src={autumnPosterUrl}
+						alt=""
+						style={{ zIndex: 0 }}
+					/>
+				) : backgroundFallback?.type === "video" &&
+				  backgroundFallback.url === backgroundVideoUrl &&
+				  isMediaSourceUrl(backgroundFallback.url) ? (
+					<div className="app-bg-fallback" aria-hidden="true" />
+				) : backgroundFallback?.type === "video" ? (
+					<ResilientVideo
+						className="app-bg-video"
+						src={backgroundFallback.url}
+						autoPlay
+						loop
+						muted
+						playsInline
+						style={{ zIndex: 0 }}
+					/>
+				) : backgroundFallback ? (
+					<img
+						className="app-bg-image"
+						src={backgroundFallback.url}
+						alt=""
+						style={{ zIndex: 0 }}
+					/>
+				) : (
+					<div className="app-bg-fallback" aria-hidden="true" />
+				))}
 			{foreground}
+			{bgmLayer}
 			{mainContent.showSplash && (
 				<SplashScreen onDone={onSplashDone} ready={appReady} />
 			)}

@@ -108,6 +108,21 @@ fn agent_memory_path() -> Result<PathBuf, String> {
     super::current_adk_path().map(|path| agent_memory_path_from_adk(&path))
 }
 
+/// Unconsolidated user episodes are work still waiting for fact extraction.
+pub fn pending_count_from_json(content: &str) -> Result<usize, String> {
+    let store: serde_json::Value = serde_json::from_str(content).map_err(|e| e.to_string())?;
+    Ok(store.get("episodes").and_then(|v| v.as_array()).map(|episodes| episodes.iter().filter(|e| e.get("role").and_then(|v| v.as_str()) == Some("user") && e.get("consolidated").and_then(|v| v.as_bool()) != Some(true)).count()).unwrap_or(0))
+}
+
+pub fn get_pending_count() -> Result<usize, String> {
+    let path = agent_memory_path()?;
+    match std::fs::read_to_string(path) {
+        Ok(content) => pending_count_from_json(&content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// Read all facts from Agent's memory JSON file.
 /// Returns empty vec if file doesn't exist or is invalid.
 pub fn get_all_agent_facts() -> Vec<AgentFact> {
@@ -314,5 +329,15 @@ mod tests {
             agent_memory_path_from_adk(adk.to_str().unwrap()),
             adk.join("naia-settings").join("memory").join("store.json")
         );
+    }
+}
+
+#[cfg(test)]
+mod r17_pending_tests {
+    #[test]
+    fn pending_counts_user_episodes_only_and_reports_corruption() {
+        assert_eq!(super::pending_count_from_json(r#"{"episodes":[{"role":"user","consolidated":false},{"role":"assistant","consolidated":false},{"role":"user","consolidated":true},{"role":"user"}]}"#).unwrap(), 2);
+        assert_eq!(super::pending_count_from_json("{}").unwrap(), 0);
+        assert!(super::pending_count_from_json("broken").is_err());
     }
 }

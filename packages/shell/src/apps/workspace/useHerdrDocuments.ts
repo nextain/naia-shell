@@ -18,6 +18,9 @@ import type { FileLocation, TerminalHandle } from "./Terminal";
 import type { HerdrSnapshot } from "./herdr";
 import type { ClassifiedDir } from "./types";
 
+/** About 10 s at 60 fps — long enough for the lazy Editor chunk on a slow link. */
+const REVEAL_WAIT_FRAMES = 600;
+
 interface DocumentsOptions {
 	naia: AppCenterProps["naia"];
 	locationGenerationRef: RefObject<number>;
@@ -133,15 +136,24 @@ export function useHerdrDocuments({
 				setOpenDocs((docs) => (docs.includes(path) ? docs : [...docs, path]));
 				setOpenFilePath(path);
 				setSurface("viewer");
+				// Editor is lazy: on a first open its chunk may not have loaded by the
+				// next frame, so keep retrying until the handle exists instead of
+				// dropping the line jump.
+				let framesLeft = REVEAL_WAIT_FRAMES;
+				const reveal = () => {
+					if (generation !== locationGenerationRef.current) return;
+					const line = location.line;
+					if (!line) return;
+					const editor = editorRef.current;
+					if (editor) {
+						editor.revealLocation(line, location.column, path);
+					} else if (framesLeft-- > 0) {
+						requestAnimationFrame(reveal);
+					}
+				};
 				requestAnimationFrame(() => {
 					fileTreeRegionRef.current?.focus({ preventScroll: true });
-					if (location.line) {
-						editorRef.current?.revealLocation(
-							location.line,
-							location.column,
-							path,
-						);
-					}
+					reveal();
 				});
 			} catch (error) {
 				Logger.warn("HerdrWorkspace", "Rejected terminal file location", {

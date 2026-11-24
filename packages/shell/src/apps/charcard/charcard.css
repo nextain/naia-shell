@@ -54,6 +54,7 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
+	flex: none;
 }
 
 .charcard-app__file-input {
@@ -70,6 +71,35 @@
 	font-size: 13px;
 	font-weight: 600;
 	cursor: pointer;
+}
+
+.charcard-app__header-actions .charcard-app__btn {
+	min-height: 36px;
+	white-space: nowrap;
+}
+
+.charcard-app__btn:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+.charcard-app button:focus-visible {
+	outline: 2px solid #afb9ff;
+	outline-offset: 2px;
+}
+
+.charcard-app__create-form {
+	display: grid;
+	gap: 8px 14px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	padding: 12px 22px;
+	border-bottom: 1px solid var(--border-color);
+	background: var(--bg-secondary);
+}
+
+.charcard-app__create-form .charcard-app__btn {
+	justify-self: start;
+	align-self: end;
 }
 
 .charcard-app__btn:hover {
@@ -198,6 +228,21 @@
 .charcard-app__card-row--selected {
 	border-color: var(--accent-color);
 	background: rgb(109 124 255 / 16%);
+}
+
+.charcard-app__card-picture {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--accent-color);
+	color: #ffffff;
+	font-weight: 700;
+	font-size: 15px;
+	flex-shrink: 0;
+	overflow: hidden;
 }
 
 .charcard-app__card-initial {
@@ -351,6 +396,12 @@
 }
 
 .charcard-app__field-row label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-secondary);
+}
+
+.charcard-app__create-form label {
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--text-secondary);
@@ -510,6 +561,11 @@
 		padding: 12px 14px;
 	}
 
+	.charcard-app__create-form {
+		grid-template-columns: minmax(0, 1fr);
+		padding: 10px 14px;
+	}
+
 	.charcard-app__notice,
 	.charcard-app__active-bar {
 		margin: 8px 14px 0;
@@ -517,9 +573,18 @@
 
 	.charcard-app__body {
 		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto 1fr;
 		padding: 12px 14px 16px;
 		overflow-x: hidden;
 		overflow-y: auto;
+	}
+
+	.charcard-app__sidebar {
+		max-height: 166px;
+	}
+
+	.charcard-app__dropzone {
+		display: none;
 	}
 
 	.charcard-app__profile {

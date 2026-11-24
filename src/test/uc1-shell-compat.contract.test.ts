@@ -109,7 +109,7 @@ describe("makeShellChatService (drop-in seam)", () => {
     expect(msg.apiKey).toBe("sk-x");
     expect(msg.adkPath).toBeUndefined();
   });
-  it("thinking: level 유효값(off/low/high) 전달 및 무효값 필터링 (#709)", async () => {
+  it("UT-SM-04 thinking levels 전달 및 무효값 필터링 (#709)", async () => {
     const { live, invokes } = mockTauri();
     const svc = makeShellChatService({ live });
     await svc.sendChatMessage({
@@ -139,5 +139,22 @@ describe("makeShellChatService (drop-in seam)", () => {
     });
     const msgInvalid = JSON.parse(invokes[2]!.args["message"] as string);
     expect("thinking" in msgInvalid).toBe(false);
+    await svc.sendChatMessage({ message: "hi", provider: { provider: "gemini", model: "flash" }, history: [], onChunk: () => {}, requestId: "r-xhigh", thinking: { level: "xhigh" }, enableThinking: true });
+    expect(JSON.parse(invokes[3]!.args["message"] as string).thinking).toEqual({ level: "xhigh" });
+    await svc.sendChatMessage({ message: "hi", provider: { provider: "gemini", model: "flash" }, history: [], onChunk: () => {}, requestId: "r-max", thinking: { level: "max" }, enableThinking: true });
+    expect(JSON.parse(invokes[4]!.args["message"] as string).thinking).toEqual({ level: "max" });
   });
+});
+
+// UC-B2C-026-R6: capture actual outbound JSON, including a subsequent ordinary turn.
+it("keeps appName bound to its request through the shell seam", async () => {
+  const { live, invokes } = mockTauri();
+  const svc = makeShellChatService({ live });
+  for (const appName of ["달빛 카페", undefined]) {
+    await svc.sendChatMessage({ message: "hello", provider: { provider: "ollama", model: "local" }, history: [], onChunk: () => {}, requestId: appName ? "app" : "normal", ...(appName ? { appName } : {}) });
+  }
+  const messages = invokes.filter(i => i.cmd === "send_to_agent_command").map(i => JSON.parse(i.args["message"] as string));
+  expect(messages[0]).toMatchObject({ requestId: "app", appName: "달빛 카페" });
+  expect(messages[0].messages).toEqual([{ role: "user", content: "hello" }]);
+  expect(messages[1]).not.toHaveProperty("appName");
 });

@@ -1,0 +1,317 @@
+.kiosk-entry {
+	min-height: calc(var(--naia-vh, 1dvh) * 100);
+	display: grid;
+	place-items: center;
+	padding: 24px;
+	box-sizing: border-box;
+	background: #111622;
+	color: #f5f7fb;
+}
+.kiosk-entry__card {
+	max-width: 560px;
+	width: 100%;
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+.kiosk-entry__card h1 {
+	font-size: clamp(24px, calc(var(--naia-vw, 1vw) * 5), 36px);
+	line-height: 1.3;
+}
+.kiosk-entry__card p {
+	line-height: 1.7;
+}
+.kiosk-entry__unavailable p {
+	font-size: 18px;
+	margin: 10px 0;
+}
+.kiosk-entry__passcode {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 20px;
+}
+.kiosk-entry__passcode h1,
+.kiosk-entry__passcode p {
+	margin: 0;
+}
+.kiosk-entry__passcode .kiosk-entry__actions {
+	margin-top: 4px;
+}
+.kiosk-entry__passcode input {
+	width: 8em;
+	min-height: 56px;
+	padding: 8px 12px;
+	border: 1px solid #bcd0ff;
+	border-radius: 12px;
+	background: #1a2133;
+	color: #f5f7fb;
+	font-size: 28px;
+	letter-spacing: 0.4em;
+	text-align: center;
+	box-sizing: border-box;
+}
+.kiosk-entry__passcode input:focus-visible {
+	outline: 3px solid white;
+	outline-offset: 4px;
+}
+.kiosk-entry__passcode input[aria-invalid="true"] {
+	border-color: #ff9a9a;
+}
+.kiosk-entry__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 16px;
+	align-items: center;
+	margin-top: 24px;
+}
+.kiosk-entry__actions button {
+	min-height: 48px;
+	padding: 12px 28px;
+	border: 1px solid #bcd0ff;
+	border-radius: 12px;
+	background: #bcd0ff;
+	color: #111622;
+	font-size: 18px;
+	cursor: pointer;
+}
+.kiosk-entry__actions button:focus-visible {
+	outline: 3px solid white;
+	outline-offset: 4px;
+}
+.kiosk-entry__actions button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.app-root[data-kiosk-demo="true"] .naia-chat-wrapper {
+	background: rgba(20, 24, 34, 0.94);
+	backdrop-filter: blur(24px) saturate(110%);
+	-webkit-backdrop-filter: blur(24px) saturate(110%);
+}
+
+.kiosk-knowledge-manuscript-viewer .workspace-editor__preview h1 {
+	font-size: 16px;
+	line-height: 1.35;
+	margin-top: 4px;
+	margin-bottom: 8px;
+}
+
+.kiosk-knowledge-manuscript-viewer .workspace-editor__preview h2 {
+	font-size: 14px;
+	line-height: 1.4;
+	margin-top: 12px;
+	margin-bottom: 6px;
+}
+
+@media (min-width: 601px) {
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) {
+		--kiosk-landscape-naia-width: min(
+			var(--naia-width, 520px),
+			calc(calc(var(--naia-vw, 1vw) * 100) - 260px)
+		);
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-rail-collapsed="true"])
+		.naia-overlay {
+		width: var(--kiosk-landscape-naia-width, 520px);
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
+		.naia-chat-area {
+		left: 16px;
+		bottom: 12px;
+		width: calc(var(--kiosk-landscape-naia-width, 520px) - 32px);
+		max-width: calc(calc(var(--naia-vw, 1vw) * 100) - 32px);
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
+		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden) {
+		min-height: 200px;
+		max-height: calc(calc(var(--naia-vh, 1dvh) * 100) - 88px);
+		border-radius: 16px;
+	}
+
+	/* 기본 높이만 40vh 로 막아 아바타를 가리지 않는다. 사람이 끌어 정한 높이는 그대로 둔다. */
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
+		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden):not([data-chat-user-sized="true"]) {
+		max-height: calc(var(--naia-vh, 1dvh) * 40);
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-app {
+		height: 100%;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header {
+		flex-wrap: nowrap;
+		gap: 6px;
+		padding: 5px 10px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .ai-control-bar {
+		flex: 0 0 auto;
+		margin: 0 2px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header-right {
+		flex: 1 1 auto;
+		justify-content: flex-end;
+		flex-wrap: nowrap;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-hint {
+		display: none;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-toggle {
+		flex-shrink: 0;
+		font-size: 11px;
+		padding: 2px 6px;
+		min-height: 24px;
+		line-height: 1.2;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-messages {
+		flex: 1 1 0;
+		min-height: 0;
+		padding: 10px 14px 12px;
+		gap: 6px;
+		overflow-y: auto;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .nva-gesture-actions {
+		padding: 8px 12px 6px;
+		border-top: 1px solid rgba(148, 163, 184, 0.16);
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-input {
+		min-height: 44px;
+		max-height: 80px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
+		.app-layout:has(.content-app__slot--active),
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
+		.app-layout:has(.content-app__slot--active .web-workspace),
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
+		.app-layout:has(.content-app__slot--active .web-workspace-viewer),
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"])
+		.app-layout:has(.content-app__slot--active .slides-app) {
+		z-index: 15;
+	}
+}
+
+@media (min-width: 601px) and (max-height: 520px) {
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
+		.naia-chat-area {
+		left: 10px;
+		bottom: 8px;
+		width: calc(var(--kiosk-landscape-naia-width, 400px) - 20px);
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]):not([data-ui-mode="workspace"])
+		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden) {
+		min-height: 180px;
+		max-height: calc(calc(var(--naia-vh, 1dvh) * 100) - 72px) !important;
+		border-radius: 12px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header {
+		padding: 3px 8px;
+		min-height: 26px;
+		gap: 4px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-hint {
+		display: none;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-header .kiosk-local-answer-toggle {
+		font-size: 10.5px;
+		padding: 2px 6px;
+		min-height: 22px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-messages {
+		padding: 6px 10px 8px;
+		gap: 4px;
+		font-size: 12px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .nva-gesture-actions {
+		padding: 3px 8px;
+		gap: 4px;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-input-bar {
+		padding: 6px 10px;
+		gap: 6px;
+	}
+
+	.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .chat-input {
+		min-height: 34px;
+		max-height: 54px;
+		padding: 5px 8px;
+		font-size: 12.5px;
+	}
+}
+
+/* 모바일 메뉴의 슬라이드 앱 아이콘(앱 꾸러미 icon.svg). */
+.naia-mobile-menu__icon {
+	width: 1.1em;
+	height: 1.1em;
+	vertical-align: -0.2em;
+	border-radius: 0.25em;
+}
+
+/* 지나 목소리 바쁨·대체 알림: 대화창 위 버튼 줄 왼쪽. */
+.kiosk-voice-notice {
+	position: absolute;
+	top: -8px;
+	left: 4px;
+	z-index: 6;
+	max-width: calc(100% - 200px);
+	padding: 4px 10px;
+	border-radius: 999px;
+	background: rgba(20, 16, 40, 0.82);
+	color: #fff;
+	font-size: 12px;
+	line-height: 1.4;
+	pointer-events: none;
+}
+[data-naia-web="true"]:not([data-layout-orientation="landscape"]) .kiosk-voice-notice {
+	top: -32px;
+	left: 8px;
+}
+
+/* 웹은 화면 방향을 따르므로 대화창 위 버튼 줄에서도 방향 토글을 숨긴다(버튼 넷, 대표님 11/13).
+   휴대폰 버튼 줄 규칙이 web-mode.css 의 숨김보다 구체적이어서 여기서 다시 막는다. */
+[data-naia-web="true"] .naia-chat-modes [data-testid="layout-orientation-toggle"] {
+	display: none !important;
+}
+
+/* 버튼 줄(AI참견·말하기·능동발화·아바타 마크)이 아바타 패널을 열면 왼쪽으로 길어져
+   대화창 가운데 끌기 토글(▼)을 덮었다(14판 검수 R5). 가로 화면에서는 버튼 줄을 토글 줄 위로 올리고,
+   알림은 토글 왼쪽까지만 차지하게 한다. */
+.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .naia-chat-area > .naia-chat-modes {
+	top: -46px;
+}
+.app-root[data-kiosk-demo="true"]:not([data-layout-orientation="portrait"]) .naia-chat-area > .kiosk-voice-notice {
+	max-width: calc(50% - 40px);
+}
+
+/* 15판: AI참견·말하기·능동발화와 사람 아이콘은 대화창 머리의 "+" 바로 옆에 붙인다(대표님 11/14). */
+.app-root[data-kiosk-demo="true"] .chat-header {
+	justify-content: flex-start;
+}
+.app-root[data-kiosk-demo="true"] .chat-header .ai-control-bar {
+	margin-left: auto !important;
+}
+.app-root[data-kiosk-demo="true"] .chat-header .chat-header-right {
+	flex: 0 0 auto !important;
+}

@@ -13,16 +13,18 @@ const base = (): AppConfig => ({
 	memoryLlmProvider: "ollama",
 	memoryLlmModel: "legacy-memory",
 	memoryLlmBaseUrl: "http://localhost:11434/v1",
+	memoryLlmCredentialRef: "legacy-ref",
 });
 
 describe("Shell expert/main/sub + memory role settings", () => {
-	it("legacy memory는 memory로 보존되고 sub에서만 legacy 상속한다", () => {
+	it("UT-SM-02 legacy memory는 보존되고 sub가 상속한다", () => {
 		const configured = readConfiguredLlmRoles(base());
 		expect(configured.memory?.provider).toBe("ollama");
 		expect(configured.sub).toEqual({ inherit: "memory" });
 		const result = resolveEffectiveLlmRoles(base());
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
+		expect(result.roles[2]).toMatchObject({ model: "legacy-memory", baseUrl: "http://localhost:11434/v1", credentialRef: "legacy-ref" });
 		expect(result.roles.map((role) => [role.role, role.provider, role.provenance])).toEqual([
 			["expert", "codex", "inherit"],
 			["main", "codex", "explicit"],

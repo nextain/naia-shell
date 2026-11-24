@@ -13,7 +13,7 @@
 | `ci-verify-completion.mjs` | 완료 근거(completion evidence) 게이트 검증. |
 | `ci-verify-voice-evidence.mjs` | 음성 경로 증거 게이트 — 음성 크리티컬 파일(tts/voice/ChatArea/RefAudioSection/voice-6g e2e) 변경 시 커밋 메시지에 `Voice-E2E: pass` 또는 `Voice-Impact: none` 트레일러 강제(GPU 필요로 CI e2e 부재 → 침묵 회귀를 명시적 주장으로 전환). pre-push 훅이 사용. |
 | `check-assembly-coverage.mjs` | 조립 매트릭스 전수 검사(미분류 0: user-scenarios의 모든 UC/S가 매트릭스에 분류됐나 + fit 게이트: 상태≥코드 행에 미평가 없나). AI 단축 사고 방지 결정론 강제. |
-| `check-file-anchors.mjs` | 파일단위 계약 앵커 검출기 — `src/main/*` 가 `module-manifest.json` 에 {layer,uc,contract} 등록됐나(드리프트 자동차단 1단계). |
+| `check-file-anchors.mjs` | 파일단위 계약 앵커 검출기 — `src/main/*` 및 manifest의 scan_dirs/scan_files(키오스크 포함)가 `module-manifest.json` 에 {layer,uc,contract} 등록됐나(드리프트 자동차단 1단계). |
 | `check-compile-integrity.mjs` | 컴파일 무결성 게이트 — core+shell tsc 무결 검증. |
 | `check-build-contract.mjs` | 빌드/dev 툴링 드리프트 검출기(`build-tooling-manifest.json` 대조). |
 | `check-traceability.mjs` | V모델 추적성 검사기 (REQ→UC→TEST-S, UC→SPEC→TEST-F). |
@@ -70,6 +70,7 @@
 | 스크립트 | 용도 |
 |---|---|
 | `qa-round.mjs` | 후보·회차·기기 결과를 고정하고 회차 상태를 원자적으로 기록·확정한다. |
+| `b2c-package-audit.mjs` (+ `b2c-package-audit.test.mjs`) | B2C 전달 ZIP·Store 서명·권한·파일 hash·라이선스 증빙을 오프라인 검사한다. 사용법은 docs/progress/026-b2c-charcard-nva.md 5회차 절. |
 | `qa-traceability.mjs` | QA 원본 정의와 UC/FE/요구사항·시나리오 연결을 검증한다. |
 | `qa-catalog.mjs` | 소스 기반 QA 조각을 병합하고 선언된 coverage/gap 검토를 생성한다. |
 | `qa-qc-numbers.mjs` | 선택된 ADK sidecar에 QA Case Number(`QC-001`...)를 append-only로 부여하고 catalog/round 표시용 매핑을 제공한다. |
@@ -78,3 +79,17 @@
 | `radio-dj-lab.mjs` (+ `radio-dj-lab-model.mjs`, `radio-dj-lab-contract.mjs`, `radio-dj-lab-observations.mjs`, `radio-dj-lab-render.mjs`, `radio-dj-lab-practical.mjs`, `radio-dj-lab.schema.json`, `radio-dj-lab-example.json`) | Radio DJ Lab 결정적 가상 시간축 기록과 loopback 실기 이벤트 수집기를 실행한다. 제품 동작 없이 deterministic fixture를 재생하고, 실기 설정은 30–60분 외부 실행 진입점으로만 제공한다. |
 
 | `packages/shell/scripts/stapler-retry.sh` | macOS 공증표 붙이기·검증의 네트워크 재시도 및 승인된 Intel 앱 예외. |
+
+- `b2c-media-audit.mjs`, `b2c-media-audit.test.mjs`: UC-B2C-026-R6 / #743 로컬 미디어 코덱·전체 디코드·첫 프레임 투명도·실패 전후 설정 snapshot 검사. 실행 예는 B2C 설계 ledger.
+
+- `packages/shell/scripts/installer-instance.mjs`: 설치판 prod/dev 입력 검증·Vite 주소 고정·dev 이름/창 conf 생성. `stage-runtime.mjs`에서 사용, `scripts/__tests__/installer-instance.test.ts`로 검증.
+
+- `packages/shell/scripts/verify-appimage-media.mjs <extracted-AppDir>` — #792 R15: Linux AppImage 필수 GStreamer 플러그인·scanner·격리 AppRun hook 검증.
+
+- `packages/shell/scripts/web-sw-version.mjs`: 웹 빌드 산출물 `sw.js` 에 `<커밋>-<index 해시>` 판 번호를 주입해 새 판마다 서비스워커 바이트와 캐시 이름이 바뀌게 한다 (`packages/shell/scripts/__tests__/web-sw-version.test.ts`).
+
+- `packages/shell/scripts/web-hosted-apps.mjs`: 웹 빌드에서 내장 앱 4개의 배포 번들을 빌드·검증하고 `dist-web/hosted-apps/`에 포함한다 (R35).
+
+- `packages/shell/scripts/deploy-web-demo.mjs`: 웹 시연 정적 사이트(`$web`) 올림 대본 — 해시 자산을 먼저 긴 캐시(`public, max-age=31536000, immutable`)로 올리고 `index.html`·`sw.js`(및 등록 파일)는 마지막에 `Cache-Control: no-cache` 로 올린다. `--dry-run` 지원 (`packages/shell/scripts/__tests__/deploy-web-demo.test.ts`).
+
+S2 기억: `scripts/conform/check.py --all`은 manifest의 `typescript-exports` 영역에서 문서와 공개 함수 이름을 대조한다. `.agents/hooks/conform-gate.js`는 TS 편집의 불일치를 즉시 차단한다. 타입 시그니처는 tsc가 검증한다.

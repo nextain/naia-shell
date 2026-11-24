@@ -55,6 +55,7 @@ scripts/builds/uc1-graft-snippet.js
 packages/*/node_modules
 packages/*/dist
 packages/shell/dist-slides/
+packages/shell/dist-web/
 packages/shell/dist-charcard/
 packages/shell/src-tauri/target
 # cargo 산출물 디렉터리 변형(target-e2e 등) — 'target' 한 줄로는 걸러지지 않는다
@@ -108,5 +109,14 @@ packages/shell/C:\\*
 naia-agent-worktrees/
 worktrees/
 
+# 웹판 NVA 말하기 아틀라스(묶음당 60~150MB) — git 제외. scripts/web-nva-atlas.mjs 가 빌드 전에
+# speech/generation-result.json 의 sha256 으로 확인하고 NAIA_WEB_NVA_ATLAS_SOURCE 에서 가져온다.
+packages/shell/public/nva/*/speech/atlas.bin
+
+# 시연판 회사 소개 덱의 비공개 장(숫자가 든 장) 그림·원고 — git 제외. scripts/web-kiosk-private-slides.mjs 가
+# 빌드 전에 ir-deck-private.manifest.json 의 sha256 으로 확인하고 NAIA_WEB_KIOSK_PRIVATE_SLIDES_SOURCE 에서 가져온다.
+packages/shell/public/kiosk-slides/private/
+packages/shell/src/lib/kiosk-demo/slides/ir-deck-private.generated.json
+packages/shell/src/lib/kiosk-demo/slides/ir-deck-private.generated.json.partial
 # Session-contract recovery leases are runtime state and record host names.
 .agents/session-contracts/.recovery/

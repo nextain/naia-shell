@@ -4,9 +4,12 @@ import {
 	localVoiceFacadeUrlFromReady,
 } from "../../voice/local-runtime";
 import { resetBgmSidecarBaseUrl } from "../../bgm-sidecar-url";
+import { Logger } from "../../logger";
 import {
 	arrayBufferToBase64,
 	deriveLanguageCode,
+	KIOSK_DEMO_VOICE_TIMEOUT_MS,
+	KIOSK_VOICE_REQUEST_TIMEOUT_MS,
 	LOCAL_VOICE_REQUEST_TIMEOUT_MS,
 	LocalVoiceTimeoutError,
 	synthesizeTts,
@@ -39,6 +42,30 @@ beforeEach(() => {
 });
 
 /** Build a minimal fetch Response-like object for a JSON body. */
+// 44-byte RIFF/WAVE header + 2 silent PCM16 samples.
+const WAV_BYTES = (() => {
+	const b = new Uint8Array(48);
+	const dv = new DataView(b.buffer);
+	const put = (o: number, t: string) => {
+		for (let i = 0; i < t.length; i++) b[o + i] = t.charCodeAt(i);
+	};
+	put(0, "RIFF");
+	dv.setUint32(4, 40, true);
+	put(8, "WAVE");
+	put(12, "fmt ");
+	dv.setUint32(16, 16, true);
+	dv.setUint16(20, 1, true);
+	dv.setUint16(22, 1, true);
+	dv.setUint32(24, 16000, true);
+	dv.setUint32(28, 32000, true);
+	dv.setUint16(32, 2, true);
+	dv.setUint16(34, 16, true);
+	put(36, "data");
+	dv.setUint32(40, 4, true);
+	return b;
+})();
+const WAV_BASE64 = btoa(String.fromCharCode(...WAV_BYTES));
+
 function jsonResponse(body: unknown, ok = true, status = 200) {
 	return {
 		ok,
@@ -81,6 +108,7 @@ afterEach(() => {
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 });
 
 describe("arrayBufferToBase64", () => {
@@ -184,6 +212,410 @@ describe("synthesizeTts — nextain (gateway)", () => {
 				gatewayUrl: "https://api.nextain.io",
 			}),
 		).rejects.toThrow(/402/);
+	});
+
+	it("sends naia-voice:tpl-jina in kiosk mode (even when caller passes another voice), decodes raw audio/wav and JSON WAV gateway responses, and keeps desktop voice behavior unchanged", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				headers: new Headers({ "Content-Type": "audio/wav" }),
+				arrayBuffer: async () => WAV_BYTES.slice().buffer,
+			} as unknown as Response)
+			.mockResolvedValueOnce(jsonResponse({ audio_content: WAV_BASE64 }))
+			.mockResolvedValueOnce(jsonResponse({ audio_content: "QUJD" }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const kioskRes = await synthesizeTts({
+			text: "키오스크 안내",
+			provider: "nextain",
+			naiaKey: "gw-kiosk",
+			gatewayUrl: "https://api.nextain.io",
+		});
+		expect(kioskRes.audioBase64).toBe(WAV_BASE64);
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+			{
+				input: "키오스크 안내",
+				voice: "naia-voice:tpl-jina",
+				audio_encoding: "MP3",
+			},
+		);
+
+		const jsonWav = await synthesizeTts({
+			text: "저장값이 Neural2-A 여도 지나 목소리",
+			voice: "ko-KR-Neural2-A",
+			provider: "nextain",
+			naiaKey: "gw-kiosk",
+			gatewayUrl: "https://api.nextain.io",
+		});
+		expect(jsonWav.audioBase64).toBe(WAV_BASE64);
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject(
+			{ voice: "naia-voice:tpl-jina" },
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+
+		vi.stubEnv("MODE", "production");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		await synthesizeTts({
+			text: "데스크톱 기본",
+			provider: "nextain",
+			naiaKey: "gw-desktop",
+			gatewayUrl: "https://api.nextain.io",
+		});
+		expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toMatchObject(
+			{
+				input: "데스크톱 기본",
+				voice: "ko-KR-SunHi:DragonHDLatestNeural",
+				audio_encoding: "MP3",
+			},
+		);
+	});
+
+	it.each([
+		[
+			"gateway 400",
+			() => jsonResponse({ detail: "unknown voice" }, false, 400),
+		],
+		["gateway 502", () => jsonResponse({ detail: "bad gateway" }, false, 502)],
+		[
+			"undecodable audio",
+			() => jsonResponse({ audio_content: btoa("not audio at all") }),
+		],
+		["empty audio", () => jsonResponse({})],
+	])(
+		"kiosk retries the sentence once with ko-KR-Neural2-A after %s",
+		async (_label, firstResponse) => {
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(firstResponse())
+				.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+			vi.stubGlobal("fetch", fetchMock);
+			vi.stubEnv("MODE", "web");
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+			const res = await synthesizeTts({
+				text: "대체 경로",
+				provider: "nextain",
+				naiaKey: "gw-kiosk",
+				gatewayUrl: "https://api.nextain.io",
+			});
+			expect(res.audioBase64).toBe("SUQzBA==");
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).voice).toBe(
+				"naia-voice:tpl-jina",
+			);
+			expect(
+				JSON.parse(fetchMock.mock.calls[1][1].body as string),
+			).toMatchObject({ input: "대체 경로", voice: "ko-KR-Neural2-A" });
+		},
+	);
+
+	describe("kiosk busy voice retry", () => {
+		const opts = {
+			text: "지나 목소리",
+			provider: "nextain" as const,
+			naiaKey: "test-key",
+			gatewayUrl: "https://gateway.invalid",
+		};
+		const failed = (status: number, retryAfter?: string) =>
+			new Response(
+				JSON.stringify({
+					detail: {
+						error: status === 400 ? "unknown_voice" : "naia_voice_busy",
+					},
+				}),
+				{
+					status,
+					headers:
+						retryAfter === undefined ? {} : { "Retry-After": retryAfter },
+				},
+			);
+		const voices = (mock: ReturnType<typeof vi.fn>) =>
+			mock.mock.calls.map((call) => JSON.parse(call[1].body as string).voice);
+		beforeEach(() => {
+			vi.useFakeTimers();
+			vi.stubEnv("MODE", "web");
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		});
+
+		it.each([503, 429])(
+			"retries jina once after %i and returns its audio",
+			async (status) => {
+				const fetchMock = vi
+					.fn()
+					.mockResolvedValueOnce(failed(status, "1"))
+					.mockResolvedValueOnce(jsonResponse({ audio_content: WAV_BASE64 }));
+				const info = vi.spyOn(Logger, "info");
+				vi.stubGlobal("fetch", fetchMock);
+				const result = synthesizeTts(opts);
+				await vi.advanceTimersByTimeAsync(999);
+				expect(fetchMock).toHaveBeenCalledTimes(1);
+				await vi.advanceTimersByTimeAsync(1);
+				expect((await result).audioBase64).toBe(WAV_BASE64);
+				expect(voices(fetchMock)).toEqual([
+					"naia-voice:tpl-jina",
+					"naia-voice:tpl-jina",
+				]);
+				expect(info).toHaveBeenCalledWith(
+					"tts",
+					"kiosk voice busy; retrying jina once",
+					{ status, delayMs: 1000 },
+				);
+			},
+		);
+
+		it("falls back to Google after two busy responses", async () => {
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(failed(503, "1"))
+				.mockResolvedValueOnce(failed(503, "1"))
+				.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(1000);
+			expect((await result).audioBase64).toBe("SUQzBA==");
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"naia-voice:tpl-jina",
+				"ko-KR-Neural2-A",
+			]);
+		});
+
+		it("falls back if the retried jina audio cannot be decoded", async () => {
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(failed(503, "1"))
+				.mockResolvedValueOnce(
+					jsonResponse({ audio_content: btoa("not audio") }),
+				)
+				.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(1000);
+			expect((await result).audioBase64).toBe("SUQzBA==");
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"naia-voice:tpl-jina",
+				"ko-KR-Neural2-A",
+			]);
+		});
+
+		it.each(["400", "network"])(
+			"immediately falls back on %s",
+			async (failure) => {
+				const fetchMock = vi.fn();
+				if (failure === "400") fetchMock.mockResolvedValueOnce(failed(400));
+				else fetchMock.mockRejectedValueOnce(new TypeError("network"));
+				fetchMock.mockResolvedValueOnce(
+					jsonResponse({ audio_content: "SUQzBA==" }),
+				);
+				vi.stubGlobal("fetch", fetchMock);
+				await synthesizeTts(opts);
+				expect(voices(fetchMock)).toEqual([
+					"naia-voice:tpl-jina",
+					"ko-KR-Neural2-A",
+				]);
+				expect(vi.getTimerCount()).toBe(0);
+			},
+		);
+
+		it("retries jina once on narrow portrait transient network failure without data-naia-web", async () => {
+			vi.stubGlobal("document", {
+				documentElement: {
+					getAttribute: (name: string) =>
+						name === "data-naia-mobile" ? "true" : null,
+				},
+			});
+			const fetchMock = vi
+				.fn()
+				.mockRejectedValueOnce(new TypeError("network"))
+				.mockResolvedValueOnce(jsonResponse({ audio_content: WAV_BASE64 }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(500);
+			expect((await result).audioBase64).toBe(WAV_BASE64);
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"naia-voice:tpl-jina",
+			]);
+		});
+
+		it.each([
+			["5", 2000],
+			[undefined, 1000],
+			["invalid", 1000],
+			["-1", 1000],
+			["0.25", 250],
+		] as const)(
+			"uses Retry-After %s as a %i ms delay",
+			async (header, delay) => {
+				const fetchMock = vi
+					.fn()
+					.mockResolvedValueOnce(failed(503, header))
+					.mockResolvedValueOnce(jsonResponse({ audio_content: WAV_BASE64 }));
+				vi.stubGlobal("fetch", fetchMock);
+				const result = synthesizeTts(opts);
+				await vi.advanceTimersByTimeAsync(delay - 1);
+				expect(fetchMock).toHaveBeenCalledTimes(1);
+				await vi.advanceTimersByTimeAsync(1);
+				await result;
+				expect(voices(fetchMock)).toEqual([
+					"naia-voice:tpl-jina",
+					"naia-voice:tpl-jina",
+				]);
+			},
+		);
+
+		it("aborts the wait immediately without requesting Google", async () => {
+			const fetchMock = vi.fn().mockResolvedValueOnce(failed(503, "1"));
+			vi.stubGlobal("fetch", fetchMock);
+			const controller = new AbortController();
+			const result = synthesizeTts({ ...opts, signal: controller.signal });
+			const rejection = expect(result).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			expect(vi.getTimerCount()).toBe(1);
+			controller.abort();
+			await rejection;
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("does not retry busy responses outside kiosk mode", async () => {
+			vi.stubEnv("MODE", "production");
+			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+			const fetchMock = vi.fn().mockResolvedValueOnce(failed(503, "1"));
+			vi.stubGlobal("fetch", fetchMock);
+			await expect(synthesizeTts(opts)).rejects.toThrow(
+				'Naia TTS 실패 (503): {"detail":{"error":"naia_voice_busy"}}',
+			);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it("falls back to Google when a hung jina request hits the voice timeout", async () => {
+			const timeout = new AbortController();
+			const timeoutSpy = vi
+				.spyOn(AbortSignal, "timeout")
+				.mockReturnValueOnce(timeout.signal);
+			const fetchMock = vi
+				.fn()
+				.mockImplementationOnce(
+					(_url: string, init: RequestInit) =>
+						new Promise((_resolve, reject) => {
+							init.signal?.addEventListener("abort", () =>
+								reject(init.signal?.reason),
+							);
+						}),
+				)
+				.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(timeoutSpy).toHaveBeenCalledWith(KIOSK_VOICE_REQUEST_TIMEOUT_MS);
+			timeout.abort(new DOMException("timed out", "TimeoutError"));
+			expect((await result).audioBase64).toBe("SUQzBA==");
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"ko-KR-Neural2-A",
+			]);
+		});
+
+		it("falls back to Google when the voice timeout fires while the body is arriving", async () => {
+			// Chrome rejects a body read cut by AbortSignal.timeout with AbortError.
+			const timeout = new AbortController();
+			vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(timeout.signal);
+			const slowBody = {
+				ok: true,
+				status: 200,
+				headers: { get: (k: string) => (k === "content-type" ? "audio/wav" : null) },
+				arrayBuffer: () =>
+					new Promise<ArrayBuffer>((_resolve, reject) => {
+						timeout.signal.addEventListener("abort", () =>
+							reject(new DOMException("aborted", "AbortError")),
+						);
+					}),
+			};
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(slowBody)
+				.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+			vi.stubGlobal("fetch", fetchMock);
+			const result = synthesizeTts(opts);
+			await vi.advanceTimersByTimeAsync(0);
+			timeout.abort(new DOMException("timed out", "TimeoutError"));
+			expect((await result).audioBase64).toBe("SUQzBA==");
+			expect(voices(fetchMock)).toEqual([
+				"naia-voice:tpl-jina",
+				"ko-KR-Neural2-A",
+			]);
+		});
+	});
+
+	it("kiosk retries when the browser cannot decode the tpl-jina audio", async () => {
+		const decode = vi
+			.fn()
+			.mockRejectedValueOnce(new DOMException("bad", "EncodingError"));
+		vi.stubGlobal(
+			"OfflineAudioContext",
+			class {
+				decodeAudioData = decode;
+			},
+		);
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ audio_content: WAV_BASE64 }))
+			.mockResolvedValueOnce(jsonResponse({ audio_content: "SUQzBA==" }));
+		vi.stubGlobal("fetch", fetchMock);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const res = await synthesizeTts({
+			text: "디코드 실패",
+			provider: "nextain",
+			naiaKey: "gw-kiosk",
+			gatewayUrl: "https://api.nextain.io",
+		});
+		expect(decode).toHaveBeenCalledTimes(1);
+		expect(res.audioBase64).toBe("SUQzBA==");
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).voice).toBe(
+			"ko-KR-Neural2-A",
+		);
+	});
+
+	it("kiosk surfaces the fallback error when both voices fail and does not retry aborts", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ detail: "x" }, false, 502))
+			.mockResolvedValueOnce(jsonResponse({ detail: "y" }, false, 503));
+		vi.stubGlobal("fetch", fetchMock);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		await expect(
+			synthesizeTts({
+				text: "둘 다 실패",
+				provider: "nextain",
+				naiaKey: "gw-kiosk",
+				gatewayUrl: "https://api.nextain.io",
+			}),
+		).rejects.toThrow(/503/);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+
+		const abortMock = vi
+			.fn()
+			.mockRejectedValue(new DOMException("aborted", "AbortError"));
+		vi.stubGlobal("fetch", abortMock);
+		await expect(
+			synthesizeTts({
+				text: "중단",
+				provider: "nextain",
+				naiaKey: "gw-kiosk",
+				gatewayUrl: "https://api.nextain.io",
+			}),
+		).rejects.toThrow(/aborted/);
+		expect(abortMock).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -646,6 +1078,39 @@ describe("synthesizeTts — naia-local-voice (/v1/audio/speech Runtime contract)
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it("S5: in kiosk demo mode, BC250 synthesis times out after 8 seconds (KIOSK_DEMO_VOICE_TIMEOUT_MS) and does not retry", async () => {
+		vi.useFakeTimers();
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => {
+					reject(new DOMException("The user aborted a request.", "AbortError"));
+				});
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const promise = synthesizeTts({
+			text: "게스트님, 안녕하세요.",
+			voice: "naia-default",
+			provider: "naia-local-voice",
+			vllmTtsHost: "https://bc250-0-voice.nextain.io",
+		});
+
+		let settled = false;
+		promise.catch(() => {
+			settled = true;
+		});
+
+		await vi.advanceTimersByTimeAsync(KIOSK_DEMO_VOICE_TIMEOUT_MS - 1);
+		expect(settled).toBe(false);
+
+		await vi.advanceTimersByTimeAsync(1);
+		await expect(promise).rejects.toThrow(/8s/);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("#688: caller abort still rejects as abort, not timeout", async () => {
 		vi.useFakeTimers();
 		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
@@ -702,7 +1167,8 @@ describe("synthesizeTts — naia-local-voice (/v1/audio/speech Runtime contract)
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const preparingCalls = dispatchSpy.mock.calls.filter(
-			(call: unknown[]) => (call[0] as Event | undefined)?.type === "naia:voice-model-preparing",
+			(call: unknown[]) =>
+				(call[0] as Event | undefined)?.type === "naia:voice-model-preparing",
 		);
 		expect(preparingCalls).toHaveLength(0);
 	});

@@ -315,6 +315,7 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
                         None => Vec::new(),
                     };
                     Ok(Message {
+                        app_name: m.get("appName").and_then(|x| x.as_str()).map(str::to_string),
                         role: m
                             .get("role")
                             .and_then(|x| x.as_str())
@@ -415,6 +416,7 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
     };
 
     Ok(ChatRequest {
+        app_name: s("appName"),
         request_id: s("requestId").unwrap_or_default(),
         session_id: s("sessionId"),
         messages,
@@ -427,22 +429,19 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
             .map(|x| x.to_string()),
         enable_tools: v.get("enableTools").and_then(|x| x.as_bool()),
         enable_thinking: v.get("enableThinking").and_then(|x| x.as_bool()),
-        thinking: v
-            .get("thinking")
-            .and_then(|t| t.get("level"))
-            .and_then(|l| l.as_str())
-            .and_then(|s| match s {
-                "off" => Some(pb::ThinkingRequest {
-                    level: pb::ThinkingLevel::Off as i32,
-                }),
-                "low" => Some(pb::ThinkingRequest {
-                    level: pb::ThinkingLevel::Low as i32,
-                }),
-                "high" => Some(pb::ThinkingRequest {
-                    level: pb::ThinkingLevel::High as i32,
-                }),
-                _ => None,
-            }),
+        thinking: Some(pb::ThinkingRequest {
+            level: match v
+                .get("thinking")
+                .and_then(|t| t.get("level"))
+                .and_then(|l| l.as_str())
+            {
+                Some("off") => pb::ThinkingLevel::Off,
+                Some("low") => pb::ThinkingLevel::Low,
+                Some("high") => pb::ThinkingLevel::High,
+                Some("xhigh") => pb::ThinkingLevel::Xhigh,
+                _ => pb::ThinkingLevel::Unspecified,
+            } as i32,
+        }),
         gateway_url: s("gatewayUrl"),
         disabled_skills: v
             .get("disabledSkills")
@@ -824,6 +823,39 @@ impl AgentGrpc {
 #[cfg(test)]
 mod transcode_tests {
     use super::*;
+
+    #[test]
+    fn ut_sm_shell_think_01() {
+        for (level, expected) in [
+            (Some("off"), 1),
+            (Some("low"), 2),
+            (Some("high"), 3),
+            (Some("xhigh"), 4),
+            (None, 0),
+            (Some("unknown"), 0),
+        ] {
+            for legacy in [None, Some(false), Some(true)] {
+                let mut input = serde_json::json!({"requestId": "thinking-test", "messages": []});
+                if let Some(level) = level {
+                    input["thinking"] = serde_json::json!({"level": level});
+                }
+                if let Some(legacy) = legacy {
+                    input["enableThinking"] = serde_json::json!(legacy);
+                }
+                let request = json_to_chat_request(&input);
+                assert_eq!(
+                    request
+                        .thinking
+                        .as_ref()
+                        .expect("thinking must be encoded")
+                        .level,
+                    expected,
+                    "level={level:?}"
+                );
+                assert_eq!(request.enable_thinking, legacy);
+            }
+        }
+    }
 
     #[test]
     fn wire_v1_json_to_proto_preserves_nested_input() {
@@ -1427,28 +1459,46 @@ mod live_tests {
             Some(ThinkingLevel::High as i32)
         );
 
-        // none (missing)
-        assert_eq!(parse_level(serde_json::json!({})), None);
+        // Missing and unknown values encode UNSPECIFIED.
+        assert_eq!(
+            parse_level(serde_json::json!({})),
+            Some(ThinkingLevel::Unspecified as i32)
+        );
 
         // invalid value
         assert_eq!(
             parse_level(serde_json::json!({
                 "thinking": { "level": "auto" }
             })),
-            None
+            Some(ThinkingLevel::Unspecified as i32)
         );
         assert_eq!(
             parse_level(serde_json::json!({
                 "thinking": { "level": "unknown" }
             })),
-            None
+            Some(ThinkingLevel::Unspecified as i32)
         );
         assert_eq!(
             parse_level(serde_json::json!({
                 "thinking": "not an object"
             })),
-            None
+            Some(ThinkingLevel::Unspecified as i32)
         );
     }
+    #[test]
+    fn app_name_metadata_is_optional_and_preserved() {
+        let req = super::try_json_to_chat_request(&serde_json::json!({
+            "requestId": "app", "appName": "달빛 카페",
+            "messages": [{"role":"user","content":"hi","appName":"달빛 카페"}]
+        })).unwrap();
+        assert_eq!(req.app_name.as_deref(), Some("달빛 카페"));
+        assert_eq!(req.messages[0].app_name.as_deref(), Some("달빛 카페"));
+        let ordinary = super::try_json_to_chat_request(&serde_json::json!({
+            "requestId":"normal", "messages":[{"role":"user","content":"hi"}]
+        })).unwrap();
+        assert_eq!(ordinary.app_name, None);
+        assert_eq!(ordinary.messages[0].app_name, None);
+    }
+
 }
 

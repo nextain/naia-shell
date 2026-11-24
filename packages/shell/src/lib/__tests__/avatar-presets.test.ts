@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
 	AVATAR_PRESETS,
 	DEFAULT_AVATAR_MODEL,
-	getAvatarGender,
 	isLegacyBundledVrmModel,
 } from "../avatar-presets";
 
@@ -20,31 +19,14 @@ describe("installed VRM defaults", () => {
 			false,
 		);
 		expect(isLegacyBundledVrmModel("01-OL_Woman.vrm")).toBe(false);
-		expect(isLegacyBundledVrmModel("naia_char_skin_head.vrm")).toBe(false);
-		expect(isLegacyBundledVrmModel("naia_char_with_hair.vrm")).toBe(false);
 	});
 
-	it("lists all six ADK avatars, preserving OL Woman as the first VRM", () => {
+	it("lists the four supported ADK avatars, preserving OL Woman as the first VRM", () => {
 		expect(AVATAR_PRESETS.map(({ filename }) => filename)).toEqual([
 			"01-OL_Woman.vrm",
 			"02-Hood_Boy.vrm",
 			"03-Sendagaya-Shino-uniform.vrm",
 			"04-Sakurada-Fumiriya.vrm",
-			"naia_char_skin_head.vrm",
-			"naia_char_with_hair.vrm",
 		]);
-	});
-
-	it("uses the female voice family for both official Naia VRMs", () => {
-		expect(
-			getAvatarGender(
-				"C:\\naia-adk\\naia-settings\\vrm-files\\naia_char_skin_head.vrm",
-			),
-		).toBe("female");
-		expect(
-			getAvatarGender(
-				"/home/user/naia-adk/naia-settings/vrm-files/naia_char_with_hair.vrm",
-			),
-		).toBe("female");
 	});
 });

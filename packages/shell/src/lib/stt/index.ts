@@ -14,4 +14,6 @@ export { createApiSttSession } from "./api-stt";
 export {
 	createWebSpeechSttSession,
 	isWebSpeechAvailable,
+	webSpeechErrorMessageKey,
+	webSpeechSttOptions,
 } from "./web-speech-stt";

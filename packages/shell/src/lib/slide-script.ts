@@ -7,7 +7,17 @@
  * the PDF text for narration).
  */
 
-export type SlideScriptSections = Map<number, string>;
+export interface SlideVideoDirective {
+	page: number;
+	order: number;
+	fileName: string;
+	validName: boolean;
+	section: string;
+}
+
+export type SlideScriptSections = Map<number, string> & {
+	videoDirectives?: SlideVideoDirective[];
+};
 
 function normalizeSectionText(text: string): string {
 	return text.replace(/\r\n?/g, "\n").trim();
@@ -24,10 +34,68 @@ function isValidPage(page: number): boolean {
 	return Number.isInteger(page) && page >= 1;
 }
 
+export function isValidSlideVideoFileName(fileName: string): boolean {
+	if (
+		!fileName ||
+		fileName.length > 180 ||
+		fileName.startsWith(".") ||
+		fileName.includes("..") ||
+		fileName.includes("/") ||
+		fileName.includes("\\") ||
+		/[":*?<>|]/u.test(fileName) ||
+		[...fileName].some((character) => {
+			const code = character.charCodeAt(0);
+			return code <= 0x1f || code === 0x7f;
+		}) ||
+		fileName.trim() !== fileName
+	) {
+		return false;
+	}
+	return /\.(?:mp4|webm|m4v)$/i.test(fileName);
+}
+
+/** Parse video headings independently from page narration sections. */
+export function parseSlideVideoDirectives(
+	markdown: string,
+): SlideVideoDirective[] {
+	const lines = String(markdown ?? "")
+		.replace(/\r\n?/g, "\n")
+		.split("\n");
+	const directives: SlideVideoDirective[] = [];
+	for (let index = 0; index < lines.length; index++) {
+		const match = lines[index].match(
+			/^##\s+(\d+)-(\d+)\.\s+\[(?:영상|video)\](?:\s+(.*))?\s*$/i,
+		);
+		if (!match) continue;
+		const page = Number.parseInt(match[1], 10);
+		const order = Number.parseInt(match[2], 10);
+		let end = index + 1;
+		while (end < lines.length && !/^##\s+/.test(lines[end])) end++;
+		const fileName = (match[3] ?? "").trim();
+		directives.push({
+			page,
+			order,
+			fileName,
+			validName:
+				isValidPage(page) &&
+				Number.isInteger(order) &&
+				order >= 1 &&
+				isValidSlideVideoFileName(fileName),
+			section: lines.slice(index, end).join("\n").trimEnd(),
+		});
+	}
+	return directives.sort(
+		(left, right) => left.page - right.page || left.order - right.order,
+	);
+}
+
 /** Parse `## 1.`/`## 1)`/`## 1` sections while retaining empty sections. */
 export function parseSlideScript(markdown: string): SlideScriptSections {
 	const sections: SlideScriptSections = new Map();
-	const lines = String(markdown ?? "").replace(/\r\n?/g, "\n").split("\n");
+	sections.videoDirectives = parseSlideVideoDirectives(markdown);
+	const lines = String(markdown ?? "")
+		.replace(/\r\n?/g, "\n")
+		.split("\n");
 	let page: number | null = null;
 	let buffer: string[] = [];
 
@@ -59,15 +127,24 @@ export function parseSlideScript(markdown: string): SlideScriptSections {
 }
 
 /** Serialize sections in physical page order, including authored-empty pages. */
-export function serializeSlideScript(sections: ReadonlyMap<number, string>): string {
-	return [...sections.entries()]
+export function serializeSlideScript(
+	sections: ReadonlyMap<number, string>,
+): string {
+	const pageSections = [...sections.entries()]
 		.filter(([page]) => isValidPage(page))
 		.sort(([left], [right]) => left - right)
 		.map(([page, text]) => {
 			const body = escapeSectionBody(text);
 			return body ? `## ${page}.\n${body}` : `## ${page}.`;
-		})
-		.join("\n\n");
+		});
+	const videoDirectives =
+		"videoDirectives" in sections && Array.isArray(sections.videoDirectives)
+			? sections.videoDirectives
+			: [];
+	return [
+		...pageSections,
+		...videoDirectives.map(({ section }) => section),
+	].join("\n\n");
 }
 
 /** Replace or append one page without losing empty sections in the script. */

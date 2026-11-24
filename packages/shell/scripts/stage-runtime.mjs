@@ -43,6 +43,7 @@ import {
 } from "./agent-pairing.mjs";
 import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { herdrReleaseDir } from "./stage-herdr.mjs";
+import { resolveInstallerInstance, installerInstanceConf } from "./installer-instance.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
 import { resolveProfileRegistryPath } from "./stage-voxcpm2-runtime.mjs";
 
@@ -303,6 +304,23 @@ export function generateConf(
  */
 export function installerCoreEnv(source = process.env) {
 	return { VITE_NAIA_NEW_CORE: source.VITE_NAIA_NEW_CORE ?? "1" };
+}
+
+/** linuxdeploy must find Vosk before it rewrites the executable RPATH.
+ * Use verified staging output; never depend on runner caches or productName.
+ */
+export function linuxBundleEnv(
+	platform,
+	resourcesDir = RESOURCES,
+	source = process.env,
+) {
+	if (platform !== "linux") return {};
+	return {
+		LD_LIBRARY_PATH: [
+			resolve(resourcesDir),
+			...(source.LD_LIBRARY_PATH || "").split(":").filter(Boolean),
+		].join(":"),
+	};
 }
 
 /* ───────────────────────── 부작용 단계 ───────────────────────── */
@@ -599,7 +617,9 @@ export function invalidateVoskBuildCache(
 async function main() {
 	// Installer staging is a product build, so native E2E checkout selectors must
 	// not leak into its paired-agent choice or into child staging commands.
-	const cleanLaunchEnv = interactiveLaunchEnv(process.env);
+	const instance = resolveInstallerInstance(process.env.NAIA_INSTALLER_INSTANCE);
+	console.log(`[stage-runtime] installer instance=${instance.instance}`);
+	const cleanLaunchEnv = { ...interactiveLaunchEnv(process.env), ...instance.env };
 	for (const key of Object.keys(process.env)) delete process.env[key];
 	Object.assign(process.env, cleanLaunchEnv);
 	const platform = process.platform;
@@ -731,6 +751,7 @@ async function main() {
 		voxcpm2RuntimePresent,
 		createUpdaterArtifacts: unsignedUpdaterValidation ? false : undefined,
 	});
+	Object.assign(conf, installerInstanceConf(JSON.parse(readFileSync(resolve(SRC_TAURI, "tauri.conf.json"), "utf8")), instance));
 	if (unsignedUpdaterValidation) {
 		console.warn(
 			"[stage-runtime] UNSIGNED local validation: updater signatures are intentionally disabled; these artifacts are not release eligible",
@@ -747,7 +768,7 @@ async function main() {
 	// strip하려 들면 제3자 런타임이 변형되거나 외부 아키텍처 ELF에서 실패한다.
 	// 설치 계약은 검증된 런타임 원본을 동봉하는 것이므로 모든 플랫폼에서 보존한다
 	// (NO_STRIP을 소비하는 도구는 linuxdeploy뿐이다).
-	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1" };
+	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1", ...linuxBundleEnv(platform) };
 	// 이전 로컬 빌드의 stale 포맷이 같은 glob으로 업로드되는 것을 구조적으로 차단한다.
 	rmSync(resolve(SHELL, "src-tauri", "target", "release", "bundle"), {
 		recursive: true,

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_VOICE_REF_URL,
 	addAllowedTool,
@@ -8,13 +8,16 @@ import {
 	isToolAllowed,
 	loadConfig,
 	migrateLegacyDna3OllamaModel,
+	normalizeRetiredVoiceConfig,
 	reconcileExplicitLocalProfile,
 	removeAllowedTool,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
 	resolveThinkingLevel,
+	resolveWebThinkingEnabled,
 	saveConfig,
 } from "../config";
+import { KIOSK_DEMO_TTS_VOICE } from "../config-seed";
 
 describe("config", () => {
 	beforeEach(() => {
@@ -347,6 +350,9 @@ describe("legacy NVA runtime migration on save", () => {
 });
 
 describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
+	it("UT-SM-04 sends the chosen main role xhigh", () => {
+		expect(resolveThinkingLevel({ llmRoles: { main: { thinkingLevel: "xhigh" } } })).toBe("xhigh");
+	});
 	it("defaults to off when config is null or undefined or empty", () => {
 		expect(resolveThinkingLevel(null)).toBe("off");
 		expect(resolveThinkingLevel(undefined)).toBe("off");
@@ -397,3 +403,72 @@ describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
 	});
 });
 
+describe("normalizeRetiredVoiceConfig kiosk vs desktop Neural2 handling", () => {
+	afterEach(() => {
+		localStorage.clear();
+		vi.unstubAllEnvs();
+	});
+
+	it("keeps naia-voice:tpl-jina and upgrades stored ko-KR-Neural2-A to naia-voice:tpl-jina in kiosk mode while keeping desktop DragonHD migration intact", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		expect(KIOSK_DEMO_TTS_VOICE).toBe("naia-voice:tpl-jina");
+		const kioskNormalized = normalizeRetiredVoiceConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: KIOSK_DEMO_TTS_VOICE,
+		});
+		expect(kioskNormalized.changed).toBe(false);
+		expect(kioskNormalized.config.ttsVoice).toBe("naia-voice:tpl-jina");
+
+		const kioskLegacyNormalized = normalizeRetiredVoiceConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: "ko-KR-Neural2-A",
+		});
+		expect(kioskLegacyNormalized.changed).toBe(true);
+		expect(kioskLegacyNormalized.config.ttsVoice).toBe("naia-voice:tpl-jina");
+
+		saveConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: "ko-KR-Neural2-A",
+		});
+		expect(loadConfig()?.ttsVoice).toBe("naia-voice:tpl-jina");
+
+		vi.stubEnv("MODE", "production");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		const desktopNormalized = normalizeRetiredVoiceConfig({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			apiKey: "",
+			ttsProvider: "nextain",
+			ttsVoice: "ko-KR-Neural2-A",
+		});
+		expect(desktopNormalized.changed).toBe(true);
+		expect(desktopNormalized.config.ttsVoice).toBe(
+			"ko-KR-SunHi:DragonHDLatestNeural",
+		);
+	});
+});
+
+
+describe("ThinkingLevel max (webgpu model defaults)", () => {
+	it("passes max through from the main role and the legacy flat field", () => {
+		expect(
+			resolveThinkingLevel({ llmRoles: { main: { thinkingLevel: "max" } } }),
+		).toBe("max");
+		expect(resolveThinkingLevel({ thinkingLevel: "max" })).toBe("max");
+	});
+
+	it("treats max as thinking-enabled on the web", () => {
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "max" })).toBe(true);
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "off" })).toBe(false);
+	});
+});

@@ -217,7 +217,7 @@ test.describe("Fresh onboarding flow", () => {
 		await expect(videoCard).not.toContainText("▶");
 		const screenshotDir = path.resolve(
 			process.cwd(),
-			"../../tmp/naia-shell-windows-hardening",
+			"test-results/r15-onboarding",
 		);
 		mkdirSync(screenshotDir, { recursive: true });
 		await page.locator(".onboarding-app").screenshot({
@@ -364,3 +364,77 @@ test.describe("Fresh onboarding flow", () => {
 		expect(reloadCount - reloadCountBefore).toBeGreaterThanOrEqual(2);
 	});
 });
+
+for (const width of [360, 1100]) {
+	test(`Linux media fallback keeps onboarding input usable ${width}px`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.addInitScript(() => {
+			HTMLMediaElement.prototype.play = function () {
+				return Promise.reject(new Error("appsink not found"));
+			};
+		});
+		await setupFreshOnboarding(page);
+		const name = page.locator('input[placeholder="Naia"]');
+		await name.fill("Still responsive");
+		await name.press("Tab");
+		await expect(
+			page.getByRole("button", { name: /다음|Next/i }),
+		).toBeEnabled();
+		await clickNext(page);
+		await expect(
+			page.locator('input[placeholder="Still responsive"]'),
+		).toHaveCount(0);
+		// Exercise the actual NVA renderer with an isolated model, independent of
+		// the onboarding fixture's legacy (non-prebaked) manifest.
+		await page.evaluate(async () => {
+			const win = window as any;
+			const invoke = win.__TAURI_INTERNALS__.invoke;
+			win.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+				if (cmd === "read_local_binary" && args.path.endsWith("manifest.json"))
+					return btoa(
+						JSON.stringify({
+							nva_version: "0.2",
+							canvas: { width: 406, height: 720 },
+							animations: { idle: { clip: "idle.webm", loop: true } },
+							vrm_slots: {
+								profile: {
+									generation_mode: "prebaked_webm_only",
+									default_locale: "en",
+								},
+								speech: {},
+							},
+						}),
+					);
+				return invoke(cmd, args);
+			};
+			window.dispatchEvent(
+				new CustomEvent("naia-avatar-preview", {
+					detail: { provider: "naia-video-avatar", model: "media-test" },
+				}),
+			);
+		});
+		// The broadcast hotfix retired the trial still image. A failed decoder
+		// must leave a transparent avatar, an announced error, and usable input.
+		await expect(
+			page.locator('[data-video-avatar-status="error"]'),
+		).toBeVisible();
+		await expect(page.locator("[data-video-avatar-fallback]")).toHaveCount(0);
+		await expect(page.locator("[data-video-avatar-prebaked]")).toBeHidden();
+		const userName = page.locator(".onboarding-app input").first();
+		await userName.fill("Keyboard works");
+		await expect(userName).toHaveValue("Keyboard works");
+		await expect(
+			page.getByRole("button", { name: /다음|Next/i }),
+		).toBeEnabled();
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= innerWidth,
+			),
+		).toBe(true);
+		await page.screenshot({
+			path: `test-results/r15-fallback-${width}.png`,
+		});
+	});
+}

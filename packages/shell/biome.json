@@ -48,6 +48,7 @@
 			"test-results",
 			"src-tauri/gen",
 			"src/lib/locales",
+			"src/lib/avatar/nva-speech/vendor",
 			".claude"
 		]
 	},

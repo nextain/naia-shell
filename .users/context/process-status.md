@@ -1,3 +1,177 @@
+## 웹판 마이크 권한 재시도와 글로 대화 (R21-4) — 2026-11-20
+
+- 권한 안내에서 마이크를 다시 연결하거나 안내를 닫고 작성 중인 글에 초점을 둡니다. 표적 Vitest 111통과·0실패, 셸 타입 검사 신규 오류 0건. 1280×720·390×844 오프라인 미리보기에서 배치 확인. 웹 앱과 실제 마이크 미확인.
+- `UC-WEB-VOICE-MIC-ERROR` · `FR-WEB-VOICE-MIC.4` · `ChatArea.test.tsx` · `i18n-user-facing.test.ts`
+
+## 웹판 첫 메시지와 아바타 동작 안내 (R21-1) — 2026-11-20
+
+- 빈 대화에서 현재 캐릭터 이름과 첫 말 두 개를 표시합니다. 표적 Vitest 116통과·0실패, 셸 타입 검사 신규 오류 0건. 1280×720·390×844 오프라인 미리보기에서 배치 확인. 웹 앱 실기 미확인.
+- `UC-WEB-CHAT-START` · `FR-WEB-CHAT-START.1~2` · `ChatArea.test.tsx` · `NvaGestureActions.test.tsx` · `i18n-user-facing.test.ts`
+
+## 웹판 캐릭터 카드 저장·임시 보관 쉬운 안내 문구 (R21-6) — 2026-11-20
+
+- 캐릭터 카드 화면에서 `IndexedDB` 같은 개발 낱말 없이 정상 보관 상태에서는 이 브라우저에 저장되며 브라우저 기록을 지우면 사라진다고 안내하고, 임시 보관 상태에서는 창을 닫으면 사라진다는 상태 배너만 표시하도록 정리했습니다. 표적 Vitest 통과. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-CHARCARD-STORAGE-COPY` · `FR-WEB-CHARCARD-STORAGE-COPY.1~2` · `CharCardApp.test.tsx`
+
+## 웹판 좁은 설정 탭 잘림 방지와 생각 세기 쉬운 이름 표기 (R21-8) — 2026-11-20
+
+- 좁은 모바일·세로 화면에서 설정 탭 막대의 여백·글자 크기를 줄이고 줄바꿈(`flex-wrap: wrap`)을 허용해 마지막 탭 이름이 잘리지 않게 하고, 두뇌 설정의 생각 세기 `xhigh`를 한국어 `매우 높음`·영어 `Very High` 등 14개 로케일로 표시했습니다. 표적 Vitest 통과. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-SETTINGS-TABS-THINKING` · `FR-WEB-SETTINGS-TABS-THINKING.1~2` · `SettingsTab.test.tsx` · `i18n-user-facing.test.ts`
+
+## 웹판 무료 크레딧 가입 안내와 대화 전 차감·무료 안내 연결 (R21-3) — 2026-11-20
+
+- 비로그인 상태의 로그인 단추 근처에 무료 200 Cr 지급과 답 길이에 따라 달라지는 클라우드 비용 안내를 표시하고, 대화 입력칸 위에 클라우드 첫 메시지 직전 1회 Cr 차감·남은 Cr 안내(닫거나 첫 전송 시 브라우저 기억) 및 내 기기 모델 무료 안내를 연결했습니다. 표적 Vitest 통과. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-CREDIT-CONTEXT` · `FR-WEB-CREDIT-CONTEXT.1~2` · `credits.test.ts` · `web-stage1-features.test.tsx` · `ChatArea.test.tsx`
+
+## 웹 음악 재생 준비·확인과 시간 초과 복구 (R7) — 2026-11-20
+
+- YouTube 준비 이벤트에서 재생을 요청하고, 현재 재생기 확인 뒤 재생 중 카드와 AI 안내를 표시합니다. 표적 Vitest 56통과·0실패. 실제 YouTube 소리와 화면 미확인.
+- `UC-WEB-BGM-CATALOG-TRUTH` · `FR-WEB-BGM-PLAY.3, .5` · `BgmPlayer.test.tsx`
+
+## 웹 음성 대화 시작과 재개 시 마이크 예외 처리 (R26) — 2026-11-20
+
+- 권한·장치 예외 안내와 인식기 해제 후 재시도를 확인했습니다. 표적 Vitest 124통과·0실패. 실제 마이크와 화면 미확인.
+- `UC-WEB-VOICE-MIC-ERROR` · `FR-WEB-VOICE-MIC.3` · `web-speech-stt.test.ts` · `ChatArea.test.tsx`
+
+## 스튜디오 적용 시 웹 음성 합성 엔진 전환 (R16) — 2026-11-20
+
+- 스튜디오 카드의 아바타·목소리와 Naia Cloud TTS 엔진이 함께 적용되며, 열려 있던 음성 설정도 갱신됩니다. 표적 Vitest 173통과·0실패·8제외. 실제 게이트웨이 합성과 화면 미확인.
+- `UC-WEB-STUDIO-VOICE-APPLY` · `FR-WEB-STUDIO-VOICE.3~4` · `web-studio-voice.test.ts` · `SettingsTab.test.tsx`
+
+## 웹판 두뇌 목록·적용 단추·앱 표시·플레이어·캐릭터 대화 — 2026-11-20
+
+- R1·R2·R8·R12를 수정했습니다. R5 셸 제목 막대와 R6 패키지 SVG 연결은 기준 커밋에서 확인했습니다. 최종 표적 Vitest 26통과·0실패이며 1280×720·390×844 실 브라우저 검증은 남아 있습니다.
+- `UC-WEB-A-R1/R2/R5/R6/R8/R12` · `packages/shell/e2e/web-gpu-a-ui.spec.ts` · 작업 묶음 보고서 `bundle-runs/p1-ui.report.md`
+
+<!-- src-sha: r17nva20261120 -->
+
+## 웹판 파일 탐색기 파일 올리기 및 NVA 아바타 재생 경로 보강 (R17) — 2026-11-20
+
+- `5e4ead30`·`277dfcdc` 포함을 확인하고, `work/`에 올린 `.nva`·`.vrm` 바이너리 안내·원본 내려받기, `FileSystemFileHandle.move()` 미지원 브라우저 OPFS 쓰기 폴백, `naia-settings/nva-files`에 올린 `.nva` ZIP의 설정 목록 반영(`listNaiaAssets`) 및 1280×720·390×844 `VideoAvatarCanvas` 직접 재생 경로를 연결했습니다. 표적 Vitest 4파일 41통과·0실패. 실 브라우저 화면은 미확인입니다.
+- `UC-WEB-WORKSPACE-IMPORT` · `FR-WEB-WORKSPACE-IMPORT.1~4` · `web-nva-archive.test.ts` · `web-workspace-path.test.tsx` · `VideoAvatarCanvas.test.tsx`
+
+<!-- src-sha: r3unify20261120 -->
+
+## 웹판 미니 앱스토어와 포털 앱스토어 단일 카탈로그·표시 통합 (R3) — 2026-11-20
+
+- 셸 안의 내장 앱 정의·게이트웨이 상품 정규화·포털 공개 목록(`GET /api/apps`) 병합·다국어 이름/설명 폴백·가격 표기(`무료` / `Cr`)를 `app-catalog.ts` 한 코드로 통합하고 어댑터와 `WebAppStoreModal`(14개국어·`Escape` 닫기·오류 재시도·1280×720/390×844 줄바꿈)에 연결했습니다. `/app/` 경로에서도 포털 `/hosted-apps/` 주소를 정규화하고 유료 스토어 상품의 가격·권한 검사를 보존합니다. 표적 Vitest 6파일 34통과·0실패. 실서버 화면은 미확인입니다.
+- `UC-WEB-APP-CATALOG` · `FR-WEB-APP-CATALOG.1~5` · `app-catalog.test.ts` · `WebAppStoreModal.test.tsx`
+
+<!-- src-sha: 7c3b648621572e1f -->
+
+## 웹판 아바타 영상 다운로드와 재시도 (R48) — 2026-11-20
+
+- 브라우저가 같은 클립의 Blob을 영상 재생과 발화 준비에 공유합니다. 첫 실패 300ms 뒤 한 번 다시 시도합니다. 표적 Vitest 248통과·12실패·1제외이며, 실패 12건은 기준 커밋에서도 재현됐습니다. R48 10건 통과. 실 브라우저의 첫 프레임 시간과 화면은 미확인입니다.
+- `UC-WEB-AVATAR-CLIP` · `FR-WEB-AVATAR-CLIP.1` · `prebaked-renderer.test.ts` · `VideoAvatarCanvas.test.tsx`
+
+<!-- src-sha: 18181c937a98e5fe -->
+
+## 웹판 워커의 게이트웨이 대화 비용 전달 (R47) — 2026-11-20
+
+- 에이전트 c5d6d7b를 사용하는 웹 모드 표적 Vitest 9파일 72통과·0실패. 수정 전 모의 Terra 응답은 2,041토큰과 0 USD를 내보냈고, 수정 후 워커 MessagePort가 0.0069043 USD를 내보냄. 실제 0·누락·문자열·음수·NaN·비유한 값과 도구 라운드의 비용 합산·단가 대체를 확인. 실서버·브라우저 화면 미확인. 파일 앵커 검사는 기준 커밋의 웹 런타임 미계약 파일 3건을 검출함.
+- `UC-WEB-USAGE-COST` · `FR-WEB-USAGE-COST.1` · `packages/shell/web-worker/__tests__/agent-worker-usage.test.ts`
+
+<!-- src-sha: 0d69f97c7d06dda3 -->
+
+## 웹판 캐릭터 카드 파일 보관 (R11) — 2026-11-20
+
+- 표적 Vitest 52건, 로컬 /app/ 배포 형식 카드 번들의 Playwright R11 4건 및 R40 2건 통과. 1280×720·390×844에서 새로 고침 뒤 불러온 카드 그림과 키보드 포커스를 확인했다. 저장 한도 초과 뒤 작은 파일 추가와 저장 실패 시 임시 보관 안내를 확인했다. 캡처 bundle-runs/r11-shots/R11-1280.png·R11-390.png.
+- `UC-WEB-A-R11` · `FR-WEB-A-R11` · `packages/shell/e2e/web-charcard-r11.spec.ts`
+
+<!-- src-sha: 2a48a4b509256dc2 -->
+
+## 웹 키오스크 앱스토어 안내 시험 (R46) — 2026-11-20
+
+- 기존 시험 실패 1건 재현 후 표적 Vitest 1건 및 Playwright 3건 통과. 1280×720·390×844 키오스크의 안내 열기·닫기와 정식 웹판의 통합 상점을 대조. 전체 셸 Vitest 3,693 통과, 13 실패, 34 제외. 실패는 nva-alpha-bake 9건, canonical-speech 3건, nva.test.ts의 atlas.bin 누락 1건. kiosk-demo/knowledge 실패 0건. 캡처 bundle-runs/r46-shots/R46-1280.png·R46-390.png.
+- `UC-WEB-KIOSK-APP-STORE` · `packages/shell/src/components/__tests__/AppMainContent.kiosk-store.test.tsx`
+
+<!-- src-sha: 370ffd13122f50f5 -->
+
+## 웹판 모델 준비 오류 중 입력칸 배치 (R44) — 2026-11-20
+
+- 표적 Vitest 120건과 Playwright 2건 통과. 1280×720·390×844 초기 및 양방향 크기 변경에서 입력칸 하단 712px·838px와 오류 상세의 키보드 접근을 확인. 캡처 bundle-runs/r44-shots/R44-1280.png·R44-390.png.
+- `UC-WEB-CHAT-MODEL-ERROR` · `FR-WEB-CHAT-MODEL-ERROR.1~2` · `packages/shell/e2e/web-chat-model-error-r44.spec.ts`
+
+<!-- src-sha: 20f73d9390f3a095 -->
+
+## 웹판 Naia 모델 적용 시 계정 인증 유지 (R45) — 2026-11-20
+
+- 셸 표적 Vitest 58건, 에이전트 표적 Vitest 61건 및 Playwright 1280×720·390×844 2건 통과. 새로고침 없이 Terra와 Luna의 인증 요청과 응답을 확인. 캡처 bundle-runs/r45-shots/R45-1280.png·R45-390.png.
+- `UC-WEB-MAIN-MODEL-AUTH` · `FR-WEB-MAIN-MODEL-AUTH.1~2` · `packages/shell/e2e/web-main-model-r45.spec.ts`
+
+<!-- src-sha: 529875b7df8ebcbe -->
+
+## 웹판 VRM 립싱크 (R43) — 2026-11-20
+
+- 표적 Vitest 218건과 Playwright 1280×720·390×844 4건 통과. 디코딩한 시험 음원에 맞춰 VRM 모음 표정이 바뀌고 재생 종료·Esc 중단 뒤 해제됨을 확인. 같은 음원으로 데스크톱 NVA 타이밍과 모바일 NVA 말하기 클립을 대조. 캡처 shots/r40-card/R43-1280.png·R43-390.png.
+- `UC-WEB-VRM-LIP-SYNC` · `FR-WEB-VRM-LIP-SYNC.1~2` · `packages/shell/e2e/web-vrm-lip-sync-r43.spec.ts`
+
+<!-- src-sha: 5b6f75184999a42d -->
+
+## 웹판 크레딧 금액 표기 (R42) — 2026-11-20
+
+- 표적 Vitest 95건과 Playwright 1280×720·390×844 2건 통과. 한국어·영어 모델 요금과 잔액을 확인하고 조회 실패에서 재시도. 캡처 shots/r40-card/R42-1280.png·R42-390.png.
+- `UC-WEB-CREDIT-FORMAT` · `FR-WEB-CREDIT-FORMAT.1` · `packages/shell/e2e/web-credits-r42.spec.ts`
+
+<!-- src-sha: 1d79769912aad3b5 -->
+
+## 웹판 VRM 설정의 VRoid Hub 링크 (R41) — 2026-11-20
+
+- 표적 Vitest 3건과 Playwright 1280×720·390×844 2건 통과. 키보드로 새 탭을 열고 격리 응답 오류 뒤 원래 설정에서 NVA 선택으로 전환. 캡처 shots/r40-card/R41-1280.png·R41-390.png.
+- `UC-WEB-VRM-HUB` · `FR-WEB-VRM-HUB.1` · `packages/shell/e2e/web-vroid-hub-r41.spec.ts`
+
+<!-- src-sha: 4f83c9966f571f68 -->
+
+## 웹판 캐릭터 카드 추가·적용 (R40) — 2026-11-20
+
+- 표적 Vitest 100건과 Playwright 1280×720·390×844 2건 통과. 두 화면에서 PNG 목록·상세와 같은 줄의 만들기·파일 추가·적용을 확인. 캡처 shots/r40-card/R40-1280.png·R40-390.png. /app/ 웹 빌드와 카드 번들 확인.
+- `UC-WEB-CHARCARD` · `FR-WEB-CHARCARD.1~3` · `packages/shell/e2e/web-charcard-r40.spec.ts`
+
+<!-- src-sha: 7d4dedb15f471806 -->
+
+## 웹판 설정 창의 재생 중 카드 겹침 해소 (R36) — 2026-11-20
+
+- Vitest BgmPlayer.test.tsx R36 1/1. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-BGM-NOWPLAYING · FR-WEB-BGM-NOWPLAYING.1 · packages/shell/e2e/web-bgm-nowplaying-r36.spec.ts
+
+
+## 웹판 ADK 작업공간의 로컬 음악 표시 (R34) — 2026-11-20
+
+- Vitest web-bgm-music.test.ts·web-workspace-path.test.tsx R34 2/2. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-SETTINGS-MUSIC · FR-WEB-SETTINGS-MUSIC.1 · packages/shell/e2e/web-settings-files-r32.spec.ts
+
+
+## 웹판 ADK 기본 배경·아바타와 가져온 미디어 (R32) — 2026-11-20
+
+- Vitest web-settings-catalog.test.ts 7/7. heavy-run의 /data 가용 공간 요건 미충족으로 현재 변경의 Playwright·캡처 미확인.
+- UC-WEB-SETTINGS-FILES · FR-WEB-SETTINGS-FILES.1–4 · packages/shell/e2e/web-settings-files-r32.spec.ts
+
+<!-- src-sha: 8910c93b2b43f753 -->
+
+## 웹판 내장 미니앱 번들 R35 2단계 — 2026-11-20
+
+- P01~P03 완료. `UC-WEB-HOSTED-APPS`와 `FR-WEB-HOSTED-APPS.1~2`에 네 앱의 빌드·실행 계약을 기록했다.
+- 표적 Vitest 44 통과. 셸·BGM·웹 워커 타입 검사와 고정 원본 가져오기 통과. 기존 원본 번들 네 개의 HTML과 스크립트는 `/app/` Vite 미리보기에서 HTTP로 확인했다.
+- P04는 빌드 실행기의 디스크 조건에 막혔다. 새 `dist-web`, Playwright 1280·390, 화면 캡처 및 포털 실제 헤더는 미확인이다. P05는 대기 중이다.
+
+## 웹판 메인 모델과 Terra (R33) — 2026-11-19
+
+- P01–P03은 `UC-WEB-MAIN-MODEL-LIVE`와 `FR-WEB-MAIN-MODEL-LIVE.1~4`에 연결했다. 브라우저 설정에서 공급자와 모델을 전환할 때 기존 Worker와 대화 이력을 유지하도록 구현했다.
+- 셸 집중 Vitest 188건, 에이전트 계약 Vitest 29건, 게이트웨이 시험 37건이 각각 통과했다. 게이트웨이 `97f20de3`에서 Terra 채팅 호출에 이미지 라우팅 설정이 섞이는 문제를 수정했다.
+- 개발 게이트웨이의 기존 Terra 스트림은 HTTP 200과 본문 0바이트를 반환했다. 수정 후 실제 응답, Playwright 1280×720·390×844와 화면 캡처는 P04 검증 대상으로 남아 있다.
+
+## S2 키오스크 웹 기억 — 2026-11-05
+
+- P01–P05 완료: 키오스크 깃발에서만 OPFS MemoryPort를 데스크톱 agent 처리기에 연결하고 네 기억 명령을 연다. 새로고침 뒤 게스트님·앞 사용자 발화를 회상한다.
+- S3 API: `packages/shell/src/lib/kiosk-demo/memory.ts`의 `resetKioskMemory()`. 기억만 초기화하므로 새 방문자는 진행 중인 응답 취소·대화 UI 초기화 및 Worker 폐기(페이지 재로딩 권장)도 수행한다.
+- 검증: 키오스크 Vitest 7/7(실 agent handler 포함), 웹 런타임/worker 219 통과, 타입 검사(core/Shell/BGM/worker), 키오스크 Vite build, 계약/앵커/assembly 및 부정 시험 통과.
+- 전체 Shell은 3,035 통과/9 실패/24 제외. 변경 전 HEAD에서도 동일한 agent-pairing 8건·SettingsTab logout 1건 실패를 재현했다. 루트 구조 기존 `tmp/`·`tsconfig.build.json` 위반은 보존했다.
+
+## 0.2.6 B2C 초기 slice — 2026-11-03
+
+- P01~P05: UC-B2C-026의 카드 해석·페르소나 연결·현재 NVA/음성/배경 테마 저장/선택 구현 및 한정 검증.
+- Shell 전체 2,621 통과/21 제외, 관련 회귀 218 통과/8 제외, Playwright 1100/360px 2 통과. 타입 검사 core/Shell/BGM 통과. 로컬 가지 `feat/026-charcard-nva`, 푸시 없음.
+- 실제 Agent/음성/영상 디코딩과 저장 재시작 검증은 미실행. 첫 인사는 프롬프트 문맥에 포함하며 자동 발화·카드 라이브러리·카드별 테마 연결은 후속. 설계/범위: `docs/progress/026-b2c-charcard-nva.md`.
 <!-- src-sha: 727a1bc8c244f98e -->
 
 ## 0.2.6 사용 통계 — 2026-11-04

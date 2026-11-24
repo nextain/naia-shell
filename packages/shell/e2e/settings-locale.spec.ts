@@ -10,6 +10,8 @@ function localeWriteMock(failFirstWrite = false): string {
 	window.__localeConfigWrites = [];
 	window.__localeConfigFile = sessionStorage.getItem("locale-test-config-file") || "";
 	window.__localeReloads = 0;
+	window.__localeChangeReloads = 0;
+	window.__localeWriteChanged = false;
 	window.__localeEvents = [];
 	window.addEventListener("naia:locale-change", function(event) {
 		window.__localeEvents.push(event.detail);
@@ -24,13 +26,17 @@ function localeWriteMock(failFirstWrite = false): string {
 		window.__TAURI_INTERNALS__.convertFileSrc = function(path, proto) { return (proto || "asset") + "://localhost/" + encodeURIComponent(path); };
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 		if (cmd === "write_naia_config") {
-			if (window.__failLocaleNextWrite) { window.__failLocaleNextWrite = false; throw new Error("locale write failed"); }
+			// Fail only the write that changes the locale: a late boot-time write
+			// of the unchanged config must not consume the one-shot failure.
+			var currentLocale = JSON.parse(window.__localeConfigFile || "{}").locale;
+			if (window.__failLocaleNextWrite && JSON.parse(args.json).locale !== currentLocale) { window.__failLocaleNextWrite = false; throw new Error("locale write failed"); }
 		if (window.__holdLocaleWrite) await new Promise(function(resolve) {
 			window.__localeWriteRelease = function() {
 				window.__holdLocaleWrite = false;
 				resolve();
 			};
 		});
+			window.__localeWriteChanged = currentLocale !== undefined && JSON.parse(args.json).locale !== currentLocale;
 			window.__localeConfigFile = args.json;
 			sessionStorage.setItem("locale-test-config-file", args.json);
 			window.__localeConfigWrites.push(JSON.parse(args.json));
@@ -43,6 +49,9 @@ function localeWriteMock(failFirstWrite = false): string {
 		if (cmd === "read_naia_ui_config") return "";
 		if (cmd === "reload_agent_settings") {
 			window.__localeReloads += 1;
+			// App.tsx also syncs the unchanged cache back in the background; count
+			// only the reload that follows a locale-changing write.
+			if (window.__localeWriteChanged) window.__localeChangeReloads += 1;
 			if (window.__failLocaleReload) throw new Error("agent connection refused");
 			return { available: false, memoryReloaded: false, memoryStatus: "next_start" };
 		}
@@ -224,9 +233,6 @@ test.describe("Settings locale persistence", () => {
 	}) => {
 		await openSettings(page, true);
 		const picker = page.locator("#locale-select");
-		const reloadsBeforeFailure = await page.evaluate(
-			() => (window as any).__localeReloads,
-		);
 		await picker.click();
 		await page.getByRole("button", { name: "English" }).click();
 		await expect(page.locator(".settings-error")).toContainText(
@@ -255,8 +261,8 @@ test.describe("Settings locale persistence", () => {
 			)
 			.toBe("en");
 		await expect
-			.poll(() => page.evaluate(() => (window as any).__localeReloads))
-			.toBe(reloadsBeforeFailure + 1);
+			.poll(() => page.evaluate(() => (window as any).__localeChangeReloads))
+			.toBe(1);
 	});
 
 	test("keeps the saved locale and emits the voice event when the agent is stopped", async ({

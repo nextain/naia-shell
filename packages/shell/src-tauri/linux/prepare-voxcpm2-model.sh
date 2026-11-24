@@ -198,9 +198,11 @@ PY
     --report "$NVIDIA_REPORT" --index-url https://pypi.nvidia.com -r "$NVIDIA_REQ"
   # The tensorrt-cu12 metapackage's setup runs a nested pip install of the
   # bindings and libraries into the building interpreter, ignoring --target.
-  # With the pending tree on PYTHONPATH it finds them satisfied and leaves
-  # the immutable artifact untouched. `-I` would hide PYTHONPATH, so `-s`.
-  PYTHONPATH="$NVIDIA_PENDING" run_python "Pinned TensorRT Python package acquisition failed" \
+  # PYTHONPATH alone does not stop it (pip's build environment replaces it),
+  # so 2.9G landed inside the immutable artifact and the next install failed
+  # verification (#842). The step above already staged both, so turn the
+  # nested install off. `-I` would hide the environment, so `-s`.
+  NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP=1 PYTHONPATH="$NVIDIA_PENDING" run_python "Pinned TensorRT Python package acquisition failed" \
     -B -s -m pip install --disable-pip-version-check --no-deps --target "$NVIDIA_PENDING" \
     --report "$PYPI_REPORT" --index-url https://pypi.org/simple -r "$PYPI_REQ"
   PYTHONPATH="$NVIDIA_PENDING" run_python "Acquired TensorRT package verification failed" -B -s -c "$VERIFY_NVIDIA"

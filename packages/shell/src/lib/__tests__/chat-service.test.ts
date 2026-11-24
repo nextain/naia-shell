@@ -259,12 +259,14 @@ describe("chat-service", () => {
 			onChunk: vi.fn(),
 			requestId: "wire-r1",
 			sessionId: "s1",
+			appName: "달빛 카페",
 			channel: { kind: "shell" },
 			grounding: { policy: "required", knowledgeScope: "workshop" },
 			providerSession: { mode: "resume", providerSessionRef: "opaque-ref" },
 			processing: { processingProfileRef: "profile-local-cloud-001" },
 		});
 		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.appName).toBe("달빛 카페");
 		expect(parsed.messages[0].attachments[0].localRef).toBe("img_1");
 		expect(parsed.channel).toEqual({ kind: "shell" });
 		expect(parsed.grounding).toEqual({
@@ -861,6 +863,48 @@ describe("chat-service", () => {
 			);
 			expect(payloadOff.thinking).toEqual({ level: "off" });
 			expect(payloadOff.enableThinking).toBe(false);
+		});
+
+		it("옛 경로에서 max thinking level 을 그대로 전달한다 (webgpu gpt-6-luna)", async () => {
+			vi.stubEnv("VITE_NAIA_NEW_CORE", "");
+			const { sendChatMessage } = await import("../chat-service");
+
+			mockListen.mockImplementation(
+				async (
+					_event: string,
+					handler: (event: { payload: string }) => void,
+				) => {
+					setTimeout(() => {
+						handler({
+							payload: JSON.stringify({
+								type: "finish",
+								requestId: "req-think-max",
+							}),
+						});
+					}, 5);
+					return mockUnlisten;
+				},
+			);
+
+			await sendChatMessage({
+				message: "test max",
+				provider: { provider: "nextain", model: "gpt-6-luna", apiKey: "k" },
+				history: [],
+				onChunk: () => {},
+				requestId: "req-think-max",
+				thinking: { level: "max" },
+				enableThinking: true,
+			});
+
+			const call = mockInvoke.mock.calls.find(
+				(c) => c[0] === "send_to_agent_command",
+			);
+			expect(call).toBeDefined();
+			const payload = JSON.parse(
+				(call?.[1] as { message: string }).message,
+			);
+			expect(payload.thinking).toEqual({ level: "max" });
+			expect(payload.enableThinking).toBe(true);
 		});
 
 		it("새 코어(isNewCore) 분기에서 thinking 과 enableThinking 을 전달한다", async () => {

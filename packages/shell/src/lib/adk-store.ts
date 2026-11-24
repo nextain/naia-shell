@@ -8,8 +8,29 @@ import {
 	mergeBootConfig,
 	saveConfig,
 } from "./config";
+import { applyKioskDemoMainModel } from "./config-seed";
+import { createLocalMediaUrl } from "./local-media-url";
 import { Logger } from "./logger";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
+import {
+	WEB_BACKGROUND_ASSETS,
+	WEB_NVA_ASSETS,
+	WEB_VRM_ASSETS,
+	isWebMode,
+	resolveWebPublicAssetUrl,
+} from "./web-runtime/web-assets";
+import { isBenignWebSettingsListError } from "./web-runtime/web-adk-policy";
+import {
+	listWebBgmMusicPaths,
+	readWebBgmMusicBlob,
+	webBgmFileName,
+} from "./web-runtime/web-bgm-music";
+import { listWebNvaAssets } from "./web-runtime/web-nva-archive";
+import { WEB_ADK_PATH } from "./web-runtime/web-adk-path";
+import {
+	listWebBackgroundPaths,
+	readWebSettingsAssetBlob,
+} from "./web-runtime/web-settings-assets";
 import {
 	type SlotsManifest,
 	buildSlotsManifest,
@@ -53,6 +74,25 @@ export function isNaiaConfigHydrationPending(): boolean {
 
 // ── ADK Path ──────────────────────────────────────────────────────────────────
 
+let adkBindingRevision = 0;
+let configRestoreRevision = 0;
+
+/** Native adk-path is the bootstrap authority; never migrate a WebView pointer. */
+export async function bootstrapAdkPath(): Promise<void> {
+	Logger.debug("adk-store", "bootstrap native workspace");
+	const previous = getAdkPath();
+	localStorage.removeItem(ADK_PATH_KEY);
+	// Clear derived settings even when the path is unchanged: the data home may
+	// have changed while the WebView profile was reused.
+	localStorage.removeItem("naia-config");
+	const path = await invoke<string | null>("read_naia_path_cache");
+	if (path?.trim()) localStorage.setItem(ADK_PATH_KEY, path.trim());
+	Logger.debug("adk-store", "native workspace restored", {
+		selected: !!path,
+		changed: previous !== path,
+	});
+}
+
 export function getAdkPath(): string | null {
 	return localStorage.getItem(ADK_PATH_KEY);
 }
@@ -63,6 +103,7 @@ export async function setAdkPath(path: string): Promise<void> {
 	// Native rebinding is the commit point. Keep the existing bootstrap pointer
 	// and config untouched while the agent is restarting or if the rebind fails.
 	await invoke("write_naia_path_cache", { adkPath: normalized });
+	adkBindingRevision++;
 	localStorage.setItem(ADK_PATH_KEY, normalized);
 	// config.workspaceRoot is defined as an adkPath mirror (see config.ts). The
 	// two used to drift: onboarding's AdkSetupScreen writes only the adk path,
@@ -90,6 +131,7 @@ export function isAdkInitialized(): boolean {
 }
 
 export function clearAdkPath(): void {
+	adkBindingRevision++;
 	localStorage.removeItem(ADK_PATH_KEY);
 }
 
@@ -131,10 +173,53 @@ export type NaiaAssetSubdir =
 	| "bgm-musics"
 	| "nva-files";
 
-/** Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/ */
+/**
+ * Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/.
+ * 웹판에는 Tauri IPC가 없어 dist 번들 자산 카탈로그(/avatars/*, /backgrounds/*)를
+ * 그대로 돌려준다. 데스크톱 아바타·배경 표시 코드는 URL을 그대로 fetch하므로
+ * 호출자 변경 없이 동작한다 (새 렌더러 없음).
+ */
 export async function listNaiaAssets(
 	subdir: NaiaAssetSubdir,
 ): Promise<string[]> {
+	if (isWebMode()) {
+		if (subdir === "vrm-files")
+			return WEB_VRM_ASSETS.map((asset) => asset.url);
+		// 폴더가 없거나 저장소 API가 없을 때만 빈 사용자 목록으로 접는다.
+		// 권한·용량 등 나머지 오류는 호출자가 목록·기존 선택을 보존하고
+		// 원인을 표시할 수 있도록 그대로 던진다.
+		if (subdir === "background") {
+			// 번들 카탈로그 뒤에 사용자가 올린 브라우저 저장소 파일을 붙인다.
+			// 동명 파일도 각각 살린다(선택 식별자가 전체 경로라 겹치지 않음).
+			const bundled = WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
+			let uploaded: string[];
+			try {
+				uploaded = await listWebBackgroundPaths();
+			} catch (error) {
+				if (!isBenignWebSettingsListError(error)) throw error;
+				uploaded = [];
+			}
+			return [...bundled, ...uploaded];
+		}
+		if (subdir === "nva-files") {
+			try {
+				return await listWebNvaAssets();
+			} catch (error) {
+				if (!isBenignWebSettingsListError(error)) throw error;
+				return [...WEB_NVA_ASSETS];
+			}
+		}
+		// R10: 사용자가 이 브라우저에 올린 음악(OPFS).
+		if (subdir === "bgm-musics") {
+			try {
+				return await listWebBgmMusicPaths();
+			} catch (error) {
+				if (!isBenignWebSettingsListError(error)) throw error;
+				return [];
+			}
+		}
+		return [];
+	}
 	const adkPath = getAdkPath();
 	if (!adkPath) return [];
 	try {
@@ -202,21 +287,46 @@ export async function readLocalBlob(
 	return new Blob([bytes], { type: mimeType });
 }
 
+
 /**
- * Read a local file via Rust and return a blob: URL.
+ * Read a local file via Rust and return an object URL (blob:, or MediaSource for
+ * webm video on Linux — see local-media-url.ts).
  * Works for images, audio, and video (IPC is local so transfer is fast).
- * Caller is responsible for revoking the returned blob URL when done.
+ * Caller is responsible for revoking the returned URL when done.
  */
 export async function toLocalBlobUrl(filePath: string): Promise<string> {
+	// 웹판: dist 번들 자산·원격·blob/data URL은 fetch 가능한 그대로 둔다.
+	// (웹 convertFileSrc는 identity라 아래 fallback과 결과가 같지만, 실패한
+	//  read_local_binary 왕복 전에 바로 반환해 desktop_only 경고를 남기지 않는다.)
+	if (
+		isWebMode() &&
+		/^(https?:|blob:|data:|\/|avatars\/|assets\/|backgrounds\/|nva\/)/.test(
+			filePath,
+		)
+	) {
+		return resolveWebPublicAssetUrl(filePath);
+	}
+	// R10: 웹판에 올린 음악은 OPFS 에서 읽어 blob: URL 로 재생한다.
+	if (isWebMode() && webBgmFileName(filePath)) {
+		return createLocalMediaUrl(await readWebBgmMusicBlob(filePath));
+	}
+	// 설정에서 올린 배경·NVA 사용자 파일은 브라우저 저장소에서 읽어 그때마다
+	// 임시 Blob URL을 만든다(새로고침 뒤에도 같은 식별자로 다시 만든다).
+	// 파일이 사라지면 호출자가 기본 배경으로 복구하도록 실패를 그대로 둔다.
+	if (isWebMode() && filePath.startsWith(`${WEB_ADK_PATH}/`)) {
+		return createLocalMediaUrl(await readWebSettingsAssetBlob(filePath));
+	}
 	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
 	if (!BLOB_URL_EXTS.has(ext)) {
 		// Video or unknown — asset URL (may fail on Windows, no workaround without streaming)
 		return convertFileSrc(filePath);
 	}
 	try {
-		const blob = await readLocalBlob(filePath);
-		return URL.createObjectURL(blob);
+		return createLocalMediaUrl(await readLocalBlob(filePath));
 	} catch {
+		Logger.warn("adk-store", "local media read failed; using asset protocol", {
+			extension: ext,
+		});
 		return convertFileSrc(filePath);
 	}
 }
@@ -325,6 +435,17 @@ function stripForAgent(
 			DERIVED_AGENT_ENV_KEYS.has(k)
 		)
 			continue;
+		if (k === "mainModelThinkingLevels" && v && typeof v === "object" && !Array.isArray(v)) {
+			const levels: Record<string, string> = {};
+			for (const [key, value] of Object.entries(v)) {
+				try {
+					const pair: unknown = JSON.parse(key);
+					if (Array.isArray(pair) && pair.length === 2 && pair.every(part => typeof part === "string" && part.length > 0 && part.length <= 300 && !/[\u0000-\u001f]/.test(part)) && typeof value === "string" && ["off", "low", "high", "xhigh", "max"].includes(value)) levels[JSON.stringify(pair)] = value;
+				} catch { /* Invalid keys are not configuration. */ }
+			}
+			out[k] = levels;
+			continue;
+		}
 		if (k === "llmRoles" && v && typeof v === "object" && !Array.isArray(v)) {
 			const roles: Record<string, unknown> = {};
 			for (const role of ["expert", "main", "sub", "memory"]) {
@@ -341,6 +462,9 @@ function stripForAgent(
 				]) {
 					if (typeof source[field] === "string" && source[field])
 						clean[field] = source[field] as string;
+				}
+				if (typeof source.thinkingLevel === "string" && ["off", "low", "high", "xhigh", "max"].includes(source.thinkingLevel)) {
+					clean.thinkingLevel = source.thinkingLevel;
 				}
 				if (Object.keys(clean).length) roles[role] = clean;
 			}
@@ -616,12 +740,12 @@ export function applyModelSelectionToConfig(
 	// A provider/model switch is an immediate main-role edit too. Keeping only
 	// the legacy flat fields here was the stale-main-provider seam that made
 	// the UI and the reloaded agent disagree until a later Apply click.
-	const next: Record<string, unknown> = {
+	const next = applyKioskDemoMainModel({
 		...(current ?? {}),
 		provider,
 		model,
 		llmRoles: { ...roles, main: { ...main, provider, model } },
-	};
+	} as Partial<AppConfig>) as Record<string, unknown>;
 	return {
 		...next,
 		...buildNaiaConfigEnv(next as Parameters<typeof buildNaiaConfigEnv>[0]),
@@ -752,6 +876,8 @@ export async function readNaiaUiConfig(
 export async function applyWorkspaceConfigToLocal(): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
+	const bindingRevision = adkBindingRevision;
+	const restoreRevision = ++configRestoreRevision;
 	const fileConfig = (await readNaiaConfig(adkPath)) ?? {};
 	const uiConfig = (await readNaiaUiConfig(adkPath)) ?? {};
 	const merged = {
@@ -759,6 +885,14 @@ export async function applyWorkspaceConfigToLocal(): Promise<void> {
 		onboardingComplete: true,
 		workspaceRoot: adkPath,
 	};
+	if (
+		bindingRevision !== adkBindingRevision ||
+		restoreRevision !== configRestoreRevision ||
+		getAdkPath() !== adkPath
+	) {
+		Logger.debug("AdkStore", "discard superseded config restore", {});
+		return;
+	}
 	localStorage.setItem("naia-config", JSON.stringify(merged));
 }
 
@@ -774,6 +908,7 @@ async function writeSlotsManifestNow(
 	detectedVramGb?: number,
 	adkPathOverride?: string | null,
 ): Promise<SlotsManifest | null> {
+	if (isWebMode()) return null;
 	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return null;
 	// ★tier 해석(buildSlotsManifest 가 "auto" → 해석된 id 로)에 VRAM 이 필요.
@@ -839,7 +974,12 @@ async function writeNaiaConfigNow(
 	adkPath: string | null,
 ): Promise<void> {
 	if (!adkPath) return;
-	const publicAgentConfig = stripForAgent(config);
+	const publicAgentConfig = stripForAgent(
+		applyKioskDemoMainModel(config as Partial<AppConfig>) as Record<
+			string,
+			unknown
+		>,
+	);
 	const normalizedAgentConfig = {
 		...publicAgentConfig,
 		...buildNaiaConfigEnv(

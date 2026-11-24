@@ -39,7 +39,7 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 
 import * as chatService from "../../lib/chat-service";
 import { Logger } from "../../lib/logger";
-import { BgmPlayer } from "../BgmPlayer";
+import { BgmPlayer, WEB_NOW_PLAYING_CARD_MS } from "../BgmPlayer";
 import { hydrateUiPreferences, resetUiPreferencesForTests } from "../../lib/ui-preferences";
 
 function bgmCommandHandler() {
@@ -87,7 +87,7 @@ function openCaptionsToggle(container: HTMLElement): HTMLInputElement {
  * real background-rendering component does from useAvatarStore. The YouTube
  * message handler derives eventPlaybackId from this iframe's own `src`. */
 function attachIframeForCurrentPlayback(): HTMLIFrameElement {
-	const src = useAvatarStore.getState().backgroundVideoUrl;
+	const src = useAvatarStore.getState().bgmVideoUrl;
 	const iframe = document.createElement("iframe");
 	iframe.className = "app-bg-iframe";
 	iframe.src = src;
@@ -274,7 +274,14 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		const nextPost = vi.spyOn(next.contentWindow!, "postMessage");
 		postYtMessage({ event: "onReady" });
 		expect(openCaptionsToggle(restored.container)).toBeChecked();
-		expect(screen.queryByRole("button", { name: /captions|^CC$/i })).toBeNull();
+		// The track toggle carries the track title in its accessible name, so it
+		// can match /captions/i for caption tracks; only a dedicated captions/CC
+		// button outside the track toggle would be a stray control.
+		expect(
+			screen
+				.queryAllByRole("button", { name: /captions|^CC$/i })
+				.filter((el) => !el.classList.contains("bgm-track-toggle")),
+		).toHaveLength(0);
 		expect(nextPost).toHaveBeenCalledWith(
 			JSON.stringify({
 				event: "command",
@@ -847,6 +854,21 @@ describe("BgmPlayer YouTube playback state machine", () => {
  * 끝났다. 관측 경로가 로그를 남기지 않아 재현될 때마다 원인을 다시 추측해야
  * 했다. 실패했을 때 어느 관문에서 끊겼는지가 로그 한 줄로 나와야 한다.
  */
+	it("skips to the next candidate immediately on a fatal iframe error before frame confirmation", async () => {
+		render(<BgmPlayer />);
+		await startTrack("v1", "Blocked Song");
+		attachIframeForCurrentPlayback();
+		await enqueueTrack("v2", "Next Song");
+		// No confirmCurrentFrame: the frame is still unconfirmed.
+		// A fatal onError (150 = embedding blocked) must advance right away
+		// instead of only pending a terminal.
+		postYtMessage({ event: "onError", info: 150 });
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v2");
+	});
+
 describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 	beforeEach(() => {
 		bgmPlayback.reset();
@@ -2020,6 +2042,7 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 	afterEach(() => {
 		cleanup();
 		vi.useRealTimers();
+		vi.unstubAllEnvs();
 		vi.clearAllMocks();
 		listeners.clear();
 		bgmPlayback.reset();
@@ -2078,7 +2101,7 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		);
 		await startTrack("first", "YouTube One");
 		expect(useAvatarStore.getState().backgroundMediaType).toBe("iframe");
-		expect(useAvatarStore.getState().backgroundVideoUrl).toMatch(
+		expect(useAvatarStore.getState().bgmVideoUrl).toMatch(
 			/^https:\/\/www\.youtube-nocookie\.com\/embed\/first\?/,
 		);
 		expect(container.querySelector("audio")?.hasAttribute("src")).toBe(false);
@@ -2099,6 +2122,24 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		);
 		expect(container.querySelector("audio")?.getAttribute("src")).toBe(
 			"blob:local-two",
+		);
+		expect(useAvatarStore.getState().bgmVideoUrl).toBe("");
+	});
+
+	it("keeps the YouTube player when the user changes the background mid-song", async () => {
+		const { container } = render(<BgmPlayer />);
+		await waitFor(() =>
+			expect(container.querySelector(".bgm-player")).toBeInTheDocument(),
+		);
+		await startTrack("first", "YouTube One");
+		const embed = useAvatarStore.getState().bgmVideoUrl;
+		expect(embed).toMatch(/\/embed\/first\?/);
+		useAvatarStore.getState().setBackgroundMediaType("image");
+		useAvatarStore.getState().setBackgroundVideoUrl("blob:new-background");
+		await Promise.resolve();
+		expect(useAvatarStore.getState().bgmVideoUrl).toBe(embed);
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+			"blob:new-background",
 		);
 	});
 
@@ -2176,5 +2217,438 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			vi.advanceTimersByTime(1_000);
 		});
 		expect(postedEvents().filter((m) => m.event === "listening")).toHaveLength(0);
+	});
+
+	it("renders keyless youtube-nocookie embed and floating Now Playing card in web mode and stops on click (fix7d)", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			render(<BgmPlayer />);
+			const requested = bgmPlayback.request({
+				videoId: "5yx6BWlEVcY",
+				title: "Chillhop Music - Jazzy & Lofi Hip Hop Beats",
+			});
+			await act(async () => {
+				bgmCommandHandler()({
+					payload: JSON.stringify({
+						type: "bgm_youtube_play",
+						playbackId: requested.playbackId,
+						videoId: "5yx6BWlEVcY",
+						title: "Chillhop Music - Jazzy & Lofi Hip Hop Beats",
+					}),
+				});
+			});
+
+			expect(bgmPlayback.current()?.status).toBe("requested");
+			expect(useAvatarStore.getState().bgmVideoUrl).toContain(
+				"https://www.youtube-nocookie.com/embed/5yx6BWlEVcY",
+			);
+
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			attachIframeForCurrentPlayback();
+			confirmCurrentFrame();
+			postYtMessage({ event: "onStateChange", info: 1 });
+			const nowPlayingCard = screen.getByTestId("bgm-youtube-now-playing");
+			expect(nowPlayingCard).toHaveTextContent(
+				"Chillhop Music - Jazzy & Lofi Hip Hop Beats",
+			);
+
+			// Clicking the stop button on the floating card stops playback and hides the card
+			fireEvent.click(screen.getByTestId("bgm-web-stop-btn"));
+			expect(bgmPlayback.current()?.status).toBe("paused");
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R36 keeps the web Now Playing card while hovered or focused, then hides it without stopping playback", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.useFakeTimers();
+		try {
+			render(<BgmPlayer />);
+			const requested = bgmPlayback.request({ videoId: "5yx6BWlEVcY", title: "Lofi Chill" });
+			await act(async () => {
+				bgmCommandHandler()({
+					payload: JSON.stringify({
+						type: "bgm_youtube_play",
+						playbackId: requested.playbackId,
+						videoId: "5yx6BWlEVcY",
+						title: "Lofi Chill",
+					}),
+				});
+			});
+			attachIframeForCurrentPlayback();
+			confirmCurrentFrame();
+			postYtMessage({ event: "onStateChange", info: 1 });
+			const card = screen.getByTestId("bgm-youtube-now-playing");
+			act(() => useAppStore.setState({ activeApp: "settings" }));
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			expect(bgmPlayback.current()?.status).toBe("playing");
+			act(() => useAppStore.setState({ activeApp: null }));
+			const reopenedCard = screen.getByTestId("bgm-youtube-now-playing");
+			expect(card).not.toBeInTheDocument();
+			fireEvent.pointerEnter(reopenedCard);
+			act(() => {
+				vi.advanceTimersByTime(WEB_NOW_PLAYING_CARD_MS + 500);
+			});
+			expect(screen.getByTestId("bgm-youtube-now-playing")).toBeInTheDocument();
+			const stop = screen.getByTestId("bgm-web-stop-btn");
+			fireEvent.focus(stop);
+			fireEvent.pointerLeave(reopenedCard);
+			act(() => {
+				vi.advanceTimersByTime(WEB_NOW_PLAYING_CARD_MS + 500);
+			});
+			expect(reopenedCard).toBeInTheDocument();
+			fireEvent.blur(stop);
+			act(() => {
+				vi.advanceTimersByTime(WEB_NOW_PLAYING_CARD_MS + 500);
+			});
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			expect(bgmPlayback.current()?.status).toBe("playing");
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R7 requests playback on iframe readiness and announces the track after confirmation", async () => {
+		vi.stubEnv("MODE", "web");
+		const events: string[] = [];
+		const unlisten = onAiInterferenceEvent((event) => events.push(event.action));
+		try {
+			render(<BgmPlayer />);
+			await startTrack("3jWRrafhO7M", "GhibliJazz");
+			const iframe = attachIframeForCurrentPlayback();
+			const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+			const player = document.querySelector(".bgm-player");
+
+			expect(player).toHaveAttribute("data-bgm-playback-status", "requested");
+			expect(player).toHaveAttribute("data-bgm-announced-title", "");
+			expect(events).not.toContain("music_started");
+			expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+			postYtObjectMessage({ event: "onReady" });
+			expect(postMessage).toHaveBeenCalledWith(
+				JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+				"*",
+			);
+
+			postYtObjectMessage({
+				event: "infoDelivery",
+				info: { currentTime: 1, playerState: 1, videoData: { video_id: "3jWRrafhO7M" } },
+			});
+			expect(player).toHaveAttribute("data-bgm-playback-status", "playing");
+			expect(player).toHaveAttribute("data-bgm-announced-title", "GhibliJazz");
+			expect(events.filter((event) => event === "music_started")).toHaveLength(1);
+			expect(screen.getByTestId("bgm-youtube-now-playing")).toHaveTextContent("GhibliJazz");
+		} finally {
+			unlisten();
+		}
+	});
+
+	it("R7 times out a pending request recovered on mount and accepts late confirmation", () => {
+		vi.stubEnv("MODE", "web");
+		vi.useFakeTimers();
+		const pending = bgmPlayback.request({ videoId: "pending", title: "Pending Song" });
+		render(<BgmPlayer />);
+		expect(useAvatarStore.getState().bgmVideoUrl).toContain(pending.playbackId);
+		attachIframeForCurrentPlayback();
+
+		act(() => vi.advanceTimersByTime(12_000));
+		expect(bgmPlayback.current()?.status).toBe("timeout");
+		expect(screen.getByRole("status")).toHaveClass("bgm-yt-notice");
+		expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+		confirmCurrentFrame();
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(screen.getByTestId("bgm-youtube-now-playing")).toHaveTextContent("Pending Song");
+	});
+
+	it("R7 lets the user retry the same song after a playback timeout", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.useFakeTimers();
+		render(<BgmPlayer />);
+		await startTrack("retry", "Retry Song");
+		const first = bgmPlayback.current();
+		attachIframeForCurrentPlayback();
+
+		act(() => vi.advanceTimersByTime(12_000));
+		expect(bgmPlayback.current()?.status).toBe("timeout");
+		fireEvent.click(screen.getByRole("button", { name: "Play" }));
+
+		expect(bgmPlayback.current()?.selected).toEqual(first?.selected);
+		expect(bgmPlayback.current()?.playbackId).not.toBe(first?.playbackId);
+		expect(bgmPlayback.current()?.status).toBe("requested");
+		expect(screen.queryByRole("status")).toBeNull();
+	});
+
+	it("R7 waits for the iframe to confirm a resumed web track", async () => {
+		vi.stubEnv("MODE", "web");
+		render(<BgmPlayer />);
+		await startTrack("resume", "Resume Song");
+		const iframe = attachIframeForCurrentPlayback();
+		const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+		confirmCurrentFrame();
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		act(() => bgmCommandHandler()({
+			payload: JSON.stringify({ type: "bgm_youtube_pause" }),
+		}));
+		expect(bgmPlayback.current()?.status).toBe("paused");
+		act(() => bgmCommandHandler()({
+			payload: JSON.stringify({ type: "bgm_youtube_resume" }),
+		}));
+		expect(postMessage).toHaveBeenCalledWith(
+			JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+			"*",
+		);
+		expect(bgmPlayback.current()?.status).toBe("loading");
+		expect(screen.queryByTestId("bgm-youtube-now-playing")).toBeNull();
+		postYtMessage({ event: "onStateChange", info: 1 });
+		expect(bgmPlayback.current()?.status).toBe("playing");
+	});
+});
+
+describe("BgmPlayer local folder playlist loop", () => {
+	beforeEach(() => {
+		bgmPlayback.reset();
+		resetBgmLibraryCache();
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]);
+		vi.mocked(toLocalBlobUrl).mockImplementation(async (path) => `blob:${path}`);
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		vi.mocked(listNaiaAssets).mockResolvedValue([]);
+		vi.mocked(toLocalBlobUrl).mockResolvedValue("blob:mock");
+		listeners.clear();
+		bgmPlayback.reset();
+		resetBgmLibraryCache();
+		useAvatarStore.setState(useAvatarStore.getInitialState());
+		localStorage.clear();
+	});
+	async function setup(exclude: string[] = []) {
+		localStorage.setItem("naia-config", JSON.stringify({ locale: "en", bgmSource: "local", bgmLocalLoopExclude: exclude }));
+		const { container } = render(<BgmPlayer />);
+		const audio = container.querySelector("audio")!;
+		await waitFor(() => expect(audio.src).toBe("blob:/music/a.mp3"));
+		await act(async () => { fireEvent.click(container.querySelector(".bgm-btn--play")!); });
+		expect(useAvatarStore.getState().bgmPlaying).toBe("local");
+		return { audio, container };
+	}
+	async function end(audio: HTMLAudioElement, expected: string) {
+		await act(async () => { fireEvent.ended(audio); });
+		expect(audio.src).toBe(`blob:/music/${expected}.mp3`);
+	}
+	it.each(["queue", "playlist"])("advances the library %s before the local folder on track end", async (mode) => {
+		const first = { id: "local:/music/a.mp3", source: "local", path: "/music/a.mp3", title: "First" };
+		const next = { id: "youtube:next", source: "youtube", youtubeId: "next", title: "Queued Next" };
+		localStorage.setItem("naia-config", JSON.stringify({
+			locale: "en", bgmSource: "local",
+			bgmLibrary: { schemaVersion: 1, likes: [],
+				playlists: [{ id: "mix", name: "Mix", createdAt: 1, updatedAt: 1, tracks: mode === "playlist" ? [first, next] : [first] }],
+				activePlaylistId: "mix", currentIndex: 0, shuffle: false, repeat: "off",
+				queue: mode === "queue" ? [next] : [], history: [] },
+		}));
+		const { container } = render(<BgmPlayer />);
+		const audio = container.querySelector("audio")!;
+		await waitFor(() => expect(audio.src).toBe("blob:/music/a.mp3"));
+		await act(async () => { fireEvent.click(container.querySelector(".bgm-btn--play")!); });
+		await act(async () => { fireEvent.ended(audio); });
+		await waitFor(() => expect(useAvatarStore.getState().bgmVideoUrl).toMatch(/\/embed\/next\?/));
+		expect(bgmPlayback.current()?.selected.title).toBe("Queued Next");
+		expect(audio.src).not.toBe("blob:/music/b.mp3");
+	});
+	it("advances every local track and wraps last to first twice with no library playlist", async () => {
+		const { audio } = await setup();
+		expect(audio.loop).toBe(false);
+		for (const track of ["b", "c", "a", "b", "c", "a"]) await end(audio, track);
+	});
+	it("does not advance after manual stop or before playback starts", async () => {
+		const { audio, container } = await setup();
+		fireEvent.click(container.querySelector(".bgm-btn--play")!);
+		expect(useAvatarStore.getState().bgmPlaying).toBe("");
+		const calls = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+		await end(audio, "a");
+		expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(calls);
+	});
+	it("keeps native single track looping even when excluded", async () => {
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/a.mp3"]);
+		const { audio } = await setup(["a.mp3"]);
+		expect(audio.loop).toBe(true);
+	});
+	it("skips excluded file names including at wraparound", async () => {
+		const { audio } = await setup(["b.mp3", "a.mp3"]);
+		await end(audio, "c");
+		await end(audio, "c");
+	});
+	it("wraps a manually selected last track back to first", async () => {
+		const { audio } = await setup();
+		fireEvent.click(screen.getByText(/Local/, { selector: ".bgm-app-tab" }));
+		await act(async () => { fireEvent.click(screen.getByTitle("c")); });
+		expect(audio.src).toBe("blob:/music/c.mp3");
+		await end(audio, "a");
+	});
+	it("allows manual playback of an excluded track then resumes eligible tracks", async () => {
+		const { audio } = await setup(["b.mp3"]);
+		fireEvent.click(screen.getByText(/Local/, { selector: ".bgm-app-tab" }));
+		await act(async () => { fireEvent.click(screen.getByTitle("b")); });
+		expect(audio.src).toBe("blob:/music/b.mp3");
+		await end(audio, "c");
+		await end(audio, "a");
+	});
+	it("ignores exclusions when every file is excluded", async () => {
+		const { audio } = await setup(["a.mp3", "b.mp3", "c.mp3"]);
+		await end(audio, "b");
+		await end(audio, "c");
+		await end(audio, "a");
+	});
+});
+
+describe("BgmPlayer mobile BGM toggle & 390x844 layout safety (R10/R36)", () => {
+	beforeEach(() => {
+		bgmPlayback.reset();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		listeners.clear();
+		bgmPlayback.reset();
+		useAvatarStore.setState(useAvatarStore.getInitialState());
+		localStorage.clear();
+		document.querySelectorAll(".web-mobile-menu-trigger").forEach((el) => el.remove());
+	});
+
+	it("toggles .bgm-yt-app open and closed when window receives naia:bgm-toggle", () => {
+		const { container } = render(<BgmPlayer />);
+		const panel = document.querySelector(".bgm-yt-app") as HTMLElement;
+		expect(panel).toBeTruthy();
+		expect(panel.classList.contains("bgm-yt-app--hidden")).toBe(true);
+		expect(panel).toHaveAttribute("aria-hidden", "true");
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+		});
+		expect(panel.classList.contains("bgm-yt-app--hidden")).toBe(false);
+		expect(panel).not.toHaveAttribute("aria-hidden");
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+		});
+		expect(panel.classList.contains("bgm-yt-app--hidden")).toBe(true);
+		expect(container.querySelector(".bgm-player")).toBeInTheDocument();
+	});
+
+	it("keeps a stable accessible music/BGM label on .bgm-track-toggle even when the track title changes", async () => {
+		const { container } = render(<BgmPlayer />);
+		const toggleBtn = container.querySelector(".bgm-track-toggle") as HTMLButtonElement;
+		expect(toggleBtn).toBeTruthy();
+		expect(toggleBtn).toHaveAttribute("aria-label");
+		expect(toggleBtn.getAttribute("aria-label")).toMatch(/음악|뮤직|bgm|music/i);
+
+		await startTrack("v-lofi", "Midnight Lo-Fi Beats");
+		expect(toggleBtn.getAttribute("aria-label")).toMatch(/음악|뮤직|bgm|music/i);
+		expect(toggleBtn.getAttribute("aria-label")).toContain("Midnight Lo-Fi Beats");
+
+		fireEvent.click(toggleBtn);
+		expect(toggleBtn.getAttribute("aria-label")).toMatch(/음악|뮤직|bgm|music/i);
+	});
+
+	it("positions .bgm-yt-app below a visible .web-mobile-menu-trigger with 0 overlap and clamped width on 390x844", () => {
+		const prevW = window.innerWidth;
+		const prevH = window.innerHeight;
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+		Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+
+		const trigger = document.createElement("button");
+		trigger.className = "web-mobile-menu-trigger";
+		trigger.style.display = "block";
+		trigger.style.visibility = "visible";
+		trigger.getBoundingClientRect = () =>
+			({
+				top: 8,
+				left: 342,
+				right: 382,
+				bottom: 48,
+				width: 40,
+				height: 40,
+				x: 342,
+				y: 8,
+				toJSON: () => ({}),
+			}) as DOMRect;
+		document.body.appendChild(trigger);
+
+		try {
+			const { container } = render(<BgmPlayer />);
+			const playerEl = container.querySelector(".bgm-player") as HTMLElement;
+			// Simulate clipped offscreen player position observed in 390x844 QA
+			playerEl.getBoundingClientRect = () =>
+				({
+					top: 4,
+					left: 381.17,
+					right: 453.17,
+					bottom: 44,
+					width: 72,
+					height: 40,
+					x: 381.17,
+					y: 4,
+					toJSON: () => ({}),
+				}) as DOMRect;
+
+			act(() => {
+				window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+			});
+
+			const panel = document.querySelector(".bgm-yt-app") as HTMLElement;
+			const top = Number.parseFloat(panel.style.top);
+			const left = Number.parseFloat(panel.style.left);
+			expect(top).toBeGreaterThanOrEqual(48 + 8);
+			expect(left).toBeGreaterThanOrEqual(8);
+			expect(left + 374).toBeLessThanOrEqual(390 - 8);
+			expect(panel.style.maxWidth).toBe("calc(100vw - 16px)");
+
+			// Resize recalculates position while expanded
+			trigger.getBoundingClientRect = () =>
+				({
+					top: 24,
+					left: 342,
+					right: 382,
+					bottom: 64,
+					width: 40,
+					height: 40,
+					x: 342,
+					y: 24,
+					toJSON: () => ({}),
+				}) as DOMRect;
+			act(() => {
+				window.dispatchEvent(new Event("resize"));
+			});
+			expect(Number.parseFloat(panel.style.top)).toBeGreaterThanOrEqual(64 + 8);
+		} finally {
+			Object.defineProperty(window, "innerWidth", { configurable: true, value: prevW });
+			Object.defineProperty(window, "innerHeight", { configurable: true, value: prevH });
+		}
+	});
+
+	it("falls back to top >= 56 on narrow mobile when .app-bar is collapsed and trigger is absent", () => {
+		const prevW = window.innerWidth;
+		const prevH = window.innerHeight;
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+		Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+		try {
+			render(<BgmPlayer />);
+			act(() => {
+				window.dispatchEvent(new CustomEvent("naia:bgm-toggle"));
+			});
+			const panel = document.querySelector(".bgm-yt-app") as HTMLElement;
+			expect(Number.parseFloat(panel.style.top)).toBeGreaterThanOrEqual(56);
+		} finally {
+			Object.defineProperty(window, "innerWidth", { configurable: true, value: prevW });
+			Object.defineProperty(window, "innerHeight", { configurable: true, value: prevH });
+		}
 	});
 });

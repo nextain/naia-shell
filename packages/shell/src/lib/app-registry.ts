@@ -236,7 +236,9 @@ export class ActiveAppBridge implements NaiaContextBridge {
 	pushContext(ctx: AppContext): void {
 		// Dynamic import avoids circular dep (stores/app ??app-registry ??stores/app)
 		import("../stores/app").then(({ useAppStore }) => {
-			useAppStore.getState().setActiveAppContext(ctx);
+			const state = useAppStore.getState();
+			if (ctx.type !== "bgm" && this.appId !== "__builtin__" && state.activeApp !== this.appId) return;
+			state.setActiveAppContext(ctx, this.appId);
 		});
 	}
 
@@ -421,7 +423,9 @@ export interface AppDescriptor {
 export function shouldMountKeepAliveApp(
 	descriptor: AppDescriptor,
 	activatedAppIds: ReadonlySet<string>,
+	closedAppIds?: ReadonlySet<string>,
 ): boolean {
+	if (closedAppIds?.has(descriptor.id)) return false;
 	return (
 		!descriptor.deferMountUntilActive || activatedAppIds.has(descriptor.id)
 	);

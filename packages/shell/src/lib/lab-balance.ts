@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isWebMode } from "./web-runtime/web-assets";
 
 export interface CachedLabCredits {
 	value: number;
@@ -68,6 +69,24 @@ export function isLabBalanceUnauthorized(err: unknown): boolean {
 }
 
 const NAIA_KEY_UNAUTHORIZED_EVENT = "naia_key_unauthorized";
+const NAIA_WEB_CREDIT_REFRESH_EVENT = "naia-web-credit-refresh";
+
+/**
+ * Notify `WebCreditChip` (SP-00 / SP-10) that a cloud LLM turn or cloud TTS
+ * synthesis just consumed credits (or hit HTTP 402), triggering an immediate
+ * debounced balance re-fetch.
+ */
+export function requestWebCreditRefresh(): void {
+	if (typeof window === "undefined") return;
+	window.dispatchEvent(new CustomEvent(NAIA_WEB_CREDIT_REFRESH_EVENT));
+}
+
+export function onWebCreditRefresh(handler: () => void): () => void {
+	if (typeof window === "undefined") return () => {};
+	window.addEventListener(NAIA_WEB_CREDIT_REFRESH_EVENT, handler);
+	return () =>
+		window.removeEventListener(NAIA_WEB_CREDIT_REFRESH_EVENT, handler);
+}
 
 /**
  * Broadcasts that the stored Naia key was rejected by the backend — whether
@@ -82,8 +101,7 @@ export function markNaiaKeyUnauthorized(): void {
 
 export function onNaiaKeyUnauthorized(handler: () => void): () => void {
 	window.addEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
-	return () =>
-		window.removeEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
+	return () => window.removeEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
 }
 
 /** Use native HTTP inside Tauri to avoid WebView CORS/PNA balance failures. */
@@ -92,7 +110,11 @@ export async function fetchLabBalancePayload(
 	naiaKey: string,
 	signal?: AbortSignal,
 ): Promise<unknown> {
-	if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+	if (
+		!isWebMode() &&
+		typeof window !== "undefined" &&
+		"__TAURI_INTERNALS__" in window
+	) {
 		return invoke<unknown>("fetch_naia_balance", {
 			gatewayUrl,
 			naiaKey,

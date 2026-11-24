@@ -23,7 +23,7 @@ import {
 	loadConfig,
 	saveConfig,
 } from "../lib/config";
-import { formatCreditsFromUsd } from "../lib/credits";
+import { formatCreditsFromUsd, formatWebCreditsFromUsd } from "../lib/credits";
 import { paymentLinksHiddenNow, usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
@@ -49,6 +49,7 @@ import {
 	type RefRecording,
 	startRefRecording,
 } from "../lib/voice/ref-recorder";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { scaledFontSize } from "../lib/ui-font-scale";
 
@@ -88,6 +89,7 @@ function setConfigVoiceRefUrl(url: string | null): void {
  * 같게 두어 부르는 쪽을 건드리지 않았다.
  */
 function pickStrings() {
+	const web = isWebMode();
 	return {
 		sectionTitle: t("voice.ref.sectionTitle"),
 		hint: t("voice.ref.hint"),
@@ -112,13 +114,13 @@ function pickStrings() {
 		recordTooShort: t("voice.ref.recordTooShort", { min: MIN_DURATION_S }),
 		recordCancel: t("voice.ref.recordCancel"),
 		takeReady: (seconds: string) => t("voice.ref.takeReady", { seconds }),
-		takeApply: t("voice.ref.takeApply"),
+		takeApply: t(web ? "voice.ref.takeApplyWeb" : "voice.ref.takeApply"),
 		takeApplyFree: t("voice.ref.takeApplyFree"),
 		takeDiscard: t("voice.ref.takeDiscard"),
 		uploadBtn: t("voice.ref.uploadBtn"),
 		replaceBtn: t("voice.ref.replaceBtn"),
 		uploading: t("voice.ref.uploading"),
-		cost: t("voice.ref.cost"),
+		cost: t(web ? "voice.ref.costWeb" : "voice.ref.cost"),
 		costLocal: t("voice.ref.costLocal"),
 		localEngineOff: t("voice.ref.localEngineOff"),
 		localEngineStarting: t("voice.ref.localEngineStarting"),
@@ -141,7 +143,7 @@ function pickStrings() {
 			unknown: t("voice.ref.errUnknown"),
 		},
 		uploadSuccess: (balance: string) =>
-			t("voice.ref.uploadSuccess", { balance }),
+			t(web ? "voice.ref.uploadSuccessWeb" : "voice.ref.uploadSuccess", { balance }),
 		localRefApplied: t("voice.ref.localRefApplied"),
 		removeSuccess: t("voice.ref.removeSuccess"),
 		presetTitle: t("voice.ref.presetTitle"),
@@ -179,7 +181,7 @@ function formatDate(iso: string): string {
 
 function formatBalance(balanceUsd: number): string {
 	// Gateway reports the balance in USD; the app shows credits (1 credit = $0.001).
-	return formatCreditsFromUsd(balanceUsd);
+	return isWebMode() ? formatWebCreditsFromUsd(balanceUsd) : formatCreditsFromUsd(balanceUsd);
 }
 
 /** cc0-ko-female-01 → "여성 음색 1" — human name for a catalog file id, so the

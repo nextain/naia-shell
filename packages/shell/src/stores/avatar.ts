@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { isLegacyBundledVrmModel } from "../lib/avatar-presets";
 import { loadConfig } from "../lib/config";
+import type { AmbientBgm } from "../lib/avatar/ambient-idle";
 import type { EmotionName } from "../lib/vrm/expression";
+import type { VrmLipSyncSource } from "../lib/vrm/lip-sync";
 
 export type BackgroundMediaType = "" | "image" | "video" | "iframe";
 
@@ -11,24 +13,36 @@ interface AvatarState {
 	/** Asset URL (convertFileSrc) for background video. Empty = no video. */
 	backgroundVideoUrl: string;
 	backgroundMediaType: BackgroundMediaType;
+	/**
+	 * YouTube BGM embed URL. Its own layer above the background, so the user
+	 * can change the background without unmounting the player (music keeps
+	 * playing). Empty = no YouTube BGM.
+	 */
+	bgmVideoUrl: string;
 	/** Asset URL (convertFileSrc) for BGM track. Empty = no BGM. */
 	bgmTrackUrl: string;
+	/** BGM source playing right now ("" = none); drives the NVA ambient idle. */
+	bgmPlaying: AmbientBgm;
 	animationPath: string;
 	isLoaded: boolean;
 	loadProgress: number;
 	currentEmotion: EmotionName;
 	isSpeaking: boolean;
+	lipSyncSource: VrmLipSyncSource | null;
 	pendingAudio: string | null;
 	setLoaded: (loaded: boolean) => void;
 	setLoadProgress: (progress: number) => void;
 	setEmotion: (emotion: EmotionName) => void;
 	setSpeaking: (speaking: boolean) => void;
+	setLipSyncSource: (source: VrmLipSyncSource | null) => void;
 	setPendingAudio: (data: string | null) => void;
 	setModelPath: (path: string) => void;
 	setBackgroundImage: (path: string) => void;
 	setBackgroundVideoUrl: (url: string) => void;
 	setBackgroundMediaType: (type: BackgroundMediaType) => void;
+	setBgmVideoUrl: (url: string) => void;
 	setBgmTrackUrl: (url: string) => void;
+	setBgmPlaying: (source: AmbientBgm) => void;
 }
 
 function getInitialModelPath(): string {
@@ -47,22 +61,31 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	backgroundImage: getInitialBgImage(),
 	backgroundVideoUrl: "",
 	backgroundMediaType: "",
+	bgmVideoUrl: "",
 	bgmTrackUrl: "",
+	bgmPlaying: "",
 	animationPath: "/animations/idle_loop.vrma",
 	isLoaded: false,
 	loadProgress: 0,
 	currentEmotion: "neutral",
 	isSpeaking: false,
+	lipSyncSource: null,
 	pendingAudio: null,
 	setLoaded: (loaded) => set({ isLoaded: loaded }),
 	setLoadProgress: (progress) => set({ loadProgress: progress }),
 	setEmotion: (emotion) => set({ currentEmotion: emotion }),
-	setSpeaking: (speaking) => set({ isSpeaking: speaking }),
+	setSpeaking: (speaking) =>
+		set(
+			speaking ? { isSpeaking: true } : { isSpeaking: false, lipSyncSource: null },
+		),
+	setLipSyncSource: (source) => set({ lipSyncSource: source }),
 	setPendingAudio: (data) => set({ pendingAudio: data }),
 	setModelPath: (path) =>
 		set({ modelPath: path, isLoaded: false, loadProgress: 0 }),
 	setBackgroundImage: (path) => set({ backgroundImage: path }),
 	setBackgroundVideoUrl: (url) => set({ backgroundVideoUrl: url }),
 	setBackgroundMediaType: (type) => set({ backgroundMediaType: type }),
+	setBgmVideoUrl: (url) => set({ bgmVideoUrl: url }),
 	setBgmTrackUrl: (url) => set({ bgmTrackUrl: url }),
+	setBgmPlaying: (source) => set({ bgmPlaying: source }),
 }));
