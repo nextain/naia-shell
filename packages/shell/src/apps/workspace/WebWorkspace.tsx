@@ -132,7 +132,7 @@ type ImportDirectoryProps = {
 	treeRevision: number;
 };
 
-function Directory({
+export function Directory({
 	dir,
 	path,
 	onOpen,
@@ -148,6 +148,9 @@ function Directory({
 	const { treeRevision } = importProps;
 	const [entries, setEntries] = useState<WebWorkspaceEntry[] | null>(null);
 	const [error, setError] = useState(false);
+	// 실패 화면에 머무르지 않게 다시 읽기 횟수를 둔다. 목록 읽기는
+	// dir·path·treeRevision 이 바뀌어야 다시 도므로, 재시도 전용 키로 돌린다.
+	const [attempt, setAttempt] = useState(0);
 	useEffect(() => {
 		let active = true;
 		(async () => {
@@ -177,8 +180,16 @@ function Directory({
 		return () => {
 			active = false;
 		};
-	}, [dir, path, treeRevision]);
-	if (error) return <p role="alert">{t("webExplorer.readFailed")}</p>;
+	}, [dir, path, treeRevision, attempt]);
+	if (error)
+		return (
+			<>
+				<p role="alert">{t("webExplorer.readFailed")}</p>
+				<button type="button" onClick={() => setAttempt((n) => n + 1)}>
+					{t("common.retry")}
+				</button>
+			</>
+		);
 	if (path === WEB_BGM_MUSIC_DIR) {
 		if (!entries) {
 			return <p className="web-workspace-edit-hint" role="status">{t("bgm.loading")}</p>;
@@ -343,9 +354,17 @@ function workspaceImportError(error: unknown) {
 	return "webExplorer.importFailed";
 }
 
-function WorkspaceMusicPreview({ path, name }: { path: string; name: string }) {
+export function WorkspaceMusicPreview({
+	path,
+	name,
+}: {
+	path: string;
+	name: string;
+}) {
 	const [url, setUrl] = useState<string>();
 	const [error, setError] = useState(false);
+	// 미리듣기 실패 화면에 머무르지 않게 다시 열기 횟수를 둔다.
+	const [attempt, setAttempt] = useState(0);
 	useEffect(() => {
 		let active = true;
 		let objectUrl: string | undefined;
@@ -354,6 +373,7 @@ function WorkspaceMusicPreview({ path, name }: { path: string; name: string }) {
 				if (!active) return;
 				objectUrl = URL.createObjectURL(blob);
 				setUrl(objectUrl);
+				setError(false);
 			})
 			.catch((cause) => {
 				Logger.debug("WebWorkspace", "Could not open imported audio", {
@@ -365,13 +385,18 @@ function WorkspaceMusicPreview({ path, name }: { path: string; name: string }) {
 			active = false;
 			if (objectUrl) URL.revokeObjectURL(objectUrl);
 		};
-	}, [path]);
+	}, [path, attempt]);
 	return (
 		<div className="workspace-editor__media-viewer">
 			{error ? (
-				<p className="workspace-editor__media-error" role="alert">
-					{t("workspace.mediaOpenError")}
-				</p>
+				<>
+					<p className="workspace-editor__media-error" role="alert">
+						{t("workspace.mediaOpenError")}
+					</p>
+					<button type="button" onClick={() => setAttempt((n) => n + 1)}>
+						{t("common.retry")}
+					</button>
+				</>
 			) : url ? (
 				<audio
 					controls
