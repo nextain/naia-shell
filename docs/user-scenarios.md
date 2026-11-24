@@ -4060,3 +4060,72 @@ Test Coverage Map (P02)
 | UC-MACOS-NVA-AND-QUALITY-20261116 | 데스크톱 `stacked_alpha` 라우팅 해제, `blob:` URL `dataset.naiaStackedAlpha` 보존, WebKit `.stacked.mp4`/`.mp4` 자동 폴백 및 디코드 실패 감지 | `packages/shell/src/lib/avatar/__tests__/macos-nva-fallback.test.ts`, `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/vite.config.ts` (`desktopPublicAssetsPlugin` NVA 매니페스트/폴백 보존 검증) |
 | UC-MACOS-NVA-AND-QUALITY-20261116 | macOS `Info.plist`(`NSMicrophoneUsageDescription`) 및 최소 권한 `entitlements.app.plist`(`audio-input`) 번들 연결, 한글 폰트 스택(`Apple SD Gothic Neo` 우선), Retina DPR 상한(`1.5`) | `packages/shell/scripts/__tests__/platform-matrix.test.ts`, `packages/shell/src/lib/avatar/__tests__/macos-nva-fallback.test.ts` | `packages/shell/src-tauri/tauri.conf.json` |
 | UC-MACOS-NVA-AND-QUALITY-20261116 | `Cmd+Q`(`RunEvent::ExitRequested`/`RunEvent::Exit`) 사이드카 일괄 종료 멱등 보장, macOS Linux PipeWire 실행 차단 및 30바이트 자리표시 `ffmpeg` 방어 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src-tauri/src/lib.rs` | `cargo check` / `cargo test --lib` |
+
+### Test Coverage Map — UC 추적 색인 (게이트 판독용, 2026-11-24)
+
+각 UC 절의 상세 표가 증거 본문이고, 이 표는 게이트가 읽는 색인이다. 행의 파일은 모두 저장소에 실재한다.
+
+| UC | 확인 내용 | 시험 |
+|---|---|---|
+| UC-KIOSK-KNOWLEDGE-S1 | 시연 질문 지식 검색 근거 답변 | `knowledge.test.ts`, `e2e/kiosk-knowledge.spec.ts` |
+| UC-KIOSK-MEMORY-S2 | 시연 격리 시드 복원 단위 시험 | `kiosk-demo.test.ts` |
+| UC-WEB-A-R1 | 두뇌 공급자 목록 브라우저 가능 항목만 | `registry-web-providers.test.ts`, `e2e/web-gpu-a-ui.spec.ts`, `SettingsTab.test.tsx` |
+| UC-WEB-A-R11 | 카드 저장 유지 격리 앱 낭독 | `e2e/web-charcard-r11.spec.ts`, `installed-app-host-bridge.test.ts`, `card-store.test.ts` |
+| UC-WEB-A-R12 | 캐릭터로 대화 시작 첫 인사 | `charcard-chat-start.test.ts`, `ChatArea.test.tsx`, `e2e/web-gpu-a-ui.spec.ts` |
+| UC-WEB-A-R2 | 대화창 상태줄 가림 없음 세 폭 | `e2e/web-chat-visibility.spec.ts` |
+| UC-WEB-A-R28 | 대화창 상태줄 가림 없음 세 폭 | `e2e/web-chat-visibility.spec.ts` |
+| UC-WEB-A-R5 | 설치 앱 제목 막대 닫기 단추 가림 없음 | `e2e/web-gpu-a-ui.spec.ts`, `app-close-lifecycle.test.tsx` |
+| UC-WEB-A-R6 | 앱 아이콘 데스크톱 동일 자산 | `app-store-adapter-package-icon.test.ts`, `e2e/web-gpu-a-ui.spec.ts` |
+| UC-WEB-A-R8 | 상단 막대 음악 플레이어 우측 | `AppBar.test.tsx`, `e2e/web-gpu-a-ui.spec.ts` |
+| UC-WEB-APP-CATALOG | 상점 진입 설치 권한 오류 | `e2e/web-app-store-catalog.spec.ts`, `app-catalog.test.ts`, `app-store-adapter.test.ts` |
+| UC-WEB-APP-TOOLS-20261114 | 시각 메모 동일 도구 | `web-worker/__tests__/web-app-tools.test.ts` |
+| UC-WEB-AVATAR-CLIP | 첫 화면 대기 아바타 재생 | `prebaked-renderer.test.ts`, `VideoAvatarCanvas.test.tsx` |
+| UC-WEB-BGM-CATALOG-TRUTH | 목록 곡 실제 재생 일치 | `e2e/web-bgm-r7.spec.ts`, `src/lib/__tests__/bgm-skill.test.ts`, `BgmPlayer.test.tsx` |
+| UC-WEB-BGM-LOCAL-IMPORT | 로컬 탭 파일 올리기 | `e2e/web-bgm-r10.spec.ts`, `src/lib/web-runtime/__tests__/web-bgm-music.test.ts` |
+| UC-WEB-BGM-NOWPLAYING | 재생 중 카드 가림 없음 | `BgmPlayer.test.tsx`, `e2e/web-bgm-nowplaying-r36.spec.ts` |
+| UC-WEB-BGM-TOPBAR-PLAY | 상단 바 유튜브 재생 | `e2e/web-bgm-r31.spec.ts`, `bgm-embed.test.ts` |
+| UC-WEB-BOOT-RUNTIME-SEPARATION | 깨끗한 웹 부팅 네이티브 복원 실패 | `packages/shell/e2e/web-runtime-boot.spec.ts`, `packages/shell/e2e/adk-home-isolation.spec.ts` |
+| UC-WEB-CHARCARD | 카드 목록 만들기 파일 추가 | `e2e/web-charcard-r40.spec.ts`, `CharCardApp.test.tsx` |
+| UC-WEB-CHARCARD-STORAGE-COPY | 저장 임시보관 쉬운 말 | `CharCardApp.test.tsx` |
+| UC-WEB-CHAT-MODEL-ERROR | 기기 대화 차단 이어가기 | `e2e/web-chat-model-error-r44.spec.ts`, `WebModelStatusBar.test.tsx`, `agent-bridge.test.ts` |
+| UC-WEB-CHAT-MODEL-SUMMARY | 기기 모델 상태 짧게 보기 | `WebModelStatusBar.test.tsx`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
+| UC-WEB-CHAT-START | 첫 메시지 보내기 소개 단추 | `ChatArea.test.tsx`, `i18n-user-facing.test.ts`, `NvaGestureActions.test.tsx` |
+| UC-WEB-CREDIT-CONTEXT | 무료 크레딧 차감 확인 | `web-stage1-features.test.tsx`, `ChatArea.test.tsx`, `credits.test.ts` |
+| UC-WEB-CREDIT-FORMAT | 잔액 요금 짧게 읽기 | `credits.test.ts`, `WebCreditChip.test.tsx`, `e2e/web-credits-r42.spec.ts` |
+| UC-WEB-HOSTED-APPS | 내장 미니앱 4개 실행 | `e2e/web-hosted-apps-r35.spec.ts`, `e2e/web-app-store-catalog.spec.ts`, `scripts/__tests__/web-hosted-apps.test.ts` |
+| UC-WEB-KIOSK-ADK-LOCAL | 시연판 투명성 내 PC 답변 | `kiosk-demo.test.ts`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-APP-STORE | 시연판 앱스토어 안내 개폐 | `AppMainContent.kiosk-store.test.tsx` |
+| UC-WEB-KIOSK-FIX | 적대 검수 수정 묶음 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-FIX7B | 6판 실주소 지적 나머지 | `AiControlBar.test.tsx`, `AppMainContent.test.tsx`, `kiosk-demo.test.ts` |
+| UC-WEB-KIOSK-FIX7C | 아바타 매팅 구멍 고화질 버퍼 | `VideoAvatarCanvas.test.tsx`, `prebaked-renderer.test.ts`, `nva-stacked-alpha.test.ts` |
+| UC-WEB-KIOSK-FIX7D | 탐색기 배치 유튜브 재생 | `AppMainContent.test.tsx`, `AppBar.test.tsx`, `App.test.tsx` |
+| UC-WEB-KIOSK-FIX7F | 지나 외형 단추 겹침 수정 | `prebaked-renderer.test.ts`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-FIX7G | GPU 매팅 골든 반례 시험 | `prebaked-renderer.test.ts`, `nva-stacked-alpha.test.ts`, `e2e/kiosk-demo.spec.ts` |
+| UC-WEB-KIOSK-FIX7J | 알파 재생 셰이더 유한 전파 | `nva-stacked-alpha.test.ts`, `prebaked-renderer.test.ts`, `VideoAvatarCanvas.test.tsx` |
+| UC-WEB-KIOSK-MOBILE-FIX | 세로 화면 멈춤 문구 잔액 가드 | `ChatArea.test.tsx`, `KioskDemoGate.test.tsx`, `kiosk-demo.test.ts` |
+| UC-WEB-KIOSK-PW | 숫자 4자리 비밀번호 입장 | `KioskDemoGate.test.tsx`, `passcode.test.ts` |
+| UC-WEB-KIOSK-R12 | 데스크톱 사이트 세로 대화 설정 탭 | `AppMainContent.test.tsx`, `web-assets.test.ts` |
+| UC-WEB-KIOSK-R13-KL | 시연 지식 질문 화면 발표 | `knowledge.test.ts`, `web-app-tools.test.ts`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-R3 | 3판 대표 지적 수정 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts` |
+| UC-WEB-KIOSK-S3 | 로그인 없이 대화 시작 | `e2e/kiosk-demo.spec.ts`, `entry.test.ts` |
+| UC-WEB-KIOSK-S4 | 실사 아바타 전환 대화창 확장 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| UC-WEB-KIOSK-S5 | 게이트웨이 음성 브라우저 폴백 | `kiosk-demo.test.ts`, `config-seed.test.ts`, `ChatArea.test.tsx` |
+| UC-WEB-KIOSK-S6 | 발표해줘 슬라이드 장별 설명 | `slides.test.ts`, `command-table.test.ts`, `router.test.ts` |
+| UC-WEB-KIOSK-STUDIO-NVA | 스튜디오 정본 묶음 교체 | `SettingsTab.test.tsx`, `VideoAvatarCanvas.test.tsx`, `kiosk-demo.spec.ts` |
+| UC-WEB-MAC-SAFARI-CHROME | 사파리 방문자 크롬 안내 | `e2e/web-mac-safari-chrome.spec.ts`, `web-auth.test.ts`, `mac-safari-notice.test.tsx` |
+| UC-WEB-MAIN-MODEL-AUTH | 모델 적용 대화 이어가기 | `e2e/web-main-model-r45.spec.ts`, `SettingsTab.test.tsx` |
+| UC-WEB-MAIN-MODEL-LIVE | 메인 모델 즉시 전환 | `e2e/web-main-model-r33.spec.ts`, `web-worker/__tests__/openai-compat-provider.test.ts` |
+| UC-WEB-REF-AUDIO-UPLOAD | 내 목소리 올리기 | `e2e/web-ref-audio-r13.spec.ts`, `src/lib/voice/__tests__/ref-audio-api-web-r13.test.ts`, `RefAudioSection.test.tsx` |
+| UC-WEB-SETTINGS-FILES | 설정 파일 목록 보기 | `web-settings-catalog.test.ts`, `e2e/web-settings-files-r32.spec.ts` |
+| UC-WEB-SETTINGS-MUSIC | 올린 음악 목록 보기 | `e2e/web-settings-files-r32.spec.ts`, `web-bgm-music.test.ts`, `web-workspace-path.test.tsx` |
+| UC-WEB-SETTINGS-TABS-THINKING | 좁은 화면 탭 생각 세기 | `SettingsTab.test.tsx`, `i18n-user-facing.test.ts` |
+| UC-WEB-SLIDES-PPTX | 브라우저 PPTX 열기 그림 PDF | `e2e/web-slides-pptx.spec.ts`, `slides-pptx.test.ts` |
+| UC-WEB-STUDIO-VOICE-APPLY | 적용 시 캐릭터 목소리 변경 | `src/lib/web-runtime/__tests__/web-studio-voice.test.ts`, `web-studio-voice.test.ts` |
+| UC-WEB-USAGE-COST | 대화 비용 차감 확인 | `web-worker/__tests__/agent-worker-usage.test.ts`, `web-worker/__tests__/openai-compat-provider.test.ts` |
+| UC-WEB-VISUAL-AGENT-SLUG | 공유 주소 이름 공개 주소 | `e2e/web-visual-agent-slug-r39.spec.ts`, `visual-agent-slug.test.ts`, `web-sw-version.test.ts` |
+| UC-WEB-VOICE-LANG-GROUP | 언어별 목소리 묶음 | `e2e/web-voice-r25v.spec.ts`, `src/lib/tts/__tests__/registry.test.ts` |
+| UC-WEB-VOICE-MIC-ERROR | 음성 대화 마이크 오류 안내 | `e2e/web-voice-r26.spec.ts`, `src/lib/stt/__tests__/web-speech-stt.test.ts`, `ChatArea.test.tsx` |
+| UC-WEB-VRM-HUB | 아바타 선택 VRoid Hub 연결 | `SettingsTab.test.tsx`, `e2e/web-vroid-hub-r41.spec.ts` |
+| UC-WEB-VRM-LIP-SYNC | 말하는 아바타 입 움직임 | `e2e/web-vrm-lip-sync-r43.spec.ts`, `lip-sync.test.ts` |
+| UC-WEB-WORKSPACE-IMPORT | 작업 파일 아바타 가져오기 | `web-workspace-path.test.tsx`, `web-settings-catalog.test.ts`, `web-nva-archive.test.ts` |
+| UC-WEBGPU-MODEL-DEFAULTS-20261124 | 기본 모델 순서 기존 선택 보존 | `registry.test.ts`, `WebModelStatusBar.test.tsx` |
