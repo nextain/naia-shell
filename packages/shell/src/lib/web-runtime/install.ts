@@ -7,7 +7,18 @@ import {
 	unregisterEventListener,
 } from "./event-bus";
 import { registerWebLlmProvider } from "./llm-provider";
-import { routeCommand } from "./router";
+// router(명령 표·에이전트 브리지·BGM 묶음)는 첫 invoke 때 로드해 첫 번들을 줄인다.
+// installWebRuntime 자체는 동기 그대로라 부팅 순서·시험이 그대로다.
+type RouteCommand = (
+	cmd: string,
+	args?: unknown,
+	options?: unknown,
+) => Promise<unknown>;
+let routeCommandPromise: Promise<RouteCommand> | null = null;
+function getRouteCommand(): Promise<RouteCommand> {
+	routeCommandPromise ??= import("./router").then((m) => m.routeCommand);
+	return routeCommandPromise;
+}
 import {
 	normalizeRetiredWebBackgroundInRecord,
 	syncWebModeRootAttribute,
@@ -48,7 +59,7 @@ export function installWebRuntime(): void {
 	if (typeof window !== "undefined") {
 		window.__TAURI_INTERNALS__ = {
 			invoke: (cmd: string, args?: unknown, options?: unknown) =>
-				routeCommand(cmd, args, options),
+				getRouteCommand().then((route) => route(cmd, args, options)),
 			transformCallback: (
 				callback: (response: unknown) => void,
 				once = false,

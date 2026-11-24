@@ -135,7 +135,7 @@ export function notifyKioskDemoUnavailable(): void {
 
 async function resetKioskSettingsToSeed(): Promise<void> {
 	if (!isKioskDemo()) return;
-	const seed = buildKioskDemoConfigSeed();
+	const seed = await buildKioskDemoConfigSeed();
 	try {
 		if (typeof localStorage !== "undefined") {
 			localStorage.removeItem("naia-web-nextain-model");

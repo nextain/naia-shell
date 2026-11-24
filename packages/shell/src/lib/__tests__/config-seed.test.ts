@@ -72,24 +72,24 @@ describe("config-seed (FR-VOICE.15)", () => {
 		}
 	});
 
-	it("turns proactive speech on by default in the kiosk seed (strict === true check downstream)", () => {
+	it("turns proactive speech on by default in the kiosk seed (strict === true check downstream)", async () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		const seed = buildKioskDemoConfigSeed();
+		const seed = await buildKioskDemoConfigSeed();
 		expect(seed.proactiveSpeechProfile).toBe("personal_radio_dj");
 		expect(seed.proactiveSpeechPermitted).toBe(true);
 
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
-		expect(buildKioskDemoConfigSeed()).toEqual({});
+		expect(await buildKioskDemoConfigSeed()).toEqual({});
 	});
 
-	it("pins environmentAwareness to off and environmentTerminalInput to false in kiosk seed and applyKioskDemoMainModel while preserving them when kiosk is off", () => {
+	it("pins environmentAwareness to off and environmentTerminalInput to false in kiosk seed and applyKioskDemoMainModel while preserving them when kiosk is off", async () => {
 		expect(KIOSK_DEMO_ENVIRONMENT_AWARENESS).toBe("off");
 		expect(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT).toBe(false);
 
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
-		const seed = buildKioskDemoConfigSeed();
+		const seed = await buildKioskDemoConfigSeed();
 		expect(seed.environmentAwareness).toBe("off");
 		expect(seed.environmentTerminalInput).toBe(false);
 
@@ -103,7 +103,7 @@ describe("config-seed (FR-VOICE.15)", () => {
 		expect(pinned.environmentTerminalInput).toBe(false);
 
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
-		expect(buildKioskDemoConfigSeed()).toEqual({});
+		expect(await buildKioskDemoConfigSeed()).toEqual({});
 		const preservedWeb = applyKioskDemoMainModel({
 			provider: "nextain",
 			model: "gpt-5.6-luna",

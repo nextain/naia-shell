@@ -159,7 +159,7 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 	const existing = JSON.parse(
 		(await fs.readText(path)) || JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG),
 	);
-	const seed = buildKioskDemoConfigSeed();
+	const seed = await buildKioskDemoConfigSeed();
 	// FR-WEB-KIOSK-FIX.10: 키오스크 시연 주 모델은 applyKioskDemoMainModel 하나로만 정하고,
 	//   게이트웨이 /v1/models 목록에 luna가 없을 때만 살아 있는 대체 모델로 내린다.
 	if (seed.provider === "nextain") {

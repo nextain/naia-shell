@@ -6819,7 +6819,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		const { buildSystemPrompt } = await import("../../lib/persona");
 		localStorage.setItem(
 			"naia-config",
-			JSON.stringify(buildKioskDemoConfigSeed()),
+			JSON.stringify(await buildKioskDemoConfigSeed()),
 		);
 
 		render(<SettingsTab />);

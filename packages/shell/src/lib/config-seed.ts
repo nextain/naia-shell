@@ -1,12 +1,7 @@
 import { isLegacyBundledVrmModel } from "./avatar-presets";
 import { effectiveAvatarProviderFromConfig } from "./avatar/nva-gate";
-import {
-	KIOSK_JINA_CARD_ID,
-	KIOSK_JINA_SAVED_CARD,
-	KIOSK_JINA_THEME,
-	characterCardPatch,
-	libraryCard,
-} from "./character-theme";
+// character-theme(카드 파서·문구 묶음)는 시연판 시드에서만 필요하므로
+// 첫 번들에서 빼고 buildKioskDemoConfigSeed 안에서 동적 로드한다.
 import type { AppConfig } from "./config";
 import { isKioskDemo } from "./kiosk-demo/flag";
 import {
@@ -299,11 +294,20 @@ export function resolveInitialShellChatLayout(
 }
 
 /** OFF는 빈 패치: 일반판의 모든 기본값과 온보딩 선택을 보존한다. */
-export function buildKioskDemoConfigSeed(): SeedableShellConfig {
+export async function buildKioskDemoConfigSeed(): Promise<SeedableShellConfig> {
 	kioskGatewayServedModels = null;
 	if (!isKioskDemo()) return {};
 	setKioskLocalAnswerEnabled(false);
 	const model = resolveKioskDemoMainModel(null);
+	// 카드 파서·문구 묶음은 시연판에서만 쓰이므로 첫 번들 밖에 둔다.
+	// 호출자는 이미 비동기 부팅 흐름(게이트·온보딩)이라 대기해도 첫 화면이 밀리지 않는다.
+	const {
+		KIOSK_JINA_CARD_ID,
+		KIOSK_JINA_SAVED_CARD,
+		KIOSK_JINA_THEME,
+		characterCardPatch,
+		libraryCard,
+	} = await import("./character-theme");
 	const jinaCardPatch = characterCardPatch(
 		libraryCard(KIOSK_JINA_SAVED_CARD),
 		"게스트",

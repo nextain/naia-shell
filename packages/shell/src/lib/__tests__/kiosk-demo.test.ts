@@ -114,7 +114,7 @@ describe("S3 kiosk isolation", () => {
 			localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, "test-personal-fixture");
 			const before = localStorage.getItem("naia-config");
 			expect(isKioskDemo()).toBe(false);
-			expect(buildKioskDemoConfigSeed()).toEqual({});
+			expect(await buildKioskDemoConfigSeed()).toEqual({});
 			expect(INITIAL_WEB_WORKSPACE_CONFIG.avatarProvider).toBe(
 				"naia-video-avatar",
 			);
@@ -134,8 +134,8 @@ describe("S3 kiosk isolation", () => {
 			expect(buildSystemPrompt()).not.toContain(KIOSK_DEMO_PERSONA);
 		},
 	);
-	it("ON produces the requested polite Korean guide and Jina real-person avatar", () => {
-		const seed = buildKioskDemoConfigSeed();
+	it("ON produces the requested polite Korean guide and Jina real-person avatar", async () => {
+		const seed = await buildKioskDemoConfigSeed();
 		expect(seed).toMatchObject({
 			agentName: "지나",
 			userName: "게스트",
@@ -276,7 +276,7 @@ describe("S3 kiosk isolation", () => {
 		expect(KIOSK_DEMO_ENABLE_TOOLS).toBe(true);
 		expect(KIOSK_DEMO_ENVIRONMENT_AWARENESS).toBe("off");
 		expect(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT).toBe(false);
-		expect(buildKioskDemoConfigSeed()).toMatchObject({
+		expect(await buildKioskDemoConfigSeed()).toMatchObject({
 			provider: "nextain",
 			model: "gpt-5.6-luna",
 			enableTools: true,
@@ -323,13 +323,13 @@ describe("S3 kiosk isolation", () => {
 		expect(saved.llmRoles.main.model).toBe("gpt-5.6-luna");
 		vi.unstubAllGlobals();
 	});
-	it("FR-WEB-KIOSK-FIX.10 resolves gpt-5.6-luna in kiosk mode when saved model is missing or gateway defaultModel changes", () => {
+	it("FR-WEB-KIOSK-FIX.10 resolves gpt-5.6-luna in kiosk mode when saved model is missing or gateway defaultModel changes", async () => {
 		expect(getDefaultLlmModel("nextain")).toBe("gpt-5.6-luna");
 		const originalNextain = getLlmProvider("nextain")!;
 		registerLlmProvider({ ...originalNextain, defaultModel: "claude-opus-5" });
 		try {
 			expect(getDefaultLlmModel("nextain")).toBe("gpt-5.6-luna");
-			expect(buildKioskDemoConfigSeed().model).toBe("gpt-5.6-luna");
+			expect((await buildKioskDemoConfigSeed()).model).toBe("gpt-5.6-luna");
 		} finally {
 			registerLlmProvider(originalNextain);
 		}
@@ -879,7 +879,7 @@ describe("S3 kiosk isolation", () => {
 			reload: () => undefined,
 		});
 
-		const seed = buildKioskDemoConfigSeed();
+		const seed = await buildKioskDemoConfigSeed();
 		const resetLocal = loadConfig()!;
 		expect(resetLocal).toMatchObject(seed);
 		expect(localStorage.getItem("naia-web-nextain-model")).toBeNull();

@@ -1,6 +1,5 @@
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { loadConfig } from "../config";
-import { getStartableAgentBridge } from "./agent-bridge";
 import { installWebRuntime } from "./install";
 import { startWebModel } from "./model-start";
 import { checkWebAdkStartup } from "./web-adk";
@@ -68,6 +67,8 @@ export async function bootWebRuntimeAndModel(
 			} catch {
 				storage = null;
 			}
+			// 에이전트 브리지는 모델 시작 때만 필요하므로 첫 번들 밖에 둔다.
+			const { getStartableAgentBridge } = await import("./agent-bridge");
 			if (
 				isKioskDemo() ||
 				(selection?.provider ?? loadConfig()?.provider) !== "webllm"
