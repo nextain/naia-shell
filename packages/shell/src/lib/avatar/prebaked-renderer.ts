@@ -476,7 +476,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			}
 			return;
 		}
-		const generation = ++this.generation;
+		this.generation++;
 		if (active) {
 			const needsFallbackClip =
 				Boolean(this.speechStage) &&
@@ -487,30 +487,11 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.activeGesture = false;
 				this.cancelOneShot?.();
 				void this.playIdle();
-			} else if (!this.speechStage) {
-			const clip =
-				this.config.manifest.vrm_slots?.visemes?.aiueo?.clip ??
-				this.config.manifest.vrm_slots?.motions?.talking?.clip ??
-				this.config.manifest.animations.talking?.clip ??
-				this.config.manifest.animations.speak?.clip ??
-				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true, undefined, generation, false).catch(
-				(err) => {
-					Logger.warn(
-						"PrebakedAvatarRenderer",
-						"talking clip playback failed",
-						{
-							clip,
-							error: String(err),
-						},
-					);
-				},
-			);
+			}
 		} else {
 			this.speechStage?.stop();
 			void this.playIdle();
 		}
-	}
 	}
 
 	/** Play one aligned or browser-timed plan through the canonical player. */
