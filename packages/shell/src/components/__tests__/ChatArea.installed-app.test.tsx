@@ -216,19 +216,11 @@ class FakeSpeechRecognition {
 
 describe("ChatArea", () => {
 	beforeEach(() => {
-		cleanup();
-		localStorage.clear();
 		localStorage.setItem("naia-adk-path", "/tmp/chat-area-test-adk");
 		capturedRequests.length = 0;
-		appRegistry.unregister("test.app");
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
 		vi.mocked(fetchAgentSkills).mockResolvedValue([]);
 		modelToolBoundary.reset();
-		vi.mocked(isNewCore).mockReturnValue(false);
-		useChatStore.setState(useChatStore.getInitialState());
-		useAvatarStore.setState(useAvatarStore.getInitialState());
-		useCascadeAvatarStore.setState(useCascadeAvatarStore.getInitialState());
-		useAppStore.setState({ activeApp: null });
 	});
 
 	it("keeps typed text while a card is still being committed", async () => {
