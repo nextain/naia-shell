@@ -10,6 +10,10 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkBundleBudget } from "../check-bundle-budget.mjs";
 
+const repositoryBudget = JSON.parse(
+	readFileSync(resolve(import.meta.dirname, "../../bundle-budget.json"), "utf8"),
+);
+
 const temporaryDirectories = [];
 const deferredModules = [
 	"src/apps/browser/BrowserCenterArea.tsx",
@@ -94,6 +98,12 @@ afterEach(() => {
 });
 
 describe("bundle budget", () => {
+	it("keeps the Windows distribution measurement within the frozen budget", () => {
+		expect(187018511).toBeLessThanOrEqual(repositoryBudget.distBytes);
+		expect(repositoryBudget.entryRawBytes).toBe(540000);
+		expect(repositoryBudget.entryGzipBytes).toBe(170000);
+	});
+
 	it("measures the HTML module entry and writes a passing JSON report", () => {
 		const { shellDirectory, distDirectory } = fixture();
 		const report = checkBundleBudget({ shellDirectory });
