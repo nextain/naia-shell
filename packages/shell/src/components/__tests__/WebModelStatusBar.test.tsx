@@ -15,10 +15,11 @@ import {
 	WEB_LLM_MODEL_ID,
 } from "../../lib/web-runtime/webllm-model";
 
-vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn().mockResolvedValue([]),
+const tauriMocks = vi.hoisted(() => ({
+	invoke: vi.fn(),
 	convertFileSrc: vi.fn((path: string) => path),
 }));
+vi.mock("@tauri-apps/api/core", () => tauriMocks);
 vi.mock("../../lib/web-runtime/agent-bridge", () => ({
 	getStartableAgentBridge: () => ({ start: vi.fn(), sendLine: vi.fn() }),
 }));
@@ -28,6 +29,7 @@ describe("WebModelStatusBar", () => {
 		resetWebModelStatusForTests();
 		localStorage.clear();
 		setWebAssetsModeForTests(true);
+		tauriMocks.invoke.mockReset().mockResolvedValue([]);
 	});
 
 	afterEach(async () => {

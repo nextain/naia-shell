@@ -1,5 +1,5 @@
 import { mergeCatalogModels } from "../lib/llm/small-model";
-import { defaultSmallModel, LOCAL_SMALL_MODEL, smallModelChoices } from "../lib/llm/small-model";
+import { defaultSmallModel, defaultThinkingLevel, LOCAL_SMALL_MODEL, smallModelChoices } from "../lib/llm/small-model";
 import { WebPushSettings } from "./WebPushSettings";
 import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import { invoke } from "@tauri-apps/api/core";
@@ -435,7 +435,10 @@ function writeMainModelSelection(config: AppConfig, role: LlmRoleConfig, previou
 		if (level) levels[modelThinkingKey(prior.provider, prior.model)] = level;
 	}
 	const key = role.provider && role.model ? modelThinkingKey(role.provider, role.model) : "";
-	const level = (key && levels[key]) || (prior?.provider === role.provider && prior?.model === role.model ? prior?.thinkingLevel : undefined);
+	const storedOrPrior = (key && levels[key]) || (prior?.provider === role.provider && prior?.model === role.model ? prior?.thinkingLevel : undefined);
+	// 웹 모드 nextain 선택: 저장된 개별 override가 없으면 모델별 기본 추론 강도 적용.
+	const webDefault = role.provider === "nextain" && role.model && isWebMode() && !isKioskDemo() ? defaultThinkingLevel(role.model) : undefined;
+	const level = storedOrPrior ?? webDefault;
 	const selection = { ...role };
 	delete selection.thinkingLevel;
 	const updated = writeConfiguredLlmRole(config, "main", { ...selection, ...(level ? { thinkingLevel: level } : {}) });
@@ -7545,7 +7548,7 @@ export function SettingsTab() {
 											provider: selectedProvider, model: selectedModel,
 											...(smallRole.provider === selectedProvider && smallRole.baseUrl ? { baseUrl: smallRole.baseUrl } : selectedProvider === "ollama" ? { baseUrl: ollamaHost } : selectedProvider === "vllm" ? { baseUrl: vllmHost } : {}),
 											...(smallRole.provider === selectedProvider && smallRole.credentialRef ? { credentialRef: smallRole.credentialRef } : {}),
-											...(selectedProvider === "nextain" && /luna/i.test(selectedModel) ? { thinkingLevel: "low" as const } : {}),
+											...(selectedProvider === "nextain" && (isWebMode() || /luna/i.test(selectedModel)) ? { thinkingLevel: "low" as const } : {}),
 										};
 										setSmallRole(choice);
 										const current = loadConfig();
@@ -7558,7 +7561,11 @@ export function SettingsTab() {
 									<option value="__inherit__">{t("settings.smallModelInherit")}</option>
 									{!smallRole.inherit && smallRole.provider && smallRole.model && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
 									{Object.entries(dynamicModels).filter(([id]) => id === "nextain" || (!isWebMode() && ["ollama", "vllm", "codex", "grok", "claude-code-cli"].includes(id))).map(([id, models]) => <optgroup key={id} label={getLlmProvider(id)?.name ?? id}>
-										{sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
+										{(id === "nextain" && isWebMode()
+										? ["deepseek-v4.1-flash", "gpt-6-luna"]
+											.map((wanted) => smallModelChoices(models).find((candidate) => candidate.id === wanted))
+											.filter((candidate): candidate is LlmModelMeta => Boolean(candidate))
+										: sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode)).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
 									</optgroup>)}
 									{!isWebMode() && !(dynamicModels.ollama ?? []).some(m => m.id === LOCAL_SMALL_MODEL) && <option value={JSON.stringify(["ollama", LOCAL_SMALL_MODEL])}>Qwen 3.5 4B ({t("settings.smallModelLocal")})</option>}
 								</select>

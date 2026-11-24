@@ -35,7 +35,8 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         (out.thinking.level === "off" ||
           out.thinking.level === "low" ||
           out.thinking.level === "high" ||
-          out.thinking.level === "xhigh")
+          out.thinking.level === "xhigh" ||
+          out.thinking.level === "max")
           ? { thinking: out.thinking }
           : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),

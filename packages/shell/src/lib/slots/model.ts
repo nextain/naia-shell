@@ -3,7 +3,7 @@ import { effectiveAvatarProviderFromConfig } from "../avatar/nva-gate";
 // 게이트(naia 계정 binary) → 6 클라우드 슬롯(main·sub·embedding·stt·tts·avatar) 각각 독립 설정.
 // I/O 0(DOM/localStorage 접근 금지) — SettingsTab UI·온보딩 기본값 양쪽이 동일 로직 소비(비일관 방지).
 // SoT: .agents/progress/naia-model-slots-architecture-2026-06-28.md
-import type { AppConfig, SttProviderId, TtsProviderId } from "../config";
+import type { AppConfig, SttProviderId, ThinkingLevel, TtsProviderId } from "../config";
 import { applyKioskDemoMainModel } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import {
@@ -89,10 +89,11 @@ export const SLOT_FIELD_MAP: Record<SlotId, readonly string[]> = {
 
 // ── 슬롯 값 스냅샷 ──
 export interface SlotSnapshot {
-	main: { provider: ProviderId; model: string };
+	main: { provider: ProviderId; model: string; thinkingLevel?: ThinkingLevel };
 	sub: {
 		provider: ProviderId | "none" | undefined;
 		model?: string;
+		thinkingLevel?: ThinkingLevel;
 	};
 	embedding: {
 		provider: AppConfig["memoryEmbeddingProvider"];

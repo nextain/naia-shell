@@ -102,7 +102,7 @@ interface SendChatOptions {
 	enableTools?: boolean;
 	/** Enable thinking/reasoning output from models that support it. */
 	enableThinking?: boolean;
-	thinking?: { level: "off" | "low" | "high" | "xhigh" };
+	thinking?: { level: "off" | "low" | "high" | "xhigh" | "max" };
 	gatewayUrl?: string;
 	disabledSkills?: string[];
 	/** Enabled coding CLI names from the Skills tab (#605). */

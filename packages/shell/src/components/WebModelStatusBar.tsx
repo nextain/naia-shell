@@ -20,6 +20,7 @@ import {
 } from "../lib/lab-balance";
 import { getDefaultLlmModel } from "../lib/llm/registry";
 import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import { defaultThinkingLevel } from "../lib/llm/small-model";
 import { Logger } from "../lib/logger";
 import { effectiveMainRole } from "../lib/slots/model";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
@@ -142,7 +143,8 @@ function WebCloudChatRecovery({ provider }: { provider: "webllm" | "nextain" }) 
 			) {
 				throw new Error("Cloud chat selection is unavailable");
 			}
-			const selection = { provider: "nextain", model };
+			const defaultLevel = defaultThinkingLevel(model);
+		const selection = { provider: "nextain", model, ...(defaultLevel ? { thinkingLevel: defaultLevel } : {}) };
 			const next = {
 				...writeConfiguredLlmRole(current, "main", selection),
 				webAutoDefaultModel: false,

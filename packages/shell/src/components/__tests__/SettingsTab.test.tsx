@@ -1526,7 +1526,7 @@ describe("SettingsTab", () => {
 		expect(labels.some((label) => label.includes("(Naia)"))).toBe(false);
 		expect(labels.some((label) => label.includes("Analysis only"))).toBe(false);
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
-			"gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "motif-3", "deepseek-v4-flash", "solar-mini",
+			"deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna", "solar-pro4", "gpt-5.6-luna", "motif-3", "deepseek-v4-flash", "solar-mini",
 		]);
 		expect(
 			[...modelSelect.options].map((option) => option.value),
@@ -1860,7 +1860,7 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			expect(modelSelect.value).toBe("gpt-6.1-terra");
+			expect(modelSelect.value).toBe("deepseek-v4.1-flash");
 			expect(
 				[...modelSelect.options].map((option) => option.value),
 			).not.toContain("claude-opus-5");

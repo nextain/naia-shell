@@ -24,7 +24,7 @@ export interface ShellSendOptions {
   environmentSegments?: readonly EnvironmentSegment[];
   enableTools?: boolean;
   enableThinking?: boolean;
-  thinking?: { level: "off" | "low" | "high" | "xhigh" };
+  thinking?: { level: "off" | "low" | "high" | "xhigh" | "max" };
   gatewayUrl?: string;
   disabledSkills?: readonly string[];
   /** Enabled coding CLI names from Skills tab (#605). */
@@ -118,7 +118,8 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         (opts.thinking.level === "off" ||
           opts.thinking.level === "low" ||
           opts.thinking.level === "high" ||
-          opts.thinking.level === "xhigh")
+          opts.thinking.level === "xhigh" ||
+          opts.thinking.level === "max")
           ? { thinking: { level: opts.thinking.level } }
           : {}),
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
