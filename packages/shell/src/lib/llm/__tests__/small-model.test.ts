@@ -57,6 +57,9 @@ describe("UT-SM-05 Terra absent", () => {
  it("selects the next available recommendation", () => {
    expect(defaultMainModel([meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "max" });
  });
+ it("falls back to solar-pro4 without a thinking default when the lineup is otherwise absent", () => {
+   expect(defaultMainModel([meta("solar-pro4"), meta("motif-3")])).toEqual({ provider: "nextain", model: "solar-pro4" });
+ });
 });
 describe("UT-SM-06 default thinking levels (webgpu 3-model lineup)", () => {
  it("maps the webgpu lineup to its per-model default strength", () => {
