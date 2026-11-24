@@ -509,6 +509,46 @@ describe("webgpu model defaults (v2-20261124)", () => {
 			});
 		});
 	});
+
+	it("W5 exposes the four approved web main models in fixed order", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra" }));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const main = document.getElementById("model-select") as HTMLSelectElement;
+		await waitFor(() => {
+			expect([...main.options].map((option) => option.value)).toContain("deepseek-v4.1-flash");
+		});
+		expect([...main.options].map((option) => option.value)).toEqual([
+			"deepseek-v4.1-flash",
+			"gpt-6.1-terra",
+			"gpt-6-luna",
+			"solar-pro4",
+		]);
+	});
+
+	it("W6 applies no thinking default when Solar Pro 4 is picked as the web main model", async () => {
+		localStorage.setItem("naia-remote-key", "test-w6-fixture");
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+			apiKey: "",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+		}));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const main = document.getElementById("model-select") as HTMLSelectElement;
+		await waitFor(() => {
+			expect([...main.options].map((option) => option.value)).toContain("solar-pro4");
+		});
+		fireEvent.change(main, { target: { value: "solar-pro4" } });
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.main).toMatchObject({
+				provider: "nextain",
+				model: "solar-pro4",
+			});
+		});
+		expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.main.thinkingLevel).toBeUndefined();
+	});
 });
 
 describe("SettingsTab", () => {
