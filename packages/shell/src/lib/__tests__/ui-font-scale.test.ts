@@ -130,4 +130,25 @@ describe("stylesheet font-size contract (FR-UI-FONT-SCALE.2)", () => {
 		);
 		expect(css).toMatch(/:root\s*\{\s*--ui-font-scale:\s*1;/);
 	});
+
+	/**
+	 * 병합 해소 때 닫는 중괄호가 빠지면 프로덕션 웹 빌드(vite/postcss)가
+	 * "Unclosed block" 으로 깨진다. 균형 계산으로 막는다.
+	 */
+	it.each(stylesheets)("%s has balanced braces (build:web gate)", (path) => {
+		const css = readFileSync(resolve(__dirname, "../../..", path), "utf-8");
+		const stripped = css
+			.replace(/\/\*[\s\S]*?\*\//g, "")
+			.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, "");
+		let depth = 0;
+		let min = 0;
+		for (const ch of stripped) {
+			if (ch === "{") depth += 1;
+			else if (ch === "}") depth -= 1;
+			if (depth < min) min = depth;
+		}
+		expect(`${path} min-depth ${min} end-depth ${depth}`).toBe(
+			`${path} min-depth 0 end-depth 0`,
+		);
+	});
 });
