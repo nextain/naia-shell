@@ -148,6 +148,14 @@ export function WebCreditChip() {
 		};
 	}, [enabled, refresh]);
 
+	const handleChipClick = useCallback(() => {
+		// Primary entry: open the usage dashboard in a new tab. The popover
+		// stays as the balance-detail and separate charge entry, gated by the
+		// distribution payment policy; closing the popover opens nothing.
+		if (!open) openNaiaWeb("usage");
+		setOpen((v) => !v);
+	}, [open]);
+
 	if (!enabled || balance === null) return null;
 	const level = webCreditLevel(balance);
 	const continueLocal = () => {
@@ -197,7 +205,7 @@ export function WebCreditChip() {
 			<button
 				type="button"
 				className={`web-credit__chip web-credit__chip--${level}`}
-				onClick={() => setOpen((v) => !v)}
+				onClick={handleChipClick}
 				title={t("webCredit.title")}
 				aria-label={`${t("webCredit.title")}: ${formatWebCredits(balance)}`}
 				aria-expanded={open}
