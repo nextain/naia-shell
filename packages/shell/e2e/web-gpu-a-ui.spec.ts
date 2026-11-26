@@ -98,7 +98,8 @@ for (const viewport of [
 				if (!localStorage.getItem("naia-web-llm-model")) localStorage.setItem("naia-web-llm-model", "Qwen3-4B-q4f32_1-MLC");
 			});
 			await page.goto("/");
-			await page.getByTestId("web-workspace-start-default").click();
+			await expect(page.locator(".splash-screen")).toHaveCount(0, { timeout: 60_000 });
+			await page.getByTestId("web-workspace-start-default").click({ timeout: 60_000 });
 			await expect.poll(() => page.evaluate(() => window.__NAIA_WEB_ADK_STATUS__?.().phase), { timeout: 180_000 }).toBe("ready");
 			await expect(page.locator(isPortrait(page) ? ".web-mobile-menu-trigger" : ".app-bar-settings")).toBeVisible({ timeout: 60_000 });
 		});
@@ -107,7 +108,7 @@ for (const viewport of [
 			await context?.close();
 		});
 
-		test(`R8: YouTube music player sits after the web status pills and credit (${viewport.width})`, async () => {
+		test(`R8: settings gear sits once directly after the YouTube music player (${viewport.width})`, async () => {
 			test.setTimeout(180_000);
 			const bar = page.locator(".app-bar");
 			const harness = bar.getByTestId("web-runtime-harness-bar");
@@ -115,6 +116,7 @@ for (const viewport of [
 			const settings = bar.locator(".app-bar-settings");
 			await expect(harness).toHaveCount(1);
 			await expect(bgm).toHaveCount(1);
+			await expect(settings).toHaveCount(1);
 			const order = await page.evaluate(() => {
 				const q = (s: string) => document.querySelector(s);
 				const pos = (a: Element | null, b: Element | null) =>
@@ -123,10 +125,10 @@ for (const viewport of [
 				return {
 					harnessBeforeBgm: pos(q("[data-testid='web-runtime-harness-bar']"), q(".app-bar .bgm-player")),
 					creditBeforeBgm: pos(credit, q(".app-bar .bgm-player")),
-					settingsBeforeBgm: pos(q(".app-bar-settings"), q(".app-bar .bgm-player")),
+					bgmBeforeSettings: pos(q(".app-bar .bgm-player"), q(".app-bar-settings")),
 				};
 			});
-			expect(order).toEqual({ harnessBeforeBgm: true, creditBeforeBgm: true, settingsBeforeBgm: true });
+			expect(order).toEqual({ harnessBeforeBgm: true, creditBeforeBgm: true, bgmBeforeSettings: true });
 			if (isPortrait(page)) {
 				await expect(bgm).toBeHidden();
 				await expect(page.locator(".web-mobile-menu-trigger")).toBeVisible();
@@ -135,9 +137,9 @@ for (const viewport of [
 				const b = await bgm.boundingBox();
 				const s = await settings.boundingBox();
 				if (!h || !b || !s) throw new Error("missing app bar geometry");
-				expect(s.x).toBeGreaterThanOrEqual(h.x + h.width - 1);
-				expect(b.x).toBeGreaterThanOrEqual(s.x + s.width - 1);
-				expect(b.x + b.width).toBeLessThanOrEqual(viewport.width);
+				expect(b.x).toBeGreaterThanOrEqual(h.x + h.width - 1);
+				expect(s.x).toBeGreaterThanOrEqual(b.x + b.width - 1);
+				expect(s.x + s.width).toBeLessThanOrEqual(viewport.width);
 			}
 			await shot(page, "R8", viewport.width);
 		});
