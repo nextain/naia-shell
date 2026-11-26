@@ -20,3 +20,12 @@ test("character card editor labels use the shell locale", () => {
 	);
 	assert.doesNotMatch(editor, /[가-힣]/u);
 });
+
+test("kiosk harness and response rules are available as Markdown seed documents", () => {
+	const workspace = new URL("../packages/shell/src/lib/kiosk-demo/workspace/", import.meta.url);
+	assert.match(readFileSync(new URL("harness.md", workspace), "utf8"), /^# AGENTS\.md/m);
+	assert.match(
+		readFileSync(new URL("response-rules.md", workspace), "utf8"),
+		/^# .*Response Rules/m,
+	);
+});
