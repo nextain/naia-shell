@@ -4,3 +4,5 @@ export const KIOSK_DEMO_GREETING =
 
 export const KIOSK_DEMO_GREETING_EN =
 	"Hello, guest. I’m Jina, your guide to Nextain. Please ask me about Naia and Nextain. I can also present our company introduction slides. In radio DJ mode, I can recommend songs for you too.";
+
+export const kioskJinaThemeName = "지나 시연 테마";
