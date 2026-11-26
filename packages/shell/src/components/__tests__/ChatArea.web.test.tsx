@@ -4641,6 +4641,7 @@ describe("ChatArea", () => {
 	});
 
 	it("FR-WEB-KIOSK-ADK.3~4 renders evidence line below replies, opens clicked file in workspace, and defaults local answer toggle to OFF with 8GB notice", async () => {
+		await setLocale("ko");
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		localStorage.removeItem("naia-kiosk-local-answer");
@@ -5235,6 +5236,7 @@ describe("ChatArea", () => {
 	});
 
 	it("renders the local-answer toggle as plain \"내 기기(웹GPU)\" without 처음으로 (r15)", async () => {
+		await setLocale("ko");
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "naia_test_kiosk_fixture_123456");
