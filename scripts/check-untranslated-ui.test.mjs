@@ -29,3 +29,25 @@ test("kiosk harness and response rules are available as Markdown seed documents"
 		/^# .*Response Rules/m,
 	);
 });
+
+test("web entry and kiosk status copy use the locale tables", () => {
+	const files = [
+		"components/AiControlBar.tsx",
+		"components/KioskDemoGate.tsx",
+		"components/KioskVoiceNotice.tsx",
+		"components/SkillsTab.tsx",
+		"components/ToolActivity.tsx",
+		"apps/slides/SlidesControls.tsx",
+		"apps/workspace/WebWorkspace.tsx",
+	];
+	for (const name of files) {
+		const source = readFileSync(
+			new URL("../packages/shell/src/" + name, import.meta.url),
+			"utf8",
+		);
+		const hardcoded = source.split("\n").filter((line) =>
+			!/^\s*(?:\/\/|\/\*|\*)/.test(line) && /[가-힣]/u.test(line),
+		);
+		assert.deepEqual(hardcoded, [], name);
+	}
+});
