@@ -4,6 +4,9 @@ import { webAdkOpfsPath } from "../web-runtime/web-adk-path";
 import type { WebFs } from "../web-runtime/web-fs";
 import { isKioskDemo } from "./flag";
 import rawIrDeck from "./slides/ir-deck.json";
+import presentationCopy from "./slides/presentation-copy.json";
+import slideQuestionContext from "./slides/question-context.md?raw";
+import slideReferenceContext from "./slides/reference-context.md?raw";
 import {
 	KIOSK_PRIVATE_IR_SLIDE_IMAGES,
 	KIOSK_PRIVATE_IR_SLIDE_PAGES,
@@ -47,10 +50,10 @@ export interface KioskSlidesController {
 
 export const KIOSK_IR_SLIDES_PDF_PATH =
 	"opfs://naia-adk/slides/nextain-ir-public.pdf";
-export const KIOSK_IR_SLIDES_PDF_NAME = "넥스테인 회사 소개.pdf";
+export const KIOSK_IR_SLIDES_PDF_NAME = presentationCopy.pdfName;
 export const KIOSK_IR_SLIDES_SCRIPT_PATH =
 	"opfs://naia-adk/slides/nextain-ir-public.md";
-export const KIOSK_IR_SLIDES_SCRIPT_NAME = "넥스테인 회사 소개.md";
+export const KIOSK_IR_SLIDES_SCRIPT_NAME = presentationCopy.scriptName;
 /** 발표 중 질문 답의 근거 칩에 쓰는 탐색기 경로(낭독 대본). */
 export const KIOSK_IR_SLIDES_EVIDENCE_FILE = "slides/nextain-ir-public.md";
 export const KIOSK_IR_SLIDE_IMAGE_DIR = "/kiosk-slides";
@@ -60,17 +63,7 @@ const KIOSK_IR_SLIDE_IMAGE_NAME = /^[0-9a-f]{16}\.jpg$/;
 // 시연 첫 화면에 비밀번호를 둔 뒤(2026-11-13)로 회사 소개 자료의 매출·가입·투자 숫자는 덱에 싣는다.
 // 다만 숫자가 든 장의 그림·원고는 저장소 밖에 두고 시연판 웹 빌드 때만 합친다(slides/private-deck.ts).
 // 덱 원고에 없는 지분·가치 평가·계약 조건과 개인 정보, 내부 경로는 계속 막는다.
-export const FORBIDDEN_IR_SLIDE_WORDS = [
-	"밸류",
-	"계약금",
-	"계약 금액",
-	"영업이익",
-	"순이익",
-	"지분",
-	"기업가치",
-	"개인 정보",
-	"개인정보",
-] as const;
+export const FORBIDDEN_IR_SLIDE_WORDS: readonly string[] = presentationCopy.forbiddenWords;
 
 const FORBIDDEN_IR_SLIDE_PATTERNS: readonly RegExp[] = [
 	/\x2fhome\x2f|min\x68o|nextain\x2dadk/i,
@@ -462,44 +455,30 @@ export const getActiveKioskIrSlide = (): KioskIrSlide | null => {
 	return null;
 };
 
+function renderSlideContext(template: string, slide: KioskIrSlide, question?: string): string {
+	const values: Readonly<Record<string, string>> = {
+		page: String(slide.page),
+		title: slide.title,
+		script: slide.script,
+		evidenceFile: KIOSK_IR_SLIDES_EVIDENCE_FILE,
+	};
+	const context = template.trimEnd().replace(/\{(page|title|script|evidenceFile)\}/g, (_, name) => values[name]);
+	const userQuestion = question?.trim();
+	return userQuestion ? context + "\n" + presentationCopy.questionLabel + userQuestion : context;
+}
+
 export const buildKioskSlideQuestionPrompt = (
 	slide: KioskIrSlide,
 	question?: string,
 ): string => {
-	const lines = [
-		`[현재 발표 중인 슬라이드: ${slide.page}장 — ${slide.title}]`,
-		`발표 대본 파일: ${KIOSK_IR_SLIDES_EVIDENCE_FILE}`,
-		`장 발표문:\n${slide.script}`,
-		`규칙:`,
-		`1. 발표 중간 질문에는 반드시 지금 보고 있는 ${slide.page}장('${slide.title}')의 제목과 장 발표문에 적힌 내용만으로 답하세요.`,
-		`2. 다른 슬라이드 장이나 다른 지식 카드(marketing.md, growth.md 등)를 검색하거나 끌어오지 말고, 이 장에 없는 고유명사·수치를 절대 지어내지 마세요.`,
-		`3. 질문한 항목(예: 핵심 지표, 수치, 통계, 실적, 가격 등)이 이 장의 제목·발표문에 없으면 "이 장에는 그 내용이 없어요"라고 먼저 분명하게 말한 뒤, 지금 ${slide.page}장에 실제로 적힌 핵심 내용만 짧게 안내하세요.`,
-		`4. 질문한 항목(예: 이 장에 나오는 용어 설명, 방금 장 요약 등)이 이 장의 제목·발표문에 있으면 이 장에 적힌 내용만 사용해 정확히 답하세요.`,
-		`5. 근거 파일은 오직 ${KIOSK_IR_SLIDES_EVIDENCE_FILE} 하나만 사용하세요.`,
-	];
-	if (question?.trim()) {
-		lines.push(`사용자 질문: ${question.trim()}`);
-	}
-	return lines.join("\n");
+	return renderSlideContext(slideQuestionContext, slide, question);
 };
 
 export const buildKioskSlideReferencePrompt = (
 	slide: KioskIrSlide,
 	question?: string,
 ): string => {
-	const lines = [
-		`[현재 열려 있는 슬라이드 참고: ${slide.page}장 — ${slide.title}]`,
-		`발표 대본 파일: ${KIOSK_IR_SLIDES_EVIDENCE_FILE}`,
-		`장 발표문:\n${slide.script}`,
-		`참고 안내:`,
-		`1. 현재 슬라이드 발표는 진행 중이 아니라 멈춤·대기 또는 완료 상태입니다.`,
-		`2. 지금 열려 있는 ${slide.page}장('${slide.title}')에 대한 질문이면 위 발표문(${KIOSK_IR_SLIDES_EVIDENCE_FILE})을 참고해 답하세요.`,
-		`3. 다른 슬라이드 장이나 회사·제품·기억·성장 등 다른 주제에 대한 질문이면 이 장에만 가두지 말고 skill_knowledge_search 또는 skill_knowledge_ask로 공개 지식 카드를 검색해 답하세요.`,
-	];
-	if (question?.trim()) {
-		lines.push(`사용자 질문: ${question.trim()}`);
-	}
-	return lines.join("\n");
+	return renderSlideContext(slideReferenceContext, slide, question);
 };
 
 export async function handleKioskSlidesChatTurn(
