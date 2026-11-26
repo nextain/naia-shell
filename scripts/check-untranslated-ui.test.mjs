@@ -127,3 +127,12 @@ test("kiosk diagnostics, narration and slide placeholders use named message reso
 	assert.ok(read("kiosk-demo/radio-dj-ko.json").fallback.transition.includes("{title}"));
 	assert.ok(read("slides-pptx-note-placeholders.json").includes("클릭하여 메모 추가"));
 });
+
+test("the untranslated UI gate stays within both frozen budgets", () => {
+	const gate = spawnSync(process.execPath, ["scripts/check-untranslated-ui.mjs"], {
+		encoding: "utf8",
+		timeout: 30_000,
+	});
+	assert.ifError(gate.error);
+	assert.equal(gate.status, 0, gate.stdout + gate.stderr);
+});
