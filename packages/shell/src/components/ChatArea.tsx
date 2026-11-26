@@ -23,7 +23,7 @@ import {
 	resolveShellAvatarSelection,
 	setKioskLocalAnswerEnabled,
 } from "../lib/config-seed";
-import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
+import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/locales/kiosk-greetings";
 import { isWebAuthenticated, verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import { startWebModel } from "../lib/web-runtime/model-start";
@@ -1899,7 +1899,7 @@ export function ChatArea({
 		const config = loadConfig();
 		if (!config) return;
 		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
-		const greeting = getLocale() === "ko" ? KIOSK_DEMO_GREETING : KIOSK_DEMO_GREETING_EN;
+		const greeting = t("kiosk.greeting");
 		const initialMessages = useChatStore.getState().messages;
 		if (initialMessages.length === 1 && initialMessages[0].content === KIOSK_DEMO_GREETING && greeting !== KIOSK_DEMO_GREETING) {
 			useChatStore.getState().setMessages([{ ...initialMessages[0], content: greeting }]);

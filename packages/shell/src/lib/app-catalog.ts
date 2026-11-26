@@ -652,7 +652,7 @@ export function buildUnifiedAppCatalog(
 
 /**
  * Shared localization rule matching the portal storefront (`apps-catalog.ts`):
- * exact locale -> base language -> (`ko` uses `ko`, all other locales prefer `en`) -> `name`.
+ * Exact locale -> base language -> English -> Korean -> manifest default.
  */
 export function localizeStoreProduct(
 	item: Pick<StoreProductSummary, "appId" | "manifest">,
@@ -661,21 +661,19 @@ export function localizeStoreProduct(
 	const base = locale.split("-")[0]?.toLowerCase() || "en";
 	const names = item.manifest.names;
 	const descriptions = item.manifest.descriptions;
-	const preferredFallbackLocale = base === "ko" ? "ko" : "en";
-	const secondaryFallbackLocale = base === "ko" ? "en" : "ko";
 
 	const title =
 		names?.[locale] ??
 		names?.[base] ??
-		names?.[preferredFallbackLocale] ??
-		names?.[secondaryFallbackLocale] ??
+		names?.en ??
+		names?.ko ??
 		(item.manifest.name || item.appId);
 
 	const description =
 		descriptions?.[locale] ??
 		descriptions?.[base] ??
-		descriptions?.[preferredFallbackLocale] ??
-		descriptions?.[secondaryFallbackLocale] ??
+		descriptions?.en ??
+		descriptions?.ko ??
 		item.manifest.description ??
 		"";
 

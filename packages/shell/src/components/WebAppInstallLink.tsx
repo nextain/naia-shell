@@ -24,32 +24,6 @@ type CatalogState =
 	| { status: "loading" | "unavailable" | "failed" }
 	| { status: "ready"; item: StoreProductSummary };
 
-const ENGLISH_COPY = {
-	title: "Open an app in Naia",
-	loading: "Finding the app…",
-	checking: "Checking app access…",
-	accept: "Install and open",
-	cancel: "Cancel",
-	shop: "Back to the App Store",
-	unavailable: "This app is unavailable in the web shell.",
-	notOwned: "This app is not in your library. Get it from the App Store.",
-	signIn: "Sign in to check access to this app.",
-	failed: "Could not open this app. Try again.",
-};
-
-const KOREAN_COPY: typeof ENGLISH_COPY = {
-	title: "나이아에서 앱 열기",
-	loading: "앱을 찾는 중…",
-	checking: "앱 사용 권한을 확인하는 중…",
-	accept: "설치하고 열기",
-	cancel: "취소",
-	shop: "앱스토어로 돌아가기",
-	unavailable: "웹판에서 열 수 없는 앱입니다.",
-	notOwned: "아직 보유하지 않은 앱입니다. 앱스토어에서 받으세요.",
-	signIn: "앱 사용 권한을 확인하려면 로그인하세요.",
-	failed: "앱을 열지 못했습니다. 다시 시도하세요.",
-};
-
 export function WebAppInstallLink({ ready }: { ready: boolean }) {
 	const [dismissedSearch, setDismissedSearch] = useState<string | null>(null);
 	const workspace = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
@@ -122,7 +96,6 @@ function InstallConfirmation({
 	}, [appId, attempt]);
 
 	const locale = getLocale();
-	const copy = locale === "ko" ? KOREAN_COPY : ENGLISH_COPY;
 	const product = catalog.status === "ready" ? localizeStoreProduct(catalog.item, locale) : null;
 	const installed = appId ? Boolean(appRegistry.get(appId)) : false;
 	const shopUrl = buildWebStoreUrl(`${NAIA_WEB_BASE_URL.replace(/\/$/u, "")}/${locale}/apps`);
@@ -174,9 +147,9 @@ function InstallConfirmation({
 	};
 
 	const message = issue
-		? copy[issue]
+		? t(`webAppInstall. + expr + `)
 		: catalog.status === "unavailable" || catalog.status === "failed"
-			? copy[catalog.status]
+			? t(`webAppInstall. + expr + `)
 			: null;
 
 	return (
@@ -193,13 +166,13 @@ function InstallConfirmation({
 					if (event.key === "Escape" && !busyRef.current) onClose();
 				}}
 			>
-				<h3 id="web-app-install-title">{copy.title}</h3>
+				<h3 id="web-app-install-title">{t("webAppInstall.title")}</h3>
 				{product && <p><strong>{product.title}</strong>{product.description && <><br />{product.description}</>}</p>}
-				{catalog.status === "loading" && <p role="status">{copy.loading}</p>}
+				{catalog.status === "loading" && <p role="status">{t("webAppInstall.loading")}</p>}
 				{message && <p role="alert" data-testid="web-app-install-error">{message}</p>}
 				<div className="sync-dialog-actions">
 					{message && !busy && (
-						<a href={shopUrl} data-testid="web-app-install-shop">{copy.shop}</a>
+						<a href={shopUrl} data-testid="web-app-install-shop">{t("webAppInstall.shop")}</a>
 					)}
 					<button
 						type="button"
@@ -208,7 +181,7 @@ function InstallConfirmation({
 						disabled={busy}
 						onClick={onClose}
 					>
-						{copy.cancel}
+						{t("webAppInstall.cancel")}
 					</button>
 					{catalog.status === "failed" && (
 						<button
@@ -231,7 +204,7 @@ function InstallConfirmation({
 							disabled={busy}
 							onClick={() => void confirm()}
 						>
-							{busy ? copy.checking : installed ? t("webAppStore.open") : copy.accept}
+							{busy ? t("webAppInstall.checking") : installed ? t("webAppStore.open") : t("webAppInstall.accept")}
 						</button>
 					)}
 				</div>

@@ -10,7 +10,7 @@ import {
 import { buildRoleplayPrompt } from "../apps/charcard/prompt-builder";
 import type { AppConfig } from "./config";
 import { Logger } from "./logger";
-import { KIOSK_DEMO_GREETING } from "./persona";
+import { KIOSK_DEMO_GREETING } from "./locales/kiosk-greetings";
 import {
 	readWebSettingsAssetBlob,
 	resolveWebBackgroundSelection,
