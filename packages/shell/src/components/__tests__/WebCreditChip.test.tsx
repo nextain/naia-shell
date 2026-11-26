@@ -177,7 +177,25 @@ describe("WebCreditChip", () => {
 			screen.getByRole("button", { name: /webCredit.title/ }),
 		).toHaveAttribute("aria-expanded", "true");
 		expect(screen.getByText("cost.labCharge")).toBeInTheDocument();
-		expect(screen.getByText("webCredit.usage")).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "webCredit.usage" })).toHaveAttribute(
+			"href",
+			"https://naia.land/ko/usage",
+		);
+	});
+
+	it("provides a keyboard-activated usage link if opening a new tab is blocked", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 200 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /webCredit.title/ });
+		fireEvent.click(chip);
+
+		const usageLink = screen.getByRole("link", { name: "webCredit.usage" });
+		expect(usageLink).toHaveAttribute("href", "https://naia.land/ko/usage");
+		usageLink.focus();
+		expect(document.activeElement).toBe(usageLink);
+		fireEvent.keyDown(usageLink, { key: "Enter" });
+		expect(usageLink).toHaveAttribute("target", "_blank");
+		expect(usageLink).toHaveAttribute("rel", "noopener noreferrer");
 	});
 
 	it("does not open another tab when the chip closes the popover", async () => {
