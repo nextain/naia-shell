@@ -119,3 +119,11 @@ test("kiosk workspace upgrades keep an explicit history of shipped manuscript te
 	assert.ok(migrations.manuscripts["web.md"].every(([before, after]) => before !== after));
 	assert.match(readFileSync(new URL("web-r13.md", workspace), "utf8"), /^# /u);
 });
+
+test("kiosk diagnostics, narration and slide placeholders use named message resources", () => {
+	const lib = new URL("../packages/shell/src/lib/", import.meta.url);
+	const read = (name) => JSON.parse(readFileSync(new URL(name, lib), "utf8"));
+	assert.ok(read("kiosk-demo/kb-compiler/ko-messages.json").noGrounding);
+	assert.ok(read("kiosk-demo/radio-dj-ko.json").fallback.transition.includes("{title}"));
+	assert.ok(read("slides-pptx-note-placeholders.json").includes("클릭하여 메모 추가"));
+});
