@@ -76,3 +76,17 @@ test("the built-in app catalog stores its localized manifest data separately", (
 		assert.ok(manifest.descriptions.ko && manifest.descriptions.en);
 	}
 });
+
+test("slide guidance and shipped deck metadata have standalone content resources", () => {
+	const slides = new URL("../packages/shell/src/lib/kiosk-demo/slides/", import.meta.url);
+	for (const name of ["question-context.md", "reference-context.md"]) {
+		const template = readFileSync(new URL(name, slides), "utf8");
+		assert.match(template, /\{title\}/u);
+		assert.match(template, /\{script\}/u);
+		assert.match(template, /\{evidenceFile\}/u);
+	}
+	const metadata = JSON.parse(readFileSync(new URL("presentation-copy.json", slides), "utf8"));
+	assert.match(metadata.pdfName, /\.pdf$/u);
+	assert.match(metadata.scriptName, /\.md$/u);
+	assert.ok(metadata.forbiddenWords.includes("개인정보"));
+});
