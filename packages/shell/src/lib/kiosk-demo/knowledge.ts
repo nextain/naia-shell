@@ -16,7 +16,9 @@ import { MemoryStoreAdapter } from "./kb-compiler/adapters/store/memory";
 import type { Kb } from "./kb-compiler/domain/types";
 import kbRaw from "./knowledge/kb.json?raw";
 import KIOSK_AGENTS_MD from "./workspace/harness.md?raw";
+import legacyDocuments from "./workspace/legacy-documents.json";
 import KIOSK_RULES_MD from "./workspace/response-rules.md?raw";
+import legacyWebR13 from "./workspace/web-r13.md?raw";
 
 export { KIOSK_AGENTS_MD, KIOSK_RULES_MD };
 
@@ -29,21 +31,14 @@ const LEGACY_SCOPE = "kiosk-demo";
 const LEGACY_DIR = "kiosk-demo";
 const LEGACY_SOURCE = `opfs://naia-adk/${LEGACY_DIR}/knowledge`;
 /** 12판 knowledge/web.md 에서 바뀐 문장(옛 글 → 새 글). 방문자가 고친 다른 부분은 건드리지 않는다. */
-const LEGACY_MANUSCRIPT_TEXT: Record<string, readonly [string, string][]> = {
-	"web.md": [
-		["이번 IR 키오스크는 웹판에서", "이번 IR 시연은 웹판에서"],
-		[
-			"시연 화면의 기능은 이 키오스크 범위와 연결된 것부터 안내합니다.",
-			"시연 화면의 기능은 이번 시연 범위에 든 것부터 안내합니다.",
-		],
-	],
-};
+const legacyManuscriptText: Readonly<Record<string, readonly (readonly string[])[]>> =
+	legacyDocuments.manuscripts;
 export const KIOSK_ADK_KNOWLEDGE_DIR = "opfs://naia-adk/knowledge";
 
 /** 10판까지 OPFS 에 심은 AGENTS.md(웹판 능력 안내 없음). 이 글 그대로일 때만 새 지침으로 바꾼다. */
 const KIOSK_AGENTS_MD_R10 = KIOSK_AGENTS_MD.slice(
 	0,
-	KIOSK_AGENTS_MD.indexOf("\n## 4. 웹판에서 할 수 있는 일과 없는 일"),
+	KIOSK_AGENTS_MD.indexOf(legacyDocuments.chapterAddedAfterR10),
 );
 
 const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
@@ -53,11 +48,10 @@ const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
 });
 
 // Upgrade only the untouched bundled web manuscript and its compiled card.
-const R13_OLD_WEB = "# 웹판 브라우저 입구\n\n설치 없이 웹에서 쓸 수 있나요라는 질문에 답하면, 웹판은 가벼운 사용자가 **설치 없이 브라우저에서 시작**하는 기본 입구이며 웹판과 이번 시연의 지원 범위를 구분해 안내합니다. 휴대폰 화면 배치와 파일 탐색기, 기억 내보내기 등이 개발되었습니다. 2026년 11월 기준 웹판 0.2.5는 핵심 기능 개발을 마치고 공개 전 마무리 단계입니다. 이번 IR 시연은 웹판에서 시연 전용 계정과 준비된 회사 지식을 사용하는 구성입니다. 일반 서비스 전체의 공개 출시나 모든 데스크톱 명령 지원을 뜻하지 않습니다. 시연 화면의 기능은 이번 시연 범위에 든 것부터 안내합니다.\n";
 async function upgradeBundledWebKnowledge(fs: WebFs): Promise<void> {
  const updated = manuscripts["./knowledge/web.md"];
  for (const path of [webAdkOpfsPath(`${KIOSK_SOURCE_DIR}/web.md`), webAdkOpfsPath("knowledge/web.md")]) {
-  if ((await fs.readText(path))?.trim() === R13_OLD_WEB.trim()) await fs.writeBytes(path, updated);
+  if ((await fs.readText(path))?.trim() === legacyWebR13.trim()) await fs.writeBytes(path, updated);
  }
  const path = kbPath(KIOSK_SCOPE);
  const raw = await fs.readText(path);
@@ -67,7 +61,7 @@ async function upgradeBundledWebKnowledge(fs: WebFs): Promise<void> {
   const fresh = JSON.parse(kbRaw);
   const card = current.kb?.cards?.find((item: { sourceUris?: string[] }) => item.sourceUris?.some((uri) => uri.endsWith("/web.md")));
   const replacement = fresh.kb?.cards?.find((item: { sourceUris?: string[] }) => item.sourceUris?.some((uri) => uri.endsWith("/web.md")));
-  if (card?.fields?.content === R13_OLD_WEB.split("\n").slice(1).join("\n").trim() && replacement) {
+  if (card?.fields?.content === legacyWebR13.split("\n").slice(1).join("\n").trim() && replacement) {
    card.fields = replacement.fields;
    await fs.writeBytes(path, JSON.stringify(current, null, 2));
   }
@@ -208,7 +202,7 @@ export async function migrateLegacyKioskKnowledge(fs: WebFs): Promise<void> {
 			await fs.writeBytes(kbPath(scope), kbRaw);
 	});
 	await step("manuscripts", async () => {
-		for (const [fileName, pairs] of Object.entries(LEGACY_MANUSCRIPT_TEXT)) {
+		for (const [fileName, pairs] of Object.entries(legacyManuscriptText)) {
 			const path = webAdkOpfsPath(`knowledge/${fileName}`);
 			const text = await fs.readText(path);
 			if (!text) continue;
@@ -255,7 +249,7 @@ export async function seedKioskKnowledge(fs: WebFs): Promise<void> {
 						version: 1,
 						scope: KIOSK_SCOPE,
 						sources: [
-							{ path: KIOSK_SOURCE, label: "넥스테인·나이아 공개 지식" },
+							{ path: KIOSK_SOURCE, label: legacyDocuments.publicKnowledgeLabel },
 						],
 					}),
 				);
@@ -338,9 +332,7 @@ export const seedKioskAdkWorkspace = async (
 			const existingAgents = await fs.readText(agentsPath);
 			if (
 				!existingAgents ||
-				existingAgents.includes("**근거와 기준일**을 보존하고") ||
-				existingAgents.includes("## 1. 지나가 누구인가") ||
-				existingAgents.includes("skill_memory_save") ||
+				legacyDocuments.agentsText.some((text) => existingAgents.includes(text)) ||
 				existingAgents === KIOSK_AGENTS_MD_R10
 			) {
 				await fs.writeBytes(agentsPath, KIOSK_AGENTS_MD);
@@ -349,7 +341,7 @@ export const seedKioskAdkWorkspace = async (
 			const existingRules = await fs.readText(rulesPath);
 			if (
 				!existingRules ||
-				existingRules.includes("출처(`knowledge/*.md`)를 대답 근거로 남깁니다")
+				existingRules.includes(legacyDocuments.responseRulesText)
 			) {
 				await fs.writeBytes(rulesPath, KIOSK_RULES_MD);
 			}
