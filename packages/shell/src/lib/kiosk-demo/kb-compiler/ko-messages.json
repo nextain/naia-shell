@@ -1,0 +1,12 @@
+{
+  "noAnswer": "'{question}' 에 답할 카드 없음",
+  "lowConfidenceUnaccepted": "'{title}' 신뢰도 {confidence} < {minimum} (정답 재현했으나 미채택)",
+  "noRelevantCard": "'{question}' 관련 카드 없음(정답 후보만 발견)",
+  "answerNotReproduced": "'{question}' 카드 찾았으나 정답 미재현(aCov {coverage})",
+  "lowConfidence": "'{title}' 신뢰도 {confidence} < {minimum}",
+  "contradiction": "'{title}' {field} 모순: {choices}",
+  "blockedSensitiveData": "민감정보 차단(block): PII {pii}건 · 대외비 {confidential}건",
+  "noGrounding": "관련 근거를 찾지 못했습니다.",
+  "fetchUnavailable": "fetch 미지원 환경 — Fetcher 주입 필요",
+  "invalidExport": "잘못된 KB export 포맷"
+}

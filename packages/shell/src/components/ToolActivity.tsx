@@ -77,7 +77,7 @@ export function ToolActivity({ tool }: Props) {
 		const kioskStatus = tool.status === "running" ? "running" : "success";
 		const kioskIcon = STATUS_ICON[kioskStatus];
 		const kioskLabel =
-			tool.status === "running" ? "자료 찾는 중" : "자료 찾음";
+			tool.status === "running" ? t("kioskTool.searching") : t("kioskTool.found");
 		const kioskFiles = extractKioskToolFiles(tool);
 		return (
 			<div

@@ -1,12 +1,14 @@
 /** @spec SPEC-004 — eval-anchored 검증. 운영자 정답(GoldQA)을 루프 밖 합격 기준 삼아 KB 자가검증. 결정론.
  * 리뷰 반영: 질문 관련성 + 정답 재현 둘 다 요구(F1 stuffing/순환 완화), score는 accepted 기준(F3), 모순은 다중 필드(F5).
  */
+import messages from "../ko-messages.json";
+import { interpolateMessage } from "../interpolate-message";
 import type { RetrievalPort } from "../domain/ports.js";
 import type { Kb, GoldQA, Gap, VerifyResult, ServiceCard } from "../domain/types.js";
 import { coverage, normalize } from "./text.js";
 
-const ANSWER_THRESHOLD = 0.6; // 정답 토큰 재현 합격선
-const QUESTION_THRESHOLD = 0.5; // 카드가 질문과 관련 있어야 함(정답만 든 junk 카드 배제)
+const ANSWER_THRESHOLD = 0.6; // Required answer coverage.
+const QUESTION_THRESHOLD = 0.5; // Required question coverage.
 const CONTRADICTION_FIELDS = ["fee", "hours", "department", "documents", "phone", "eligibility"];
 
 function cardText(c: ServiceCard): string {
@@ -22,14 +24,14 @@ export async function verify(
   await retrieval.index(kb);
   const gaps: Gap[] = [];
   const accepted = new Set<string>();
-  let answered = 0; // accepted(=합격) 기준으로만 증가 → score와 정합
+  let answered = 0; // Count accepted answers only.
 
   for (const qa of gold) {
     const hits = await retrieval.search(qa.q, 3);
     // 질문 관련 + 정답 재현 둘 다 충족하는 카드 (정답만 든 무관 카드 배제)
     const best = hits.find((c) => coverage(qa.q, cardText(c)) >= QUESTION_THRESHOLD) ?? hits[0];
     if (!best) {
-      gaps.push({ kind: "unanswered", detail: `'${qa.q}' 에 답할 카드 없음`, gold: qa });
+      gaps.push({ kind: "unanswered", detail: interpolateMessage(messages.noAnswer, { question: qa.q }), gold: qa });
       continue;
     }
     const qCov = coverage(qa.q, cardText(best));
@@ -39,19 +41,41 @@ export async function verify(
         accepted.add(best.id);
         answered++;
       } else {
-        gaps.push({ kind: "low_confidence", detail: `'${best.title}' 신뢰도 ${best.confidence.toFixed(2)} < ${lowConfidenceThreshold} (정답 재현했으나 미채택)`, gold: qa, cardId: best.id });
+        gaps.push({
+          kind: "low_confidence",
+          detail: interpolateMessage(messages.lowConfidenceUnaccepted, {
+            title: best.title,
+            confidence: best.confidence.toFixed(2),
+            minimum: lowConfidenceThreshold,
+          }),
+          gold: qa,
+          cardId: best.id,
+        });
       }
     } else if (qCov < QUESTION_THRESHOLD) {
-      gaps.push({ kind: "unanswered", detail: `'${qa.q}' 관련 카드 없음(정답 후보만 발견)`, gold: qa });
+      gaps.push({ kind: "unanswered", detail: interpolateMessage(messages.noRelevantCard, { question: qa.q }), gold: qa });
     } else {
-      gaps.push({ kind: "mismatch", detail: `'${qa.q}' 카드 찾았으나 정답 미재현(aCov ${aCov.toFixed(2)})`, gold: qa, cardId: best.id });
+      gaps.push({
+        kind: "mismatch",
+        detail: interpolateMessage(messages.answerNotReproduced, { question: qa.q, coverage: aCov.toFixed(2) }),
+        gold: qa,
+        cardId: best.id,
+      });
     }
   }
 
   // 저신뢰 카드(정답 매칭과 무관) 표면화
   for (const c of kb.cards) {
     if (c.confidence < lowConfidenceThreshold && !gaps.some((g) => g.cardId === c.id)) {
-      gaps.push({ kind: "low_confidence", detail: `'${c.title}' 신뢰도 ${c.confidence.toFixed(2)} < ${lowConfidenceThreshold}`, cardId: c.id });
+      gaps.push({
+        kind: "low_confidence",
+        detail: interpolateMessage(messages.lowConfidence, {
+          title: c.title,
+          confidence: c.confidence.toFixed(2),
+          minimum: lowConfidenceThreshold,
+        }),
+        cardId: c.id,
+      });
     }
   }
 
@@ -69,7 +93,11 @@ export async function verify(
       const vals = new Set(group.map((c) => c.fields[field]).filter(Boolean));
       if (vals.size > 1) {
         for (const c of group) {
-          gaps.push({ kind: "contradiction", detail: `'${c.title}' ${field} 모순: ${[...vals].join(" vs ")}`, cardId: c.id });
+          gaps.push({
+            kind: "contradiction",
+            detail: interpolateMessage(messages.contradiction, { title: c.title, field, choices: [...vals].join(" vs ") }),
+            cardId: c.id,
+          });
           accepted.delete(c.id);
         }
       }

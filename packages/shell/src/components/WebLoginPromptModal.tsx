@@ -11,57 +11,11 @@ import {
 } from "../lib/web-runtime/web-auth";
 import {
 	type WebLoginPromptDetail,
-	type WebLoginPromptReason,
 	markWebLoginPromptDismissedToday,
 	onWebLoginPrompt,
 } from "../lib/web-runtime/web-login-prompt";
 import { readNavigatorGpu } from "../lib/web-runtime/webgpu-check";
 import { WEB_LLM_MODEL_ID } from "../lib/web-runtime/webllm-model";
-
-interface PromptCopy {
-	badge: string;
-	title: string;
-	body: string;
-	reasonHint: Record<WebLoginPromptReason, string>;
-	loginCta: string;
-	continueLocal: string;
-	later: string;
-}
-
-function getPromptCopy(locale: string): PromptCopy {
-	if (locale === "ko") {
-		return {
-			badge: "무료 200 Cr 지급",
-			title: "로그인하고 무료 200 Cr 받기",
-			body: "클라우드 고성능 두뇌·드래곤 14개국어 감정 음성·나이아 스튜디오를 바로 쓸 수 있어요. 대화와 기억은 지금처럼 이 브라우저에만 남습니다.",
-			reasonHint: {
-				"cloud-llm": "클라우드 고성능 LLM 두뇌는 로그인 후 크레딧으로 이용할 수 있어요.",
-				"dragon-voice": "Naia Cloud 드래곤 14개국어 HD 음성은 로그인 후 이용할 수 있어요.",
-				studio: "나이아 스튜디오 캐릭터·목소리 제작은 로그인 후 이용할 수 있어요.",
-				"app-store": "유료 미니앱 구매·권한 동기화는 로그인 후 이용할 수 있어요.",
-				account: "Google 또는 Discord 계정으로 5초 만에 시작할 수 있어요.",
-			},
-			loginCta: "Naia 로그인 (Google / Discord)",
-			continueLocal: "로컬 WebGPU 무료 두뇌로 계속하기",
-			later: "나중에",
-		};
-	}
-	return {
-		badge: "Free 200 Cr",
-		title: "Sign in and get 200 Cr free",
-		body: "Unlock cloud frontier LLMs, 14-language Dragon HD emotional voices, and Naia Studio. Your chats and memory stay right inside this browser.",
-		reasonHint: {
-			"cloud-llm": "Cloud LLM models require a Naia account with credits.",
-			"dragon-voice": "Naia Cloud Dragon 14-language HD voices require sign-in.",
-			studio: "Naia Studio character & NVA creation requires sign-in.",
-			"app-store": "App Store purchases & entitlements require sign-in.",
-			account: "Sign in with Google or Discord in seconds.",
-		},
-		loginCta: "Sign in to Naia (Google / Discord)",
-		continueLocal: "Continue free with local WebGPU",
-		later: "Later",
-	};
-}
 
 export function WebLoginPromptModal() {
 	const [prompt, setPrompt] = useState<WebLoginPromptDetail | null>(null);
@@ -87,7 +41,6 @@ export function WebLoginPromptModal() {
 
 	const { reason } = prompt;
 	const locale = getLocale();
-	const copy = getPromptCopy(locale);
 	const gpuAvailable = Boolean(readNavigatorGpu());
 
 	const handleLogin = () => {
@@ -156,7 +109,7 @@ export function WebLoginPromptModal() {
 						marginBottom: 10,
 					}}
 				>
-					⚡ {copy.badge}
+					⚡ {t("webLoginPrompt.badge")}
 				</div>
 				<h2
 					id="web-login-prompt-title"
@@ -167,7 +120,7 @@ export function WebLoginPromptModal() {
 						color: "#f8fafc",
 					}}
 				>
-					{copy.title}
+					{t("webLoginPrompt.title")}
 				</h2>
 				<p
 					style={{
@@ -177,7 +130,7 @@ export function WebLoginPromptModal() {
 						color: "#cbd5e1",
 					}}
 				>
-					{copy.reasonHint[reason]}
+					{t(`webLoginPrompt.reason.${reason}`)}
 				</p>
 				<p
 					style={{
@@ -187,7 +140,7 @@ export function WebLoginPromptModal() {
 						color: "#94a3b8",
 					}}
 				>
-					{copy.body}
+					{t("webLoginPrompt.body")}
 				</p>
 				<p
 					data-testid="web-login-prompt-credit-hint"
@@ -227,7 +180,7 @@ export function WebLoginPromptModal() {
 							cursor: "pointer",
 						}}
 					>
-						{copy.loginCta}
+						{t("webLoginPrompt.loginCta")}
 					</button>
 					{gpuAvailable && (
 						<button
@@ -246,7 +199,7 @@ export function WebLoginPromptModal() {
 								cursor: "pointer",
 							}}
 						>
-							{copy.continueLocal}
+							{t("webLoginPrompt.continueLocal")}
 						</button>
 					)}
 					<button
@@ -264,7 +217,7 @@ export function WebLoginPromptModal() {
 							cursor: "pointer",
 						}}
 					>
-						{copy.later}
+						{t("webLoginPrompt.later")}
 					</button>
 				</div>
 			</section>

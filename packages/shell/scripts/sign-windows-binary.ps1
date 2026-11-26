@@ -38,6 +38,25 @@ if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
   throw "File to sign not found: $FilePath"
 }
 
+# Dev placeholder sidecars are not PE binaries. build.rs writes
+# `#!naia-ffmpeg-dev-placeholder` when NAIA_FFMPEG_SIDECAR_SOURCE is unset
+# (clean CI checkouts), and signtool fails the whole bundle on it
+# ("This file format cannot be signed because it is not recognized").
+# Skip it here; the runtime already refuses to execute it with a clear
+# message (validate_ffmpeg_executable) and falls back to PATH/NAIA_FFMPEG_PATH.
+$placeholderProbe = New-Object byte[] 32
+$placeholderStream = [System.IO.File]::OpenRead($FilePath)
+try {
+  $placeholderRead = $placeholderStream.Read($placeholderProbe, 0, $placeholderProbe.Length)
+} finally {
+  $placeholderStream.Close()
+}
+$placeholderHead = [System.Text.Encoding]::ASCII.GetString($placeholderProbe, 0, $placeholderRead)
+if ($placeholderHead.StartsWith("#!naia-ffmpeg-dev-placeholder")) {
+  Write-Host "Skipping dev placeholder sidecar (not a signable PE binary): $([System.IO.Path]::GetFileName($FilePath))"
+  exit 0
+}
+
 $fullPath = (Resolve-Path -LiteralPath $FilePath).Path
 $fileName = [System.IO.Path]::GetFileName($fullPath)
 

@@ -535,9 +535,9 @@ export default function WebWorkspace() {
 		try {
 			await revertKioskAdkFile(file);
 			setEditorRevision((n) => n + 1);
-			setRevertNotice("원본으로 되돌렸어요.");
+			setRevertNotice(t("webExplorer.reverted"));
 		} catch {
-			setRevertNotice("원본으로 되돌리지 못했어요.");
+			setRevertNotice(t("webExplorer.revertFailed"));
 		}
 	}
 	async function download() {
@@ -619,10 +619,10 @@ export default function WebWorkspace() {
 								type="button"
 								className="web-workspace-tree-collapse"
 								data-testid="web-workspace-tree-collapse"
-								aria-label="파일 탐색기 닫기"
+								aria-label={t("webExplorer.collapseTree")}
 								onClick={() => setExplorerOpen(false)}
 							>
-								접기
+								{t("webExplorer.collapse")}
 							</button>
 						)}
 					</header>
@@ -716,7 +716,7 @@ export default function WebWorkspace() {
 						<div
 							role="separator"
 							aria-orientation="vertical"
-							aria-label="탐색기 폭 조절"
+							aria-label={t("webExplorer.resizeTree")}
 							className="web-workspace-resizer"
 							data-testid="web-workspace-resizer"
 							onMouseDown={handleResizerMouseDown}
@@ -743,7 +743,7 @@ export default function WebWorkspace() {
 									data-testid="web-workspace-revert"
 									onClick={() => void revertToOriginal()}
 								>
-									원본으로 되돌리기
+									{t("webExplorer.revert")}
 								</button>
 							)}
 							<button type="button" onClick={() => void download()}>
@@ -761,7 +761,7 @@ export default function WebWorkspace() {
 						{editable && (
 							<p className="web-workspace-edit-hint" role="status">
 								{revertNotice ||
-									"고치면 바로 저장되고, 지나의 다음 대답부터 반영돼요. 새로고침하면 원본으로 돌아갑니다."}
+									t("webExplorer.kioskEditHint")}
 							</p>
 						)}
 						{isSettingsModel ? (

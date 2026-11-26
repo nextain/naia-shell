@@ -1490,9 +1490,7 @@ export function App() {
 				setShowOnboarding(false);
 				setAppTitle(res.characterName);
 				showGlobalToast(
-					getLocale() === "ko"
-						? `캐릭터 카드 적용됨: ${res.characterName}`
-						: `Character card applied: ${res.characterName}`,
+					t("studio.characterCardApplied", { name: res.characterName }),
 				);
 			}
 		};

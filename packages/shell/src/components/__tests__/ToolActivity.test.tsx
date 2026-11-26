@@ -9,9 +9,10 @@ import { useAppStore } from "../../stores/app";
 import { ToolActivity } from "../ToolActivity";
 
 describe("ToolActivity", () => {
-	afterEach(() => {
+	afterEach(async () => {
 		cleanup();
 		vi.unstubAllEnvs();
+		await setLocale("en");
 	});
 
 	const baseTool: ToolCall = {
@@ -153,7 +154,8 @@ describe("ToolActivity", () => {
 		}
 	});
 
-	it("FR-WEB-KIOSK-R3.1 hides raw tool args/output JSON and expand button in kiosk demo mode", () => {
+	it("FR-WEB-KIOSK-R3.1 hides raw tool args/output JSON and expand button in kiosk demo mode", async () => {
+		await setLocale("ko");
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		const runningTool: ToolCall = {
@@ -209,7 +211,8 @@ describe("ToolActivity", () => {
 		).toBe(true);
 	});
 
-	it("P2-1 reads kiosk tool file label only from tool payload and never overwrites past tool badges when slides open or change pages", () => {
+	it("P2-1 reads kiosk tool file label only from tool payload and never overwrites past tool badges when slides open or change pages", async () => {
+		await setLocale("ko");
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		const companyTool: ToolCall = {

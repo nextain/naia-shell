@@ -1,0 +1,246 @@
+{
+	"dragonVoices": [
+		{
+			"id": "ko-KR-SunHi:DragonHDLatestNeural",
+			"label": "SunHi HD (한국어 · 여성)",
+			"language": "ko",
+			"gender": "female"
+		},
+		{
+			"id": "ko-KR-Hyunsu:DragonHDLatestNeural",
+			"label": "Hyunsu HD (한국어 · 남성)",
+			"language": "ko",
+			"gender": "male"
+		},
+		{
+			"id": "en-US-Ava:DragonHDLatestNeural",
+			"label": "Ava HD (English / 다국어 · 여성)",
+			"language": "en",
+			"gender": "female",
+			"secondaryLocales": [
+				"ru",
+				"hi",
+				"bn",
+				"ko",
+				"ja",
+				"zh",
+				"fr",
+				"de",
+				"es",
+				"ar",
+				"pt",
+				"id",
+				"vi"
+			]
+		},
+		{
+			"id": "en-US-Andrew:DragonHDLatestNeural",
+			"label": "Andrew HD (English / 다국어 · 남성)",
+			"language": "en",
+			"gender": "male",
+			"secondaryLocales": [
+				"ru",
+				"hi",
+				"bn",
+				"ko",
+				"ja",
+				"zh",
+				"fr",
+				"de",
+				"es",
+				"ar",
+				"pt",
+				"id",
+				"vi"
+			]
+		},
+		{
+			"id": "ja-JP-Nanami:DragonHDLatestNeural",
+			"label": "Nanami HD (日本語 · 여성)",
+			"language": "ja",
+			"gender": "female"
+		},
+		{
+			"id": "ja-JP-Masaru:DragonHDLatestNeural",
+			"label": "Masaru HD (日本語 · 남성)",
+			"language": "ja",
+			"gender": "male"
+		},
+		{
+			"id": "zh-CN-Xiaochen:DragonHDLatestNeural",
+			"label": "Xiaochen HD (中文 · 여성)",
+			"language": "zh",
+			"gender": "female"
+		},
+		{
+			"id": "zh-CN-Xiaoxiao:DragonHDFlashLatestNeural",
+			"label": "Xiaoxiao HD Flash (中文 · 여성)",
+			"language": "zh",
+			"gender": "female"
+		},
+		{
+			"id": "zh-TW-HsiaoChen:DragonLatestNeural",
+			"label": "HsiaoChen Dragon (繁體中文 · 여성)",
+			"language": "zh",
+			"gender": "female"
+		},
+		{
+			"id": "es-ES-Ximena:DragonHDLatestNeural",
+			"label": "Ximena HD (Español · 여성)",
+			"language": "es",
+			"gender": "female"
+		},
+		{
+			"id": "es-ES-Tristan:DragonHDLatestNeural",
+			"label": "Tristan HD (Español · 남성)",
+			"language": "es",
+			"gender": "male"
+		},
+		{
+			"id": "fr-FR-Vivienne:DragonHDLatestNeural",
+			"label": "Vivienne HD (Français · 여성)",
+			"language": "fr",
+			"gender": "female"
+		},
+		{
+			"id": "fr-FR-Remy:DragonHDLatestNeural",
+			"label": "Remy HD (Français · 남성)",
+			"language": "fr",
+			"gender": "male"
+		},
+		{
+			"id": "de-DE-Seraphina:DragonHDLatestNeural",
+			"label": "Seraphina HD (Deutsch · 여성)",
+			"language": "de",
+			"gender": "female"
+		},
+		{
+			"id": "de-DE-Florian:DragonHDLatestNeural",
+			"label": "Florian HD (Deutsch · 남성)",
+			"language": "de",
+			"gender": "male"
+		},
+		{
+			"id": "pt-BR-Thalita:DragonHDLatestNeural",
+			"label": "Thalita HD (Português · 여성)",
+			"language": "pt",
+			"gender": "female"
+		},
+		{
+			"id": "pt-BR-Macerio:DragonHDLatestNeural",
+			"label": "Macerio HD (Português · 남성)",
+			"language": "pt",
+			"gender": "male"
+		},
+		{
+			"id": "id-ID-Gadis:DragonHDLatestNeural",
+			"label": "Gadis HD (Bahasa Indonesia · 여성)",
+			"language": "id",
+			"gender": "female"
+		},
+		{
+			"id": "id-ID-Ardi:DragonHDLatestNeural",
+			"label": "Ardi HD (Bahasa Indonesia · 남성)",
+			"language": "id",
+			"gender": "male"
+		},
+		{
+			"id": "vi-VN-HoaiMy:DragonLatestNeural",
+			"label": "HoaiMy Dragon (Tiếng Việt · 여성)",
+			"language": "vi",
+			"gender": "female"
+		},
+		{
+			"id": "ar-EG-Hoda:DragonLatestNeural",
+			"label": "Hoda Dragon (العربية · 여성)",
+			"language": "ar",
+			"gender": "female"
+		},
+		{
+			"id": "ar-SA-Hamed:DragonLatestNeural",
+			"label": "Hamed Dragon (العربية · 남성)",
+			"language": "ar",
+			"gender": "male"
+		},
+		{
+			"id": "it-IT-Isabella:DragonHDLatestNeural",
+			"label": "Isabella HD (Italiano · 여성)",
+			"language": "it",
+			"gender": "female"
+		},
+		{
+			"id": "it-IT-Alessio:DragonHDLatestNeural",
+			"label": "Alessio HD (Italiano · 남성)",
+			"language": "it",
+			"gender": "male"
+		},
+		{
+			"id": "th-TH-Premwadee:DragonLatestNeural",
+			"label": "Premwadee Dragon (ไทย · 여성)",
+			"language": "th",
+			"gender": "female"
+		},
+		{
+			"id": "th-TH-Pattara:DragonLatestNeural",
+			"label": "Pattara Dragon (ไทย · 남성)",
+			"language": "th",
+			"gender": "male"
+		}
+	],
+	"languageLabels": {
+		"ko": "한국어",
+		"en": "English",
+		"ja": "日本語",
+		"zh": "中文",
+		"fr": "Français",
+		"de": "Deutsch",
+		"ru": "Русский",
+		"es": "Español",
+		"ar": "العربية",
+		"hi": "हिन्दी",
+		"bn": "বাংলা",
+		"pt": "Português",
+		"id": "Bahasa Indonesia",
+		"vi": "Tiếng Việt",
+		"it": "Italiano",
+		"th": "ไทย"
+	},
+	"edgeVoices": [
+		{
+			"id": "ko-KR-SunHiNeural",
+			"label": "SunHi (여성)",
+			"gender": "female"
+		},
+		{
+			"id": "ko-KR-InJoonNeural",
+			"label": "InJoon (남성)",
+			"gender": "male"
+		},
+		{
+			"id": "ko-KR-HyunsuMultilingualNeural",
+			"label": "Hyunsu (남성, 다국어)",
+			"gender": "male"
+		},
+		{
+			"id": "en-US-AriaNeural",
+			"label": "Aria (영어, 여성)",
+			"gender": "female"
+		},
+		{
+			"id": "en-US-GuyNeural",
+			"label": "Guy (영어, 남성)",
+			"gender": "male"
+		},
+		{
+			"id": "ja-JP-NanamiNeural",
+			"label": "Nanami (일본어, 여성)",
+			"gender": "female"
+		},
+		{
+			"id": "zh-CN-XiaoxiaoNeural",
+			"label": "Xiaoxiao (중국어, 여성)",
+			"gender": "female"
+		}
+	],
+	"hostDescription": "GPU voice synthesis on a host you choose — this PC's engine or a remote Voice Host URL. Supports voice cloning (음성 참조 / 내 목소리 만들기)."
+}

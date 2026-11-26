@@ -1,0 +1,22 @@
+{
+	"manuscripts": {
+		"web.md": [
+			[
+				"이번 IR 키오스크는 웹판에서",
+				"이번 IR 시연은 웹판에서"
+			],
+			[
+				"시연 화면의 기능은 이 키오스크 범위와 연결된 것부터 안내합니다.",
+				"시연 화면의 기능은 이번 시연 범위에 든 것부터 안내합니다."
+			]
+		]
+	},
+	"chapterAddedAfterR10": "\n## 4. 웹판에서 할 수 있는 일과 없는 일",
+	"agentsText": [
+		"**근거와 기준일**을 보존하고",
+		"## 1. 지나가 누구인가",
+		"skill_memory_save"
+	],
+	"responseRulesText": "출처(`knowledge/*.md`)를 대답 근거로 남깁니다",
+	"publicKnowledgeLabel": "넥스테인·나이아 공개 지식"
+}

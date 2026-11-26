@@ -271,9 +271,3 @@ export const KIOSK_DEMO_PERSONA = `당신은 넥스테인의 안내 직원 지�
 제공된 지식을 바탕으로 설명하며 모르는 내용은 모른다고 말합니다. 사실이나 수치를 지어내지 않습니다.
 지식 검색 결과가 질문과 맞지 않으면 다른 낱말로 한 번 더 찾은 뒤 답합니다.
 비공개 자료나 매출 등 민감한 수치는 안내하지 않습니다.`;
-
-export const KIOSK_DEMO_GREETING =
-	"게스트님, 안녕하세요. 넥스테인의 안내를 맡은 지나입니다. 나이아와 넥스테인이 궁금하시면 편하게 물어봐 주세요. 회사 소개 슬라이드 발표도 해 드릴 수 있어요. 라디오 DJ모드로 노래를 추천해드릴수도 있습니다.";
-
-export const KIOSK_DEMO_GREETING_EN =
-	"Hello, guest. I’m Jina, your guide to Nextain. Please ask me about Naia and Nextain. I can also present our company introduction slides. In radio DJ mode, I can recommend songs for you too.";
