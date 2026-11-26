@@ -7,13 +7,15 @@
  * 추가하는 것으로 끝난다.
  */
 
-const SINO_DIGITS = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"];
-const SPOKEN_DIGITS = ["공", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"];
-const SINO_SMALL_UNITS = ["천", "백", "십", ""];
-const SINO_GROUP_UNITS = ["", "만", "억", "조", "경"];
+import copy from "./ko-number-lexicon.json";
 
-const NATIVE_ONES = ["", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉"];
-const NATIVE_TENS = ["", "열", "스물", "서른", "마흔", "쉰", "예순", "일흔", "여든", "아흔"];
+const SINO_DIGITS = copy.sinoDigits;
+const SPOKEN_DIGITS = copy.spokenDigits;
+const SINO_SMALL_UNITS = copy.sinoSmallUnits;
+const SINO_GROUP_UNITS = copy.sinoGroupUnits;
+
+const NATIVE_ONES = copy.nativeOnes;
+const NATIVE_TENS = copy.nativeTens;
 
 /** 1–9999 한자어. 십·백·천 앞의 '일'은 생략한다 (일십→십). */
 function sinoUnder10000(n: number): string {
@@ -35,7 +37,7 @@ function sinoUnder10000(n: number): string {
 /** 음이 아닌 정수의 한자어 읽기. 만 단위 그룹 사이는 띄어 읽는다. */
 export function sinoKoreanNumber(n: number): string {
 	if (!Number.isSafeInteger(n) || n < 0) return String(n);
-	if (n === 0) return "영";
+	if (n === 0) return copy.zero;
 	let out = "";
 	let group = 0;
 	while (n > 0 && group < SINO_GROUP_UNITS.length) {
@@ -54,7 +56,7 @@ export function sinoKoreanNumber(n: number): string {
 /** 1–99 관형 고유어 수사 (세 시, 스무 개, 스물한 명). 범위 밖은 한자어. */
 export function nativeKoreanCounting(n: number): string {
 	if (!Number.isSafeInteger(n) || n < 1 || n > 99) return sinoKoreanNumber(n);
-	if (n === 20) return "스무";
+	if (n === 20) return copy.twenty;
 	return NATIVE_TENS[Math.floor(n / 10)] + NATIVE_ONES[n % 10];
 }
 
@@ -68,23 +70,9 @@ export function digitWiseKorean(digits: string): string {
 // ── 단위 분류표 (FR-VOICE-TEXT.5 확장점) ──────────────────────────────────
 // 매칭은 항상 긴 단위부터 시도한다 (개월이 개보다, 시간이 시보다 먼저).
 
-const SINO_UNITS = [
-	"킬로바이트", "메가바이트", "기가바이트", "테라바이트",
-	"밀리미터", "밀리리터", "밀리그램", "센티미터", "킬로미터", "킬로그램",
-	"암페어", "헤르츠", "칼로리", "퍼센트", "페이지",
-	"년대", "개월", "개국", "개소", "인분", "학년", "주년", "주일", "세기",
-	"번지", "호선", "단계", "차원", "차선", "비트", "바이트", "인치",
-	"킬로", "미터", "그램", "리터", "달러", "유로", "위안", "마력",
-	"년", "월", "일", "분", "초", "원", "엔", "층", "호", "회", "차", "기",
-	"쪽", "점", "배", "도", "프로", "세", "위", "부", "평", "볼트", "와트",
-];
+const SINO_UNITS = copy.sinoUnits;
 
-const NATIVE_UNITS = [
-	"시간", "가지", "군데", "봉지", "조각", "켤레", "그루", "송이", "묶음",
-	"다발", "상자", "그릇", "접시", "포기", "마디",
-	"시", "개", "명", "살", "마리", "장", "잔", "권", "병", "대", "번",
-	"벌", "척", "채", "곡", "줄", "판", "편", "팀", "알", "쌍", "컵",
-];
+const NATIVE_UNITS = copy.nativeUnits;
 
 const NATIVE_UNIT_SET = new Set(NATIVE_UNITS);
 
@@ -102,11 +90,11 @@ const UNIT_PATTERN = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${UNIT_ALTERNATION})`, "
 function readWithUnit(numText: string, unit: string): string {
 	const [intPart, fracPart] = numText.split(".");
 	const n = Number.parseInt(intPart, 10);
-	const unitWord = unit === "%" ? "퍼센트" : unit === "℃" ? "도" : unit;
+	const unitWord = unit === "%" ? copy.percent : unit === "℃" ? copy.degrees : unit;
 	let reading: string;
 	if (fracPart !== undefined) {
-		// 소수는 항상 한자어 (삼 점 오 개).
-		reading = `${sinoKoreanNumber(n)} 점 ${digitWiseKorean(fracPart)}`;
+		// Decimals use Sino-Korean numbers.
+		reading = `${sinoKoreanNumber(n)}${copy.decimal}${digitWiseKorean(fracPart)}`;
 	} else if (NATIVE_UNIT_SET.has(unit) && n >= 1 && n <= 99) {
 		reading = nativeKoreanCounting(n);
 	} else {
@@ -129,11 +117,11 @@ export function normalizeKoreanNumbers(text: string): string {
 			.replace(UNIT_PATTERN, (_m, num: string, unit: string) =>
 				readWithUnit(num, unit),
 			)
-			// 남은 소수 (단위 없음): 삼 점 오.
+			// Read decimals without a counter.
 			.replace(
 				/(\d+)\.(\d+)/g,
 				(_m, i: string, f: string) =>
-					`${sinoKoreanNumber(Number.parseInt(i, 10))} 점 ${digitWiseKorean(f)}`,
+					`${sinoKoreanNumber(Number.parseInt(i, 10))}${copy.decimal}${digitWiseKorean(f)}`,
 			)
 			// 남은 정수: 0으로 시작하거나 아주 길면 자리읽기, 그 외 한자어.
 			.replace(/\d+/g, (m) =>
