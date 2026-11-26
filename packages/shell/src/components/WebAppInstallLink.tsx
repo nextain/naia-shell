@@ -147,9 +147,9 @@ function InstallConfirmation({
 	};
 
 	const message = issue
-		? t(`webAppInstall. + expr + `)
+		? t(`webAppInstall.${issue}`)
 		: catalog.status === "unavailable" || catalog.status === "failed"
-			? t(`webAppInstall. + expr + `)
+			? t(`webAppInstall.${catalog.status}`)
 			: null;
 
 	return (

@@ -130,7 +130,7 @@ export function WebLoginPromptModal() {
 						color: "#cbd5e1",
 					}}
 				>
-					{t(`webLoginPrompt.reason. + expr + `)}
+					{t(`webLoginPrompt.reason.${reason}`)}
 				</p>
 				<p
 					style={{

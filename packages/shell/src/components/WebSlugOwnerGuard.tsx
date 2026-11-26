@@ -26,8 +26,8 @@ export function WebSlugOwnerGuard({ decision }: WebSlugOwnerGuardProps) {
 		}
 	};
 
-	const title = t(`webSlugGuard. + expr + .title`, { slug });
-	const body = t(`webSlugGuard. + expr + .body`);
+	const title = t(`webSlugGuard.${decision.status}.title`, { slug });
+	const body = t(`webSlugGuard.${decision.status}.body`);
 
 	return (
 		<main
