@@ -227,6 +227,20 @@ describe("WebCreditChip", () => {
 		expect(screen.getByText("webCredit.usage")).toBeInTheDocument();
 	});
 
+	it("opens usage from the chip at a low balance too", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 12 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /webCredit.title/ });
+		expect(chip.className).toContain("web-credit__chip--low");
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledTimes(1);
+		expect(window.open).toHaveBeenCalledWith(
+			"https://naia.land/ko/usage",
+			"_blank",
+			"noopener",
+		);
+	});
+
 	it("opens usage, not billing, from the chip at zero balance", async () => {
 		mocks.fetchBalance.mockResolvedValue({ credits: 0 });
 		render(<WebCreditChip />);
