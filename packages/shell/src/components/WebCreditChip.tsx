@@ -51,6 +51,10 @@ function openNaiaWeb(path: string) {
 	);
 }
 
+function naiaWebHref(path: string): string {
+	return naiaWebUrl(`${getLocale()}/${path}`, NAIA_WEB_BASE_URL);
+}
+
 /**
  * Web build top-bar credit balance (SP-00) and zero-credit card (SP-10).
  * Re-reads the balance every minute and when the tab regains focus, so a
@@ -148,6 +152,14 @@ export function WebCreditChip() {
 		};
 	}, [enabled, refresh]);
 
+	const handleChipClick = useCallback(() => {
+		// Primary entry: open the usage dashboard in a new tab. The popover
+		// stays as the balance-detail and separate charge entry, gated by the
+		// distribution payment policy; closing the popover opens nothing.
+		if (!open) openNaiaWeb("usage");
+		setOpen((v) => !v);
+	}, [open]);
+
 	if (!enabled || balance === null) return null;
 	const level = webCreditLevel(balance);
 	const continueLocal = () => {
@@ -197,7 +209,7 @@ export function WebCreditChip() {
 			<button
 				type="button"
 				className={`web-credit__chip web-credit__chip--${level}`}
-				onClick={() => setOpen((v) => !v)}
+				onClick={handleChipClick}
 				title={t("webCredit.title")}
 				aria-label={`${t("webCredit.title")}: ${formatWebCredits(balance)}`}
 				aria-expanded={open}
@@ -222,9 +234,13 @@ export function WebCreditChip() {
 								{t("cost.labCharge")}
 							</button>
 						)}
-						<button type="button" onClick={() => openNaiaWeb("usage")}>
+						<a
+							href={naiaWebHref("usage")}
+							target="_blank"
+							rel="noopener noreferrer"
+						>
 							{t("webCredit.usage")}
-						</button>
+						</a>
 					</div>
 				</section>
 			)}
