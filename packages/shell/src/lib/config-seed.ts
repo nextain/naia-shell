@@ -4,6 +4,7 @@ import { effectiveAvatarProviderFromConfig } from "./avatar/nva-gate";
 // 첫 번들에서 빼고 buildKioskDemoConfigSeed 안에서 동적 로드한다.
 import type { AppConfig } from "./config";
 import { isKioskDemo } from "./kiosk-demo/flag";
+import kioskGuest from "./kiosk-demo/guest.json";
 import {
 	WEB_DEFAULT_NVA,
 	isLegacyWebNaiaSelection,
@@ -310,13 +311,13 @@ export async function buildKioskDemoConfigSeed(): Promise<SeedableShellConfig> {
 	} = await import("./character-theme");
 	const jinaCardPatch = characterCardPatch(
 		libraryCard(KIOSK_JINA_SAVED_CARD),
-		"게스트",
+		kioskGuest.name,
 		"ko",
 	);
 	return buildSeedShellConfig({
 		agentName: jinaCardPatch.patch.agentName,
-		userName: "게스트",
-		honorific: "님",
+		userName: kioskGuest.name,
+		honorific: kioskGuest.honorific,
 		speechStyle: "formal",
 		locale: "ko",
 		persona: jinaCardPatch.patch.persona,

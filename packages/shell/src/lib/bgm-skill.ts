@@ -39,6 +39,7 @@ import {
 	SKILL_YOUTUBE_BGM,
 } from "./bgm-skill-spec";
 import webYoutubeCatalog from "./bgm-web-catalog.json";
+import gugakSearchQuery from "./bgm-gugak-query.json";
 import { loadConfig } from "./config";
 import { recordRadioDjLabEvent } from "./radio-dj-lab-observer";
 
@@ -535,7 +536,7 @@ const WEB_BGM_CATEGORY_MATCHERS: ReadonlyArray<{
 	{ category: "cinematic", query: "epic cinematic soundtrack instrumental", pattern: /(?:시네마틱|cinematic|영화\s*음악|ost)/i },
 	{ category: "ambient", query: "ambient atmospheric space music", pattern: /(?:앰비언트|ambient|명상)/i },
 	{ category: "synthwave", query: "synthwave retrowave 80s electronic", pattern: /(?:신스웨이브|synthwave|레트로)/i },
-	{ category: "gugak", query: "국악 전통음악 가야금 해금 연주", pattern: /(?:국악|gugak|가야금|해금)/i },
+	{ category: "gugak", query: gugakSearchQuery, pattern: /(?:국악|gugak|가야금|해금)/i },
 	{ category: "rain", query: "rain sounds thunderstorm relaxing sleep", pattern: /(?:빗소리|비\s*소리|비\s*오는\s*소리|rain)/i },
 	{ category: "nature", query: "nature sounds forest birds ocean waves", pattern: /(?:자연의?\s*소리|숲\s*소리|파도\s*소리|nature)/i },
 	{ category: "cafe", query: "coffee shop background noise jazz", pattern: /(?:카페\s*음악|카페\s*소음|cafe)/i },

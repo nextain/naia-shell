@@ -1,6 +1,8 @@
 /** @spec SPEC-010 — 개인정보(PII)·대외비 탐지/경고/레닥션 (D05 안전 우선). 결정론.
  * 내부 기밀자료를 외부 LLM(클라우드)에 보내기 전 스캔 → 경고/레닥션/차단.
  */
+import messages from "../ko-messages.json";
+import { interpolateMessage } from "../interpolate-message";
 import lexicon from "../ko-lexicon.json";
 
 export type SensitiveKind = "rrn" | "phone" | "email" | "card" | "account" | "passport" | "confidential";
@@ -90,7 +92,7 @@ export interface SafetyReport {
 
 export class SafetyBlockedError extends Error {
   constructor(public report: SafetyReport) {
-    super(`민감정보 차단(block): PII ${report.piiCount}건 · 대외비 ${report.confidentialCount}건`);
+    super(interpolateMessage(messages.blockedSensitiveData, { pii: report.piiCount, confidential: report.confidentialCount }));
   }
 }
 

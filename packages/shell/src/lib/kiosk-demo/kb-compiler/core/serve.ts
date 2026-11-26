@@ -1,6 +1,7 @@
 /** @spec SPEC-008 — 서빙(검색·질의응답). 빌드된 KB 위에서 retrieval + 추출형 grounded 답변/기권.
  * naia-agent(RAG/툴) · naia-omni(툴 호출) · CMS 가 공용으로 쓰는 서빙 진입점. 오프라인·결정론(LLM 선택).
  */
+import messages from "../ko-messages.json";
 import type { RetrievalPort, GeneratePort } from "../domain/ports.js";
 import type { Kb, ServiceCard } from "../domain/types.js";
 import { contentQuery, coverage, isLabelHeading, matchedTokenCount, tokens } from "./text.js";
@@ -92,8 +93,8 @@ export function bestSnippet(card: ServiceCard, q: string, max = 300): string {
 }
 
 export interface KnowledgeServiceOptions {
-  answerThreshold?: number; // 기권 임계(질의-카드 관련성). 기본 0.4
-  generate?: GeneratePort; // 주입 시 추출 대신 LLM grounded 생성(선택)
+  answerThreshold?: number; // Required relevance. Defaults to 0.4.
+  generate?: GeneratePort; // Optional grounded generation.
 }
 
 /** 빌드된 KB + RetrievalPort 를 감싼 서빙 서비스. agent/omni/CMS 공용. */
@@ -134,7 +135,7 @@ export class KnowledgeService {
       return false;
     });
     if (!best) {
-      return { abstained: true, answer: "관련 근거를 찾지 못했습니다.", sources: [] };
+      return { abstained: true, answer: messages.noGrounding, sources: [] };
     }
     const sources = hits.slice(0, 3).map((c) => ({ title: c.title, sourceUris: c.sourceUris }));
     if (this.opts.generate) {
