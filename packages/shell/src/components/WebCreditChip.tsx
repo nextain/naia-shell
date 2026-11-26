@@ -51,6 +51,10 @@ function openNaiaWeb(path: string) {
 	);
 }
 
+function naiaWebHref(path: string): string {
+	return naiaWebUrl(`${getLocale()}/${path}`, NAIA_WEB_BASE_URL);
+}
+
 /**
  * Web build top-bar credit balance (SP-00) and zero-credit card (SP-10).
  * Re-reads the balance every minute and when the tab regains focus, so a
@@ -230,9 +234,13 @@ export function WebCreditChip() {
 								{t("cost.labCharge")}
 							</button>
 						)}
-						<button type="button" onClick={() => openNaiaWeb("usage")}>
+						<a
+							href={naiaWebHref("usage")}
+							target="_blank"
+							rel="noopener noreferrer"
+						>
 							{t("webCredit.usage")}
-						</button>
+						</a>
 					</div>
 				</section>
 			)}
