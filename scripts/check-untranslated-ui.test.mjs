@@ -90,3 +90,12 @@ test("slide guidance and shipped deck metadata have standalone content resources
 	assert.match(metadata.scriptName, /\.md$/u);
 	assert.ok(metadata.forbiddenWords.includes("개인정보"));
 });
+
+test("the bundled kiosk character card is stored in character-card format", () => {
+	const card = JSON.parse(readFileSync(
+		new URL("../packages/shell/src/lib/kiosk-demo/jina-card.json", import.meta.url),
+		"utf8",
+	));
+	assert.equal(card.spec, "chara_card_v2");
+	assert.ok(card.data.first_mes && card.data.character_book.entries.length);
+});
