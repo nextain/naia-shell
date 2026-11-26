@@ -15,6 +15,10 @@ import { Bm25RetrievalAdapter } from "./kb-compiler/adapters/retrieval/bm25";
 import { MemoryStoreAdapter } from "./kb-compiler/adapters/store/memory";
 import type { Kb } from "./kb-compiler/domain/types";
 import kbRaw from "./knowledge/kb.json?raw";
+import KIOSK_AGENTS_MD from "./workspace/harness.md?raw";
+import KIOSK_RULES_MD from "./workspace/response-rules.md?raw";
+
+export { KIOSK_AGENTS_MD, KIOSK_RULES_MD };
 
 export const KIOSK_SCOPE = "nextain-public";
 /** 번들 원고 사본. 점으로 시작하는 폴더라 탐색기에는 보이지 않는다(보이는 사본은 naia-adk/knowledge). */
@@ -36,57 +40,11 @@ const LEGACY_MANUSCRIPT_TEXT: Record<string, readonly [string, string][]> = {
 };
 export const KIOSK_ADK_KNOWLEDGE_DIR = "opfs://naia-adk/knowledge";
 
-export const KIOSK_AGENTS_MD = `# AGENTS.md — ADK 하네스 지침
-
-이 \`AGENTS.md\`는 화면에 보여 주기 위한 꾸밈 글이 아니라, 매 대화 턴마다 에이전트 워커가 실제로 읽어 시스템 지침으로 결합하는 하네스 정본(Single Source of Truth)입니다.
-
-## 1. 캐릭터 정체성 (페르소나)
-
-지금 캐릭터는 페르소나 설정(캐릭터 카드)을 따른다.
-
-## 2. 무엇을 읽고 대답하는가 (참조 경로)
-
-대답을 만들 때 아래 ADK 작업 공간 파일들과 페르소나 설정(캐릭터 카드)을 실제로 읽고 결합합니다:
-
-- \`AGENTS.md\`: 하네스 최상위 지침 (역할·참조 경로·응답 원칙)
-- 페르소나 설정(캐릭터 카드): 지금 적용된 캐릭터의 이름·소개·성격·상황·첫 인사·예시 대화·로어북
-- \`knowledge/*.md\`: 넥스테인·나이아·성장·제품·가능성에 관한 공개 지식 원고 카드 (21종)
-- \`rules/response-rules.md\`: 근거 보존·기준일 명시·비공개 추측 금지 규칙
-
-## 3. 어떤 규칙으로 대답하는가 (응답 원칙)
-
-1. 넥스테인·나이아·성장·제품·가능성 질문에는 \`skill_knowledge_search\` 또는 \`skill_knowledge_ask\` 도구로 \`knowledge/*.md\` 공개 지식을 먼저 확인합니다.
-2. 대답할 때 참고한 지식 원고의 **기준일**을 보존하되 대답 글에 파일 이름·근거 줄을 쓰지 않고, 계획은 확정 사실이 아닌 계획으로 구분해 설명합니다.
-3. 공개 지식 원고에 없는 수치나 비공개 내부 정보는 추측하지 않고 공개 가능한 범위만 정직하게 안내합니다.
-4. 음성 합성(TTS)으로 자연스럽게 읽히도록 핵심부터 또렷하고 간결한 한국어 문장으로 답합니다.
-
-## 4. 웹판에서 할 수 있는 일과 없는 일
-
-이 웹판(브라우저 시연판)에는 웹 검색 도구와 브라우저(웹 페이지 열기·조작) 도구가 없습니다. 서버 모드와 내 기기(웹GPU) 모드 모두 같습니다.
-
-- 할 수 있는 것: 공개 지식 찾기(\`skill_knowledge_search\`, \`skill_knowledge_ask\`), 음악 틀기(\`skill_youtube_bgm\`), 지금 시각 알려 드리기(\`get_time\`, 기기 시계). 날씨가 궁금하면 설정의 스킬 탭에서 확인하도록 안내합니다.
-- 지금 몇 시냐고 물으면 \`get_time\` 도구를 먼저 부르고, 도구가 돌려준 시각 그대로 말합니다(지역을 말하면 timezone 인자에 넣습니다).
-- 완벽한 음악 플레이어: 유튜브 검색 재생, 내 기기의 로컬 음악 파일, 재생 목록(플레이리스트), 배경 영상까지 지원합니다. 음악을 듣고 싶어 하면 이 기능을 소개하고 바로 틀어 드립니다.
-- 라디오 DJ 모드: "라디오 DJ 시작해줘"라고 말하거나 대화창 위 능동 발화 버튼을 누르면 지나가 먼저 말을 걸며 노래를 추천합니다.
-- 캐릭터 카드: 실리태번(SillyTavern) 캐릭터 카드(PNG·JSON)를 불러와 지나의 성격과 말투를 바꿀 수 있습니다.
-- 앱스토어와 스킬 확장, 장기 기억(naia-memory)은 현재 설치형 앱에서는 되고, 웹버전 통합은 진행 중입니다.
-- 할 수 없는 것: 인터넷 검색, 뉴스·주가 같은 실시간 정보 조회, 웹 페이지나 브라우저 열기.
-- 검색이나 브라우저 열기를 부탁받으면 한 번의 대답에서 "웹판에서는 웹 검색과 브라우저 열기를 할 수 없다"는 사실과 대안(공개 지식에서 찾아 드리기, 음악 틀기, 지금 시각 알려 드리기)을 함께 말합니다. 되묻거나 여러 번 시도하지 않고, 검색한 척하거나 결과를 지어내지 않습니다.
-`;
-
 /** 10판까지 OPFS 에 심은 AGENTS.md(웹판 능력 안내 없음). 이 글 그대로일 때만 새 지침으로 바꾼다. */
 const KIOSK_AGENTS_MD_R10 = KIOSK_AGENTS_MD.slice(
 	0,
 	KIOSK_AGENTS_MD.indexOf("\n## 4. 웹판에서 할 수 있는 일과 없는 일"),
 );
-
-export const KIOSK_RULES_MD = `# 대답 및 근거 규칙 (Response Rules)
-
-1. **공개 지식 우선 확인**: 넥스테인·나이아·제품·기술·비전 질문에는 반드시 \`knowledge/*.md\` 공개 지식 원고를 먼저 조회합니다.
-2. **근거·기준일 보존**: 지식 카드에 적힌 기준일은 보존하되, 대답 글에 파일 이름·근거 줄을 쓰지 않습니다.
-3. **계획과 사실 구분**: 로드맵·향후 일정은 현재 완료된 사실과 구분하여 계획으로 안내합니다.
-4. **비공개 정보 추측 금지**: 원고에 없는 내부 수치·열쇠·비공개 주소는 추측하거나 만들어 내지 않습니다.
-`;
 
 const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
 	eager: true,
