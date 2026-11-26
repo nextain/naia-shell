@@ -109,3 +109,13 @@ test("the kiosk knowledge compiler keeps Korean dictionary data independent of i
 	assert.ok(data.markdownBoilerplate.includes("작성일"));
 	assert.ok(data.confidentialTerms.includes("대외비"));
 });
+
+test("kiosk workspace upgrades keep an explicit history of shipped manuscript text", () => {
+	const workspace = new URL(
+		"../packages/shell/src/lib/kiosk-demo/workspace/",
+		import.meta.url,
+	);
+	const migrations = JSON.parse(readFileSync(new URL("legacy-documents.json", workspace), "utf8"));
+	assert.ok(migrations.manuscripts["web.md"].every(([before, after]) => before !== after));
+	assert.match(readFileSync(new URL("web-r13.md", workspace), "utf8"), /^# /u);
+});
