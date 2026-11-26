@@ -209,7 +209,7 @@ export function CharacterThemeSettings({
 		if (!card || !originalCard) return;
 		const restored = structuredClone(originalCard);
 		syncEditedCardState(restored, restored);
-		setStatus("카드 원래대로 되돌렸습니다.");
+		setStatus(t("characterTheme.restored"));
 	}
 
 	function renderModifiedBadge(field: CardEditableFieldKey) {
@@ -228,7 +228,7 @@ export function CharacterThemeSettings({
 					color: "#93c5fd",
 				}}
 			>
-				카드에서 바꿈
+				{t("characterTheme.modified")}
 			</span>
 		);
 	}
@@ -547,7 +547,7 @@ export function CharacterThemeSettings({
 											color: "#93c5fd",
 										}}
 									>
-										카드에서 바꿈 ({modifiedFields.size})
+										{t("characterTheme.modifiedCount", { count: modifiedFields.size })}
 									</span>
 								)}
 							</div>
@@ -559,7 +559,7 @@ export function CharacterThemeSettings({
 							disabled={busy || modifiedFields.size === 0}
 							onClick={handleRevertOriginal}
 						>
-							카드 원래대로
+							{t("characterTheme.restoreOriginal")}
 						</button>
 					</div>
 
@@ -572,7 +572,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-name">
-							이름 (name)
+							{t("characterTheme.fieldName")}
 							{renderModifiedBadge("name")}
 						</label>
 						<input
@@ -588,7 +588,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-description">
-							소개 (description)
+							{t("characterTheme.fieldDescription")}
 							{renderModifiedBadge("description")}
 						</label>
 						<textarea
@@ -606,7 +606,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-personality">
-							성격 (personality)
+							{t("characterTheme.fieldPersonality")}
 							{renderModifiedBadge("personality")}
 						</label>
 						<textarea
@@ -624,7 +624,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-scenario">
-							상황 (scenario)
+							{t("characterTheme.fieldScenario")}
 							{renderModifiedBadge("scenario")}
 						</label>
 						<textarea
@@ -640,7 +640,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-first_mes">
-							첫 인사 (first_mes / alternate_greetings)
+							{t("characterTheme.fieldGreeting")}
 							{renderModifiedBadge("first_mes")}
 						</label>
 						{(() => {
@@ -653,7 +653,7 @@ export function CharacterThemeSettings({
 							if (greetingChoices.length === 0) return null;
 							return (
 								<select
-									aria-label="첫 인사 고르기"
+									aria-label={t("characterTheme.chooseGreeting")}
 									data-testid="charcard-greeting-select"
 									className="settings-select"
 									value={
@@ -670,13 +670,13 @@ export function CharacterThemeSettings({
 									}}
 								>
 									{!greetingChoices.includes(card.first_mes) && (
-										<option value="">직접 고친 첫 인사</option>
+										<option value="">{t("characterTheme.customGreeting")}</option>
 									)}
 									{greetingChoices.map((g, idx) => (
 										<option key={`${idx}-${g.slice(0, 24)}`} value={g}>
 											{idx === 0
-												? `기본 첫 인사: ${g.slice(0, 36)}`
-												: `대체 인사 ${idx}: ${g.slice(0, 36)}`}
+												? t("characterTheme.primaryGreeting", { text: g.slice(0, 36) })
+												: t("characterTheme.alternateGreeting", { index: idx, text: g.slice(0, 36) })}
 										</option>
 									))}
 								</select>
@@ -695,7 +695,7 @@ export function CharacterThemeSettings({
 							htmlFor="charcard-field-alternate_greetings"
 							style={{ fontSize: 12, marginTop: 4, display: "block" }}
 						>
-							대체 첫 인사 목록 (줄바꿈으로 구분)
+							{t("characterTheme.alternateGreetings")}
 						</label>
 						<textarea
 							id="charcard-field-alternate_greetings"
@@ -717,7 +717,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-mes_example">
-							예시 대화 (mes_example)
+							{t("characterTheme.fieldExample")}
 							{renderModifiedBadge("mes_example")}
 						</label>
 						<textarea
@@ -743,8 +743,7 @@ export function CharacterThemeSettings({
 							}}
 						>
 							<label>
-								로어북 항목 목록 (character_book:{" "}
-								{card.character_book.entries.length}개)
+								{t("characterTheme.lorebookEntries", { count: card.character_book.entries.length })}
 								{renderModifiedBadge("character_book")}
 							</label>
 							<button
@@ -755,11 +754,11 @@ export function CharacterThemeSettings({
 								onClick={() => {
 									const nextEntry: NormalizedLorebookEntry = {
 										id: `entry-${card.character_book.entries.length + 1}`,
-										name: `항목 ${card.character_book.entries.length + 1}`,
+										name: t("characterTheme.newLoreEntryName", { index: card.character_book.entries.length + 1 }),
 										comment: "",
-										keys: ["키워드"],
+										keys: [t("characterTheme.newLoreEntryKeyword")],
 										secondary_keys: [],
-										content: "새 로어북 지식 내용",
+										content: t("characterTheme.newLoreEntryContent"),
 										enabled: true,
 										constant: true,
 										insertion_order: 10,
@@ -773,11 +772,11 @@ export function CharacterThemeSettings({
 									});
 								}}
 							>
-								항목 추가
+								{t("characterTheme.addLoreEntry")}
 							</button>
 						</div>
 						{card.character_book.entries.length === 0 ? (
-							<p className="settings-hint">등록된 로어북 항목이 없습니다.</p>
+							<p className="settings-hint">{t("characterTheme.emptyLorebook")}</p>
 						) : (
 							card.character_book.entries.map((entry, idx) => (
 								<div
@@ -800,7 +799,7 @@ export function CharacterThemeSettings({
 									>
 										<input
 											type="checkbox"
-											aria-label={`로어북 항목 ${idx + 1} 사용`}
+											aria-label={t("characterTheme.loreEntryEnabled", { index: idx + 1 })}
 											data-testid={`charcard-lorebook-enabled-${idx}`}
 											checked={entry.enabled}
 											disabled={busy}
@@ -821,12 +820,12 @@ export function CharacterThemeSettings({
 										/>
 										<input
 											type="text"
-											aria-label={`로어북 항목 ${idx + 1} 키워드`}
+											aria-label={t("characterTheme.loreEntryKeywords", { index: idx + 1 })}
 											data-testid={`charcard-lorebook-keys-${idx}`}
 											className="settings-input"
 											value={entry.keys.join(", ")}
 											disabled={busy}
-											placeholder="키워드 (쉼표 구분)"
+											placeholder={t("characterTheme.loreKeywordHint")}
 											onChange={(e) => {
 												const nextKeys = e.target.value
 													.split(",")
@@ -846,7 +845,7 @@ export function CharacterThemeSettings({
 										/>
 									</div>
 									<textarea
-										aria-label={`로어북 항목 ${idx + 1} 내용`}
+										aria-label={t("characterTheme.loreEntryContent", { index: idx + 1 })}
 										data-testid={`charcard-lorebook-content-${idx}`}
 										className="settings-textarea"
 										rows={2}
@@ -874,7 +873,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-system_prompt">
-							카드 쪽 지시 — system_prompt
+							{t("characterTheme.fieldSystemPrompt")}
 							{renderModifiedBadge("system_prompt")}
 						</label>
 						<textarea
@@ -892,7 +891,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-post_history_instructions">
-							카드 쪽 지시 — post_history
+							{t("characterTheme.fieldPostHistory")}
 							{renderModifiedBadge("post_history_instructions")}
 						</label>
 						<textarea
@@ -912,7 +911,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-creator">
-							만든 사람 (creator)
+							{t("characterTheme.fieldCreator")}
 							{renderModifiedBadge("creator")}
 						</label>
 						<input
@@ -928,7 +927,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-creator_notes">
-							메모 (creator_notes)
+							{t("characterTheme.fieldCreatorNotes")}
 							{renderModifiedBadge("creator_notes")}
 						</label>
 						<textarea
@@ -946,7 +945,7 @@ export function CharacterThemeSettings({
 
 					<div className="settings-field">
 						<label htmlFor="charcard-field-tags">
-							꼬리표 (tags)
+							{t("characterTheme.fieldTags")}
 							{renderModifiedBadge("tags")}
 						</label>
 						<input
