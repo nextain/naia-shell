@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 	key: "naia_key" as string | undefined,
 	fetchBalance: vi.fn(),
 	setActiveApp: vi.fn(),
+	paymentHidden: false,
 }));
 
 vi.mock("../../lib/web-runtime/web-assets", () => ({
@@ -28,7 +29,7 @@ vi.mock("../../lib/config", () => ({
 	getNaiaKeySecure: async () => mocks.key,
 }));
 vi.mock("../../lib/distribution", () => ({
-	usePaymentLinksHidden: () => false,
+	usePaymentLinksHidden: () => mocks.paymentHidden,
 }));
 vi.mock("../../lib/i18n", () => ({
 	getLocale: () => "ko",
@@ -63,6 +64,7 @@ describe("WebCreditChip", () => {
 		mocks.key = "naia_key";
 		mocks.fetchBalance.mockReset();
 		mocks.setActiveApp.mockReset();
+		mocks.paymentHidden = false;
 		vi.spyOn(window, "open").mockImplementation(() => null);
 	});
 	afterEach(() => {
@@ -157,5 +159,91 @@ describe("WebCreditChip", () => {
 		await new Promise((r) => setTimeout(r, 0));
 		expect(kiosk.container.innerHTML).toBe("");
 		expect(mocks.fetchBalance).not.toHaveBeenCalled();
+	});
+
+	it("opens the usage dashboard in a new tab when the chip is clicked", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 200 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /webCredit.title/ });
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledTimes(1);
+		expect(window.open).toHaveBeenCalledWith(
+			"https://naia.land/ko/usage",
+			"_blank",
+			"noopener",
+		);
+		// The balance detail popover and the separate charge path stay reachable.
+		expect(
+			screen.getByRole("button", { name: /webCredit.title/ }),
+		).toHaveAttribute("aria-expanded", "true");
+		expect(screen.getByText("cost.labCharge")).toBeInTheDocument();
+		expect(screen.getByText("webCredit.usage")).toBeInTheDocument();
+	});
+
+	it("does not open another tab when the chip closes the popover", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 200 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /webCredit.title/ });
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledTimes(1);
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledTimes(1);
+		expect(
+			screen.getByRole("button", { name: /webCredit.title/ }),
+		).toHaveAttribute("aria-expanded", "false");
+	});
+
+	it("chip is a keyboard-focusable native button on the same activation path", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 200 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /webCredit.title/ });
+		expect(chip.tagName).toBe("BUTTON");
+		expect(chip).not.toHaveAttribute("tabindex", "-1");
+		(chip as HTMLElement).focus();
+		expect(document.activeElement).toBe(chip);
+		// Native Enter/Space activation fires click in browsers; prove the
+		// shared path opens usage once.
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledWith(
+			"https://naia.land/ko/usage",
+			"_blank",
+			"noopener",
+		);
+	});
+
+	it("still opens usage from the chip when payment links are hidden", async () => {
+		mocks.paymentHidden = true;
+		mocks.fetchBalance.mockResolvedValue({ credits: 200 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /webCredit.title/ });
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledTimes(1);
+		expect(window.open).toHaveBeenCalledWith(
+			"https://naia.land/ko/usage",
+			"_blank",
+			"noopener",
+		);
+		expect(screen.queryByText("cost.labCharge")).toBeNull();
+		expect(screen.getByText("webCredit.usage")).toBeInTheDocument();
+	});
+
+	it("opens usage, not billing, from the chip at zero balance", async () => {
+		mocks.fetchBalance.mockResolvedValue({ credits: 0 });
+		render(<WebCreditChip />);
+		const chip = await screen.findByRole("button", { name: /0 Cr/ });
+		fireEvent.click(chip);
+		expect(window.open).toHaveBeenCalledTimes(1);
+		expect(window.open).toHaveBeenCalledWith(
+			"https://naia.land/ko/usage",
+			"_blank",
+			"noopener",
+		);
+		expect(window.open).not.toHaveBeenCalledWith(
+			expect.stringContaining("/billing"),
+			expect.anything(),
+			expect.anything(),
+		);
+		// The zero-credit card with local-continue stays on screen.
+		expect(await screen.findByRole("alert")).toBeInTheDocument();
 	});
 });
