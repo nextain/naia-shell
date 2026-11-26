@@ -63,3 +63,16 @@ test("web media providers load their catalog and Korean pronunciation dictionary
 	assert.equal(readings.words.webgpu, "웹지피유");
 	assert.equal(Object.keys(readings.letters).length, 26);
 });
+
+test("the built-in app catalog stores its localized manifest data separately", () => {
+	const manifests = JSON.parse(readFileSync(
+		new URL("../packages/shell/src/lib/stage1-hosted-apps.json", import.meta.url),
+		"utf8",
+	));
+	assert.equal(manifests.length, 4);
+	for (const { appId, manifest } of manifests) {
+		assert.equal(manifest.id, appId);
+		assert.ok(manifest.names.ko && manifest.names.en);
+		assert.ok(manifest.descriptions.ko && manifest.descriptions.en);
+	}
+});
