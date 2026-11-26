@@ -162,6 +162,8 @@ vi.mock("../../stores/app", () => {
 	return { useAppStore };
 });
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "@testing-library/react";
 import { AppBar } from "../AppBar";
 
@@ -626,7 +628,7 @@ describe("AppBar — edit mode (#295)", () => {
 		}
 	});
 
-	it("R8: web mode places the BGM player at the end of the app bar", async () => {
+	it("R8: web mode places settings once directly after the BGM player", async () => {
 		vi.stubEnv("MODE", "web");
 		try {
 			const { container } = render(<AppBar />);
@@ -635,18 +637,56 @@ describe("AppBar — edit mode (#295)", () => {
 				expect(container.querySelector(".bgm-player")).not.toBeNull(),
 			);
 			const bgm = container.querySelector(".bgm-player")!;
+			const settings = container.querySelector(".app-bar-settings")!;
+			// 설정 버튼은 한 번만 렌더된다.
+			expect(container.querySelectorAll(".app-bar-settings")).toHaveLength(1);
 			const controls = [
 				screen.getByTestId("web-brain-status-badge"),
 				screen.getByTestId("web-open-harness-btn"),
 				screen.getByTestId("web-character-card-quick-btn"),
 				screen.getByTestId("web-login-free-credits-btn"),
-				container.querySelector(".app-bar-settings")!,
 				bgm,
+				settings,
 			];
 			for (const [index, control] of controls.slice(1).entries()) {
 				expect(controls[index].compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 			}
-			expect(container.querySelector(".app-bar")?.lastElementChild).toBe(bgm);
+			// 음악 플레이어 바로 뒤가 설정이며, 설정이 상단바 끝이다.
+			expect(bgm.nextElementSibling).toBe(settings);
+			expect(container.querySelector(".app-bar")?.lastElementChild).toBe(settings);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("R8: web mode settings keeps entry behavior and keyboard order after the BGM player", async () => {
+		vi.stubEnv("MODE", "web");
+		try {
+			const { container } = render(<AppBar />);
+			await act(async () => {});
+			await waitFor(() =>
+				expect(container.querySelector(".bgm-player")).not.toBeNull(),
+			);
+			const settings = container.querySelector(
+				".app-bar-settings",
+			) as HTMLButtonElement;
+			// 기존 진입 동작 보존: 클릭하면 설정 앱으로 전환된다.
+			fireEvent.click(settings);
+			expect(mockSetActiveApp).toHaveBeenCalledWith("settings");
+			// 키보드 순서: DOM 순서가 탭 순서를 결정하므로 BGM 뒤·설정이 마지막이다.
+			const bar = container.querySelector(".app-bar")!;
+			const order = Array.from(
+				bar.querySelectorAll("button, [tabindex], audio, input"),
+			);
+			const bgmIndex = order.findIndex((el) =>
+				el.closest(".bgm-player"),
+			);
+			expect(order.indexOf(settings)).toBeGreaterThan(bgmIndex);
+			expect(order[order.length - 1]?.closest(".app-bar-settings")).not.toBeNull();
+			// 좁은 화면 가로 배치: 상단바는 가로 flex(세로 적층 아님)이며 설정은 축소되지 않는다.
+			const css = readFileSync(resolve(__dirname, "../../styles/global.css"), "utf8");
+			expect(css).toMatch(/\.app-bar\s*\{[^}]*display:\s*flex;/s);
+			expect(css).toMatch(/\.app-bar-settings\s*\{[^}]*flex-shrink:\s*0;/s);
 		} finally {
 			vi.unstubAllEnvs();
 		}

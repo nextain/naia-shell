@@ -3306,15 +3306,15 @@ Verification: `packages/shell/e2e/web-runtime-boot.spec.ts` exercises a clean we
 | NVA 아바타 연동 | `naia-settings/nva-files`에 올린 `.nva`가 `listNaiaAssets("nva-files")`와 설정 목록에 나타나고 `VideoAvatarCanvas`가 네트워크 요청 없이 OPFS ZIP에서 재생 | `web-nva-archive.test.ts`, `VideoAvatarCanvas.test.tsx` R17 |
 | 오류·충돌·브라우저 호환 | 기존 파일 보존, `move()` 미지원 브라우저 쓰기 폴백 및 용량 부족 시 반쪽 파일 제거, 깨진 `.nva` 오류 표시 | `web-workspace-path.test.tsx`, `web-nva-archive.test.ts`, `VideoAvatarCanvas.test.tsx` R17 |
 
-## UC-WEB-A-R8. 웹판 상단 막대에서 음악 플레이어를 맨 오른쪽에 두기
+## UC-WEB-A-R8. 웹판 상단 막대에서 음악 플레이어 오른쪽에 설정 두기
 
-웹판(브라우저 실행) 사용자가 상단 막대를 봅니다. 왼쪽부터 앱 탭, WebGPU 준비 상태, 공개 하네스, 캐릭터 카드 바로가기, 크레딧, 설정이 보이고 음악(유튜브) 플레이어가 맨 오른쪽에 옵니다. 데스크톱 앱과 시연판은 음악 플레이어 뒤에 설정 단추가 옵니다.
+웹판(브라우저 실행) 사용자가 상단 막대를 봅니다. 왼쪽부터 앱 탭, WebGPU 준비 상태, 공개 하네스, 캐릭터 카드 바로가기, 크레딧, 음악(유튜브) 플레이어와 설정이 보입니다. 데스크톱 앱과 시연판은 음악 플레이어 뒤에 설정 단추가 옵니다.
 
 ### Test Coverage Map — UC-WEB-A-R8
 
 | 상태 | 판정 | 시험 |
 |---|---|---|
-| 기본(웹)·키보드 | 상태 표시 → 크레딧 → 설정 → 음악 DOM 순서와 화면 x 좌표 | `AppBar.test.tsx` R8, `e2e/web-gpu-a-ui.spec.ts` R8 (1280·390) |
+| 기본(웹)·키보드 | 상태 표시 → 크레딧 → 음악 → 설정 DOM 순서와 화면 x 좌표 | `AppBar.test.tsx` R8, `e2e/web-gpu-a-ui.spec.ts` R8 (1280·390) |
 | 빈 곡·진행·성공·오류 | 곡 선택 전, 재생 중, 재생·실패 알림 때 플레이어 진입 위치 유지 | `UC-WEB-BGM-TOPBAR-PLAY` |
 | 데스크톱 | 웹 전용 요소가 없을 때 음악 → 설정 순서 유지 | `AppBar.test.tsx` 기존 시험 |
 | 좁은 세로 화면 | 390×844에서는 기존 배치대로 상단 막대를 숨기고 ☰ 메뉴를 쓰며, 문서 순서는 같음 | `e2e/web-gpu-a-ui.spec.ts` R8 (390) |
@@ -4076,7 +4076,7 @@ Test Coverage Map (P02)
 | UC-WEB-A-R28 | 대화창 상태줄 가림 없음 세 폭 | `e2e/web-chat-visibility.spec.ts` |
 | UC-WEB-A-R5 | 설치 앱 제목 막대 닫기 단추 가림 없음 | `e2e/web-gpu-a-ui.spec.ts`, `app-close-lifecycle.test.tsx` |
 | UC-WEB-A-R6 | 앱 아이콘 데스크톱 동일 자산 | `app-store-adapter-package-icon.test.ts`, `e2e/web-gpu-a-ui.spec.ts` |
-| UC-WEB-A-R8 | 상단 막대 음악 플레이어 우측 | `AppBar.test.tsx`, `e2e/web-gpu-a-ui.spec.ts` |
+| UC-WEB-A-R8 | 상단 막대 음악 플레이어 오른쪽 설정 | `AppBar.test.tsx`, `e2e/web-gpu-a-ui.spec.ts` |
 | UC-WEB-APP-CATALOG | 상점 진입 설치 권한 오류 | `e2e/web-app-store-catalog.spec.ts`, `app-catalog.test.ts`, `app-store-adapter.test.ts` |
 | UC-WEB-APP-TOOLS-20261114 | 시각 메모 동일 도구 | `web-worker/__tests__/web-app-tools.test.ts` |
 | UC-WEB-AVATAR-CLIP | 첫 화면 대기 아바타 재생 | `prebaked-renderer.test.ts`, `VideoAvatarCanvas.test.tsx` |
