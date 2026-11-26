@@ -417,9 +417,7 @@ export function AppMainContent(props: AppMainContentProps) {
 												}}
 											>
 												⚡{" "}
-												{getLocale() === "ko"
-													? "로그인 · 무료 200 Cr"
-													: "Sign in · 200 Cr"}
+												{t("webMobileMenu.loginCta")}
 											</button>
 											<div
 												className="web-mobile-menu-login__hint"
