@@ -6958,6 +6958,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 	});
 
 	it("R8: unlocks Memory and Skills tabs in kiosk demo, keeps Radio DJ + web skills without CLI detection, and shows naia-memory integration banner on Memory tab with options and apply buttons hidden", async () => {
+		await setLocale("ko");
 		const { resetWarnedCommands } = await import(
 			"../../lib/web-runtime/router"
 		);
@@ -7039,6 +7040,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			setWebFsForTests(null);
 			setWebAssetsModeForTests(null);
 			vi.unstubAllEnvs();
+			await setLocale("en");
 		}
 	});
 

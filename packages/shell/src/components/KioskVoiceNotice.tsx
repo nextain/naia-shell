@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { useEffect, useState } from "react";
 import {
 	KIOSK_VOICE_STATE_EVENT,
@@ -6,11 +7,6 @@ import {
 
 /** 바쁨·대체 알림이 '정상' 소식 없이 남아 있는 최대 시간. */
 export const KIOSK_VOICE_NOTICE_MS = 8_000;
-
-const MESSAGES: Record<Exclude<KioskVoiceState, "ok">, string> = {
-	busy: "목소리 서버가 붐벼 잠시 기다리는 중입니다",
-	fallback: "목소리 서버가 붐벼 이 문장은 다른 목소리로 읽습니다",
-};
 
 /** 시연판: 지나 목소리가 붐비거나 다른 목소리로 바뀔 때 대화창 위에 한 줄 알린다. */
 export function KioskVoiceNotice() {
@@ -41,7 +37,7 @@ export function KioskVoiceNotice() {
 			data-voice-state={state}
 			role="status"
 		>
-			{MESSAGES[state]}
+			{t(`kioskVoice.${state}`)}
 		</div>
 	);
 }

@@ -234,13 +234,13 @@ export function AiControlBar({
 				aria-pressed={manualOrientation !== null}
 				aria-label={
 					layoutOrientation === "portrait"
-						? "가로 배치로 전환"
-						: "세로 배치로 전환"
+						? t("ai.switchToLandscape")
+						: t("ai.switchToPortrait")
 				}
 				title={
 					layoutOrientation === "portrait"
-						? "가로 배치로 전환"
-						: "세로 배치로 전환"
+						? t("ai.switchToLandscape")
+						: t("ai.switchToPortrait")
 				}
 				onClick={() => {
 					const next = toggleLayoutOrientation(layoutOrientation);
