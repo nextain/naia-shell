@@ -51,3 +51,15 @@ test("web entry and kiosk status copy use the locale tables", () => {
 		assert.deepEqual(hardcoded, [], name);
 	}
 });
+
+test("web media providers load their catalog and Korean pronunciation dictionary from data files", () => {
+	const lib = new URL("../packages/shell/src/lib/", import.meta.url);
+	const catalog = JSON.parse(readFileSync(new URL("bgm-web-catalog.json", lib), "utf8"));
+	assert.ok(catalog.some((entry) => entry.keywords.includes("로파이")));
+	const readings = JSON.parse(readFileSync(
+		new URL("avatar/nva-speech/ko-speech-unit-readings.json", lib),
+		"utf8",
+	));
+	assert.equal(readings.words.webgpu, "웹지피유");
+	assert.equal(Object.keys(readings.letters).length, 26);
+});
