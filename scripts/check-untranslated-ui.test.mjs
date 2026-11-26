@@ -99,3 +99,13 @@ test("the bundled kiosk character card is stored in character-card format", () =
 	assert.equal(card.spec, "chara_card_v2");
 	assert.ok(card.data.first_mes && card.data.character_book.entries.length);
 });
+
+test("the kiosk knowledge compiler keeps Korean dictionary data independent of its algorithms", () => {
+	const data = JSON.parse(readFileSync(
+		new URL("../packages/shell/src/lib/kiosk-demo/kb-compiler/ko-lexicon.json", import.meta.url),
+		"utf8",
+	));
+	assert.ok(data.questionFillers.includes("알려주세요"));
+	assert.ok(data.markdownBoilerplate.includes("작성일"));
+	assert.ok(data.confidentialTerms.includes("대외비"));
+});
