@@ -14,6 +14,7 @@
 
 import type { InstalledAppManifest } from "./app-loader";
 import { formatWebCredits } from "./credits";
+import stage1HostedApps from "./stage1-hosted-apps.json";
 
 const VALID_ID_RE = /^[a-z0-9]+(?:\.[a-z0-9-]+)+$/i;
 const SHORT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}$/i;
@@ -75,99 +76,7 @@ export interface Stage1HostedAppSpec {
 	readonly manifest: StoreProductSummary["manifest"];
 }
 
-export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = [
-	{
-		appId: "land.naia.charcard",
-		hostedSlug: "naia-charcard",
-		version: "1.0.0",
-		defaultPriceCredits: 0,
-		freeWithoutLogin: true,
-		manifest: {
-			id: "land.naia.charcard",
-			name: "캐릭터 카드",
-			names: { ko: "캐릭터 카드", en: "Character Cards" },
-			icon: "🃏",
-			description: "SillyTavern V2/V3 PNG·JSON 캐릭터 카드 불러오기·편집·적용",
-			descriptions: {
-				ko: "실리태번 호환 캐릭터 카드(.png / .json)를 불러오고 나이아 에이전트에 바로 입힙니다.",
-				en: "Import, edit, and apply SillyTavern V2/V3 PNG & JSON character cards.",
-			},
-			version: "1.0.0",
-			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask", "storage"],
-			keepAlive: true,
-		},
-	},
-	{
-		appId: "land.naia.slides",
-		hostedSlug: "naia-slides",
-		version: "0.1.2",
-		defaultPriceCredits: 0,
-		freeWithoutLogin: true,
-		manifest: {
-			id: "land.naia.slides",
-			name: "슬라이드",
-			names: { ko: "슬라이드", en: "Naia Slides" },
-			icon: "▣",
-			description: "나이아 아바타와 함께하는 슬라이드 발표 미니앱",
-			descriptions: {
-				ko: "PDF·PPTX 발표 자료를 열고 나이아 아바타가 한 장씩 발표합니다.",
-				en: "Open a PDF or PPTX deck and present it with your Naia avatar.",
-			},
-			version: "0.1.2",
-			manifest_version: 2,
-			permissions: ["speech", "locale"],
-			keepAlive: true,
-		},
-	},
-	{
-		appId: "land.naia.ieumoffice",
-		hostedSlug: "ieumoffice",
-		version: "0.2.0",
-		defaultPriceCredits: 0,
-		freeWithoutLogin: true,
-		forceVersion: true,
-		manifest: {
-			id: "land.naia.ieumoffice",
-			name: "이음오피스",
-			names: { ko: "이음오피스", en: "IeumOffice" },
-			icon: "📑",
-			description: "이음오피스 v0.2.0 문서·발표 웹 스튜디오",
-			descriptions: {
-				ko: "이음오피스 v0.2.0 웹 스튜디오에서 문서·슬라이드를 작성하고 나이아와 협업합니다.",
-				en: "Author documents and slide decks in IeumOffice v0.2.0 Web Studio.",
-			},
-			version: "0.2.0",
-			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask"],
-			keepAlive: true,
-		},
-	},
-	{
-		appId: "land.naia.cafelua-tarot",
-		hostedSlug: "cafelua-tarot",
-		version: "0.1.5",
-		defaultPriceCredits: 3000,
-		freeWithoutLogin: true,
-		forceVersion: true,
-		manifest: {
-			id: "land.naia.cafelua-tarot",
-			name: "카페루아 타로",
-			names: { ko: "카페루아 타로", en: "Cafe Lua Tarot" },
-			icon: "🔮",
-			description:
-				"카페루아 타로 v0.1.5 — 1/3/10장 스프레드 리딩 및 타로 이야기 낭독",
-			descriptions: {
-				ko: "나이아가 카페루아의 타로 리더가 되어 1/3/10장 카드를 풀어 주고 타로 이야기를 낭독합니다.",
-				en: "Cafe Lua Tarot v0.1.5 — 1/3/10-card spreads and narrated tarot stories with Naia.",
-			},
-			version: "0.1.5",
-			manifest_version: 2,
-			permissions: ["speech", "locale", "model.ask"],
-			keepAlive: true,
-		},
-	},
-];
+export const STAGE1_HOSTED_MINI_APPS: readonly Stage1HostedAppSpec[] = stage1HostedApps;
 
 export const STAGE1_HOSTED_BY_ID = new Map(
 	STAGE1_HOSTED_MINI_APPS.map((spec) => [spec.appId, spec]),
