@@ -1,3 +1,5 @@
+import fixedKorean from "./fixed-ko";
+
 // 이 파일이 이 언어의 정본이다. 생성물이 아니다.
 //
 // 예전에는 `scripts/i18n-translations.source.ts` 에서 생성한다고 적혀 있었는데,
@@ -8,6 +10,7 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	...fixedKorean,
 	"webVisualAgent.slugLabel": "공유 주소 이름",
 	"webVisualAgent.hint": "영문 소문자, 숫자, 하이픈(-) 3~32자를 입력하세요.",
 	"webVisualAgent.publicAddress": "공개 주소",

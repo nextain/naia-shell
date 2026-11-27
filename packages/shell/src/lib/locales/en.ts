@@ -1,4 +1,5 @@
 import englishWeb from "./en-web";
+import fixedKorean from "./fixed-ko";
 
 // 이 파일이 이 언어의 정본이다. 생성물이 아니다.
 //
@@ -16,6 +17,7 @@ import englishWeb from "./en-web";
 // 웹 모드 전용 문구(`webModel.*`, `webWorkspace.*`)는 데스크톱 첫 번들 예산 절약을
 // 위해 데스크톱 운영 빌드(MODE === "production")에서 번들 대상에서 제외된다.
 const englishCore = {
+	...fixedKorean,
 	"settings.embeddingRevision": "Model revision (change when replacing the model)",
 	"settings.embeddingDimensions": "Vector dimensions (match the served model)",
 	"settings.embeddingIdentityMissing": "A model revision is required for vector search. Recall uses matching words until it is set. Local e5-large uses 1024 dimensions. Enter the revision you actually deployed.",
