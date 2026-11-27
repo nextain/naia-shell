@@ -38,6 +38,10 @@ describe("installer instance", () => {
     }
     expect(workflow).not.toContain("/Naia.app");
     expect(workflow).not.toContain('LOCALAPPDATA "Naia"');
+    const nsisUpdateStep = workflow.slice(workflow.indexOf("Verify NSIS update stops only installed processes"));
+    expect(nsisUpdateStep.split("\n").slice(0, 8).join("\n")).toContain(
+      'Join-Path $env:LOCALAPPDATA "${{ env.NAIA_INSTALLER_NAME }}"',
+    );
     const staging = readFileSync(new URL("../stage-runtime.mjs", import.meta.url), "utf8");
     expect(staging).toContain("...interactiveLaunchEnv(process.env), ...instance.env");
     expect(staging).toContain("Object.assign(conf, installerInstanceConf(");
