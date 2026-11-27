@@ -7,6 +7,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { t } from "../../lib/i18n";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const navigate = vi.fn();
@@ -135,7 +136,7 @@ describe("KnowledgeGraphOverlay (작업영역 오버레이 + 노드→출처→�
 		);
 		fireEvent.click(screen.getByTestId("node-x"));
 		expect(screen.getByTestId("knowledge-graph-detail").textContent).toContain(
-			"찾지 못했",
+			t("hardkoG1a.graph.noSources"),
 		);
 	});
 });

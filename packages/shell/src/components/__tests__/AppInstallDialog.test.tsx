@@ -7,6 +7,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../lib/i18n";
 
 const { mockInvoke } = vi.hoisted(() => ({ mockInvoke: vi.fn().mockResolvedValue({
 		id: "land.naia.slides",
@@ -46,7 +47,7 @@ import { AppInstallDialog } from "../AppInstallDialog";
 import { getStoreProductMetadata } from "../../lib/app-store-client";
 
 const addButton = () =>
-	screen.getByRole("button", { name: "추가" }) as HTMLButtonElement;
+	screen.getByRole("button", { name: t("hardkoG1a.install.add") }) as HTMLButtonElement;
 
 describe("AppInstallDialog — zip gating (#358 / #359)", () => {
 	beforeEach(() => vi.clearAllMocks());
@@ -63,8 +64,8 @@ describe("AppInstallDialog — zip gating (#358 / #359)", () => {
 
 	it("Zip tab is gated: shows an in-development notice and keeps Add disabled", () => {
 		render(<AppInstallDialog onClose={() => {}} />);
-		fireEvent.click(screen.getByRole("button", { name: /파일 \(Zip/ }));
-		expect(screen.getByText(/보안 강화 작업 중/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: t("hardkoG1a.install.zipTab") }));
+		expect(screen.getByText(t("hardkoG1a.install.zipNotice"))).toBeTruthy();
 		// Even after switching to the zip tab, install must stay disabled.
 		expect(addButton().disabled).toBe(true);
 	});
@@ -116,10 +117,10 @@ describe("AppInstallDialog — storefront install (#471)", () => {
 
 		expect(screen.getAllByTestId("app-install-product")).toHaveLength(1);
 		expect(screen.getByText("Naia Slides")).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "설치" }));
+		fireEvent.click(screen.getByRole("button", { name: t("hardkoG1a.install.install") }));
 		await waitFor(() =>
 			expect(
-				screen.getByText(/(?:설치 완료|Installed): Naia Slides/),
+				screen.getByText(t("apps.installed", { name: "Naia Slides" })),
 			).toBeTruthy(),
 		);
 	});
@@ -128,7 +129,7 @@ describe("AppInstallDialog — storefront install (#471)", () => {
 		mockInvoke.mockRejectedValueOnce('PERMISSION_EXPANSION:["permissions: browser","host_permissions: https://example.com/*"]');
 		mockInvoke.mockResolvedValueOnce({ id: "land.naia.slides", name: "Naia Slides", path: "/tmp/apps/land.naia.slides" });
 		render(<AppInstallDialog request={{ appId: "land.naia.slides", name: "Naia Slides", state: "state", storeOrigin: "https://dev.naia.land" }} onClose={() => {}} />);
-		fireEvent.click(screen.getByRole("button", { name: "설치" }));
+		fireEvent.click(screen.getByRole("button", { name: t("hardkoG1a.install.install") }));
 		const warning = await screen.findByTestId("permission-expansion");
 		expect(warning.textContent).toContain("permissions: browser");
 		expect(mockInvoke).toHaveBeenCalledWith("app_install_store", expect.objectContaining({ allowPermissionExpansion: false }));

@@ -29,7 +29,7 @@ import {
 	sendAppSkillsClear,
 	cancelChat,
 } from "../../lib/chat-service";
-import { setLocale } from "../../lib/i18n";
+import { setLocale, t } from "../../lib/i18n";
 import { SLIDE_PRESENTER_CANCEL_EVENT, SLIDE_PRESENTER_SPEECH_RESULT_EVENT, SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
 import * as voiceSessionApi from "../../lib/voice/index";
@@ -4419,7 +4419,7 @@ describe("ChatArea", () => {
 			const alert = await screen.findByTestId("bgm-sidecar-error");
 			expect(alert).toBeDefined();
 			expect(alert.textContent).toContain(
-				"BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.",
+				t("hardkoG1a.chat.bgmServerFailed"),
 			);
 			expect(ensureBgmSidecar).toHaveBeenCalledTimes(1);
 		} finally {
@@ -4607,7 +4607,7 @@ describe("ChatArea", () => {
 						useChatStore
 							.getState()
 							.messages.some((m) =>
-								m.content.includes("잠시 문제가 있어요, 다시 말해 주세요."),
+								m.content === t("hardkoG1a.chat.replyRetry"),
 							),
 					).toBe(true),
 				);
@@ -4691,25 +4691,25 @@ describe("ChatArea", () => {
 				render(<ChatArea />);
 
 				const toggleBtn = screen.getByTestId("kiosk-local-answer-toggle");
-				expect(toggleBtn).toHaveTextContent("내 기기(웹GPU)");
+				expect(toggleBtn).toHaveTextContent(t("hardkoG1a.chat.localAnswer"));
 				expect(toggleBtn).toHaveAttribute("aria-pressed", "false");
 				expect(
 					screen.getByTestId("kiosk-answer-source-gateway"),
 				).toHaveAttribute("aria-pressed", "true");
 				expect(screen.getByTestId("kiosk-local-answer-hint")).toHaveTextContent(
-					"그래픽 메모리 8GB 이상 기기에서만 됩니다",
+					t("hardkoG1a.chat.localAnswerRequirement"),
 				);
 				// jsdom has no navigator.gpu: the 내 PC option is shown as off with the reason.
 				await waitFor(() =>
 					expect(toggleBtn).toHaveAttribute("aria-disabled", "true"),
 				);
 				expect(screen.getByTestId("kiosk-local-answer-hint")).toHaveTextContent(
-					"이 브라우저는 WebGPU 가 없어 쓸 수 없어요",
+					t("hardkoG1a.chat.localAnswerUnavailable"),
 				);
 
 				expect(
 					screen.getByTestId("kiosk-local-answer-badge"),
-				).toHaveTextContent("내 PC 에서 나온 답");
+				).toHaveTextContent(t("hardkoG1a.chat.localReply"));
 
 				const evidence = screen.getByTestId("chat-kiosk-evidence");
 				expect(evidence).not.toHaveTextContent("AGENTS.md");
@@ -4727,7 +4727,7 @@ describe("ChatArea", () => {
 				await waitFor(() =>
 					expect(
 						screen.getByTestId("kiosk-local-answer-notice"),
-					).toHaveTextContent("그래픽 메모리 8GB 이상 기기에서만 됩니다"),
+					).toHaveTextContent(t("hardkoG1a.chat.webGpuFallback")),
 				);
 				expect(toggleBtn).toHaveAttribute("aria-pressed", "false");
 
@@ -4749,8 +4749,7 @@ describe("ChatArea", () => {
 					const confirmBox = await screen.findByTestId(
 						"kiosk-local-answer-confirm",
 					);
-					expect(confirmBox).toHaveTextContent("약 2.5GB");
-					expect(confirmBox).toHaveTextContent("처음 한 번 내려받아요");
+					expect(confirmBox).toHaveTextContent(t("hardkoG1a.chat.localDownloadPrompt"));
 					expect(toggleBtn).toHaveAttribute("aria-pressed", "false");
 					expect(localStorage.getItem("naia-kiosk-local-answer")).toBeNull();
 
@@ -4780,7 +4779,7 @@ describe("ChatArea", () => {
 					).toHaveAttribute("aria-pressed", "false");
 					expect(
 						screen.getByTestId("kiosk-local-answer-hint"),
-					).toHaveTextContent("내 PC 의 WebLLM 으로 대답해요");
+					).toHaveTextContent(t("hardkoG1a.chat.localAnswerActive"));
 
 					// While a local answer streams, the row says so.
 					act(() => {
@@ -4788,7 +4787,7 @@ describe("ChatArea", () => {
 					});
 					expect(
 						screen.getByTestId("kiosk-local-answer-live"),
-					).toHaveTextContent("내 PC 로 대답 중");
+					).toHaveTextContent(t("hardkoG1a.chat.localAnswerLive"));
 					act(() => {
 						useChatStore.setState({ isStreaming: false });
 					});
@@ -5208,7 +5207,7 @@ describe("ChatArea", () => {
 			const playMessages = useChatStore.getState().messages;
 			const assistantPlayMsg = playMessages.at(-1);
 			expect(assistantPlayMsg?.role).toBe("assistant");
-			expect(assistantPlayMsg?.content).toContain("재생을 시작했어요");
+			expect(assistantPlayMsg?.content).toBe(t("hardkoG1a.chat.youtubeStarted", { track: bgmPlayback.current()?.selected.title || "YouTube BGM" }));
 			expect(assistantPlayMsg?.toolCalls?.[0]).toMatchObject({
 				toolName: "skill_youtube_bgm",
 				args: { action: "play", category: "lofi" },
@@ -5226,7 +5225,7 @@ describe("ChatArea", () => {
 			const stopMessages = useChatStore.getState().messages;
 			const assistantStopMsg = stopMessages.at(-1);
 			expect(assistantStopMsg?.role).toBe("assistant");
-			expect(assistantStopMsg?.content).toContain("재생을 멈췄어요");
+			expect(assistantStopMsg?.content).toBe(t("hardkoG1a.chat.youtubeStopped"));
 			expect(assistantStopMsg?.toolCalls?.[0]).toMatchObject({
 				toolName: "skill_youtube_bgm",
 				args: { action: "stop" },
@@ -5252,9 +5251,9 @@ describe("ChatArea", () => {
 			const toggleBtn = screen.getByTestId("kiosk-local-answer-toggle");
 			expect(screen.queryByRole("button", { name: "처음으로" })).toBeNull();
 
-			expect(toggleBtn).toHaveAttribute("aria-label", "내 기기(웹GPU)에서 대답하기");
-			expect(toggleBtn.getAttribute("title")).toContain("내 기기(웹GPU)에서 대답하기");
-			expect(toggleBtn.textContent).toBe("내 기기(웹GPU)");
+			expect(toggleBtn).toHaveAttribute("aria-label", t("hardkoG1a.chat.localAnswerAria"));
+			expect(toggleBtn.getAttribute("title")).toBe(t("hardkoG1a.chat.localAnswerTitle"));
+			expect(toggleBtn.textContent).toBe(t("hardkoG1a.chat.localAnswer"));
 			expect(toggleBtn.querySelector(".kiosk-local-answer-label-suffix")).toBeNull();
 			expect(headerWrap.closest(".chat-header")).toBeNull();
 

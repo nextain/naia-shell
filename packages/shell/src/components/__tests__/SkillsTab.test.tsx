@@ -7,6 +7,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../lib/i18n";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { useSkillsStore } from "../../stores/skills";
 
@@ -146,16 +147,16 @@ describe("SkillsTab checkbox model", () => {
 		expect(mockRefresh).not.toHaveBeenCalled();
 		expect(screen.queryByTestId("skills-cli-refresh")).toBeNull();
 		expect(screen.getByTestId("skills-web-notice").textContent).toContain(
-			"향후 앱과 동일하게 지원 예정",
+			t("hardkoG1a.skills.webNotice"),
 		);
-		expect(screen.getByText("날씨")).toBeDefined();
+		expect(screen.getByText(t("hardkoG1a.skills.weather"))).toBeDefined();
 		expect(screen.getByText(/get_weather/)).toBeDefined();
 		expect(document.querySelector('[data-skill-id="knowledge"]')).toBeNull();
 		expect(document.querySelector('[data-skill-id="memory"]')).toBeNull();
 		expect(screen.getByTestId("gesture-enable-youtube")).toBeDefined();
 		expect(screen.getByTestId("radio-dj-order")).toBeDefined();
 		expect(screen.getByTestId("skills-web-unavailable").textContent).toContain(
-			"웹버전 통합 진행중",
+			t("hardkoG1a.skills.desktopNotice"),
 		);
 	});
 
@@ -172,7 +173,7 @@ describe("SkillsTab checkbox model", () => {
 
 		expect(mockRefresh).not.toHaveBeenCalled();
 		expect(screen.getByTestId("skills-web-notice").textContent).toContain(
-			"향후 앱과 동일하게 지원 예정",
+			t("hardkoG1a.skills.webNotice"),
 		);
 		expect(document.querySelector('[data-skill-id="knowledge"]')).not.toBeNull();
 		expect(document.querySelector('[data-skill-id="memory"]')).toBeNull();
@@ -183,7 +184,7 @@ describe("SkillsTab checkbox model", () => {
 		expect(screen.getByTestId("gesture-enable-youtube")).toBeDefined();
 		expect(screen.getByTestId("radio-dj-order")).toBeDefined();
 		expect(screen.getByTestId("skills-web-unavailable").textContent).toContain(
-			"웹버전 통합 진행중",
+			t("hardkoG1a.skills.desktopNotice"),
 		);
 	});
 });

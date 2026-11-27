@@ -172,7 +172,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				await removeInstalledApp(appId);
 				setRemoveError("");
 			} catch (error) {
-				setRemoveError(`앱을 제거하지 못했습니다: ${String(error)}`);
+				setRemoveError(t("hardkoG1a.appBar.removeFailed", { error: String(error) }));
 				return;
 			}
 		} else {
@@ -259,7 +259,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				await removeInstalledApp(appId);
 				setRemoveError("");
 			} catch (error) {
-				setRemoveError(`앱을 제거하지 못했습니다: ${String(error)}`);
+				setRemoveError(t("hardkoG1a.appBar.removeFailed", { error: String(error) }));
 				setCtxMenu(null);
 				return;
 			}
@@ -398,7 +398,6 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				</div>
 			)}
 			<div className="app-bar-tabs" data-usage-event="app-bar.handle-tab-bar-context-menu-1.context" onContextMenu={handleTabBarContextMenu}>
-				{/* 바탕화면 — no app active */}
 				<button
 					type="button"
 					className={`app-bar-tab${activeApp === null ? " app-bar-tab--active" : ""}`}
@@ -471,9 +470,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 									role="document"
 									onClick={(e) => e.stopPropagation()}
 								>
-									<p>앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.</p>
+									<p>{t("hardkoG1a.appBar.webStoreNotice")}</p>
 									<button type="button" onClick={() => setKioskStoreNotice(false)}>
-										닫기
+										{t("hardkoG1a.close")}
 									</button>
 								</div>
 							</div>,
@@ -524,7 +523,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								<button
 									type="button"
 									className="app-bar-tab-remove app-bar-tab-remove--shortcut"
-									title={`${mode.names?.[getLocale()] ?? mode.name} 삭제`}
+									title={t("hardkoG1a.appBar.deleteMode", {
+										name: mode.names?.[getLocale()] ?? mode.name,
+									})}
 									onClick={(e) => handleRemoveApp(e, mode.id)}
 								>
 									✕
@@ -555,7 +556,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							className={`app-bar-tab app-bar-tab--shortcut${editMode ? " app-bar-tab--edit" : ""}`}
 							title={
 								editMode
-									? `아이콘 변경: ${shortcut.title || shortcut.url}`
+									? t("hardkoG1a.appBar.changeIcon", { name: shortcut.title || shortcut.url })
 									: shortcut.title || shortcut.url
 							}
 							data-usage-event="app-bar.open-icon-editor-8.click"
@@ -593,7 +594,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							<button
 								type="button"
 								className="app-bar-tab-remove app-bar-tab-remove--shortcut"
-								title="바로가기 삭제"
+								title={t("hardkoG1a.appBar.deleteShortcut")}
 								data-usage-event="app-bar.stop-propagation-9.click"
 								onClick={(e) => {
 									e.stopPropagation();
@@ -806,7 +807,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						setEditMode((v) => !v);
 						setIconEditing(null);
 					}}
-					title={editMode ? "편집 완료" : "앱·바로가기 편집"}
+					title={editMode ? t("hardkoG1a.appBar.editDone") : t("hardkoG1a.appBar.edit")}
 				>
 					{editMode ? "✓" : "✏"}
 				</button>
@@ -838,7 +839,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								className="app-bar-url-dialog__input"
 								value={iconInput}
 								onChange={(e) => setIconInput(e.target.value)}
-								placeholder="이모지 또는 이미지 URL (비우면 기본값)"
+								placeholder={t("hardkoG1a.appBar.shortcutIconPlaceholder")}
 								autoFocus
 							/>
 							<div className="app-bar-url-dialog__btns">

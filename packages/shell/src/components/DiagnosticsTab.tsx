@@ -417,7 +417,7 @@ export function DiagnosticsTab() {
 							data-usage-event="diagnostics-tab.handle-restart-2.click"
 							onClick={handleRestart}
 						>
-							{t("diagnostics.restart") || "재시작"}
+							{t("diagnostics.restart")}
 						</button>
 					</div>
 				</div>
@@ -522,7 +522,7 @@ export function DiagnosticsTab() {
 							className="diagnostics-log-btn"
 							data-usage-event="diagnostics-tab.handle-open-in-window-6.click"
 							onClick={handleOpenInWindow}
-							title="새창으로 열기"
+							title={t("hardkoG1a.diagnostics.openNewWindow")}
 						>
 							↗
 						</button>
@@ -571,7 +571,7 @@ export function DiagnosticsTab() {
 									onClick={
 										isImportant ? () => setSelectedLog(entry) : undefined
 									}
-									title={isImportant ? "클릭하여 상세 보기" : undefined}
+									title={isImportant ? t("hardkoG1a.diagnostics.viewDetails") : undefined}
 								>
 									<span
 										className="log-prefix"
@@ -619,7 +619,7 @@ export function DiagnosticsTab() {
 								data-usage-event="diagnostics-tab.set-selected-log-10.click"
 								onClick={() => setSelectedLog(null)}
 							>
-								닫기
+								{t("hardkoG1a.close")}
 							</button>
 						</div>
 					</div>

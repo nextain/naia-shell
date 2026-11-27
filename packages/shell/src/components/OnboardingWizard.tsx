@@ -1583,7 +1583,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							className="onboarding-step__input onboarding-step__input--persona"
 							value={extraPersona}
 							onChange={(e) => setExtraPersona(e.target.value)}
-							placeholder="추가 페르소나 설정 (선택) — 성격, 말투 스타일, 행동 규칙 등을 자유롭게 입력하세요."
+							placeholder={t("hardkoG1a.onboarding.personaPlaceholder")}
 							rows={5}
 						/>
 					</>
@@ -1762,9 +1762,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 										: t("onboard.connect.naiaPath")}
 								</button>
 								{/* #447-5: own-key/provider setup moved out of onboarding —
-								    "직접 설정" finishes onboarding and opens the full Settings
+								    The manual setup option finishes onboarding and opens the full Settings
 								    screen (provider + model + key) instead of a provider-less
-								    inline key box. "나중에 설정" keeps configuring later. */}
+								    inline key box. The set-up-later option keeps configuring later. */}
 								<div
 									style={{
 										display: "flex",
@@ -1960,10 +1960,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				{step === "complete" && (
 					<>
 						<h2 className="onboarding-step__title">
-							{t("onboard.complete.greeting").replace(
-								"{name}",
-								userName.trim() || "게스트",
-							)}
+							{t("onboard.complete.greeting", {
+								name: userName.trim() || t("hardkoG1a.onboarding.guest"),
+							})}
 							{localVoiceInstallation?.canStart === false && !localVoiceMsg && (
 								<p className="onboarding-step__hint onboarding-step__hint--warn">
 									{t("settings.localVoiceInstallRequired")}

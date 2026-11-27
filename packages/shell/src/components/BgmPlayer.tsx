@@ -1171,7 +1171,7 @@ export function BgmPlayer({ naia }: Props) {
 			const diagnosis = diagnoseBgmObservationFailure(counters);
 			Logger.warn(
 				"BgmPlayer",
-				`재생 관측 실패 (#521): ${diagnosis.summary}`,
+				`Playback observation failed (#521): ${diagnosis.summary}`,
 				{
 					cause: diagnosis.cause,
 					received: counters.received,
@@ -2875,7 +2875,6 @@ export function BgmPlayer({ naia }: Props) {
 							</button>
 						</div>
 
-						{/* ── 활성 플레이리스트 툴바 — 모든 탭 공통 (선택·셔플·반복) ── */}
 						{broadcastNotice && (
 							<div
 								className="bgm-yt-status"
@@ -3054,7 +3053,6 @@ export function BgmPlayer({ naia }: Props) {
 							</>
 						)}
 
-						{/* ── Playlists tab (YouTube+로컬 믹스) ── */}
 						{appTab === "playlists" && (
 									<div className="bgm-playlists">
 										<form className="bgm-playlist-create" data-usage-event="bgm-player.set-new-playlist-name-21.submit" onSubmit={(event) => {
@@ -3249,7 +3247,7 @@ export function BgmPlayer({ naia }: Props) {
 						className="bgm-web-now-playing"
 						data-testid="bgm-youtube-now-playing"
 						role="region"
-						aria-label="YouTube 재생 중"
+						aria-label={t("hardkoG1a.bgm.youtubePlayingAria")}
 						onPointerEnter={() => setNowPlayingCardHovered(true)}
 						onPointerLeave={() => setNowPlayingCardHovered(false)}
 						onFocus={() => setNowPlayingCardFocused(true)}
@@ -3282,7 +3280,7 @@ export function BgmPlayer({ naia }: Props) {
 								{currentYt.title}
 							</div>
 							<div className="bgm-web-now-playing__sub">
-								{currentYt.channel || "YouTube BGM"} · 재생 중
+								{t("hardkoG1a.bgm.youtubePlaying", { channel: currentYt.channel || "YouTube BGM" })}
 							</div>
 						</div>
 						<div className="bgm-web-now-playing__actions">

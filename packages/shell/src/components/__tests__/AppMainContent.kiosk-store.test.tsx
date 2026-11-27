@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../lib/i18n";
 import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { resetUiPreferencesForTests } from "../../lib/ui-preferences";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
@@ -144,7 +145,7 @@ describe("R46 kiosk demo App Store notice", () => {
 		expect(notice.parentElement).toBe(document.body);
 		expect(
 			within(notice).getByText(
-				"앱스토어: 현재 앱에서는 되고 웹버전 통합 진행중입니다.",
+				t("hardkoG1a.appBar.webStoreNotice"),
 			),
 		).toBeVisible();
 		expect(
@@ -155,7 +156,7 @@ describe("R46 kiosk demo App Store notice", () => {
 			expect.anything(),
 		);
 
-		fireEvent.click(within(notice).getByRole("button", { name: "닫기" }));
+		fireEvent.click(within(notice).getByRole("button", { name: t("hardkoG1a.close") }));
 		expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument();
 	});
 });

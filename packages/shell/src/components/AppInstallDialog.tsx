@@ -156,7 +156,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 			const res = await invoke<AppInstallResult>("app_install", { source });
 			setResult({
 				success: true,
-				message: `설치 완료: ${res.name} (${res.id}) → ${res.path}`,
+				message: t("hardkoG1a.install.success", { name: res.name, id: res.id, path: res.path }),
 			});
 			// Refresh the installed-app list so the new tab appears, then close.
 			await loadInstalledApps().catch(() => {});
@@ -182,7 +182,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 			>
 				<div className="app-install-header">
 					<span id="app-install-title" className="app-install-title">
-						{request ? "Naia Apps" : "앱 추가"}
+						{request ? "Naia Apps" : t("hardkoG1a.install.addApp")}
 					</span>
 					<button type="button" data-usage-event="app-install-dialog.on-close-3.click" className="app-install-close" aria-label={t("apps.close")} onClick={onClose}>
 						✕
@@ -231,14 +231,15 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 							disabled={loading}
 						/>
 						<p className="app-install-hint">
-							비공개 저장소: URL에 토큰 포함 (https://TOKEN@github.com/...)
+							{t("hardkoG1a.install.privateRepoHint", {
+								example: "https://TOKEN@github.com/...",
+							})}
 						</p>
 					</div>
 				) : (
 					<div className="app-install-body">
 						<div className="app-install-notice">
-							🚧 Zip 파일 설치는 보안 강화 작업 중입니다 (#359). 현재는 Git URL
-							설치만 지원합니다.
+							{t("hardkoG1a.install.zipNotice")}
 						</div>
 					</div>
 				)}
@@ -280,7 +281,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 								data-usage-event="app-install-dialog.set-mode-6.click"
 								onClick={() => setMode("file")}
 							>
-								파일 (Zip · 준비 중)
+								{t("hardkoG1a.install.zipTab")}
 							</button>
 						</div>
 					)}
@@ -291,7 +292,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 						onClick={onClose}
 						disabled={loading}
 					>
-						취소
+						{t("settings.cancel")}
 					</button>
 					<button
 						type="button"
@@ -302,7 +303,11 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 							loading || (!request && (mode !== "git" || !gitUrl.trim()))
 						}
 					>
-						{loading ? "설치 중..." : request ? "설치" : "추가"}
+						{loading
+							? t("hardkoG1a.install.installing")
+							: request
+								? t("hardkoG1a.install.install")
+								: t("hardkoG1a.install.add")}
 					</button>
 				</div>
 			</div>

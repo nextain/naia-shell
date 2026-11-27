@@ -1,6 +1,7 @@
 // KnowledgeGraphOverlay — 작업영역을 거의 채우는 지식 그래프 오버레이(닫으면 복귀).
 // lazy: 호출부가 열릴 때만 마운트 → 닫히면 unmount = 시뮬 정지(평소 부하 0).
 // 노드 클릭 → 그 엔티티의 출처 문서 → "원문 열기"(URL=브라우저 / 파일=워크스페이스, 기존 앱 api 재사용).
+import { t } from "../lib/i18n";
 import { type ComponentType, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { classifySourceUri, type KnowledgeGraph, type KnowledgeGraphNode, entitySourcesFromKbJson } from "../lib/knowledge-result";
 import { openKnowledgeSource } from "../lib/knowledge-source-open";
@@ -87,7 +88,7 @@ export function KnowledgeGraphOverlay({
 				justifyContent: "center",
 			}}
 		>
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: 오버레이 본체는 backdrop 클릭 전파만 차단(Esc 로 닫기 제공) */}
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: The overlay stops backdrop clicks. Escape closes it. */}
 			<div
 				className="knowledge-graph-overlay-app"
 				data-usage-event="knowledge-graph-overlay.stop-propagation-2.click"
@@ -106,7 +107,6 @@ export function KnowledgeGraphOverlay({
 					overflow: "hidden",
 				}}
 			>
-				{/* 헤더 */}
 				<div
 					style={{
 						display: "flex",
@@ -117,9 +117,13 @@ export function KnowledgeGraphOverlay({
 					}}
 				>
 					<span style={{ fontWeight: 600, color: "var(--cream, #e8e0d0)", fontSize: scaledFontSize(14) }}>
-						🕸 지식 그래프
+						{t("hardkoG1a.graph.title")}
 						<span style={{ fontSize: scaledFontSize(11), color: "var(--cream-dim, #99a)", fontWeight: 400, marginLeft: 10 }}>
-							노드 {graph.nodes.length} · 관계 {graph.edges.length} · 군집 {graph.communityCount}
+							{t("hardkoG1a.graph.summary", {
+								nodes: graph.nodes.length,
+								edges: graph.edges.length,
+								communities: graph.communityCount,
+							})}
 						</span>
 					</span>
 					<button
@@ -139,11 +143,10 @@ export function KnowledgeGraphOverlay({
 							cursor: "pointer",
 						}}
 					>
-						✕ 닫기
+						{t("hardkoG1a.graph.close")}
 					</button>
 				</div>
 
-				{/* 본체: 그래프 + 선택 출처 영역 */}
 				<div style={{ display: "flex", flex: 1, minHeight: 0 }}>
 					<div
 						ref={graphAreaRef}
@@ -162,7 +165,6 @@ export function KnowledgeGraphOverlay({
 						</div>
 					</div>
 
-					{/* 선택 노드 출처 영역 */}
 					{selected && (
 						<div
 							className="knowledge-graph-detail"
@@ -180,14 +182,17 @@ export function KnowledgeGraphOverlay({
 								{selected.label}
 							</div>
 							<div style={{ fontSize: scaledFontSize(11), color: "var(--cream-dim, #99a)", marginBottom: 12 }}>
-								{selected.type || "엔티티"} · 연결 {selected.deg}
+								{t("hardkoG1a.graph.nodeDetail", {
+									type: selected.type || t("hardkoG1a.graph.entity"),
+									count: selected.deg,
+								})}
 							</div>
 							<div style={{ fontSize: scaledFontSize(12), color: "var(--cream-dim, #aab)", marginBottom: 6 }}>
-								출처 문서
+								{t("hardkoG1a.graph.sources")}
 							</div>
 							{selSources.length === 0 ? (
 								<div style={{ fontSize: scaledFontSize(12), color: "var(--cream-dim, #889)", opacity: 0.8 }}>
-									이 노드에 연결된 출처 문서를 찾지 못했습니다.
+									{t("hardkoG1a.graph.noSources")}
 								</div>
 							) : (
 								<ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>

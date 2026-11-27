@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { t } from "../lib/i18n";
 import {
 	formatPrimaryShortcut,
 	shortcutPlatform,
@@ -41,7 +42,7 @@ export function TitleBar({
 		</div>
 	);
 
-	const toggleVerb = appVisible ? "채팅 숨기기" : "채팅 보이기";
+	const toggleVerb = appVisible ? t("hardkoG1a.titleBar.hideChat") : t("hardkoG1a.titleBar.showChat");
 	const toggleBtn = (
 		<button
 			type="button"
@@ -80,7 +81,7 @@ export function TitleBar({
 			data-macos-traffic={isMac ? "minimize" : undefined}
 			data-usage-event="title-bar.button-2.click"
 			onClick={() => appWindow.minimize()}
-			title="최소화"
+			title={t("hardkoG1a.titleBar.minimize")}
 		>
 			&#8211;
 		</button>
@@ -103,7 +104,7 @@ export function TitleBar({
 					appWindow.maximize();
 				}
 			}}
-			title="최대화"
+			title={t("hardkoG1a.titleBar.maximize")}
 		>
 			&#9633;
 		</button>
@@ -120,7 +121,7 @@ export function TitleBar({
 			data-macos-traffic={isMac ? "close" : undefined}
 			data-usage-event="title-bar.button-4.click"
 			onClick={() => appWindow.close()}
-			title="닫기"
+			title={t("hardkoG1a.close")}
 		>
 			&#10005;
 		</button>

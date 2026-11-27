@@ -1,16 +1,19 @@
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
-import { getLocale, setLocale, t, type Locale, type TranslationKey } from "../i18n";
+import {
+	getLocale,
+	setLocale,
+	t,
+	type Locale,
+	type TranslationKey,
+} from "../i18n";
 
 const prefix = "hardkoG1a.";
 // Keep source order so interchanging two valid keys fails as well as deleting
 // a call. Parameter names check the binding supplied by the component.
 const expectedCalls: Record<string, readonly string[]> = {
-	AdkSetupScreen: [
-		"adk.verificationPending",
-		"adk.pickFolder",
-	],
+	AdkSetupScreen: ["adk.verificationPending", "adk.pickFolder"],
 	AiControlBar: [
 		"layout.switchLandscape",
 		"layout.switchPortrait",
@@ -32,6 +35,7 @@ const expectedCalls: Record<string, readonly string[]> = {
 	AppInstallDialog: [
 		"install.success: name,id,path",
 		"install.addApp",
+		"install.privateRepoHint: example",
 		"install.zipNotice",
 		"install.zipTab",
 		"settings.cancel",
@@ -58,10 +62,7 @@ const expectedCalls: Record<string, readonly string[]> = {
 		"mention.noWorkspace",
 		"mention.noMatches",
 	],
-	BgmPlayer: [
-		"bgm.youtubePlayingAria",
-		"bgm.youtubePlaying: channel",
-	],
+	BgmPlayer: ["bgm.youtubePlayingAria", "bgm.youtubePlaying: channel"],
 	CharacterThemeSettings: [
 		"card.restored",
 		"card.modified",
@@ -186,7 +187,12 @@ const existingKeys: Readonly<Record<string, readonly string[]>> = {
 
 function parse(relative: string) {
 	const url = new URL(relative, import.meta.url);
-	return ts.createSourceFile(url.pathname, readFileSync(url, "utf8"), ts.ScriptTarget.Latest, true);
+	return ts.createSourceFile(
+		url.pathname,
+		readFileSync(url, "utf8"),
+		ts.ScriptTarget.Latest,
+		true,
+	);
 }
 
 function walk(node: ts.Node, visit: (node: ts.Node) => void) {
@@ -195,7 +201,11 @@ function walk(node: ts.Node, visit: (node: ts.Node) => void) {
 }
 
 function isTranslationCall(node: ts.Node): node is ts.CallExpression {
-	return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "t";
+	return (
+		ts.isCallExpression(node) &&
+		ts.isIdentifier(node.expression) &&
+		node.expression.text === "t"
+	);
 }
 
 const hangul = /[가-힣]/;
@@ -208,7 +218,9 @@ describe("G1a component translations", () => {
 			const koreanLiterals: string[] = [];
 			walk(source, (node) => {
 				if (
-					(ts.isStringLiteralLike(node) || ts.isJsxText(node) || ts.isTemplateLiteralToken(node)) &&
+					(ts.isStringLiteralLike(node) ||
+						ts.isJsxText(node) ||
+						ts.isTemplateLiteralToken(node)) &&
 					hangul.test(node.text)
 				) {
 					koreanLiterals.push(node.text.trim());
@@ -216,10 +228,15 @@ describe("G1a component translations", () => {
 				if (isTranslationCall(node)) {
 					const [key, params] = node.arguments;
 					if (!key || !ts.isStringLiteral(key)) return;
-					if (!key.text.startsWith(prefix) && !existingKeys[component]?.includes(key.text)) return;
-					const args = params && ts.isObjectLiteralExpression(params)
-						? `: ${params.properties.map((prop) => prop.name?.getText(source)).join(",")}`
-						: "";
+					if (
+						!key.text.startsWith(prefix) &&
+						!existingKeys[component]?.includes(key.text)
+					)
+						return;
+					const args =
+						params && ts.isObjectLiteralExpression(params)
+							? `: ${params.properties.map((prop) => prop.name?.getText(source)).join(",")}`
+							: "";
 					actual.push(key.text.replace(prefix, "") + args);
 				}
 				if (
@@ -228,7 +245,9 @@ describe("G1a component translations", () => {
 					ts.isStringLiteral(node.initializer) &&
 					node.initializer.text.startsWith(prefix)
 				) {
-					actual.push(`${node.name.getText(source)} = ${node.initializer.text.slice(prefix.length)}`);
+					actual.push(
+						`${node.name.getText(source)} = ${node.initializer.text.slice(prefix.length)}`,
+					);
 				}
 			});
 			expect(actual).toEqual(expected);
@@ -240,36 +259,86 @@ describe("G1a component translations", () => {
 		const source = parse("../../components/SkillsTab.tsx");
 		const actual: string[] = [];
 		walk(source, (node) => {
-			if (!ts.isJsxExpression(node) || !node.expression || !isTranslationCall(node.expression)) return;
+			if (
+				!ts.isJsxExpression(node) ||
+				!node.expression ||
+				!isTranslationCall(node.expression)
+			)
+				return;
 			const arg = node.expression.arguments[0]?.getText(source);
 			if (arg?.startsWith("skill.")) actual.push(arg);
 		});
-		expect(actual).toEqual(["skill.nameKey", "skill.descriptionKey", 'skill.badgeKey ?? "skills.builtIn"']);
+		expect(actual).toEqual([
+			"skill.nameKey",
+			"skill.descriptionKey",
+			'skill.badgeKey ?? "skills.builtIn"',
+		]);
 	});
 
 	it("reads the bundled Korean card from fixed data", () => {
 		const source = parse("../character-theme.ts");
 		const fixedReads: string[] = [];
 		walk(source, (node) => {
-			if (ts.isPropertyAccessExpression(node) && node.expression.getText(source) === "JINA_CARD_KO") {
+			if (
+				ts.isPropertyAccessExpression(node) &&
+				node.expression.getText(source) === "JINA_CARD_KO"
+			) {
 				fixedReads.push(node.name.text);
 			}
 		});
 		expect(fixedReads).toEqual([
-			"name", "description", "personality", "scenario", "alternateGreeting",
-			"exampleDialogue", "systemPrompt", "postHistory", "creatorNotes", "name",
-			"lorebookName", "lorebookDescription", "loreEntryName", "loreEntryComment",
-			"name", "guestKeyword", "loreEntryContent", "name", "themeName",
+			"name",
+			"description",
+			"personality",
+			"scenario",
+			"alternateGreeting",
+			"exampleDialogue",
+			"systemPrompt",
+			"postHistory",
+			"creatorNotes",
+			"name",
+			"lorebookName",
+			"lorebookDescription",
+			"loreEntryName",
+			"loreEntryComment",
+			"name",
+			"guestKeyword",
+			"loreEntryContent",
+			"themeName",
 		]);
 	});
 });
 
-const locales: readonly Locale[] = ["ko", "en", "ja", "zh", "fr", "de", "ru", "es", "ar", "hi", "bn", "pt", "id", "vi"];
-const placeholders = (value: string) => Array.from(value.matchAll(/\{(\w+)\}/g), (match) => match[1]).sort();
-const keys = [...new Set(Object.values(expectedCalls).flatMap((calls) => calls
-	.map((call) => call.split(" = ").at(-1)?.split(": ")[0])
-	.filter((key): key is string => Boolean(key && !Object.values(existingKeys).flat().includes(key)))
-	.map((key) => `${prefix}${key}` as TranslationKey)))];
+const locales: readonly Locale[] = [
+	"ko",
+	"en",
+	"ja",
+	"zh",
+	"fr",
+	"de",
+	"ru",
+	"es",
+	"ar",
+	"hi",
+	"bn",
+	"pt",
+	"id",
+	"vi",
+];
+const placeholders = (value: string) =>
+	Array.from(value.matchAll(/\{(\w+)\}/g), (match) => match[1]).sort();
+const keys = [
+	...new Set(
+		Object.values(expectedCalls).flatMap((calls) =>
+			calls
+				.map((call) => call.split(" = ").at(-1)?.split(": ")[0])
+				.filter((key): key is string =>
+					Boolean(key && !Object.values(existingKeys).flat().includes(key)),
+				)
+				.map((key) => `${prefix}${key}` as TranslationKey),
+		),
+	),
+];
 
 describe("G1a locale tables", () => {
 	const initialLocale = getLocale();
@@ -284,7 +353,9 @@ describe("G1a locale tables", () => {
 				const value = t(key);
 				expect(value.trim(), `${locale}: ${key}`).not.toBe("");
 				expect(value, `${locale}: ${key}`).not.toBe(key);
-				expect(placeholders(value), `${locale}: ${key}`).toEqual(placeholders(english[index]));
+				expect(placeholders(value), `${locale}: ${key}`).toEqual(
+					placeholders(english[index]),
+				);
 			}
 		}
 	});

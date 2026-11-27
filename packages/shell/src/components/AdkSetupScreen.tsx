@@ -433,13 +433,12 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						</span>
 					</button>
 
-					{/* naia 계정 백업 ADK 복원 — 구현 검증 전까지 비활성. */}
 					<button
 						type="button"
 						className="adk-setup-option-card adk-setup-option-card--naia"
 						disabled
 						style={{ opacity: 0.45, cursor: "not-allowed" }}
-						title="검증 중 — 아직 사용할 수 없습니다"
+						title={t("hardkoG1a.adk.verificationPending")}
 					>
 						<span className="adk-setup-option-icon">🌐</span>
 						<span className="adk-setup-option-title">
@@ -498,7 +497,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							onClick={async () => {
 								const selected = await open({
 									directory: true,
-									title: "naia-adk 폴더 선택",
+									title: t("hardkoG1a.adk.pickFolder"),
 								});
 								if (selected && typeof selected === "string") setPath(selected);
 							}}

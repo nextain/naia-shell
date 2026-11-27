@@ -31,7 +31,8 @@ export function KnowledgeSettingsTab() {
 	);
 	const [stats, setStats] = useState<KnowledgeKbStats | null>(null);
 	const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
-	const [kbRaw, setKbRaw] = useState(""); // 노드→출처 매핑용 원본 kb.json
+	// 노드→출처 매핑용 원본 kb.json
+	const [kbRaw, setKbRaw] = useState("");
 	const [graphOpen, setGraphOpen] = useState(false);
 	const [compiling, setCompiling] = useState(false);
 	const [error, setError] = useState("");
@@ -60,7 +61,8 @@ export function KnowledgeSettingsTab() {
 				scope,
 			});
 			setStats(parseKbStats(raw));
-			setGraph(graphFromKbJson(raw)); // 컴파일된 kb.json → 2D/3D 그래프 데이터
+			// 컴파일된 kb.json → 2D/3D 그래프 데이터
+			setGraph(graphFromKbJson(raw));
 			setKbRaw(raw);
 		} catch (err) {
 			Logger.warn("KnowledgeSettings", "Failed to read kb stats", {
@@ -179,7 +181,6 @@ export function KnowledgeSettingsTab() {
 				<div className="settings-hint">{t("settings.knowledgeManageHint")}</div>
 			</div>
 
-			{/* 지식 스코프(프로젝트) */}
 			<div className="settings-field">
 				<label>{t("settings.knowledgeScopeLabel")}</label>
 				<div className="knowledge-scope" data-testid="knowledge-scope">
@@ -187,7 +188,6 @@ export function KnowledgeSettingsTab() {
 				</div>
 			</div>
 
-			{/* 소스 폴더 레지스트리 */}
 			<div className="settings-field">
 				<label>{t("settings.knowledgeSourcesLabel")}</label>
 				{config.sources.length === 0 ? (
@@ -240,7 +240,7 @@ export function KnowledgeSettingsTab() {
 					className="settings-field kiosk-knowledge-browser"
 					data-testid="kiosk-knowledge-browser"
 				>
-					<label>시연 지식 원고 ({kioskManuscripts.length}개)</label>
+					<label>{t("hardkoG1a.graph.manuscripts", { count: kioskManuscripts.length })}</label>
 					<div
 						style={{
 							display: "grid",
@@ -356,7 +356,7 @@ export function KnowledgeSettingsTab() {
 								</div>
 								<article
 									className="workspace-editor__preview"
-									aria-label="Markdown 미리보기"
+									aria-label={t("hardkoG1a.graph.markdownPreview")}
 									style={{
 										padding: "4px 2px",
 										fontSize: "13px",
@@ -374,7 +374,6 @@ export function KnowledgeSettingsTab() {
 				</div>
 			)}
 
-			{/* 컴파일 상태 + 트리거 */}
 			<div className="settings-field">
 				<label>{t("settings.knowledgeStatusLabel")}</label>
 				<div
@@ -417,8 +416,7 @@ export function KnowledgeSettingsTab() {
 				)}
 			</div>
 
-			{/* 지식 그래프 — 평소엔 버튼만(렌더 안 함 = 부하 0). 누르면 작업영역을 채우는 오버레이로
-			    열리고(닫으면 복귀·unmount), 노드 클릭 시 출처 문서 → 원문 열기. */}
+			{/* Mount the graph only while the workspace overlay is open. Node selection opens its source document. */}
 			{graph && graph.nodes.length > 0 && (
 				<div className="settings-field">
 					<button
@@ -437,7 +435,7 @@ export function KnowledgeSettingsTab() {
 							cursor: "pointer",
 						}}
 					>
-						🕸 지식 그래프 보기 ({graph.nodes.length} 노드)
+						{t("hardkoG1a.graph.open", { count: graph.nodes.length })}
 					</button>
 				</div>
 			)}

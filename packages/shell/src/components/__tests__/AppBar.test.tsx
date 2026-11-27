@@ -258,13 +258,13 @@ describe("AppBar — add dialog", () => {
 			fireEvent.click(appStore);
 			expect(
 				await screen.findByRole("dialog", { name: "appbar.appStore" }),
-			).toHaveTextContent("웹버전 통합 진행중");
+			).toHaveTextContent("hardkoG1a.appBar.webStoreNotice");
 			expect(onAddApp).not.toHaveBeenCalled();
 			expect(mockInvoke).not.toHaveBeenCalledWith(
 				"focus_or_create_app_store_window",
 				expect.anything(),
 			);
-			fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+			fireEvent.click(screen.getByRole("button", { name: "hardkoG1a.close" }));
 			expect(
 				screen.queryByRole("dialog", { name: "appbar.appStore" }),
 			).toBeNull();
@@ -470,7 +470,7 @@ describe("AppBar — installed app removal", () => {
 		fireEvent.click(screen.getByText("appbar.removeApp"));
 
 		expect(await screen.findByRole("alert")).toHaveTextContent(
-			"앱을 제거하지 못했습니다",
+			"hardkoG1a.appBar.removeFailed",
 		);
 		expect(screen.getByTitle("Notes")).toBeInTheDocument();
 	});
@@ -561,7 +561,7 @@ describe("AppBar — edit mode (#295)", () => {
 		// Enter edit mode
 		fireEvent.click(document.querySelector(".app-bar-edit")!);
 		// ✕ button should appear
-		expect(screen.getByTitle("바로가기 삭제")).toBeDefined();
+		expect(screen.getByTitle("hardkoG1a.appBar.deleteShortcut")).toBeDefined();
 	});
 
 	it("clicking ✕ calls removeBrowserShortcut with correct url", async () => {
@@ -571,7 +571,7 @@ describe("AppBar — edit mode (#295)", () => {
 		render(<AppBar />);
 		await act(async () => {});
 		fireEvent.click(document.querySelector(".app-bar-edit")!);
-		fireEvent.click(screen.getByTitle("바로가기 삭제"));
+		fireEvent.click(screen.getByTitle("hardkoG1a.appBar.deleteShortcut"));
 		expect(mockRemoveBrowserShortcut).toHaveBeenCalledWith(SHORTCUT.url);
 	});
 
@@ -587,7 +587,7 @@ describe("AppBar — edit mode (#295)", () => {
 		fireEvent.click(shortcutBtn);
 		// Icon editor input should appear
 		expect(
-			screen.getByPlaceholderText("이모지 또는 이미지 URL (비우면 기본값)"),
+			screen.getByPlaceholderText("hardkoG1a.appBar.shortcutIconPlaceholder"),
 		).toBeDefined();
 	});
 
@@ -601,7 +601,7 @@ describe("AppBar — edit mode (#295)", () => {
 		fireEvent.click(document.querySelector(".app-bar-tab--edit")!);
 		// Type new icon
 		const input = screen.getByPlaceholderText(
-			"이모지 또는 이미지 URL (비우면 기본값)",
+			"hardkoG1a.appBar.shortcutIconPlaceholder",
 		);
 		fireEvent.change(input, { target: { value: "🎯" } });
 		// Submit

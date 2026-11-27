@@ -261,8 +261,8 @@ export function AppMainContent(props: AppMainContentProps) {
 			data-testid="avatar-controls-toggle"
 			className={`naia-chat-mode naia-avatar-corner-trigger${avatarCornerOpen ? " naia-chat-mode--active" : ""}`}
 			aria-expanded={avatarCornerOpen}
-			aria-label="아바타 화면 조절"
-			title="아바타 화면 조절"
+			aria-label={t("hardkoG1a.layout.resizeAvatar")}
+			title={t("hardkoG1a.layout.resizeAvatar")}
 			onClick={() => setAvatarCornerOpen((open) => !open)}
 		>
 			<svg
@@ -375,7 +375,7 @@ export function AppMainContent(props: AppMainContentProps) {
 					onPointerMove={handleNaiaWidthPointerMove}
 					onPointerUp={handleNaiaWidthPointerUp}
 					onPointerCancel={handleNaiaWidthPointerUp}
-					title="작업영역 경계 드래그"
+					title={t("hardkoG1a.layout.resizeWorkspace")}
 				/>
 			)}
 			{naiaVisible && (
@@ -672,7 +672,11 @@ export function AppMainContent(props: AppMainContentProps) {
 							<button
 								type="button"
 								className="naia-chat-toggle"
-								aria-label={chatVisible ? "대화창 닫기" : "대화창 열기"}
+								aria-label={
+									chatVisible
+										? t("hardkoG1a.layout.closeChat")
+										: t("hardkoG1a.layout.openChat")
+								}
 								onPointerDown={(event) => {
 									// 화면에 보이는 높이에서 시작한다(상한 때문에 chatHeight 보다 작을 수 있음).
 									const shown = event.currentTarget.parentElement
@@ -727,7 +731,7 @@ export function AppMainContent(props: AppMainContentProps) {
 								className={`naia-chat-modes${avatarCornerOpen ? " naia-chat-modes--open" : ""}`}
 								// biome-ignore lint/a11y/useSemanticElements: preserve the existing DOM/CSS contract during extraction.
 								role="group"
-								aria-label="아바타 및 대화창 조절"
+								aria-label={t("hardkoG1a.layout.resizeAvatarChat")}
 							>
 								{avatarCornerOpen && (
 									<div
@@ -856,7 +860,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									<button
 										type="button"
 										className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
-										title="왼쪽 소형"
+										title={t("hardkoG1a.layout.leftCompact")}
 										aria-pressed={uiMode === "app"}
 										data-usage-event="app-main-content.set-chat-mode-1.click"
 										onClick={() => setChatMode("app")}
@@ -866,7 +870,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									<button
 										type="button"
 										className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
-										title="왼쪽 채움"
+										title={t("hardkoG1a.layout.leftFill")}
 										aria-pressed={uiMode === "workspace"}
 										data-usage-event="app-main-content.set-chat-mode-2.click"
 										onClick={() => setChatMode("workspace")}
@@ -909,8 +913,12 @@ export function AppMainContent(props: AppMainContentProps) {
 					className={`ws-rail-toggle${railCollapsed ? " ws-rail-toggle--collapsed" : ""}`}
 					data-usage-event="app-main-content.toggle-rail-collapsed-3.click"
 					onClick={toggleRailCollapsed}
-					title={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}
-					aria-label={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}
+					title={railCollapsed ? t("hardkoG1a.layout.expandRail") : t("hardkoG1a.layout.collapseRail")}
+					aria-label={
+						railCollapsed
+							? t("hardkoG1a.layout.expandRail")
+							: t("hardkoG1a.layout.collapseRail")
+					}
 				>
 					{railCollapsed ? "💬" : "‹"}
 				</button>

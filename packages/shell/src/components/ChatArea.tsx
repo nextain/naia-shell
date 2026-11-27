@@ -163,6 +163,7 @@ import {
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
+import { KOREAN_E2E_GREETING } from "../lib/locales/hardko-g1a-fixed-ko";
 import {
 	fetchLabBalancePayload,
 	markNaiaKeyUnauthorized,
@@ -1148,10 +1149,11 @@ export function ChatArea({
 	// agent→z.ai→UI 렌더 전 경로를 관통. 응답+토큰을 naia-debug.log 로 기록(헤드리스 통짜 검증, 환경 SIGUSR1=wdio 회피).
 	useEffect(() => {
 		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
+		// Allow time for config loading and the agent gRPC connection.
 		const t = setTimeout(() => {
-			Logger.info("ChatArea", "[E2E-AUTOCHAT] send 안녕");
-			void handleSend("안녕");
-		}, 5000); // config 로딩 + agent gRPC connect 여유
+			Logger.info("ChatArea", "[E2E-AUTOCHAT] Sending the Korean test greeting");
+			void handleSend(KOREAN_E2E_GREETING);
+		}, 5000);
 		return () => clearTimeout(t);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
@@ -1857,7 +1859,8 @@ export function ChatArea({
 				ttsProvider: effectiveTtsProvider,
 			}),
 			ttsProvider: effectiveTtsProvider,
-			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
+			// #512 관측
+			localVoiceEnabled: config.localVoiceEnabled === true,
 			ttsApiKey: undefined,
 			naiaKey: resolvedNaiaKey,
 			gatewayUrl: LAB_GATEWAY_URL,
@@ -2473,9 +2476,7 @@ export function ChatArea({
 			setKioskLocalConfirmOpen(false);
 			setKioskLocalAnswerEnabled(false);
 			setKioskLocalAnswer(false);
-			setKioskLocalNotice(
-				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
-			);
+			setKioskLocalNotice(t("hardkoG1a.chat.webGpuFallback"));
 			return;
 		}
 		setKioskLocalNotice(null);
@@ -2491,9 +2492,7 @@ export function ChatArea({
 		if (!gpuResult.ok) {
 			setKioskLocalAnswerEnabled(false);
 			setKioskLocalAnswer(false);
-			setKioskLocalNotice(
-				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
-			);
+			setKioskLocalNotice(t("hardkoG1a.chat.webGpuFallback"));
 			return;
 		}
 		setKioskLocalNotice(null);
@@ -2650,7 +2649,7 @@ export function ChatArea({
 		kioskAutoRetriedRef.current = false;
 		useChatStore.getState().addMessage({
 			role: "assistant",
-			content: "잠시 문제가 있어요, 다시 말해 주세요.",
+			content: t("hardkoG1a.chat.replyRetry"),
 		});
 	}
 
@@ -2684,14 +2683,14 @@ export function ChatArea({
 		const trackTitle =
 			bgmPlayback.current()?.selected.title || "YouTube BGM";
 		const replyText = !ok
-			? "유튜브 재생 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요."
+			? t("hardkoG1a.chat.youtubeFailed")
 			: action === "stop" || action === "pause"
-				? "유튜브 재생을 멈췄어요."
+				? t("hardkoG1a.chat.youtubeStopped")
 				: action === "resume"
-					? `유튜브 '${trackTitle}' 재생을 다시 시작했어요.`
+					? t("hardkoG1a.chat.youtubeResumed", { track: trackTitle })
 					: action === "next" || action === "prev"
-						? `유튜브 '${trackTitle}' 곡으로 바꿨어요.`
-						: `유튜브에서 '${trackTitle}' 재생을 시작했어요. 상단 재생 카드에서 곡 목록을 열거나 멈출 수 있어요.`;
+						? t("hardkoG1a.chat.youtubeChanged", { track: trackTitle })
+						: t("hardkoG1a.chat.youtubeStarted", { track: trackTitle });
 		useChatStore.getState().appendStreamChunk(replyText);
 		useChatStore.getState().finishStreaming();
 		return true;
@@ -4271,7 +4270,7 @@ export function ChatArea({
 					: `${Math.floor(elapsed / 60)}m ${Math.round(elapsed % 60)}s`;
 			useChatStore.getState().recordVoiceCostSummary(targetLocalSessionId, {
 				role: "assistant",
-				content: `🎙️ ${dur} · 로컬 (무료)`,
+				content: t("hardkoG1a.chat.localRecording", { duration: dur }),
 			});
 			return;
 		}
@@ -5733,21 +5732,21 @@ export function ChatArea({
 						className="kiosk-answer-source kiosk-local-answer-header"
 						data-testid="kiosk-local-answer-header"
 						role="group"
-						aria-label="대답하는 곳 고르기"
+						aria-label={t("hardkoG1a.chat.answerSourceAria")}
 					>
-						<span className="kiosk-answer-source__label">대답하는 곳</span>
+						<span className="kiosk-answer-source__label">{t("hardkoG1a.chat.answerSource")}</span>
 						<div className="kiosk-answer-source__switch">
 							<button
 								type="button"
 								className={`kiosk-answer-source__option${kioskLocalAnswer ? "" : " active"}`}
 								data-testid="kiosk-answer-source-gateway"
 								aria-pressed={!kioskLocalAnswer}
-								title="나이아 서버에서 대답합니다"
+								title={t("hardkoG1a.chat.serverAnswerTitle")}
 								onClick={() => {
 									if (kioskLocalAnswer) void handleKioskLocalAnswerToggle();
 								}}
 							>
-								나이아 서버
+								{t("hardkoG1a.chat.serverAnswer")}
 							</button>
 							<button
 								type="button"
@@ -5755,13 +5754,15 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-toggle"
 								aria-pressed={kioskLocalAnswer}
 								aria-disabled={kioskWebGpuReady === false}
-								aria-label="내 기기(웹GPU)에서 대답하기"
-								title="내 기기(웹GPU)에서 대답하기 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+								aria-label={t("hardkoG1a.chat.localAnswerAria")}
+								title={t("hardkoG1a.chat.localAnswerTitle")}
 								onClick={() => {
 									if (!kioskLocalAnswer) void handleKioskLocalAnswerToggle();
 								}}
 							>
-								<span className="kiosk-local-answer-label-prefix">내 기기(웹GPU)</span>
+								<span className="kiosk-local-answer-label-prefix">
+									{t("hardkoG1a.chat.localAnswer")}
+								</span>
 							</button>
 						</div>
 						{kioskLocalAnswer && isStreaming ? (
@@ -5770,7 +5771,7 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-live"
 								role="status"
 							>
-								내 PC 로 대답 중…
+								{t("hardkoG1a.chat.localAnswerLive")}
 							</span>
 						) : (
 							<span
@@ -5778,10 +5779,10 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-hint"
 							>
 								{kioskWebGpuReady === false
-									? "이 브라우저는 WebGPU 가 없어 쓸 수 없어요 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+									? t("hardkoG1a.chat.localAnswerUnavailable")
 									: kioskLocalAnswer
-										? "내 PC 의 WebLLM 으로 대답해요"
-										: "그래픽 메모리 8GB 이상 기기에서만 됩니다"}
+										? t("hardkoG1a.chat.localAnswerActive")
+										: t("hardkoG1a.chat.localAnswerRequirement")}
 							</span>
 						)}
 					</div>
@@ -5790,12 +5791,12 @@ export function ChatArea({
 					<div
 						role="dialog"
 						aria-modal="false"
-						aria-label="내 PC 모델 내려받기 확인"
+						aria-label={t("hardkoG1a.chat.localDownloadAria")}
 						className="kiosk-local-answer-notice kiosk-local-answer-confirm"
 						data-testid="kiosk-local-answer-confirm"
 					>
 						<span>
-							내 PC에서 대답하려면 AI 모델(약 2.5GB)을 처음 한 번 내려받아요. 지금 내려받을까요?
+							{t("hardkoG1a.chat.localDownloadPrompt")}
 						</span>
 						<div
 							className="kiosk-local-answer-confirm__actions"
@@ -5807,7 +5808,7 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-confirm-accept"
 								onClick={() => void handleConfirmKioskLocalAnswer()}
 							>
-								확인
+								{t("hardkoG1a.chat.localDownloadConfirm")}
 							</button>
 							<button
 								type="button"
@@ -5815,7 +5816,7 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-confirm-cancel"
 								onClick={handleCancelKioskLocalAnswer}
 							>
-								취소
+								{t("settings.cancel")}
 							</button>
 						</div>
 					</div>
@@ -5830,7 +5831,7 @@ export function ChatArea({
 						<button
 							type="button"
 							className="kiosk-local-answer-notice__close"
-							aria-label="안내 닫기"
+							aria-label={t("hardkoG1a.chat.dismissNotice")}
 							onClick={() => setKioskLocalNotice(null)}
 						>
 							×
@@ -5884,7 +5885,7 @@ export function ChatArea({
 						data-testid="bgm-sidecar-error"
 					>
 						<span>
-							BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.
+							{t("hardkoG1a.chat.bgmServerFailed")}
 						</span>
 					</div>
 				)}
@@ -5966,7 +5967,7 @@ export function ChatArea({
 											className="kiosk-local-answer-badge"
 											data-testid="kiosk-local-answer-badge"
 										>
-											내 PC 에서 나온 답
+											{t("hardkoG1a.chat.localReply")}
 										</span>
 									)}
 								{isKioskDemo() &&
@@ -5977,7 +5978,9 @@ export function ChatArea({
 											className="chat-kiosk-evidence"
 											data-testid="chat-kiosk-evidence"
 										>
-											<span className="chat-kiosk-evidence__label">근거:</span>
+											<span className="chat-kiosk-evidence__label">
+												{t("hardkoG1a.chat.evidence")}
+											</span>
 											{resolveKioskEvidenceFiles(msg).map((evidencePath) => (
 												<button
 													key={evidencePath}
@@ -6296,11 +6299,11 @@ export function ChatArea({
 								? t("webModel.inputPaused")
 								: pipelineActiveRef.current
 								? ttsPlaying
-									? "나이아가 말하는 중... (버튼을 눌러 끊기)"
+									? t("hardkoG1a.chat.voiceSpeaking")
 									: sttState === "initializing"
-										? "음성 인식 준비 중..."
+										? t("hardkoG1a.chat.voicePreparing")
 										: sttState === "listening"
-											? "듣고 있어요... (텍스트 입력도 가능)"
+											? t("hardkoG1a.chat.voiceListening")
 											: t("chat.placeholder")
 								: t("chat.placeholder")
 						}

@@ -1,6 +1,7 @@
 // KnowledgeGraphView — 지식 그래프 2D/3D 캔버스 force 뷰어(K3, 의존성 0 — 캔버스만).
 // nodes/edges+deg+군집을 군집색·degree 크기로 렌더. 2D↔3D 토글(3D=원근+자동회전).
 // 경량(글로우 제거 — shadowBlur 가 perf 주범). 노드 클릭 → onNodeClick(근거→원문 탐색용).
+import { t } from "../lib/i18n";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -38,7 +39,8 @@ export function KnowledgeGraphView({
 	// 클릭 히트테스트용 — 애니메이션 루프 밖에서 최신 위치/투영 참조(effect 재실행 없이).
 	const simsRef = useRef<Sim[] | null>(null);
 	const projRef = useRef<((s: Sim) => { px: number; py: number; scale: number }) | null>(null);
-	const redrawRef = useRef<(() => void) | null>(null); // 2D 정착(raf 정지) 후 선택 변경 시 1프레임 재draw용
+	// 2D 정착(raf 정지) 후 선택 변경 시 1프레임 재draw용
+	const redrawRef = useRef<(() => void) | null>(null);
 	const selectedIdRef = useRef<string | undefined>(selectedId);
 	selectedIdRef.current = selectedId;
 	const onNodeClickRef = useRef(onNodeClick);
@@ -51,11 +53,13 @@ export function KnowledgeGraphView({
 		if (!canvas) return;
 		const ctx = canvas.getContext("2d");
 		if (!ctx) return;
-		if (typeof requestAnimationFrame !== "function") return; // 헤드리스 가드
+		// 헤드리스 가드
+		if (typeof requestAnimationFrame !== "function") return;
 
 		const N = graph.nodes.length;
 		const sims: Sim[] = graph.nodes.map((n, i) => {
-			const a = (i / Math.max(1, N)) * Math.PI * 2; // 결정론 초기 배치(원형/구면)
+			// 결정론 초기 배치(원형/구면)
+			const a = (i / Math.max(1, N)) * Math.PI * 2;
 			return {
 				id: n.id, label: n.label, deg: n.deg, community: n.community,
 				x: Math.cos(a) * 80, y: Math.sin(a) * 80, z: mode === "3d" ? Math.sin(a * 1.7) * 80 : 0,
@@ -73,14 +77,16 @@ export function KnowledgeGraphView({
 		const step = () => {
 			for (let i = 0; i < N; i++) {
 				const a = sims[i];
-				a.fx = -a.x * 0.01; a.fy = -a.y * 0.01; a.fz = -a.z * 0.01; // 중심 인력
+				// 중심 인력
+				a.fx = -a.x * 0.01; a.fy = -a.y * 0.01; a.fz = -a.z * 0.01;
 				for (let j = 0; j < N; j++) {
 					if (i === j) continue;
 					const b = sims[j];
 					const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
 					const d2 = dx * dx + dy * dy + dz * dz + 0.01;
 					const d = Math.sqrt(d2);
-					const rep = 1400 / d2; // 반발
+					// 반발
+					const rep = 1400 / d2;
 					a.fx += (dx / d) * rep; a.fy += (dy / d) * rep; a.fz += (dz / d) * rep;
 				}
 			}
@@ -89,7 +95,8 @@ export function KnowledgeGraphView({
 				const b = sims[idx.get(e.to) as number];
 				const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
 				const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01;
-				const spring = (d - 60) * 0.02 * (e.weight || 1); // 스프링(연결=당김)
+				// 스프링(연결=당김)
+				const spring = (d - 60) * 0.02 * (e.weight || 1);
 				const ux = dx / d, uy = dy / d, uz = dz / d;
 				a.fx += ux * spring; a.fy += uy * spring; a.fz += uz * spring;
 				b.fx -= ux * spring; b.fy -= uy * spring; b.fz -= uz * spring;
@@ -125,7 +132,8 @@ export function KnowledgeGraphView({
 				ctx.beginPath(); ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py); ctx.stroke();
 			}
 			const sel = selectedIdRef.current;
-			const labelThreshold = N <= 40 ? 0 : 2; // 큰 그래프는 degree≥2 만 라벨(겹침 방지)
+			// 큰 그래프는 degree≥2 만 라벨(겹침 방지)
+			const labelThreshold = N <= 40 ? 0 : 2;
 			for (const s of sims) {
 				const p = proj(s);
 				const r = (4 + Math.min(8, s.deg * 1.5)) * p.scale;
@@ -145,7 +153,8 @@ export function KnowledgeGraphView({
 			}
 		};
 
-		redrawRef.current = draw; // 정착 후 선택 변경 시 외부에서 1프레임 재draw
+		// 정착 후 선택 변경 시 외부에서 1프레임 재draw
+		redrawRef.current = draw;
 		const tick = () => {
 			if (frame < maxFrames) step();
 			draw();
@@ -171,10 +180,12 @@ export function KnowledgeGraphView({
 		if (!onClick || !sims || !project || !canvas) return;
 		const rect = canvas.getBoundingClientRect();
 		if (!rect.width || !rect.height) return;
-		const sx = (e.clientX - rect.left) * (W / rect.width); // CSS 스케일 → 버퍼 좌표
+		// CSS 스케일 → 버퍼 좌표
+		const sx = (e.clientX - rect.left) * (W / rect.width);
 		const sy = (e.clientY - rect.top) * (H / rect.height);
 		let best: Sim | null = null;
-		let bestD = 22 * 22; // 히트 반경(버퍼 좌표)
+		// 히트 반경(버퍼 좌표)
+		let bestD = 22 * 22;
 		for (const s of sims) {
 			const p = project(s);
 			const dx = p.px - sx, dy = p.py - sy;
@@ -214,9 +225,12 @@ export function KnowledgeGraphView({
 					className="knowledge-graph-meta"
 					style={{ fontSize: scaledFontSize(11), color: "var(--cream-dim, #aab)", letterSpacing: "0.02em" }}
 				>
-					● 노드 {graph.nodes.length} · 관계 {graph.edges.length} · 군집{" "}
-					{graph.communityCount}
-					{onNodeClick ? " · 노드를 클릭해 출처 보기" : ""}
+					● {t("hardkoG1a.graph.summary", {
+						nodes: graph.nodes.length,
+						edges: graph.edges.length,
+						communities: graph.communityCount,
+					})}
+					{onNodeClick ? ` · ${t("hardkoG1a.graph.nodeHint")}` : ""}
 				</span>
 				<button
 					type="button"
@@ -233,7 +247,7 @@ export function KnowledgeGraphView({
 						cursor: "pointer",
 					}}
 				>
-					{mode === "2d" ? "🌐 3D 보기" : "▦ 2D 보기"}
+					{mode === "2d" ? t("hardkoG1a.graph.show3d") : t("hardkoG1a.graph.show2d")}
 				</button>
 			</div>
 			<canvas

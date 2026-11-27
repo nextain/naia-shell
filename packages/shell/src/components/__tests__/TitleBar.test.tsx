@@ -7,6 +7,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../lib/i18n";
 
 const {
 	mockMinimize,
@@ -75,16 +76,16 @@ describe("TitleBar platform window controls and shortcut labels", () => {
 
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.map((b) => b.getAttribute("title"))).toEqual([
-			"채팅 숨기기 (Ctrl+B)",
-			"최소화",
-			"최대화",
-			"닫기",
+			`${t("hardkoG1a.titleBar.hideChat")} (Ctrl+B)`,
+			t("hardkoG1a.titleBar.minimize"),
+			t("hardkoG1a.titleBar.maximize"),
+			t("hardkoG1a.close"),
 		]);
 
 		rerender(
 			<TitleBar appVisible={false} onToggleApp={onToggleApp} title="Naia" />,
 		);
-		expect(screen.getByTitle("채팅 보이기 (Ctrl+B)")).toBeInTheDocument();
+		expect(screen.getByTitle(`${t("hardkoG1a.titleBar.showChat")} (Ctrl+B)`)).toBeInTheDocument();
 	});
 
 	it("renders left-side macOS traffic lights (close -> minimize -> maximize) and ⌘B tooltip on Darwin", async () => {
@@ -108,10 +109,10 @@ describe("TitleBar platform window controls and shortcut labels", () => {
 
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.map((b) => b.getAttribute("title"))).toEqual([
-			"닫기",
-			"최소화",
-			"최대화",
-			"채팅 숨기기 (⌘B)",
+			t("hardkoG1a.close"),
+			t("hardkoG1a.titleBar.minimize"),
+			t("hardkoG1a.titleBar.maximize"),
+			`${t("hardkoG1a.titleBar.hideChat")} (⌘B)`,
 		]);
 		expect(
 			buttons.slice(0, 3).map((b) => b.getAttribute("data-macos-traffic")),
@@ -143,7 +144,7 @@ describe("TitleBar platform window controls and shortcut labels", () => {
 		rerender(
 			<TitleBar appVisible={false} onToggleApp={onToggleApp} title="Studio" />,
 		);
-		expect(screen.getByTitle("채팅 보이기 (⌘B)")).toBeInTheDocument();
+		expect(screen.getByTitle(`${t("hardkoG1a.titleBar.showChat")} (⌘B)`)).toBeInTheDocument();
 
 		// Dragging and double-clicking the titlebar surface still work on macOS.
 		fireEvent.mouseDown(bar!, { detail: 1 });

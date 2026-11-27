@@ -892,7 +892,7 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 
 	function diagnosisCall(warn: { mock: { calls: unknown[][] } }) {
 		return (warn.mock.calls as WarnCall[]).find((call) =>
-			String(call[1]).includes("재생 관측 실패"),
+			String(call[1]).includes("Playback observation failed (#521)"),
 		);
 	}
 

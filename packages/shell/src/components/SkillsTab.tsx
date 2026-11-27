@@ -17,7 +17,7 @@ import {
 	setGestureEnabled,
 } from "../lib/cli-detection";
 import { loadConfig } from "../lib/config";
-import { t } from "../lib/i18n";
+import { type TranslationKey, t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { isWebMode } from "../lib/web-runtime/web-assets";
@@ -25,17 +25,17 @@ import { useSkillsStore } from "../stores/skills";
 
 interface WebBuiltInSkill {
 	id: string;
-	name: string;
-	description: string;
+	nameKey: TranslationKey;
+	descriptionKey: TranslationKey;
 	tools: string;
-	badge?: string;
+	badgeKey?: TranslationKey;
 }
 
 const KIOSK_WEB_SKILLS: readonly WebBuiltInSkill[] = [
 	{
 		id: "knowledge",
-		name: "지식",
-		description: "저장된 지식 베이스 검색·질의",
+		nameKey: "hardkoG1a.skills.knowledge",
+		descriptionKey: "hardkoG1a.skills.knowledgeDescription",
 		tools: "skill_knowledge_search · skill_knowledge_ask",
 	},
 ];
@@ -43,10 +43,10 @@ const KIOSK_WEB_SKILLS: readonly WebBuiltInSkill[] = [
 const COMMON_WEB_SKILLS: readonly WebBuiltInSkill[] = [
 	{
 		id: "weather",
-		name: "날씨",
-		description: "날씨 정보 조회",
+		nameKey: "hardkoG1a.skills.weather",
+		descriptionKey: "hardkoG1a.skills.weatherDescription",
 		tools: "get_weather",
-		badge: "지원 예정",
+		badgeKey: "hardkoG1a.skills.comingSoon",
 	},
 ];
 
@@ -76,13 +76,13 @@ function WebBuiltInSkillList({ kioskDemo }: { kioskDemo: boolean }) {
 				>
 					<div className="skill-card-header">
 						<div className="skill-card-info">
-							<div className="skill-card-name">{skill.name}</div>
+							<div className="skill-card-name">{t(skill.nameKey)}</div>
 							<div className="skill-card-desc-short">
-								{skill.description} · {skill.tools}
+								{t(skill.descriptionKey)} · {skill.tools}
 							</div>
 							<div className="skill-card-badges">
 								<span className="skill-badge built-in">
-									{skill.badge ?? t("skills.builtIn")}
+									{t(skill.badgeKey ?? "skills.builtIn")}
 								</span>
 							</div>
 						</div>
@@ -207,7 +207,7 @@ export function SkillsTab({
 					className="settings-coming-soon-banner"
 					data-testid="skills-web-notice"
 				>
-					향후 앱과 동일하게 지원 예정
+					{t("hardkoG1a.skills.webNotice")}
 				</div>
 			) : (
 				<div className="skills-header">
@@ -368,7 +368,7 @@ export function SkillsTab({
 						className="skills-section-title"
 						data-testid="skills-web-unavailable"
 					>
-						코딩 CLI 등 데스크톱 전용 스킬 · 웹버전 통합 진행중
+						{t("hardkoG1a.skills.desktopNotice")}
 					</div>
 				)}
 			</div>
