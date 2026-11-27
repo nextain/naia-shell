@@ -6,9 +6,6 @@ import type { NaiaContextBridge } from "../../lib/app-registry";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 import { createGenericInstalledApp } from "../generic-installed/GenericInstalledApp";
 
-vi.mock("../generic-installed/installed-app-host-bridge", () => ({
-	installInstalledAppHostBridge: vi.fn(() => vi.fn()),
-}));
 vi.mock("../generic-installed/installed-app-context-bridge", () => ({
 	installInstalledAppContextBridge: vi.fn(() => vi.fn()),
 }));
@@ -47,6 +44,7 @@ describe("installed app permission boundary", () => {
   window.dispatchEvent(new MessageEvent("message", {source: frame.contentWindow, origin: "http://asset.localhost", data: {type: "naia-app:ask", appId: "example.app", id: "req", prompt: "hello"}}));
   expect(ask).not.toHaveBeenCalled();
   expect(post).toHaveBeenCalledWith({type: "naia-app:response", id: "req", text: "", error: "permission_denied"}, "http://asset.localhost");
+  expect(post).toHaveBeenCalledTimes(1);
   window.removeEventListener("naia:installed-app:ask", ask);
  });
 });
