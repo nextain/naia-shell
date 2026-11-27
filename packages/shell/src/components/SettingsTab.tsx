@@ -5832,6 +5832,7 @@ export function SettingsTab() {
 											type="button"
 											className="voice-preview-btn"
 											style={{ color: "var(--error-color, #f44)" }}
+											data-usage-event="settings-tab.handle-delete-asset-31.click"
 											onClick={() => handleDeleteAsset("nva-files", nvaModel)}
 										>
 											{t("settings.assetDelete")}
