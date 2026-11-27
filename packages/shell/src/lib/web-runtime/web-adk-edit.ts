@@ -1,8 +1,4 @@
 import { Logger } from "../logger";
-import {
-	getKioskBundledOriginalText,
-	writeKioskBundledOriginals,
-} from "../kiosk-demo/knowledge";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { webAdkOpfsPath } from "./web-adk-path";
 import {
@@ -50,6 +46,7 @@ export async function revertKioskAdkFile(
 		throw new Error("web_workspace_write_not_allowed");
 	}
 	const rel = parts.join("/");
+	const { getKioskBundledOriginalText } = await import("../kiosk-demo/knowledge");
 	const bundled = getKioskBundledOriginalText(rel);
 	if (bundled !== null) {
 		await fs.writeBytes(webAdkOpfsPath(rel), new TextEncoder().encode(bundled));
@@ -72,6 +69,7 @@ export async function restoreKioskAdkOriginals(
 	fs: WebFs = getWebFs(),
 ): Promise<void> {
 	if (!isKioskDemo()) return;
+	const { writeKioskBundledOriginals } = await import("../kiosk-demo/knowledge");
 	await writeKioskBundledOriginals(fs);
 	try {
 		await provisionWebAdk({ fs, force: true });

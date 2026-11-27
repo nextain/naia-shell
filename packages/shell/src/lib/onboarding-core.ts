@@ -17,7 +17,6 @@ import {
 	setKioskDemoGatewayServedModels,
 } from "./config-seed";
 import { isKioskDemo } from "./kiosk-demo/flag";
-import { seedKioskAdkWorkspace } from "./kiosk-demo/knowledge";
 import {
 	fetchNaiaModelMetadata,
 	gatewayServedModelIds,
@@ -154,6 +153,7 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 	const fs = getWebFs();
 	const result = await installDefaultWebAdk({ fs });
 	if (!result.ok) throw new Error("kiosk_workspace_unavailable");
+	const { seedKioskAdkWorkspace } = await import("./kiosk-demo/knowledge");
 	await seedKioskAdkWorkspace(fs);
 	const path = webAdkOpfsPath("naia-settings/config.json");
 	const existing = JSON.parse(

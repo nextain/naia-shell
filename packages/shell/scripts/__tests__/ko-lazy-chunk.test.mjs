@@ -94,8 +94,10 @@ it("startup helpers defer the kiosk knowledge manuscripts until they are used", 
 		const source = readFileSync(resolve(shellDirectory, "src/lib", file), "utf8");
 		const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
 		const imports = parsed.statements.filter(ts.isImportDeclaration);
-		expect(imports.map(({ moduleSpecifier }) => moduleSpecifier.text), file)
-			.not.toContain(knowledge);
+		expect(
+			imports.map(({ moduleSpecifier }) => moduleSpecifier.text),
+			file,
+		).not.toContain(knowledge);
 		expect(source, file).toContain(`import("${knowledge}")`);
 	}
 });
