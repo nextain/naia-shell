@@ -90,6 +90,7 @@ it("startup helpers defer the kiosk knowledge manuscripts until they are used", 
 	for (const [file, knowledge] of [
 		["onboarding-core.ts", "./kiosk-demo/knowledge"],
 		["web-runtime/web-adk-edit.ts", "../kiosk-demo/knowledge"],
+		["kiosk-demo/entry.ts", "./knowledge"],
 	]) {
 		const source = readFileSync(resolve(shellDirectory, "src/lib", file), "utf8");
 		const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
