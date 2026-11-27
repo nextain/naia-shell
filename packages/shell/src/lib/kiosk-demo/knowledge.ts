@@ -1,5 +1,5 @@
 /** UC-KIOSK-KNOWLEDGE-S1: portable local compiler and desktop-compatible serving. */
-import { t } from "../i18n";
+import { tKo } from "../i18n";
 import { Logger } from "../logger";
 import {
 	parseKnowledgeConfig,
@@ -28,24 +28,34 @@ const LEGACY_SOURCE = `opfs://naia-adk/${LEGACY_DIR}/knowledge`;
 /** 12판 knowledge/web.md 에서 바뀐 문장(옛 글 → 새 글). 방문자가 고친 다른 부분은 건드리지 않는다. */
 const LEGACY_MANUSCRIPT_TEXT: Record<string, readonly [string, string][]> = {
 	"web.md": [
-		[t("kiosk.legacyPair.webFrom"), t("kiosk.legacyPair.webTo")],
+		[tKo("kiosk.legacyPair.webFrom"), tKo("kiosk.legacyPair.webTo")],
 		[
-			t("kiosk.legacyPair.scopeFrom"),
-			t("kiosk.legacyPair.scopeTo"),
+			tKo("kiosk.legacyPair.scopeFrom"),
+			tKo("kiosk.legacyPair.scopeTo"),
 		],
 	],
 };
 export const KIOSK_ADK_KNOWLEDGE_DIR = "opfs://naia-adk/knowledge";
 
-export const KIOSK_AGENTS_MD = t("kiosk.agentsMd");
+export const KIOSK_AGENTS_MD = tKo("kiosk.agentsMd");
+
+/**
+ * 제목 앞에서 자른다. 제목을 찾지 못하면(-1) 옛 R10 원고를 알 수 없으므로
+ * 빈 글을 돌려준다. 빈 글은 빈 OPFS 하고만 같고, 빈 OPFS 는 앞 분기에서
+ * 새 지침으로 바뀌므로, 못 찾은 검색이 유효한 원고로 slice 되지 않는다.
+ */
+export function sliceBeforeHeading(text: string, heading: string): string {
+	const at = text.indexOf(heading);
+	return at < 0 ? "" : text.slice(0, at);
+}
 
 /** 10판까지 OPFS 에 심은 AGENTS.md(웹판 능력 안내 없음). 이 글 그대로일 때만 새 지침으로 바꾼다. */
-const KIOSK_AGENTS_MD_R10 = KIOSK_AGENTS_MD.slice(
-	0,
-	KIOSK_AGENTS_MD.indexOf(t("kiosk.agentsMd.section4Heading")),
+const KIOSK_AGENTS_MD_R10 = sliceBeforeHeading(
+	KIOSK_AGENTS_MD,
+	tKo("kiosk.agentsMd.section4Heading"),
 );
 
-export const KIOSK_RULES_MD = t("kiosk.rulesMd");
+export const KIOSK_RULES_MD = tKo("kiosk.rulesMd");
 
 const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
 	eager: true,
@@ -54,7 +64,7 @@ const manuscripts = import.meta.glob<string>("./knowledge/*.md", {
 });
 
 // Upgrade only the untouched bundled web manuscript and its compiled card.
-const R13_OLD_WEB = t("kiosk.legacyWebIntro");
+const R13_OLD_WEB = tKo("kiosk.legacyWebIntro");
 async function upgradeBundledWebKnowledge(fs: WebFs): Promise<void> {
  const updated = manuscripts["./knowledge/web.md"];
  for (const path of [webAdkOpfsPath(`${KIOSK_SOURCE_DIR}/web.md`), webAdkOpfsPath("knowledge/web.md")]) {
@@ -256,7 +266,7 @@ export async function seedKioskKnowledge(fs: WebFs): Promise<void> {
 						version: 1,
 						scope: KIOSK_SCOPE,
 						sources: [
-							{ path: KIOSK_SOURCE, label: t("kiosk.sourceLabel") },
+							{ path: KIOSK_SOURCE, label: tKo("kiosk.sourceLabel") },
 						],
 					}),
 				);
@@ -339,8 +349,8 @@ export const seedKioskAdkWorkspace = async (
 			const existingAgents = await fs.readText(agentsPath);
 			if (
 				!existingAgents ||
-				existingAgents.includes(t("kiosk.detectOld.keepBasis")) ||
-				existingAgents.includes(t("kiosk.detectOld.personaHeading")) ||
+				existingAgents.includes(tKo("kiosk.detectOld.keepBasis")) ||
+				existingAgents.includes(tKo("kiosk.detectOld.personaHeading")) ||
 				existingAgents.includes("skill_memory_save") ||
 				existingAgents === KIOSK_AGENTS_MD_R10
 			) {
@@ -350,7 +360,7 @@ export const seedKioskAdkWorkspace = async (
 			const existingRules = await fs.readText(rulesPath);
 			if (
 				!existingRules ||
-				existingRules.includes(t("kiosk.detectOld.sourceLine"))
+				existingRules.includes(tKo("kiosk.detectOld.sourceLine"))
 			) {
 				await fs.writeBytes(rulesPath, KIOSK_RULES_MD);
 			}

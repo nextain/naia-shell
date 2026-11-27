@@ -1,4 +1,5 @@
 import englishTranslations from "./locales/en";
+import koTranslations from "./locales/ko";
 import type { TranslationKey } from "./locales/keys";
 
 export type Locale =
@@ -113,4 +114,16 @@ export function t(
 			? String(params[name])
 			: whole,
 	);
+}
+
+/**
+ * 한국어 고정값이 필요한 내부 읽기표·마이그레이션 비교용 결정적
+ * 한국어 조회. UI 로케일(`t()`)을 따르지 않고 ko 정본 표에서만 읽는다.
+ * 발음 읽기, 옛 OPFS 원고 판별, 저장 출처 라벨처럼 화면 언어가 바뀌어도
+ * 같은 값이어야 하는 자리에 쓴다. 번역이 바뀌거나 키가 빠져도
+ * 과거 원고 판별이 조용히 빗나가지 않는다.
+ */
+const koTable = koTranslations as TranslationTable;
+export function tKo(key: TranslationKey): string {
+	return koTable[key] ?? key;
 }

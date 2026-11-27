@@ -93,12 +93,10 @@ const EXPECTED_KNOWLEDGE_SCOPES: Readonly<Record<string, readonly string[]>> = {
 		"kiosk.legacyPair.scopeFrom",
 		"kiosk.legacyPair.scopeTo",
 	],
-	"<module>": [
-		"kiosk.agentsMd",
-		"kiosk.agentsMd.section4Heading",
-		"kiosk.rulesMd",
-		"kiosk.legacyWebIntro",
-	],
+	KIOSK_AGENTS_MD: ["kiosk.agentsMd"],
+	KIOSK_AGENTS_MD_R10: ["kiosk.agentsMd.section4Heading"],
+	KIOSK_RULES_MD: ["kiosk.rulesMd"],
+	R13_OLD_WEB: ["kiosk.legacyWebIntro"],
 	seedKioskKnowledge: ["kiosk.sourceLabel"],
 	seedKioskAdkWorkspace: [
 		"kiosk.detectOld.keepBasis",
