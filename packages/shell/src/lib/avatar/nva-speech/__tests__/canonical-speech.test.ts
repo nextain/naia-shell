@@ -345,6 +345,47 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		).toEqual(["lib/voice/audio-queue.ts:3", "lib/voice/audio-queue.ts:4"]);
 	});
 
+	it("the drift scan flags a second copy of each approved VRM meter statement", () => {
+		const name = "lib/voice/audio-queue.ts";
+		const source = readFileSync(join(shellSrc, name), "utf8").trimEnd();
+		const repeat = [
+			"function anotherMeter() {",
+			"const analyser = source.context.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+			"}",
+		];
+		const lineCount = source.split("\n").length;
+		const offenders = scanDrift(name, [source, ...repeat].join("\n"));
+		expect(offenders.map((entry) => entry.split(" ")[0])).toEqual([
+			`${name}:${lineCount + 2}`,
+			`${name}:${lineCount + 3}`,
+		]);
+	});
+
+	it("the drift scan flags playback level readers with renamed callback parameters", () => {
+		const name = "lib/tts/sentence-pipeline.ts";
+		const callback = [
+			"onPlaybackStart: (sound) => {",
+			"animate(sound.readSpeechLevel?.());",
+			'animate(sound["readSpeechLevel"]?.());',
+			"const { readSpeechLevel: readLevel } = sound;",
+			"animate(readLevel?.());",
+			"},",
+		].join("\n");
+		expect(scanDrift(name, callback).map((entry) => entry.split(" ")[0])).toEqual(
+			[`${name}:2`, `${name}:3`, `${name}:4`],
+		);
+	});
+
+	it("the drift scan revokes the meter exception for renderer timing links", () => {
+		const name = "lib/voice/audio-queue.ts";
+		const source = readFileSync(join(shellSrc, name), "utf8").trimEnd();
+		const linked = `${source}\nrenderer.playSpeechTiming?.(timing);`;
+		expect(scanDrift(name, linked).map((entry) => entry.split(" ")[0])).toEqual(
+			[`${name}:528`, `${name}:548`],
+		);
+	});
+
 	it("the drift scan flags the meter statements once the queue file links to NVA", () => {
 		const nvaLinkedMeter = [
 			'import { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";',
