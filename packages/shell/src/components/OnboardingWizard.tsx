@@ -1356,7 +1356,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				assertCurrentAdk();
 			}
 			const committedFlat = { ...completedFlat, onboardingComplete: true };
-			if (newCore) {
+			// The browser already owns the OAuth session. The native completion
+			// path writes an agent key through a desktop-only command.
+			if (newCore && !web) {
 				await core()?.completeWith(committedFlat);
 				assertCurrentAdk();
 			} else {
