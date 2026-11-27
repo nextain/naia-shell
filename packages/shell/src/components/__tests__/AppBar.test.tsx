@@ -122,6 +122,7 @@ vi.mock("../../lib/app-registry", () => ({
 
 vi.mock("../../lib/i18n", () => ({
 	t: (k: string) => k,
+	tKo: (k: string) => k,
 	getLocale: () => "ko",
 }));
 
@@ -416,7 +417,9 @@ describe("AppBar — installed app removal", () => {
 			center: () => null,
 		};
 		vi.mocked(appRegistry.list).mockReturnValue([descriptor]);
-		vi.mocked(appRegistry.get).mockReturnValue(descriptor);
+		vi.mocked(appRegistry.get).mockImplementation((id: string) =>
+			id === descriptor.id ? descriptor : undefined,
+		);
 		render(<AppBar />);
 		fireEvent.contextMenu(screen.getByTitle("Notes"));
 	}
@@ -458,7 +461,9 @@ describe("AppBar — installed app removal", () => {
 			center: () => null,
 		};
 		vi.mocked(appRegistry.list).mockReturnValue([descriptor]);
-		vi.mocked(appRegistry.get).mockReturnValue(descriptor);
+		vi.mocked(appRegistry.get).mockImplementation((id: string) =>
+			id === descriptor.id ? descriptor : undefined,
+		);
 		vi.mocked(removeInstalledApp).mockRejectedValueOnce(
 			new Error("permission denied"),
 		);
@@ -486,7 +491,9 @@ describe("AppBar — installed app removal", () => {
 			center: () => null,
 		};
 		vi.mocked(appRegistry.list).mockReturnValue([descriptor]);
-		vi.mocked(appRegistry.get).mockReturnValue(descriptor);
+		vi.mocked(appRegistry.get).mockImplementation((id: string) =>
+			id === descriptor.id ? descriptor : undefined,
+		);
 		storeRuntime.activeApp = null;
 		storeRuntime.activatedApps = [];
 		storeRuntime.closedApps = [];

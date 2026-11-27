@@ -41,6 +41,7 @@ vi.mock("../../lib/slides-files-bridge", () => ({
 
 vi.mock("../../lib/i18n", () => ({
 	t: (k: string) => k,
+	tKo: (k: string) => k,
 	getLocale: () => "ko",
 }));
 

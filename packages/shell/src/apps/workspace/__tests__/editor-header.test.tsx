@@ -16,6 +16,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("../../../lib/i18n", () => ({
 	t: (key: string) => key,
+	tKo: (key: string) => key,
 }));
 
 describe("Editor Header UX (#678)", () => {

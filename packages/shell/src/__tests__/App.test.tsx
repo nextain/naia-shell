@@ -181,6 +181,7 @@ vi.mock("../lib/logger", () => ({
 
 vi.mock("../lib/i18n", () => ({
 	t: (k: string) => k,
+	tKo: (k: string) => k,
 	getLocale: () => "ko",
 	initializeI18n: vi.fn().mockResolvedValue(undefined),
 	setLocale: vi.fn().mockResolvedValue(undefined),

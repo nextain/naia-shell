@@ -59,6 +59,7 @@ vi.mock("../../lib/config", async (importOriginal) => ({
 vi.mock("../../lib/i18n", () => ({
 	getLocale: () => "ko",
 	t: (key: string) => key,
+	tKo: (key: string) => key,
 }));
 vi.mock("../../lib/slots/model", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../lib/slots/model")>();
