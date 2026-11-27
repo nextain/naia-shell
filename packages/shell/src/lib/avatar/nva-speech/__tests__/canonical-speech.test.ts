@@ -469,24 +469,18 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const clock = () => 0.4;
 		await renderer.playSpeechTiming({ plan: plan("aligned"), clock });
 
-		const stagedRenderer = renderer as unknown as {
-			prefetchSpeechTiming(
-				plan: SpeechPlan,
-			): Promise<{ play(clock: () => number): Promise<boolean> } | null>;
-		};
-		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
+		const prepared = await renderer.prefetchSpeechTiming(plan("aligned"));
 		expect(nextStage.prepare).toHaveBeenCalledWith(plan("aligned"));
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
 		expect(nextPlay).not.toHaveBeenCalled();
 
 		expect(await prepared?.play(clock)).toBe(true);
-		expect(nextPlay).toHaveBeenCalledWith(clock);
+		expect(await prepared?.play(clock)).toBe(false);
+		expect(nextPlay).toHaveBeenCalledExactlyOnceWith(clock);
 		expect(currentStopCallsAtNextPlay).toBe(1);
-		// retireSpeechStage stops the previous stage at once and keeps it as
-		// the spare instead of disposing it immediately.
 		expect(currentStage.stop).toHaveBeenCalledTimes(1);
-		expect(currentStage.dispose).not.toHaveBeenCalled();
+		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
 		renderer.setSpeakingVisual(false);
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		renderer.stop();
@@ -499,13 +493,15 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const currentStage = {
 			start: vi.fn(async () => true),
 			prepare: vi.fn(async () => null),
+			update: vi.fn(() => true),
 			stop: vi.fn(),
 			dispose: vi.fn(),
 			speaking: true,
 		};
+		const nextPlay = vi.fn(async () => true);
 		const nextStage = {
 			start: vi.fn(async () => true),
-			prepare: vi.fn(async () => ({ play: vi.fn(async () => true) })),
+			prepare: vi.fn(async () => ({ play: nextPlay })),
 			stop: vi.fn(),
 			dispose: vi.fn(),
 			speaking: false,
@@ -520,24 +516,21 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const video = document.createElement("video");
 		vi.spyOn(video, "play").mockResolvedValue();
 		renderer.start(video, document.createElement("canvas"));
-		const stagedRenderer = renderer as unknown as {
-			prefetchSpeechTiming(
-				plan: SpeechPlan,
-			): Promise<{ play(clock: () => number): Promise<boolean> } | null>;
-			cancelPrefetchedSpeechTiming(): void;
-		};
-		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
-		stagedRenderer.cancelPrefetchedSpeechTiming();
-		// Cancelling retires the standby synchronously: stopped at once, kept
-		// as the spare instead of disposed immediately; the active stage is
-		// untouched.
+		const timing = { plan: plan("aligned"), clock: () => 0 };
+		expect(await renderer.playSpeechTiming(timing)).toBe(true);
+		expect(currentStage.start).toHaveBeenCalledExactlyOnceWith(timing);
+		const prepared = await renderer.prefetchSpeechTiming(plan("aligned"));
+		renderer.cancelPrefetchedSpeechTiming();
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
-		expect(nextStage.dispose).not.toHaveBeenCalled();
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
-		expect(await prepared?.play(() => 0)).toBe(false);
+		expect(await prepared?.play(timing.clock)).toBe(false);
+		expect(nextPlay).not.toHaveBeenCalled();
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		expect(currentStage.stop).not.toHaveBeenCalled();
+		expect(renderer.updateSpeechPlan(timing.plan)).toBe(true);
+		expect(currentStage.update).toHaveBeenCalledExactlyOnceWith(timing.plan);
+		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
 		renderer.stop();
 		// Final teardown disposes the spare standby and the active stage.
 		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
