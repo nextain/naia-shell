@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { NaiaContextBridge } from "../../lib/app-registry";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 import { createGenericInstalledApp } from "../generic-installed/GenericInstalledApp";
+import { INSTALLED_APP_ASK_EVENT } from "../generic-installed/installed-app-host-bridge";
 
+vi.mock("../generic-installed/installed-app-host-bridge", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../generic-installed/installed-app-host-bridge")>()),
+	installInstalledAppHostBridge: vi.fn(() => vi.fn()),
+}));
 vi.mock("../generic-installed/installed-app-context-bridge", () => ({
 	installInstalledAppContextBridge: vi.fn(() => vi.fn()),
 }));
@@ -35,18 +40,35 @@ describe("installed app permission boundary", () => {
   expect(frame).not.toHaveAttribute("allow");
   expect(frame.getAttribute("allow") ?? "").not.toContain("clipboard-read");
  });
- it("rejects an iframe ask without permission and returns the error to that frame", () => {
-  const App = createGenericInstalledApp("/apps/example/index.html", [], "example.app", []);
-  render(<App naia={{} as NaiaContextBridge} />);
-  const frame = screen.getByTitle("App") as HTMLIFrameElement;
-  const post = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
-  const ask = vi.fn(); window.addEventListener("naia:installed-app:ask", ask);
-  window.dispatchEvent(new MessageEvent("message", {source: frame.contentWindow, origin: "http://asset.localhost", data: {type: "naia-app:ask", appId: "example.app", id: "req", prompt: "hello"}}));
-  expect(ask).not.toHaveBeenCalled();
-  expect(post).toHaveBeenCalledWith({type: "naia-app:response", id: "req", text: "", error: "permission_denied"}, "http://asset.localhost");
-  expect(post).toHaveBeenCalledTimes(1);
-  window.removeEventListener("naia:installed-app:ask", ask);
- });
+	it("rejects an iframe ask without permission and returns the error to that frame", () => {
+		const appId = "example.app";
+		const origin = "http://asset.localhost";
+		const App = createGenericInstalledApp("/apps/example/index.html", [], appId, []);
+		render(<App naia={{} as NaiaContextBridge} />);
+		const frame = screen.getByTitle("App") as HTMLIFrameElement;
+		const target = frame.contentWindow!;
+		const post = vi.spyOn(target, "postMessage").mockImplementation(() => {});
+		const ask = vi.fn();
+		window.addEventListener(INSTALLED_APP_ASK_EVENT, ask);
+		onTestFinished(() => {
+			window.removeEventListener(INSTALLED_APP_ASK_EVENT, ask);
+			post.mockRestore();
+		});
+
+		window.dispatchEvent(
+			new MessageEvent("message", {
+				source: target,
+				origin,
+				data: { type: "naia-app:ask", appId, id: "req", prompt: "hello" },
+			}),
+		);
+
+		expect(ask).not.toHaveBeenCalled();
+		expect(post).toHaveBeenCalledExactlyOnceWith(
+			{ type: "naia-app:response", id: "req", text: "", error: "permission_denied" },
+			origin,
+		);
+	});
 });
 
 describe("installed Slides fullscreen delegation", () => {
