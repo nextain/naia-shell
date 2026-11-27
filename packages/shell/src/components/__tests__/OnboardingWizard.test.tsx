@@ -125,6 +125,7 @@ import { useAppStore } from "../../stores/app";
 import { fetchGatewayModelCatalog } from "../../lib/llm/registry";
 import { readConfiguredLlmRoles } from "../../lib/llm/roles";
 import { activateNaiaLlm } from "../../lib/chat-service";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { OnboardingWizard } from "../OnboardingWizard";
 
 // Step order (without Naia key): agentName → userName → speechStyle → character → background → provider → complete
@@ -185,6 +186,30 @@ describe("OnboardingWizard", () => {
 		expect(config.llmRoles.sub).toEqual({ inherit: "main" });
 	});
 
+	it("IT-SM-05 keeps the cloud roles when a browser completes onboarding after OAuth", async () => {
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem("naia-remote-key", "fixture-oauth-session-key");
+		const llmRoles = {
+			main: { provider: "nextain", model: "gpt-6-luna", thinkingLevel: "high" },
+			sub: { provider: "nextain", model: "gpt-6-luna", thinkingLevel: "low" },
+		};
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider: "nextain",
+			model: "gpt-6-luna",
+			llmRoles,
+		}));
+		renderAtAgentName();
+		await act(async () => { await Promise.resolve(); });
+		advanceFromAgentNameToProvider();
+		clickNextByClass();
+		clickNextByClass();
+		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
+		await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+		const stored = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(stored).toMatchObject({ provider: "nextain", model: "gpt-6-luna", llmRoles });
+	});
+
 	it("IT-SM-14 first onboarding retains legacy memory when Luna is available", async () => {
 		vi.mocked(fetchGatewayModelCatalog).mockResolvedValue([{ id: "gpt-5.6-luna", provider: "azure", price: { input: 1, output: 1 } }]);
 		localStorage.setItem("naia-adk-path", "/adk-test");
@@ -205,6 +230,7 @@ describe("OnboardingWizard", () => {
 	});
 
 	afterEach(() => {
+		setWebAssetsModeForTests(null);
 		vi.unstubAllGlobals();
 		vi.runAllTimers();
 		vi.useRealTimers();
