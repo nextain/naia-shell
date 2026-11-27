@@ -652,6 +652,13 @@
       ],
       "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
     },
+    "packages/shell/src/lib/kiosk-demo/kb-compiler/interpolate-message.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-KIOSK-KNOWLEDGE-S1"
+      ],
+      "contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+    },
     "packages/shell/web-worker/gateway-url.ts": {
       "layer": "adapters",
       "uc": [
