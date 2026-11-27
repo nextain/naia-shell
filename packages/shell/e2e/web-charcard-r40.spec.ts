@@ -28,6 +28,25 @@ async function expectActionRow(buttons: Locator[]) {
 	for (const box of bounds) expect(Math.abs(box!.y - y)).toBeLessThan(4);
 }
 
+const bundledFallbackPortrait =
+	/\/(?:hosted-apps\/naia-charcard\/assets|src\/apps\/charcard)\/fallback-avatar(?:-[\w-]+)?\.webp$/;
+
+test("decodes both JSON sample fallback portraits inside the hosted sandbox", async ({
+	page,
+}) => {
+	await openWebShellWithBgm(page, { openBgm: false });
+	await page.getByTestId("web-character-card-quick-btn").click();
+	const iframe = page.locator('iframe[src*="/hosted-apps/naia-charcard/"]');
+	await expect(iframe).not.toHaveAttribute("sandbox", /allow-same-origin/);
+	const app = iframe.contentFrame();
+	for (const id of ["clockwork-tinker-json-v3", "starlight-archivist-v2"]) {
+		const portrait = app
+			.getByTestId(`charcard-item-sample:${id}`)
+			.getByTestId("charcard-list-image");
+		await expectImage(portrait, bundledFallbackPortrait);
+	}
+});
+
 for (const viewport of WEB_BGM_VIEWPORTS) {
 	test(`R40 adds cards, shows their pictures and applies from the first screen at ${viewport.width}px`, async ({
 		page,
