@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { setLocale, t, tKo } from "../../src/lib/i18n";
 
@@ -83,4 +84,18 @@ describe("ko table stays out of the entry chunk", () => {
 		expect(ko).toContain("chat.outputStage.thinking");
 		expect(ko).toContain("생각 중…");
 	});
+});
+
+it("startup helpers defer the kiosk knowledge manuscripts until they are used", () => {
+	for (const [file, knowledge] of [
+		["onboarding-core.ts", "./kiosk-demo/knowledge"],
+		["web-runtime/web-adk-edit.ts", "../kiosk-demo/knowledge"],
+	]) {
+		const source = readFileSync(resolve(shellDirectory, "src/lib", file), "utf8");
+		const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
+		const imports = parsed.statements.filter(ts.isImportDeclaration);
+		expect(imports.map(({ moduleSpecifier }) => moduleSpecifier.text), file)
+			.not.toContain(knowledge);
+		expect(source, file).toContain(`import("${knowledge}")`);
+	}
 });
