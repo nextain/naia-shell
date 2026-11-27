@@ -12,6 +12,11 @@ import { bgmPlayback } from "../../lib/bgm-playback";
 import { t } from "../../lib/i18n";
 import en from "../../lib/locales/en";
 import {
+	patchUiPreferences,
+	resetUiPreferencesForTests,
+	UI_PREFERENCE_KEYS,
+} from "../../lib/ui-preferences";
+import {
 	BrowserCenterArea,
 	NAVIGATE_READ_DELAY_MS,
 	NAVIGATE_TEXT_TIMEOUT_MS,
@@ -41,6 +46,8 @@ vi.mock("../../lib/logger", () => ({
 
 vi.mock("../../lib/config", () => ({
 	addAllowedTool: vi.fn(),
+	loadConfig: vi.fn(() => null),
+	saveConfig: vi.fn(),
 }));
 
 vi.mock("../../lib/browser-prefs", () => ({
@@ -234,6 +241,148 @@ describe("BrowserCenterArea AI browser tools", () => {
 		expect(result).toContain("Navigated to https://news.naver.com");
 		expect(result).toContain("Page text read failed");
 		expect(result).not.toContain("Navigation failed");
+	});
+});
+
+// ── 권한이 꺼진 도구의 거부가 호출자에게 실패로 가는가 (S2) ──────────────────
+//
+// 왜 이 묶음이 있는가: 브라우저 앱 하단의 AI 도구 설정에서 어떤 도구를 끄면
+// 핸들러가 거부 문장을 "반환" 했다. 브리지는 반환값을 성공으로 전달하므로
+// 호출자(채팅)에는 거부가 성공 결과로 보였다. 거부는 거부 사유를 담은 실패
+// (reject)로 전달되어야 한다.
+const ALL_TOOL_PERMS = {
+	navigate: true,
+	back: true,
+	forward: true,
+	reload: true,
+	click: true,
+	fill: true,
+	scroll: true,
+	press: true,
+	snapshot: true,
+	getText: true,
+	eval: true,
+};
+
+const DENIAL_CASES: Array<
+	[string, string, string, Record<string, unknown>, string]
+> = [
+	[
+		"skill_browser_navigate",
+		"navigate",
+		"탐색",
+		{ url: "https://example.com" },
+		"browser_wv_navigate",
+	],
+	["skill_browser_back", "back", "뒤로", {}, "browser_wv_back"],
+	["skill_browser_forward", "forward", "앞으로", {}, "browser_wv_forward"],
+	["skill_browser_reload", "reload", "새로고침", {}, "browser_wv_reload"],
+	["skill_browser_snapshot", "snapshot", "스냅샷", {}, "browser_wv_snapshot"],
+	["skill_browser_click", "click", "클릭", { ref: "@e1" }, "browser_wv_click"],
+	[
+		"skill_browser_fill",
+		"fill",
+		"입력",
+		{ ref: "@e1", text: "hello" },
+		"browser_wv_fill",
+	],
+	["skill_browser_get_text", "getText", "읽기", {}, "browser_wv_get_text"],
+	["skill_browser_scroll", "scroll", "스크롤", {}, "browser_wv_scroll"],
+	[
+		"skill_browser_press",
+		"press",
+		"키보드",
+		{ key: "Enter" },
+		"browser_wv_press",
+	],
+	["skill_browser_eval", "eval", "JS실행", { js: "1+1" }, "browser_wv_eval"],
+];
+
+describe("BrowserCenterArea AI tool permission denial", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		localStorage.clear();
+		resetUiPreferencesForTests();
+		bgmPlayback.reset();
+		listenMock.mockResolvedValue(() => {});
+		invokeMock.mockImplementation(async (cmd: string) => {
+			if (cmd === "browser_wv_page_info") {
+				return ["https://news.naver.com", "Naver News"];
+			}
+			if (cmd === "browser_wv_get_text") {
+				return JSON.stringify("AI 뉴스 제목\nAI 뉴스 본문");
+			}
+			return undefined;
+		});
+		class ResizeObserverMock {
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+		}
+		globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
+		window.requestAnimationFrame = (cb: FrameRequestCallback) =>
+			window.setTimeout(() => cb(performance.now()), 0);
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+		vi.clearAllMocks();
+		resetUiPreferencesForTests();
+		bgmPlayback.reset();
+	});
+
+	async function mountWithPerms(
+		perms: Record<string, boolean>,
+	): Promise<MockBridge> {
+		void patchUiPreferences({ [UI_PREFERENCE_KEYS.browserToolPerms]: perms });
+		const bridge = new MockBridge();
+		render(<BrowserCenterArea naia={bridge} />);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(500);
+		});
+		return bridge;
+	}
+
+	it.each(DENIAL_CASES)(
+		"%s rejects with the denial reason when %s is off",
+		async (tool, flag, label, args, command) => {
+			const bridge = await mountWithPerms({ ...ALL_TOOL_PERMS, [flag]: false });
+
+			const settled = bridge.callTool(tool, args).then(
+				(value) => ({ ok: true as const, value }),
+				(error: unknown) => ({ ok: false as const, error }),
+			);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(NAVIGATE_READ_DELAY_MS + 100);
+			});
+			const outcome = await settled;
+
+			expect(outcome.ok).toBe(false);
+			if (!outcome.ok) {
+				const message = String(
+					(outcome.error as Error)?.message ?? outcome.error,
+				);
+				expect(message).toContain("비활성화");
+				expect(message).toContain(`'${label}'`);
+			}
+			expect(invokeMock.mock.calls.map((call) => call[0])).not.toContain(
+				command,
+			);
+		},
+	);
+
+	it("still resolves a permitted click as success", async () => {
+		const bridge = await mountWithPerms({ ...ALL_TOOL_PERMS });
+
+		const result = await bridge.callTool("skill_browser_click", {
+			ref: "@e1",
+		});
+
+		expect(result).toContain("Clicked");
+		expect(invokeMock.mock.calls.map((call) => call[0])).toContain(
+			"browser_wv_click",
+		);
 	});
 });
 
