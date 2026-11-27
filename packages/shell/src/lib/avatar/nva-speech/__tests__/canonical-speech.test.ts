@@ -260,8 +260,7 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 
 	function scanDrift(name: string, text: string): string[] {
 		const offenders: string[] = [];
-		const vrmMeter =
-			VRM_PLAYBACK_METER.has(name) && !isNvaLinked(name, text);
+		const vrmMeter = VRM_PLAYBACK_METER.has(name) && !isNvaLinked(name, text);
 		text.split("\n").forEach((line, index) => {
 			for (const [label, pattern] of DRIFT) {
 				if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
