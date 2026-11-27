@@ -544,7 +544,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		};
 
 		const u1 = naia.onToolCall("skill_browser_navigate", async (args) => {
-			if (!p.current.navigate) return denied("탐색");
+			if (!p.current.navigate) throw new Error(denied("탐색"));
 			const url = String(args.url ?? "");
 			if (!url) return "Error: url required";
 			if (isCurrentBgmYoutubeUrl(url)) {
@@ -600,7 +600,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u2 = naia.onToolCall("skill_browser_back", async () => {
-			if (!p.current.back) return denied("뒤로");
+			if (!p.current.back) throw new Error(denied("뒤로"));
 			try {
 				await invoke("browser_wv_back");
 				await refreshPageInfo();
@@ -611,7 +611,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u3 = naia.onToolCall("skill_browser_forward", async () => {
-			if (!p.current.forward) return denied("앞으로");
+			if (!p.current.forward) throw new Error(denied("앞으로"));
 			try {
 				await invoke("browser_wv_forward");
 				await refreshPageInfo();
@@ -622,7 +622,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u4 = naia.onToolCall("skill_browser_reload", async () => {
-			if (!p.current.reload) return denied("새로고침");
+			if (!p.current.reload) throw new Error(denied("새로고침"));
 			try {
 				await invoke("browser_wv_reload");
 				await refreshPageInfo();
@@ -633,7 +633,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u5 = naia.onToolCall("skill_browser_snapshot", async () => {
-			if (!p.current.snapshot) return denied("스냅샷");
+			if (!p.current.snapshot) throw new Error(denied("스냅샷"));
 			try {
 				const tree = await invoke<string>("browser_wv_snapshot");
 				await refreshPageInfo();
@@ -644,7 +644,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u6 = naia.onToolCall("skill_browser_click", async (args) => {
-			if (!p.current.click) return denied("클릭");
+			if (!p.current.click) throw new Error(denied("클릭"));
 			const ref_ = String(args.ref ?? args.selector ?? "");
 			if (!ref_) return "Error: ref required (use @eN from snapshot)";
 			try {
@@ -657,7 +657,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u7 = naia.onToolCall("skill_browser_fill", async (args) => {
-			if (!p.current.fill) return denied("입력");
+			if (!p.current.fill) throw new Error(denied("입력"));
 			const ref_ = String(args.ref ?? args.selector ?? "");
 			const text = String(args.text ?? "");
 			if (!ref_) return "Error: ref required (use @eN from snapshot)";
@@ -670,7 +670,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u8 = naia.onToolCall("skill_browser_get_text", async (args) => {
-			if (!p.current.getText) return denied("읽기");
+			if (!p.current.getText) throw new Error(denied("읽기"));
 			const ref_ = String(args.ref ?? args.selector ?? "");
 			try {
 				const raw = await invoke<string>("browser_wv_get_text", {
@@ -685,7 +685,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u9 = naia.onToolCall("skill_browser_scroll", async (args) => {
-			if (!p.current.scroll) return denied("스크롤");
+			if (!p.current.scroll) throw new Error(denied("스크롤"));
 			const dir = String(args.direction ?? args.dir ?? "down");
 			const px = Number(args.pixels ?? args.px ?? 300);
 			try {
@@ -697,7 +697,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u10 = naia.onToolCall("skill_browser_press", async (args) => {
-			if (!p.current.press) return denied("키보드");
+			if (!p.current.press) throw new Error(denied("키보드"));
 			const key = String(args.key ?? "");
 			if (!key) return "Error: key required (e.g. Enter, Tab, Control+a)";
 			try {
@@ -709,7 +709,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		});
 
 		const u12 = naia.onToolCall("skill_browser_eval", async (args) => {
-			if (!p.current.eval) return denied("JS실행");
+			if (!p.current.eval) throw new Error(denied("JS실행"));
 			const js = String(args.js ?? args.script ?? "");
 			if (!js) return "Error: js argument required";
 			try {
