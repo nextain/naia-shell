@@ -124,6 +124,19 @@ export function t(
  * 과거 원고 판별이 조용히 빗나가지 않는다.
  */
 const koTable = koTranslations as TranslationTable;
-export function tKo(key: TranslationKey): string {
-	return koTable[key] ?? key;
+/**
+ * ko 정본 표에만 들어 있는 키. ko 표에 없는 키를 받으면 컴파일 단계에서
+ * 걸린다.
+ */
+export type KoTranslationKey = Extract<TranslationKey, keyof typeof koTranslations>;
+/**
+ * 한국어 고정값 조회. ko 표에 키가 없으면 키 이름을 돌려주지 않고 던진다.
+ * 키 이름 대체는 `includes` 판별을 조용히 빗나가게 해서(옛 지침이 있는데도
+ * 없다고 보고 갱신을 건너뜀) 과거 원고 판별을 깨뜨리므로, 없으면 크게
+ * 드러낸다.
+ */
+export function tKo(key: KoTranslationKey): string {
+	const value = koTable[key];
+	if (value === undefined) throw new Error(`missing_ko_translation:${key}`);
+	return value;
 }

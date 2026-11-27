@@ -508,9 +508,11 @@ describe("b3r 이관 키가 열네 로케일에 own property 로 있다", () => 
 			t: (key: string) => enInjected[key] ?? key,
 		}));
 		try {
-			const fresh = (await import(
-				/* @vite-ignore */ "../avatar/nva-speech/browser-speech-plan.ts?fx1-speech-en"
-			)) as typeof import("../avatar/nva-speech/browser-speech-plan");
+			const freshPath: string =
+				"../avatar/nva-speech/browser-speech-plan.ts?fx1-speech-en";
+			const fresh = (await import(/* @vite-ignore */ freshPath)) as typeof import(
+				"../avatar/nva-speech/browser-speech-plan"
+			);
 			expect(
 				fresh.replaceLatinWithHangulForSpeechUnits("AI"),
 				"주입된 영어값이 발음표에 스며들었다",
