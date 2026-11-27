@@ -7,10 +7,6 @@ import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 import { createGenericInstalledApp } from "../generic-installed/GenericInstalledApp";
 import { INSTALLED_APP_ASK_EVENT } from "../generic-installed/installed-app-host-bridge";
 
-vi.mock("../generic-installed/installed-app-host-bridge", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../generic-installed/installed-app-host-bridge")>()),
-	installInstalledAppHostBridge: vi.fn(() => vi.fn()),
-}));
 vi.mock("../generic-installed/installed-app-context-bridge", () => ({
 	installInstalledAppContextBridge: vi.fn(() => vi.fn()),
 }));
