@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { setLocale, t } from "../i18n";
 
@@ -122,3 +124,18 @@ describe("b1 번역표 이관 키가 열네 로케일에 있다", () => {
 		await setLocale("ko");
 	});
 });
+
+it("detects no locale-branching translation tables outside locales", () => {
+	const repoRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
+	const gate = spawnSync(process.execPath, ["scripts/check-untranslated-ui.mjs"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	if (gate.error) throw gate.error;
+	const output = gate.stdout + gate.stderr;
+	expect(gate.stdout, output).toMatch(/^\[untranslated-ui\] .*\(baseline /m);
+	expect(gate.stderr, output).not.toMatch(/로케일 밖에서 언어로 분기하는 번역표 \d+개/);
+	// The gate independently rejects an existing excess of hardcoded Korean lines.
+	const exceedsHangulBaseline = gate.stderr.includes("❌ 늘었다.");
+	expect(gate.status, output).toBe(exceedsHangulBaseline ? 1 : 0);
+}, 30_000);

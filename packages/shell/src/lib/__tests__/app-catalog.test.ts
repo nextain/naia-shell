@@ -499,4 +499,25 @@ describe("R3 unified web catalog (built-in + gateway + admin)", () => {
 		expect(formatStoreProductPrice(0, "무료")).toBe("무료");
 		expect(formatStoreProductPrice(3000, "무료")).toBe("3,000 Cr");
 	});
+
+	it("R3 falls back to English then Korean for unsupported locale keys inherited by plain objects", () => {
+		const sample = {
+			appId: "land.naia.sample",
+			manifest: {
+				id: "land.naia.sample",
+				name: "Fallback Name",
+				version: "1.0.0",
+				names: { ko: "한국어 이름", en: "English Name" },
+				descriptions: { ko: "한국어 설명" },
+			},
+		};
+		expect(localizeStoreProduct(sample, "constructor-US")).toEqual({
+			title: "English Name",
+			description: "한국어 설명",
+		});
+		expect(localizeStoreProduct(sample, "__proto__-US")).toEqual({
+			title: "English Name",
+			description: "한국어 설명",
+		});
+	});
 });
