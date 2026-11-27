@@ -73,3 +73,17 @@ describe("UT-SM-06 default thinking levels (webgpu 3-model lineup)", () => {
    expect(defaultThinkingLevel("")).toBeUndefined();
  });
 });
+describe("UT-LUNA-DEFAULTS Luna defaults (alpha-luna-defaults-20261127 RED)", () => {
+ it("uses Luna high as the default main model when the catalog contains Luna", () => {
+   expect(defaultMainModel([meta("deepseek-v4.1-flash"), meta("gpt-6.1-terra"), meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "high" });
+   expect(defaultThinkingLevel("gpt-6-luna")).toBe("high");
+ });
+ it("uses Luna low as the default small model when the catalog contains Luna", () => {
+   expect(defaultSmallModel([meta("deepseek-v4.1-flash"), meta("gpt-6-luna"), meta("gpt-5.6-luna")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "low" });
+ });
+ it("falls back to the next candidate when Luna is absent", () => {
+   expect(defaultMainModel([meta("deepseek-v4.1-flash"), meta("gpt-6.1-terra"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "xhigh" });
+   expect(defaultMainModel([meta("gpt-6.1-terra"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" });
+   expect(defaultSmallModel([meta("deepseek-v4.1-flash"), meta("gpt-5.6-luna")])).toEqual({ provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "low" });
+ });
+});
