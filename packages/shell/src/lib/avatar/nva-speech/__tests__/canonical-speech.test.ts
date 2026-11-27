@@ -247,6 +247,15 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 	]);
 	const VRM_PLAYBACK_METER = new Set(["lib/voice/audio-queue.ts"]);
 	const VRM_PLAYBACK_METER_WAIVED = new Set(["volume threshold mouth"]);
+	// Confirmed VRM-only speech meter statements (audio-queue.ts
+	// createSpeechMeter): only these two statements are waived, and only
+	// while the file has no NVA link. Any other volume-threshold line in
+	// the same file stays flagged, so an added analyser loop or NVA
+	// callback analyser cannot hide behind the meter exception.
+	const VRM_PLAYBACK_METER_ALLOWED = new Set([
+		"const analyser = source.context.createAnalyser();",
+		"analyser.getFloatTimeDomainData(samples);",
+	]);
 	const NVA_PATH_PREFIX = "lib/avatar/nva-speech/";
 	const NVA_LINK =
 		/CanonicalSpeechStage|canonical-speech-stage|SpeechPlayer|PrebakedAvatarRenderer/;
@@ -264,7 +273,12 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		text.split("\n").forEach((line, index) => {
 			for (const [label, pattern] of DRIFT) {
 				if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
-				if (vrmMeter && VRM_PLAYBACK_METER_WAIVED.has(label)) continue;
+				if (
+					vrmMeter &&
+					VRM_PLAYBACK_METER_WAIVED.has(label) &&
+					VRM_PLAYBACK_METER_ALLOWED.has(line.trim())
+				)
+					continue;
 				if (pattern.test(line))
 					offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
 			}
@@ -328,10 +342,20 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 			scanDrift("lib/voice/audio-queue.ts", withExtraLoop).map(
 				(entry) => entry.split(" ")[0],
 			),
-		).toEqual([
-			"lib/voice/audio-queue.ts:3",
-			"lib/voice/audio-queue.ts:4",
-		]);
+		).toEqual(["lib/voice/audio-queue.ts:3", "lib/voice/audio-queue.ts:4"]);
+	});
+
+	it("the drift scan flags the meter statements once the queue file links to NVA", () => {
+		const nvaLinkedMeter = [
+			'import { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";',
+			"const analyser = source.context.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+		].join("\n");
+		expect(
+			scanDrift("lib/voice/audio-queue.ts", nvaLinkedMeter).map(
+				(entry) => entry.split(" ")[0],
+			),
+		).toEqual(["lib/voice/audio-queue.ts:2", "lib/voice/audio-queue.ts:3"]);
 	});
 
 	it("the drift scan keeps aiueo, drawn mouth and approximate forbidden in the VRM playback meter file", () => {
