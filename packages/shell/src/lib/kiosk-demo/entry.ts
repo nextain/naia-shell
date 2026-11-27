@@ -10,7 +10,6 @@ import {
 import { WEB_LLM_MODEL_PREF_KEY } from "../web-runtime/webllm-model";
 import { isKioskDemo } from "./flag";
 import { restoreKioskAdkOriginals } from "../web-runtime/web-adk-edit";
-import { seedKioskAdkWorkspace } from "./knowledge";
 
 export const KIOSK_VISIT_ACTIVE_SESSION_KEY = "naia-kiosk-visit-active";
 export const KIOSK_VISIT_LAST_ACTIVE_KEY = "naia-kiosk-last-active-at";
@@ -171,6 +170,7 @@ async function resetKioskSettingsToSeed(): Promise<void> {
 				ttsEnabled: true,
 			}),
 		);
+		const { seedKioskAdkWorkspace } = await import("./knowledge");
 		await seedKioskAdkWorkspace(fs);
 		// 손님이 고친 ADK 파일(AGENTS.md·규칙·지식·.agents·.users)을 원본으로 되돌린다.
 		await restoreKioskAdkOriginals(fs);
