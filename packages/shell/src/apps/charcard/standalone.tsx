@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { Logger } from "../../lib/logger";
 import { CharCardApp, type CharCardContextBridge } from "./CharCardApp";
+import avatarImageUrl from "./fallback-avatar.webp";
 import { resolveCharCardLocale } from "./locales/messages";
 import "./standalone.css";
 
@@ -22,10 +23,6 @@ function bootstrap() {
 	if (!root) return;
 	const locale = resolveCharCardLocale();
 	document.documentElement.lang = locale;
-	const avatarImageUrl = new URL(
-		"../../avatars/03-OL_Woman.webp",
-		window.location.href,
-	).href;
 	createRoot(root).render(
 		<React.StrictMode>
 			<CharCardApp

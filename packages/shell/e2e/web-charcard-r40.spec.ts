@@ -115,9 +115,9 @@ for (const viewport of WEB_BGM_VIEWPORTS) {
 		await expect(app.getByTestId("charcard-detail-name")).toHaveText("가람");
 		await expectImage(
 			selected.getByTestId("charcard-list-image"),
-			/\/avatars\/.*\.webp$/,
+			bundledFallbackPortrait,
 		);
-		await expectImage(picture, /\/avatars\/.*\.webp$/);
+		await expectImage(picture, bundledFallbackPortrait);
 
 		for (const version of [2, 3]) {
 			await input.setInputFiles({
