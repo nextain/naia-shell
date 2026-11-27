@@ -245,20 +245,37 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		"volume threshold mouth",
 		"approximate plan",
 	]);
-	const VRM_PLAYBACK_METER = new Set(["lib/voice/audio-queue.ts"]);
-	const VRM_PLAYBACK_METER_WAIVED = new Set(["volume threshold mouth"]);
-	// Confirmed VRM-only speech meter statements (audio-queue.ts
-	// createSpeechMeter): only these two statements are waived, and only
-	// while the file has no NVA link. Any other volume-threshold line in
-	// the same file stays flagged, so an added analyser loop or NVA
-	// callback analyser cannot hide behind the meter exception.
-	const VRM_PLAYBACK_METER_ALLOWED = new Set([
-		"const analyser = source.context.createAnalyser();",
-		"analyser.getFloatTimeDomainData(samples);",
+	const AUDIO_QUEUE = "lib/voice/audio-queue.ts";
+	// Only these two locations in createSpeechMeter may use the analyser.
+	const VRM_METER_LINES = new Map([
+		[528, "const analyser = source.context.createAnalyser();"],
+		[548, "analyser.getFloatTimeDomainData(samples);"],
 	]);
 	const NVA_PATH_PREFIX = "lib/avatar/nva-speech/";
 	const NVA_LINK =
-		/CanonicalSpeechStage|canonical-speech-stage|SpeechPlayer|PrebakedAvatarRenderer/;
+		/CanonicalSpeechStage|canonical-speech-stage|SpeechPlayer|PrebakedAvatarRenderer|nva-speech\/|\b(?:playSpeechTiming|prefetchSpeechTiming|updateSpeechPlan)\b/;
+	// The queue supplies the level reader through the playback clock contract.
+	// Only VRM lip-sync may consume it.
+	const PLAYBACK_LEVEL_LINES = new Map([
+		[
+			AUDIO_QUEUE,
+			new Set([
+				"const readSpeechLevel =",
+				"...(measure ? { duration: () => audio.duration, readSpeechLevel } : {}),",
+			]),
+		],
+		[
+			`${NVA_PATH_PREFIX}speech-timing.ts`,
+			new Set(["readSpeechLevel?: () => number;"]),
+		],
+		[
+			"lib/vrm/lip-sync.ts",
+			new Set([
+				"hasMeter: Boolean(playback.readSpeechLevel),",
+				"return sampleVrmMouth(plan, position, playback.readSpeechLevel?.());",
+			]),
+		],
+	]);
 
 	function isNvaLinked(name: string, text: string): boolean {
 		if (name.startsWith(NVA_PATH_PREFIX)) return true;
@@ -269,18 +286,28 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 
 	function scanDrift(name: string, text: string): string[] {
 		const offenders: string[] = [];
-		const vrmMeter = VRM_PLAYBACK_METER.has(name) && !isNvaLinked(name, text);
+		const vrmMeter = name === AUDIO_QUEUE && !isNvaLinked(name, text);
 		text.split("\n").forEach((line, index) => {
+			const lineNumber = index + 1;
+			const statement = line.trim();
+			if (
+				/\breadSpeechLevel\b/.test(statement) &&
+				!PLAYBACK_LEVEL_LINES.get(name)?.has(statement)
+			)
+				offenders.push(
+					`${name}:${lineNumber} volume threshold mouth: ${statement}`,
+				);
+
 			for (const [label, pattern] of DRIFT) {
 				if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
 				if (
 					vrmMeter &&
-					VRM_PLAYBACK_METER_WAIVED.has(label) &&
-					VRM_PLAYBACK_METER_ALLOWED.has(line.trim())
+					label === "volume threshold mouth" &&
+					VRM_METER_LINES.get(lineNumber) === statement
 				)
 					continue;
 				if (pattern.test(line))
-					offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
+					offenders.push(`${name}:${lineNumber} ${label}: ${statement}`);
 			}
 		});
 		return offenders;
@@ -310,43 +337,36 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 			"lib/avatar/nva-speech/mouth-loop.ts:2 volume threshold mouth",
 			"lib/avatar/nva-speech/mouth-loop.ts:3 volume threshold mouth",
 		]);
-		const stageLinked = [
-			'import { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";',
-			"const analyser = source.context.createAnalyser();",
-		].join("\n");
-		expect(scanDrift("lib/voice/audio-queue.ts", stageLinked)).toHaveLength(1);
 	});
 
 	it("the drift scan lets the VRM-only playback meter read the output level", () => {
-		const vrmMeter = [
-			'import type { AudioPlaybackClock } from "../avatar/nva-speech/speech-timing";',
-			"const analyser = source.context.createAnalyser();",
-			"analyser.getFloatTimeDomainData(samples);",
-		].join("\n");
-		expect(scanDrift("lib/voice/audio-queue.ts", vrmMeter)).toEqual([]);
+		const source = readFileSync(join(shellSrc, AUDIO_QUEUE), "utf8");
+		const lines = source.split("\n");
+		for (const [lineNumber, statement] of VRM_METER_LINES)
+			expect(lines[lineNumber - 1].trim()).toBe(statement);
+		expect(scanDrift(AUDIO_QUEUE, source)).toEqual([]);
 	});
 
 	it("the drift scan flags any extra analyser line added to the VRM playback meter file", () => {
-		const allowedMeter = [
-			"const analyser = source.context.createAnalyser();",
-			"analyser.getFloatTimeDomainData(samples);",
-		].join("\n");
-		expect(scanDrift("lib/voice/audio-queue.ts", allowedMeter)).toEqual([]);
+		const source = readFileSync(join(shellSrc, AUDIO_QUEUE), "utf8").trimEnd();
+		const lineCount = source.split("\n").length;
 		const withExtraLoop = [
-			"const analyser = source.context.createAnalyser();",
-			"analyser.getFloatTimeDomainData(samples);",
+			source,
 			"const extraAnalyser = source.context.createAnalyser();",
-			"analyser.getByteTimeDomainData(bytes);",
+			"extraAnalyser.getByteTimeDomainData(bytes);",
+			'extraAnalyser["getFloatFrequencyData"](bins);',
 		].join("\n");
 		expect(
-			scanDrift("lib/voice/audio-queue.ts", withExtraLoop).map(
-				(entry) => entry.split(" ")[0],
-			),
-		).toEqual(["lib/voice/audio-queue.ts:3", "lib/voice/audio-queue.ts:4"]);
+			scanDrift(AUDIO_QUEUE, withExtraLoop).map((entry) => entry.split(" ")[0]),
+		).toEqual([
+			`${AUDIO_QUEUE}:${lineCount + 1}`,
+			`${AUDIO_QUEUE}:${lineCount + 2}`,
+			`${AUDIO_QUEUE}:${lineCount + 3}`,
+		]);
 	});
 
 	it("the drift scan flags a second copy of each approved VRM meter statement", () => {
-		const name = "lib/voice/audio-queue.ts";
+		const name = AUDIO_QUEUE;
 		const source = readFileSync(join(shellSrc, name), "utf8").trimEnd();
 		const repeat = [
 			"function anotherMeter() {",
@@ -372,13 +392,13 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 			"animate(readLevel?.());",
 			"},",
 		].join("\n");
-		expect(scanDrift(name, callback).map((entry) => entry.split(" ")[0])).toEqual(
-			[`${name}:2`, `${name}:3`, `${name}:4`],
-		);
+		expect(
+			scanDrift(name, callback).map((entry) => entry.split(" ")[0]),
+		).toEqual([`${name}:2`, `${name}:3`, `${name}:4`]);
 	});
 
 	it("the drift scan revokes the meter exception for renderer timing links", () => {
-		const name = "lib/voice/audio-queue.ts";
+		const name = AUDIO_QUEUE;
 		const source = readFileSync(join(shellSrc, name), "utf8").trimEnd();
 		const linked = `${source}\nrenderer.playSpeechTiming?.(timing);`;
 		expect(scanDrift(name, linked).map((entry) => entry.split(" ")[0])).toEqual(
@@ -387,16 +407,13 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 	});
 
 	it("the drift scan flags the meter statements once the queue file links to NVA", () => {
-		const nvaLinkedMeter = [
-			'import { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";',
-			"const analyser = source.context.createAnalyser();",
-			"analyser.getFloatTimeDomainData(samples);",
-		].join("\n");
+		const source = readFileSync(join(shellSrc, AUDIO_QUEUE), "utf8").trimEnd();
+		const nvaLinkedMeter = `${source}\nimport { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";`;
 		expect(
-			scanDrift("lib/voice/audio-queue.ts", nvaLinkedMeter).map(
+			scanDrift(AUDIO_QUEUE, nvaLinkedMeter).map(
 				(entry) => entry.split(" ")[0],
 			),
-		).toEqual(["lib/voice/audio-queue.ts:2", "lib/voice/audio-queue.ts:3"]);
+		).toEqual([`${AUDIO_QUEUE}:528`, `${AUDIO_QUEUE}:548`]);
 	});
 
 	it("the drift scan keeps aiueo, drawn mouth and approximate forbidden in the VRM playback meter file", () => {
