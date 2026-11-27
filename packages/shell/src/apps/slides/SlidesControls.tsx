@@ -53,9 +53,9 @@ export function SlidesControls({
 					type="button"
 					onClick={() => onAction("previous")}
 					disabled={editing || state.totalPages === 0 || state.page <= 1}
-					aria-label="이전"
+					aria-label={t("slidesKiosk.previous")}
 				>
-					이전
+					{t("slidesKiosk.previous")}
 				</button>
 				<button
 					type="button"
@@ -72,9 +72,9 @@ export function SlidesControls({
 					disabled={editing || state.totalPages === 0}
 				>
 					{state.mode === "presenting"
-						? "멈춤"
+						? t("slidesKiosk.pause")
 						: state.mode === "paused" || state.mode === "answering"
-							? "이어 가기"
+							? t("slidesKiosk.resume")
 							: t("slides.start")}
 				</button>
 				<button
@@ -83,17 +83,17 @@ export function SlidesControls({
 					disabled={
 						editing || state.totalPages === 0 || state.page >= state.totalPages
 					}
-					aria-label="다음"
+					aria-label={t("slidesKiosk.next")}
 				>
-					다음
+					{t("slidesKiosk.next")}
 				</button>
 				<button
 					type="button"
 					onClick={() => onAction("stop")}
 					disabled={editing || state.totalPages === 0}
-					aria-label="끝내기"
+					aria-label={t("slidesKiosk.stop")}
 				>
-					끝내기
+					{t("slidesKiosk.stop")}
 				</button>
 			</footer>
 		);

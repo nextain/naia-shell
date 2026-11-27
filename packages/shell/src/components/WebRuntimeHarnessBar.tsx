@@ -5,7 +5,7 @@ import { appRegistry } from "../lib/app-registry";
 import { getPlatformAppStoreAdapter } from "../lib/app-store-adapter";
 import { CHARCARD_APP_ID } from "../lib/charcard-chat-start";
 import { loadConfig } from "../lib/config";
-import { getLocale, t } from "../lib/i18n";
+import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { isWebMode } from "../lib/web-runtime/web-assets";
@@ -102,40 +102,26 @@ export function WebRuntimeHarnessBar() {
 
 	if (!enabled) return null;
 
-	const locale = getLocale();
-	const isKo = locale === "ko";
 	const usingCloudBrain = authenticated && provider === "nextain";
 
 	let brainLabel = "";
 	let brainTitle = "";
 	if (usingCloudBrain) {
-		brainLabel = isKo ? "☁ 클라우드 두뇌" : "☁ Cloud Brain";
-		brainTitle = isKo
-			? "Naia 클라우드 고성능 두뇌 연결됨 (대화·기억은 브라우저 OPFS 보관)"
-			: "Connected to Naia Cloud Brain (memory stays in browser OPFS)";
+		brainLabel = t("webHarness.cloudLabel");
+		brainTitle = t("webHarness.cloudTitle");
 	} else if (modelStatus.phase === "ready") {
-		brainLabel = isKo ? "⚡ WebGPU 로컬 두뇌" : "⚡ WebGPU Local Brain";
-		brainTitle = isKo
-			? "브라우저 내장 WebGPU 로컬 LLM 가동 중 (서버 전송 0 · 무료)"
-			: "On-device WebGPU Local LLM active (zero server upload · free)";
+		brainLabel = t("webHarness.readyLabel");
+		brainTitle = t("webHarness.readyTitle");
 	} else if (modelStatus.phase === "error") {
-		brainLabel = isKo ? "⚠ WebGPU 점검" : "⚠ WebGPU Check";
-		brainTitle =
-			modelStatus.errorMessage ||
-			(isKo
-				? "WebGPU 가속 점검 또는 클라우드 두뇌 전환이 필요합니다"
-				: "Check WebGPU support or switch to Cloud Brain");
+		brainLabel = t("webHarness.errorLabel");
+		brainTitle = modelStatus.errorMessage || t("webHarness.errorTitle");
 	} else {
 		const pct = Math.max(0, Math.min(100, Math.round(modelStatus.progress * 100)));
 		brainLabel =
 			pct > 0
 				? `⚡ WebGPU ${pct}%`
-				: isKo
-					? "⚡ WebGPU 준비중"
-					: "⚡ WebGPU Init";
-		brainTitle = isKo
-			? "브라우저 WebGPU 로컬 두뇌 모델을 준비하고 있습니다"
-			: "Preparing in-browser WebGPU local LLM";
+				: t("webHarness.initialLabel");
+		brainTitle = t("webHarness.initialTitle");
 	}
 
 	const handleToggleHarness = () => {
@@ -179,28 +165,20 @@ export function WebRuntimeHarnessBar() {
 				type="button"
 				data-testid="web-open-harness-btn"
 				style={pillStyle(activeApp === "workspace")}
-				title={
-					isKo
-						? "브라우저 내 공개 하네스 열기 (AGENTS.md · 스킬 · OPFS 기억 폴더)"
-						: "Inspect In-Browser Open Harness (AGENTS.md · Skills · OPFS Memory)"
-				}
+				title={t("webHarness.openHarnessTitle")}
 				onClick={handleToggleHarness}
 			>
-				{isKo ? "📂 공개 하네스" : "📂 Open Harness"}
+				{t("webHarness.openHarness")}
 			</button>
 
 			<button
 				type="button"
 				data-testid="web-character-card-quick-btn"
 				style={pillStyle(activeApp === CHARCARD_APP_ID)}
-				title={
-					isKo
-						? "실리태번 호환 캐릭터 카드 (.png / .json) 불러오기·적용"
-						: "Import SillyTavern Character Card (.png / .json)"
-				}
+				title={t("webHarness.characterCardTitle")}
 				onClick={() => void toggleWebCharacterCard()}
 			>
-				{isKo ? "🃏 캐릭터 카드" : "🃏 Character Card"}
+				{t("webHarness.characterCard")}
 			</button>
 
 			{!authenticated && (
@@ -222,7 +200,7 @@ export function WebRuntimeHarnessBar() {
 						}
 						onClick={() => openWebLoginPrompt("account")}
 					>
-						{isKo ? "로그인 · 무료 200 Cr" : "Sign in · 200 Cr"}
+						{t("webHarness.signIn")}
 					</button>
 					{activeApp === null && (
 						<span

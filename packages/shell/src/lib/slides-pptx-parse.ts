@@ -5,11 +5,13 @@
  * web shell has no converter, so it reads the package itself: slide order and
  * size, each slide's text boxes, pictures and solid backgrounds, and speaker
  * notes.  The result feeds `slides-pptx-browser.ts`, which draws every slide
- * and writes an image PDF.  Layout is approximate (no charts, SmartArt,
- * gradients or theme fonts); notes follow the desktop script format.
+ * and writes an image PDF.  Layout is a simplified best-effort rendering (no
+ * charts, SmartArt, gradients or theme fonts); notes follow the desktop
+ * script format.
  */
 
 import { unzipSync } from "fflate";
+import slidesNotePlaceholders from "./slides-pptx-note-placeholders.json";
 
 export const MAX_BROWSER_PPTX_BYTES = 128 * 1024 * 1024;
 export const MAX_BROWSER_PPTX_SLIDES = 500;
@@ -17,11 +19,7 @@ const MAX_ZIP_ENTRIES = 4096;
 const MAX_ZIP_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_NOTES_CHARS = 4 * 1024 * 1024;
 const DEFAULT_SIZE = { cx: 12192000, cy: 6858000 };
-const PLACEHOLDER_NOTES = new Set([
-	"Click to add notes",
-	"Click to add notes.",
-	"클릭하여 메모 추가",
-]);
+const PLACEHOLDER_NOTES = new Set(slidesNotePlaceholders);
 const NS_R =
 	"http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 

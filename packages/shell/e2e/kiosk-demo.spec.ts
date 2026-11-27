@@ -24,6 +24,8 @@ function transpileAvatarModule(filePath: string): string {
 	}).outputText;
 }
 
+test.use({ locale: "ko-KR" });
+
 test.beforeEach(async ({ page }) => {
 	// 비밀번호 화면은 단위 시험(KioskDemoGate.test.tsx)에서 본다. 여기서는 이미 통과한 브라우저로 시작한다.
 	await page.addInitScript(() => {

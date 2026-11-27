@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { unlockAudioContext } from "../lib/voice/audio-queue";
 import { useAppStore } from "../stores/app";
 import { useChatStore } from "../stores/chat";
@@ -127,9 +128,9 @@ function KioskPasscodeForm({
 				void submit(value);
 			}}
 		>
-			<h1 id="kiosk-title">비밀번호를 입력해 주세요</h1>
+			<h1 id="kiosk-title">{t("kioskEntry.passcodeTitle")}</h1>
 			<p>
-				<label htmlFor="kiosk-passcode">숫자 {KIOSK_PASSCODE_LENGTH}자리</label>
+				<label htmlFor="kiosk-passcode">{t("kioskEntry.passcodeLength", { count: KIOSK_PASSCODE_LENGTH })}</label>
 			</p>
 			<input
 				id="kiosk-passcode"
@@ -155,12 +156,12 @@ function KioskPasscodeForm({
 			/>
 			{wrong && (
 				<p id="kiosk-passcode-error" role="alert">
-					비밀번호가 맞지 않아요. 다시 입력해 주세요.
+					{t("kioskEntry.wrongPasscode")}
 				</p>
 			)}
 			<div className="kiosk-entry__actions">
 				<button type="submit" disabled={value.length !== KIOSK_PASSCODE_LENGTH}>
-					확인
+					{t("kioskEntry.confirm")}
 				</button>
 			</div>
 		</form>
@@ -262,29 +263,29 @@ export function KioskDemoGate({
 					/>
 				) : phase === "unavailable" ? (
 					<div role="alert" className="kiosk-entry__unavailable">
-						<h1 id="kiosk-title">지금은 시연을 잠시 쉬고 있어요</h1>
-						<p>오늘 준비한 시연 사용량을 다 썼어요.</p>
-						<p>잠시 뒤 다시 들어와 주세요.</p>
+						<h1 id="kiosk-title">{t("kioskEntry.unavailableTitle")}</h1>
+						<p>{t("kioskEntry.unavailableBody")}</p>
+						<p>{t("kioskEntry.unavailableRetry")}</p>
 					</div>
 				) : (
 					<>
-						<h1 id="kiosk-title">지나와 이야기해 보세요</h1>
+						<h1 id="kiosk-title">{t("kioskEntry.title")}</h1>
 						<p>
-							나이아와 넥스테인이 궁금하신가요?
+							{t("kioskEntry.introQuestion")}
 							<br />
-							게스트님을 따뜻하게 안내해 드릴게요.
+							{t("kioskEntry.introGreeting")}
 							<br />
-							실시간 인터넷 검색과 외부 브라우저 열기는 지원하지 않아요.
+							{t("kioskEntry.introLimits")}
 						</p>
 						{phase === "missing-key" ? (
-							<p role="alert">시연 열쇠 없음</p>
+							<p role="alert">{t("kioskEntry.missingKey")}</p>
 						) : phase === "error" ? (
-							<p role="alert">시연을 준비하지 못했어요. 다시 시도해 주세요.</p>
+							<p role="alert">{t("kioskEntry.preparationFailed")}</p>
 						) : (
 							<output>
 								{phase === "preparing"
-									? "지나가 대화를 준비하고 있어요…"
-									: "들어가기를 누르면 음성 안내가 시작됩니다."}
+									? t("kioskEntry.preparing")
+									: t("kioskEntry.ready")}
 							</output>
 						)}
 						<div className="kiosk-entry__actions">
@@ -299,7 +300,7 @@ export function KioskDemoGate({
 										);
 									}}
 								>
-									다시 시도
+									{t("kioskEntry.retry")}
 								</button>
 							) : (
 								<button
@@ -326,7 +327,7 @@ export function KioskDemoGate({
 										enterNow();
 									}}
 								>
-									들어가기
+									{t("kioskEntry.enter")}
 								</button>
 							)}
 						</div>

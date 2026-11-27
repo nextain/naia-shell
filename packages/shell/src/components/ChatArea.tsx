@@ -23,7 +23,7 @@ import {
 	resolveShellAvatarSelection,
 	setKioskLocalAnswerEnabled,
 } from "../lib/config-seed";
-import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/persona";
+import { KIOSK_DEMO_GREETING, KIOSK_DEMO_GREETING_EN } from "../lib/locales/kiosk-greetings";
 import { isWebAuthenticated, verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import { startWebModel } from "../lib/web-runtime/model-start";
@@ -1899,7 +1899,7 @@ export function ChatArea({
 		const config = loadConfig();
 		if (!config) return;
 		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
-		const greeting = getLocale() === "ko" ? KIOSK_DEMO_GREETING : KIOSK_DEMO_GREETING_EN;
+		const greeting = t("kiosk.greeting");
 		const initialMessages = useChatStore.getState().messages;
 		if (initialMessages.length === 1 && initialMessages[0].content === KIOSK_DEMO_GREETING && greeting !== KIOSK_DEMO_GREETING) {
 			useChatStore.getState().setMessages([{ ...initialMessages[0], content: greeting }]);
@@ -2474,7 +2474,7 @@ export function ChatArea({
 			setKioskLocalAnswerEnabled(false);
 			setKioskLocalAnswer(false);
 			setKioskLocalNotice(
-				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
+				t("kioskChat.fallbackToCloud"),
 			);
 			return;
 		}
@@ -2492,7 +2492,7 @@ export function ChatArea({
 			setKioskLocalAnswerEnabled(false);
 			setKioskLocalAnswer(false);
 			setKioskLocalNotice(
-				"이 기기·브라우저에서는 WebGPU를 사용할 수 없어 클라우드로 대답합니다. (그래픽 메모리 8GB 이상 기기에서만 됩니다)",
+				t("kioskChat.fallbackToCloud"),
 			);
 			return;
 		}
@@ -5733,21 +5733,21 @@ export function ChatArea({
 						className="kiosk-answer-source kiosk-local-answer-header"
 						data-testid="kiosk-local-answer-header"
 						role="group"
-						aria-label="대답하는 곳 고르기"
+						aria-label={t("kioskChat.sourceGroup")}
 					>
-						<span className="kiosk-answer-source__label">대답하는 곳</span>
+						<span className="kiosk-answer-source__label">{t("kioskChat.sourceLabel")}</span>
 						<div className="kiosk-answer-source__switch">
 							<button
 								type="button"
 								className={`kiosk-answer-source__option${kioskLocalAnswer ? "" : " active"}`}
 								data-testid="kiosk-answer-source-gateway"
 								aria-pressed={!kioskLocalAnswer}
-								title="나이아 서버에서 대답합니다"
+								title={t("kioskChat.serverHint")}
 								onClick={() => {
 									if (kioskLocalAnswer) void handleKioskLocalAnswerToggle();
 								}}
 							>
-								나이아 서버
+								{t("kioskChat.server")}
 							</button>
 							<button
 								type="button"
@@ -5755,13 +5755,13 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-toggle"
 								aria-pressed={kioskLocalAnswer}
 								aria-disabled={kioskWebGpuReady === false}
-								aria-label="내 기기(웹GPU)에서 대답하기"
-								title="내 기기(웹GPU)에서 대답하기 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+								aria-label={t("kioskChat.localAction")}
+								title={t("kioskChat.localTooltip")}
 								onClick={() => {
 									if (!kioskLocalAnswer) void handleKioskLocalAnswerToggle();
 								}}
 							>
-								<span className="kiosk-local-answer-label-prefix">내 기기(웹GPU)</span>
+								<span className="kiosk-local-answer-label-prefix">{t("kioskChat.local")}</span>
 							</button>
 						</div>
 						{kioskLocalAnswer && isStreaming ? (
@@ -5770,7 +5770,7 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-live"
 								role="status"
 							>
-								내 PC 로 대답 중…
+								{t("kioskChat.localAnswering")}
 							</span>
 						) : (
 							<span
@@ -5778,10 +5778,10 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-hint"
 							>
 								{kioskWebGpuReady === false
-									? "이 브라우저는 WebGPU 가 없어 쓸 수 없어요 (그래픽 메모리 8GB 이상 기기에서만 됩니다)"
+									? t("kioskChat.unsupported")
 									: kioskLocalAnswer
-										? "내 PC 의 WebLLM 으로 대답해요"
-										: "그래픽 메모리 8GB 이상 기기에서만 됩니다"}
+										? t("kioskChat.localEnabled")
+										: t("kioskChat.memoryRequired")}
 							</span>
 						)}
 					</div>
@@ -5790,12 +5790,12 @@ export function ChatArea({
 					<div
 						role="dialog"
 						aria-modal="false"
-						aria-label="내 PC 모델 내려받기 확인"
+						aria-label={t("kioskChat.confirmDownload")}
 						className="kiosk-local-answer-notice kiosk-local-answer-confirm"
 						data-testid="kiosk-local-answer-confirm"
 					>
 						<span>
-							내 PC에서 대답하려면 AI 모델(약 2.5GB)을 처음 한 번 내려받아요. 지금 내려받을까요?
+							{t("kioskChat.downloadBody")}
 						</span>
 						<div
 							className="kiosk-local-answer-confirm__actions"
@@ -5807,7 +5807,7 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-confirm-accept"
 								onClick={() => void handleConfirmKioskLocalAnswer()}
 							>
-								확인
+								{t("kioskChat.confirm")}
 							</button>
 							<button
 								type="button"
@@ -5815,7 +5815,7 @@ export function ChatArea({
 								data-testid="kiosk-local-answer-confirm-cancel"
 								onClick={handleCancelKioskLocalAnswer}
 							>
-								취소
+								{t("kioskChat.cancel")}
 							</button>
 						</div>
 					</div>
@@ -5830,7 +5830,7 @@ export function ChatArea({
 						<button
 							type="button"
 							className="kiosk-local-answer-notice__close"
-							aria-label="안내 닫기"
+							aria-label={t("kioskChat.closeNotice")}
 							onClick={() => setKioskLocalNotice(null)}
 						>
 							×
@@ -5966,7 +5966,7 @@ export function ChatArea({
 											className="kiosk-local-answer-badge"
 											data-testid="kiosk-local-answer-badge"
 										>
-											내 PC 에서 나온 답
+											{t("kioskChat.localReply")}
 										</span>
 									)}
 								{isKioskDemo() &&
@@ -5977,7 +5977,7 @@ export function ChatArea({
 											className="chat-kiosk-evidence"
 											data-testid="chat-kiosk-evidence"
 										>
-											<span className="chat-kiosk-evidence__label">근거:</span>
+											<span className="chat-kiosk-evidence__label">{t("kioskChat.evidence")}</span>
 											{resolveKioskEvidenceFiles(msg).map((evidencePath) => (
 												<button
 													key={evidencePath}

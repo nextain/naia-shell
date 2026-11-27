@@ -1,6 +1,9 @@
 /** @spec SPEC-010 — 개인정보(PII)·대외비 탐지/경고/레닥션 (D05 안전 우선). 결정론.
  * 내부 기밀자료를 외부 LLM(클라우드)에 보내기 전 스캔 → 경고/레닥션/차단.
  */
+import messages from "../ko-messages.json";
+import { interpolateMessage } from "../interpolate-message";
+import lexicon from "../ko-lexicon.json";
 
 export type SensitiveKind = "rrn" | "phone" | "email" | "card" | "account" | "passport" | "confidential";
 export type Severity = "pii" | "confidential";
@@ -8,7 +11,7 @@ export type Severity = "pii" | "confidential";
 export interface SensitiveFinding {
   kind: SensitiveKind;
   severity: Severity;
-  sample: string; // 마스킹된 예시(원문 노출 금지)
+  sample: string; // Redacted sample.
   count: number;
   sourceId?: string;
 }
@@ -32,7 +35,7 @@ const PII_RULES: Rule[] = [
 ];
 
 // 대외비/기밀 마커 (텍스트는 redact 안 함 — 경고만)
-const CONFIDENTIAL_TERMS = ["대외비", "기밀", "비밀", "영업비밀", "내부자료", "내부용", "대외주의", "confidential", "secret", "proprietary", "do not distribute"];
+const CONFIDENTIAL_TERMS = lexicon.confidentialTerms;
 
 function maskSample(s: string): string {
   if (s.length <= 4) return "█".repeat(s.length);
@@ -89,7 +92,7 @@ export interface SafetyReport {
 
 export class SafetyBlockedError extends Error {
   constructor(public report: SafetyReport) {
-    super(`민감정보 차단(block): PII ${report.piiCount}건 · 대외비 ${report.confidentialCount}건`);
+    super(interpolateMessage(messages.blockedSensitiveData, { pii: report.piiCount, confidential: report.confidentialCount }));
   }
 }
 

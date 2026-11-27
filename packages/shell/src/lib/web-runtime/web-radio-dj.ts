@@ -10,6 +10,8 @@
  * transition+intro line is spoken instead of two overlapping lines.
  */
 import type { BgmPlaybackSnapshot } from "../bgm-playback";
+import { interpolateMessage } from "../kiosk-demo/kb-compiler/interpolate-message";
+import radioDjCopy from "../kiosk-demo/radio-dj-ko.json";
 
 export const WEB_DJ_END_GRACE_MS = 4_000;
 export const WEB_DJ_POLL_MS = 1_000;
@@ -37,28 +39,36 @@ export interface WebRadioDjDeps {
 	clearTimer?: (handle: unknown) => void;
 }
 
-export function djPrompt(m: WebDjMoment): string {
-	const base =
-		"너는 개인 라디오 DJ다. 한국어로 따뜻하고 가볍게, 1~2문장만 말한다. 이모지·따옴표·목록 없이 입말로만 답한다. ";
-	if (m.kind === "opening")
-		return `${base}라디오 DJ를 시작한다. 아직 고른 곡이 없으니 첫 곡을 고르는 동안 짧게 인사해라.`;
-	if (m.kind === "intro")
-		return `${base}지금 막 시작한 곡의 제목은 "${m.title}"이다. 곡을 짧게 소개해라.`;
-	if (m.kind === "transition")
-		return `${base}방금 "${m.prevTitle}"이 끝났고 이제 "${m.title}"이 시작된다. 다음 곡으로 자연스럽게 넘어가는 멘트를 해라.`;
-	return `${base}방금 "${m.prevTitle}"이 끝났다.${
-		m.nextTitle ? ` 다음 곡은 "${m.nextTitle}"이다.` : ""
-	} 다음 곡으로 넘어가는 짧은 멘트를 해라.`;
+function formatMoment(
+	copy: typeof radioDjCopy.fallback,
+	moment: WebDjMoment,
+): string {
+	switch (moment.kind) {
+		case "opening":
+			return copy.opening;
+		case "intro":
+			return interpolateMessage(copy.intro, { title: moment.title });
+		case "transition":
+			return interpolateMessage(copy.transition, {
+				prevTitle: moment.prevTitle,
+				title: moment.title,
+			});
+		case "outro":
+			return moment.nextTitle
+				? interpolateMessage(copy.outroWithNext, {
+						prevTitle: moment.prevTitle,
+						nextTitle: moment.nextTitle,
+					})
+				: interpolateMessage(copy.outro, { prevTitle: moment.prevTitle });
+	}
 }
 
-export function djFallbackLine(m: WebDjMoment): string {
-	if (m.kind === "opening") return "라디오 DJ를 시작할게요. 첫 곡을 준비하고 있어요.";
-	if (m.kind === "intro") return `지금 들려드릴 곡은 ${m.title}입니다.`;
-	if (m.kind === "transition")
-		return `${m.prevTitle}, 잘 들으셨나요? 이어서 ${m.title} 들려드릴게요.`;
-	return m.nextTitle
-		? `${m.prevTitle}이 끝났네요. 다음 곡은 ${m.nextTitle}입니다.`
-		: `${m.prevTitle}이 끝났네요. 다음 곡으로 넘어갈게요.`;
+export function djPrompt(moment: WebDjMoment): string {
+	return radioDjCopy.prompt.base + formatMoment(radioDjCopy.prompt, moment);
+}
+
+export function djFallbackLine(moment: WebDjMoment): string {
+	return formatMoment(radioDjCopy.fallback, moment);
 }
 
 function sanitizeLine(raw: string): string {

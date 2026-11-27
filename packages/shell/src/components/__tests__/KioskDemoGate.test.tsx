@@ -8,6 +8,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setLocale } from "../../lib/i18n";
 import {
 	KIOSK_PASSCODE_PASSED_KEY,
 	KIOSK_PASSCODE_SHA256,
@@ -51,7 +52,8 @@ vi.mock("../../lib/kiosk-demo/entry", async () => ({
 	...(await vi.importActual("../../lib/kiosk-demo/entry")),
 	requestKioskGreeting: mocks.greeting,
 }));
-beforeEach(() => {
+beforeEach(async () => {
+	await setLocale("ko");
 	localStorage.clear();
 	sessionStorage.clear();
 	// 비밀번호 화면은 아래 전용 시험에서만 본다. 나머지는 이미 통과한 브라우저로 시작한다.
@@ -65,9 +67,10 @@ beforeEach(() => {
 	mocks.clearConversations.mockResolvedValue(undefined);
 	mocks.restoreOriginals.mockResolvedValue(undefined);
 });
-afterEach(() => {
+afterEach(async () => {
 	cleanup();
 	vi.unstubAllEnvs();
+	await setLocale("en");
 });
 const mount = () =>
 	render(

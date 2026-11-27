@@ -7,6 +7,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../../lib/i18n";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import { useSkillsStore } from "../../stores/skills";
 
@@ -65,7 +66,8 @@ const SNAPSHOT = {
 };
 
 describe("SkillsTab checkbox model", () => {
-	afterEach(() => {
+	afterEach(async () => {
+		await setLocale("en");
 		cleanup();
 		mockRefresh.mockReset();
 		mockRefreshOne.mockReset();
@@ -132,7 +134,8 @@ describe("SkillsTab checkbox model", () => {
 		expect(screen.getByTestId("radio-dj-order")).toBeDefined();
 	});
 
-	it("renders web guidance, weather built-in, Radio DJ child, and integration notice without CLI detection in web mode", () => {
+	it("renders web guidance, weather built-in, Radio DJ child, and integration notice without CLI detection in web mode", async () => {
+		await setLocale("ko");
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
@@ -159,7 +162,8 @@ describe("SkillsTab checkbox model", () => {
 		);
 	});
 
-	it("includes Knowledge web built-in alongside Weather and Radio DJ without demo Memory in kiosk demo", () => {
+	it("includes Knowledge web built-in alongside Weather and Radio DJ without demo Memory in kiosk demo", async () => {
+		await setLocale("ko");
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");

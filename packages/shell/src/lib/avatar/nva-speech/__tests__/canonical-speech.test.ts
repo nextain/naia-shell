@@ -245,22 +245,187 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		"volume threshold mouth",
 		"approximate plan",
 	]);
+	const AUDIO_QUEUE = "lib/voice/audio-queue.ts";
+	// Only these two locations in createSpeechMeter may use the analyser.
+	const VRM_METER_LINES = new Map([
+		[528, "const analyser = source.context.createAnalyser();"],
+		[548, "analyser.getFloatTimeDomainData(samples);"],
+	]);
+	const NVA_PATH_PREFIX = "lib/avatar/nva-speech/";
+	const NVA_LINK =
+		/CanonicalSpeechStage|canonical-speech-stage|SpeechPlayer|PrebakedAvatarRenderer|nva-speech\/|\b(?:playSpeechTiming|prefetchSpeechTiming|updateSpeechPlan)\b/;
+	// The queue supplies the level reader through the playback clock contract.
+	// Only VRM lip-sync may consume it.
+	const PLAYBACK_LEVEL_LINES = new Map([
+		[
+			AUDIO_QUEUE,
+			new Set([
+				"const readSpeechLevel =",
+				"...(measure ? { duration: () => audio.duration, readSpeechLevel } : {}),",
+			]),
+		],
+		[
+			`${NVA_PATH_PREFIX}speech-timing.ts`,
+			new Set(["readSpeechLevel?: () => number;"]),
+		],
+		[
+			"lib/vrm/lip-sync.ts",
+			new Set([
+				"hasMeter: Boolean(playback.readSpeechLevel),",
+				"return sampleVrmMouth(plan, position, playback.readSpeechLevel?.());",
+			]),
+		],
+	]);
+
+	function isNvaLinked(name: string, text: string): boolean {
+		if (name.startsWith(NVA_PATH_PREFIX)) return true;
+		return text
+			.split("\n")
+			.some((line) => !/^\s*import\s+type\b/.test(line) && NVA_LINK.test(line));
+	}
+
+	function scanDrift(name: string, text: string): string[] {
+		const offenders: string[] = [];
+		const vrmMeter = name === AUDIO_QUEUE && !isNvaLinked(name, text);
+		text.split("\n").forEach((line, index) => {
+			const lineNumber = index + 1;
+			const statement = line.trim();
+			if (
+				/\breadSpeechLevel\b/.test(statement) &&
+				!PLAYBACK_LEVEL_LINES.get(name)?.has(statement)
+			)
+				offenders.push(
+					`${name}:${lineNumber} volume threshold mouth: ${statement}`,
+				);
+
+			for (const [label, pattern] of DRIFT) {
+				if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
+				if (
+					vrmMeter &&
+					label === "volume threshold mouth" &&
+					VRM_METER_LINES.get(lineNumber) === statement
+				)
+					continue;
+				if (pattern.test(line))
+					offenders.push(`${name}:${lineNumber} ${label}: ${statement}`);
+			}
+		});
+		return offenders;
+	}
 
 	it("no product line carries an SoT 3 drift trace (volume threshold, drawn mouth, approximate, aiueo, talking loop)", () => {
 		const offenders: string[] = [];
 		for (const file of productFiles(shellSrc)) {
 			const name = relative(shellSrc, file).split("\\").join("/");
-			readFileSync(file, "utf8")
-				.split("\n")
-				.forEach((line, index) => {
-					for (const [label, pattern] of DRIFT) {
-						if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
-						if (pattern.test(line))
-							offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
-					}
-				});
+			offenders.push(...scanDrift(name, readFileSync(file, "utf8")));
 		}
 		expect(offenders).toEqual([]);
+	});
+
+	it("the drift scan flags an analyser-driven mouth on the NVA path", () => {
+		const nvaFile = [
+			"const analyser = ctx.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+			"mouth.open = rms > 0.1;",
+		].join("\n");
+		expect(
+			scanDrift("lib/avatar/nva-speech/mouth-loop.ts", nvaFile).map(
+				(entry) => entry.split(": ")[0],
+			),
+		).toEqual([
+			"lib/avatar/nva-speech/mouth-loop.ts:1 volume threshold mouth",
+			"lib/avatar/nva-speech/mouth-loop.ts:2 volume threshold mouth",
+			"lib/avatar/nva-speech/mouth-loop.ts:3 volume threshold mouth",
+		]);
+	});
+
+	it("the drift scan lets the VRM-only playback meter read the output level", () => {
+		const source = readFileSync(join(shellSrc, AUDIO_QUEUE), "utf8");
+		const lines = source.split("\n");
+		for (const [lineNumber, statement] of VRM_METER_LINES)
+			expect(lines[lineNumber - 1].trim()).toBe(statement);
+		expect(scanDrift(AUDIO_QUEUE, source)).toEqual([]);
+	});
+
+	it("the drift scan flags any extra analyser line added to the VRM playback meter file", () => {
+		const source = readFileSync(join(shellSrc, AUDIO_QUEUE), "utf8").trimEnd();
+		const lineCount = source.split("\n").length;
+		const withExtraLoop = [
+			source,
+			"const extraAnalyser = source.context.createAnalyser();",
+			"extraAnalyser.getByteTimeDomainData(bytes);",
+			'extraAnalyser["getFloatFrequencyData"](bins);',
+		].join("\n");
+		expect(
+			scanDrift(AUDIO_QUEUE, withExtraLoop).map((entry) => entry.split(" ")[0]),
+		).toEqual([
+			`${AUDIO_QUEUE}:${lineCount + 1}`,
+			`${AUDIO_QUEUE}:${lineCount + 2}`,
+			`${AUDIO_QUEUE}:${lineCount + 3}`,
+		]);
+	});
+
+	it("the drift scan flags a second copy of each approved VRM meter statement", () => {
+		const name = AUDIO_QUEUE;
+		const source = readFileSync(join(shellSrc, name), "utf8").trimEnd();
+		const repeat = [
+			"function anotherMeter() {",
+			"const analyser = source.context.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+			"}",
+		];
+		const lineCount = source.split("\n").length;
+		const offenders = scanDrift(name, [source, ...repeat].join("\n"));
+		expect(offenders.map((entry) => entry.split(" ")[0])).toEqual([
+			`${name}:${lineCount + 2}`,
+			`${name}:${lineCount + 3}`,
+		]);
+	});
+
+	it("the drift scan flags playback level readers with renamed callback parameters", () => {
+		const name = "lib/tts/sentence-pipeline.ts";
+		const callback = [
+			"onPlaybackStart: (sound) => {",
+			"animate(sound.readSpeechLevel?.());",
+			'animate(sound["readSpeechLevel"]?.());',
+			"const { readSpeechLevel: readLevel } = sound;",
+			"animate(readLevel?.());",
+			"},",
+		].join("\n");
+		expect(
+			scanDrift(name, callback).map((entry) => entry.split(" ")[0]),
+		).toEqual([`${name}:2`, `${name}:3`, `${name}:4`]);
+	});
+
+	it("the drift scan revokes the meter exception for renderer timing links", () => {
+		const name = AUDIO_QUEUE;
+		const source = readFileSync(join(shellSrc, name), "utf8").trimEnd();
+		const linked = `${source}\nrenderer.playSpeechTiming?.(timing);`;
+		expect(scanDrift(name, linked).map((entry) => entry.split(" ")[0])).toEqual(
+			[`${name}:528`, `${name}:548`],
+		);
+	});
+
+	it("the drift scan flags the meter statements once the queue file links to NVA", () => {
+		const source = readFileSync(join(shellSrc, AUDIO_QUEUE), "utf8").trimEnd();
+		const nvaLinkedMeter = `${source}\nimport { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";`;
+		expect(
+			scanDrift(AUDIO_QUEUE, nvaLinkedMeter).map(
+				(entry) => entry.split(" ")[0],
+			),
+		).toEqual([`${AUDIO_QUEUE}:528`, `${AUDIO_QUEUE}:548`]);
+	});
+
+	it("the drift scan keeps aiueo, drawn mouth and approximate forbidden in the VRM playback meter file", () => {
+		const traces = [
+			"const AIUEO = ['a','i','u','e','o'];",
+			"drawMouth(ctx, openness);",
+			"// layout is approximate",
+		];
+		for (const trace of traces)
+			expect(scanDrift("lib/voice/audio-queue.ts", trace), trace).toHaveLength(
+				1,
+			);
 	});
 
 	it("the drift scan catches each forbidden trace", () => {
@@ -444,7 +609,11 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 			dispose: vi.fn(),
 			speaking: true,
 		};
-		const nextPlay = vi.fn(async () => true);
+		let currentStopCallsAtNextPlay = -1;
+		const nextPlay = vi.fn(async () => {
+			currentStopCallsAtNextPlay = currentStage.stop.mock.calls.length;
+			return true;
+		});
 		const nextStage = {
 			start: vi.fn(async () => true),
 			prepare: vi.fn(async () => ({ play: nextPlay })),
@@ -465,36 +634,39 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const clock = () => 0.4;
 		await renderer.playSpeechTiming({ plan: plan("aligned"), clock });
 
-		const stagedRenderer = renderer as unknown as {
-			prefetchSpeechTiming(
-				plan: SpeechPlan,
-			): Promise<{ play(clock: () => number): Promise<boolean> } | null>;
-		};
-		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
+		const prepared = await renderer.prefetchSpeechTiming(plan("aligned"));
 		expect(nextStage.prepare).toHaveBeenCalledWith(plan("aligned"));
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
 		expect(nextPlay).not.toHaveBeenCalled();
 
 		expect(await prepared?.play(clock)).toBe(true);
-		expect(nextPlay).toHaveBeenCalledWith(clock);
-		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		expect(await prepared?.play(clock)).toBe(false);
+		expect(nextPlay).toHaveBeenCalledExactlyOnceWith(clock);
+		expect(currentStopCallsAtNextPlay).toBe(1);
+		expect(currentStage.stop).toHaveBeenCalledTimes(1);
+		expect(currentStage.dispose).not.toHaveBeenCalled();
 		renderer.setSpeakingVisual(false);
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		renderer.stop();
+		// Final teardown disposes the promoted stage and the spare.
+		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
 	});
 
 	it("cancels a standby canonical plan without disturbing the active stage", async () => {
 		const currentStage = {
 			start: vi.fn(async () => true),
 			prepare: vi.fn(async () => null),
+			update: vi.fn(() => true),
 			stop: vi.fn(),
 			dispose: vi.fn(),
 			speaking: true,
 		};
+		const nextPlay = vi.fn(async () => true);
 		const nextStage = {
 			start: vi.fn(async () => true),
-			prepare: vi.fn(async () => ({ play: vi.fn(async () => true) })),
+			prepare: vi.fn(async () => ({ play: nextPlay })),
 			stop: vi.fn(),
 			dispose: vi.fn(),
 			speaking: false,
@@ -509,19 +681,25 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const video = document.createElement("video");
 		vi.spyOn(video, "play").mockResolvedValue();
 		renderer.start(video, document.createElement("canvas"));
-		const stagedRenderer = renderer as unknown as {
-			prefetchSpeechTiming(
-				plan: SpeechPlan,
-			): Promise<{ play(clock: () => number): Promise<boolean> } | null>;
-			cancelPrefetchedSpeechTiming(): void;
-		};
-		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
-		stagedRenderer.cancelPrefetchedSpeechTiming();
-		expect(await prepared?.play(() => 0)).toBe(false);
-		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
+		const timing = { plan: plan("aligned"), clock: () => 0 };
+		expect(await renderer.playSpeechTiming(timing)).toBe(true);
+		expect(currentStage.start).toHaveBeenCalledExactlyOnceWith(timing);
+		const prepared = await renderer.prefetchSpeechTiming(plan("aligned"));
+		renderer.cancelPrefetchedSpeechTiming();
+		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		expect(nextStage.dispose).not.toHaveBeenCalled();
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
+		expect(await prepared?.play(timing.clock)).toBe(false);
+		expect(nextPlay).not.toHaveBeenCalled();
+		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		expect(currentStage.stop).not.toHaveBeenCalled();
+		expect(renderer.updateSpeechPlan(timing.plan)).toBe(true);
+		expect(currentStage.update).toHaveBeenCalledExactlyOnceWith(timing.plan);
 		renderer.stop();
+		// Final teardown disposes the spare standby and the active stage.
+		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
+		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
 	});
 
 	it("routes playSpeechTiming/updateSpeechPlan to the stage and stops it when speech ends", async () => {

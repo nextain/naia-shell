@@ -1,6 +1,7 @@
 /** @spec SPEC-003 — Extract 어댑터(markdown): 프로즈 md → 섹션 카드 + 엔티티·관계 그래프. 로컬·결정론(클라우드 미전송). */
 import type { ExtractPort, ExtractResult } from "../../domain/ports.js";
 import type { Source, ServiceCard, Entity, Relation } from "../../domain/types.js";
+import lexicon from "../../ko-lexicon.json";
 
 const HEADING = /^(#{1,4})\s+(.+?)\s*#*$/;
 const BOLD = /\*\*([^*\n]{2,40})\*\*/g;
@@ -8,18 +9,11 @@ const LINK = /\[([^\]]{1,60})\]\(([^)\s]+)\)/g;
 
 // 보일러플레이트 — 표·양식 라벨/구조어. 굵게 표기돼도 지식 엔티티가 아니라 노이즈 허브가 됨.
 // (운영자 튜닝 대상. 고유명사·제품명은 절대 넣지 않는다.)
-const BOILERPLATE = new Set([
-  "작성일", "작성자", "합계", "소계", "총계", "총합", "총액", "상태", "구분", "비고", "번호", "순번", "항목", "내용",
-  "일자", "날짜", "기간", "금액", "수량", "단가", "단위", "참고", "기타", "분류", "담당", "담당자", "부서", "제목",
-  "요약", "개요", "목차", "목적", "배경", "현황", "결과", "계획", "일정", "예산", "단계", "유형", "종류", "대상",
-  "방법", "정의", "출처", "주석", "페이지", "버전", "이름", "성명", "전화", "주소", "이메일", "비용", "가격", "시간",
-  "장소", "위치", "점수", "평가", "등급", "서명", "확인", "승인", "신청", "접수", "처리", "발급", "제출", "첨부", "양식",
-  "서식", "본문", "표", "그림", "사진", "링크", "주의", "경고", "참조", "예시", "항목명", "구분자",
-]);
+const BOILERPLATE = new Set(lexicon.markdownBoilerplate);
 // 숫자로 시작하고 나머지가 단위/구두점뿐 → 수치값(엔티티 아님). 예: 8건·100억원·2026-05-19·1위·5~8건
-const VALUE_UNIT = new Set([..."원억만천개건명년월일위배호차회장점주분기세대권개월"]);
+const VALUE_UNIT = new Set(lexicon.markdownValueUnits);
 function isValueTerm(n: string): boolean {
-  if (!/^\d/.test(n)) return false; // 값은 숫자로 시작 (장점·회장 등 고유어 보호)
+  if (!/^\d/.test(n)) return false;
   const rest = n.replace(/[\d.,~\-/\s]/g, "");
   return [...rest].every((c) => VALUE_UNIT.has(c));
 }
@@ -35,7 +29,7 @@ interface Section {
   body: string;
 }
 
-const MIN_SECTION_CHARS = 200; // 이보다 작은 섹션은 직전에 병합(과편화 방지)
+const MIN_SECTION_CHARS = 200;
 
 function splitSections(text: string, fallbackTitle: string): Section[] {
   const lines = text.split(/\r?\n/);
@@ -70,7 +64,7 @@ export class MarkdownExtractAdapter implements ExtractPort {
     const cards: ServiceCard[] = [];
     const entities: Entity[] = [];
     const relations: Relation[] = [];
-    const conceptId = new Map<string, string>(); // 개체 dedup (이름 → id)
+    const conceptId = new Map<string, string>();
     // 공출현 누적 — 같은 섹션에 함께 나온 Concept쌍 → co_occurs 관계(주제 군집 형성)
     const coCount = new Map<string, number>();
     const coPair = new Map<string, [string, string]>();
@@ -84,7 +78,7 @@ export class MarkdownExtractAdapter implements ExtractPort {
 
       for (const sec of sections) {
         const body = sec.body.trim();
-        if (body.length < 10 && sections.length > 1) continue; // 빈 섹션 스킵
+        if (body.length < 10 && sections.length > 1) continue;
         const title = sec.title === fileTitle ? fileTitle : `${fileTitle} / ${sec.title}`;
         const firstPara = body.split(/\n\s*\n/)[0]?.replace(/\s+/g, " ").slice(0, 280) ?? "";
         const id = `card_${++cardN}`;
@@ -105,7 +99,7 @@ export class MarkdownExtractAdapter implements ExtractPort {
 
         // 굵은 용어 → Concept 노드 + mentions 관계 (dedup, 노이즈 제외)
         const seen = new Set<string>();
-        const sectionCids: string[] = []; // 이 섹션의 Concept id (공출현 계산용)
+        const sectionCids: string[] = [];
         let added = 0;
         for (const m of body.matchAll(BOLD)) {
           const name = m[1].trim();

@@ -6851,6 +6851,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 	});
 
 	it("FR-WEB-KIOSK-FIX7B.6 renders all Jina card fields in the Persona tab, marks edited fields with '카드에서 바꿈', injects edits into the conversation prompt, and reverts on '카드 원래대로'", async () => {
+		await setLocale("ko");
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("MODE", "web");
@@ -6952,10 +6953,12 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		);
 		expect(promptAfterRevert).toContain("존댓말");
 
+		await setLocale("en");
 		vi.unstubAllEnvs();
 	});
 
 	it("R8: unlocks Memory and Skills tabs in kiosk demo, keeps Radio DJ + web skills without CLI detection, and shows naia-memory integration banner on Memory tab with options and apply buttons hidden", async () => {
+		await setLocale("ko");
 		const { resetWarnedCommands } = await import(
 			"../../lib/web-runtime/router"
 		);
@@ -7037,6 +7040,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			setWebFsForTests(null);
 			setWebAssetsModeForTests(null);
 			vi.unstubAllEnvs();
+			await setLocale("en");
 		}
 	});
 

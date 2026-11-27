@@ -1,5 +1,4 @@
-import { getLocale, t } from "../lib/i18n";
-import en from "../lib/locales/en";
+import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { isWebMode } from "../lib/web-runtime/web-assets";
 
@@ -31,7 +30,7 @@ export function MacSafariNotice({
 	}
 	const copy = (
 		key: "macSafari.title" | "macSafari.existingChrome" | "macSafari.download",
-	) => (getLocale() === "ko" ? t(key) : en[key]);
+	) => t(key);
 	return (
 		<aside
 			data-testid="mac-safari-notice"

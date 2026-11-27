@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { appRegistry } from "../../lib/app-registry";
-import { getLocale, t } from "../../lib/i18n";
+import { t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 import { isNarrowPortraitScreen } from "../../lib/web-runtime/web-assets";
 import { useAppStore } from "../../stores/app";
@@ -135,9 +135,7 @@ function SettingsCenterArea() {
 						}}
 					>
 						<p style={{ margin: 0 }}>
-							{getLocale() === "ko"
-								? "설정 화면을 불러오지 못했습니다."
-								: "Could not load settings."}
+							{t("settings.loadFailed")}
 						</p>
 						<button
 							type="button"

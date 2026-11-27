@@ -104,3 +104,16 @@ it("anchors every fixed native control to an allowlisted name and the planning t
 	for (const name of seen) expect(table).toContain(`\`${name}\``);
 	expect(seen.size).toBeGreaterThan(400);
 });
+
+it("pins data-usage-event on the NVA delete-asset button", () => {
+	const source = readFileSync("src/components/SettingsTab.tsx", "utf8");
+	const anchor = 'onClick={() => handleDeleteAsset("nva-files", nvaModel)}';
+	const index = source.indexOf(anchor);
+	expect(index).toBeGreaterThan(-1);
+	const buttonStart = source.lastIndexOf("<button", index);
+	const buttonEnd = source.indexOf(">", index + anchor.length);
+	const opening = source.slice(buttonStart, buttonEnd);
+	expect(opening).toContain(
+		'data-usage-event="settings-tab.handle-delete-asset-31.click"',
+	);
+});

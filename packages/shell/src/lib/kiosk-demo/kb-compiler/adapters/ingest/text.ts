@@ -1,4 +1,5 @@
 /** @spec SPEC-002 — Ingest 어댑터: text 패스스루 + url(주입 fetch). */
+import messages from "../../ko-messages.json";
 import type { IngestPort, } from "../../domain/ports.js";
 import type { Source, SourceInput } from "../../domain/types.js";
 
@@ -13,7 +14,7 @@ export class IngestAdapter implements IngestPort {
 
   async ingest(inputs: SourceInput[]): Promise<Source[]> {
     const out: Source[] = [];
-    let counter = 0; // 호출별 로컬 → 결정론
+    let counter = 0; // Keep IDs local to each ingestion.
     const nextId = (prefix: string) => `${prefix}_${++counter}`;
     for (const inp of inputs) {
       if (inp.kind === "text" || inp.kind === "file") {
@@ -33,7 +34,7 @@ export class IngestAdapter implements IngestPort {
   private async fetch(url: string): Promise<string> {
     if (this.fetcher) return this.fetcher(url);
     const f = (globalThis as { fetch?: (u: string) => Promise<{ text(): Promise<string> }> }).fetch;
-    if (!f) throw new Error("fetch 미지원 환경 — Fetcher 주입 필요");
+    if (!f) throw new Error(messages.fetchUnavailable);
     const res = await f(url);
     return res.text();
   }
