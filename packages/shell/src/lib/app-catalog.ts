@@ -650,15 +650,23 @@ export function buildUnifiedAppCatalog(
 	return { items: ordered, adminAppIds };
 }
 
-/**
- * Shared localization rule matching the portal storefront (`apps-catalog.ts`):
- * exact locale -> base language -> (`ko` uses `ko`, all other locales prefer `en`) -> `name`.
- * The order lives in a lookup table instead of a language comparison so the
- * locale branched copy table gate does not see a shadow table here.
- */
 const STORE_FALLBACK_ORDER: Record<string, readonly [string, string]> = {
 	ko: ["ko", "en"],
 };
+
+function getOwnLocaleValue<T>(
+	values: Readonly<Record<string, T>> | undefined,
+	locale: string,
+): T | undefined {
+	return values && Object.prototype.hasOwnProperty.call(values, locale)
+		? values[locale]
+		: undefined;
+}
+
+/**
+ * Shared localization rule matching the portal storefront (`apps-catalog.ts`):
+ * exact locale -> base language -> (`ko` uses `ko`, all other locales prefer `en`) -> `name`.
+ */
 export function localizeStoreProduct(
 	item: Pick<StoreProductSummary, "appId" | "manifest">,
 	locale: string,
@@ -667,20 +675,20 @@ export function localizeStoreProduct(
 	const names = item.manifest.names;
 	const descriptions = item.manifest.descriptions;
 	const [preferredFallbackLocale, secondaryFallbackLocale] =
-		STORE_FALLBACK_ORDER[base] ?? (["en", "ko"] as const);
+		getOwnLocaleValue(STORE_FALLBACK_ORDER, base) ?? (["en", "ko"] as const);
 
 	const title =
-		names?.[locale] ??
-		names?.[base] ??
-		names?.[preferredFallbackLocale] ??
-		names?.[secondaryFallbackLocale] ??
+		getOwnLocaleValue(names, locale) ??
+		getOwnLocaleValue(names, base) ??
+		getOwnLocaleValue(names, preferredFallbackLocale) ??
+		getOwnLocaleValue(names, secondaryFallbackLocale) ??
 		(item.manifest.name || item.appId);
 
 	const description =
-		descriptions?.[locale] ??
-		descriptions?.[base] ??
-		descriptions?.[preferredFallbackLocale] ??
-		descriptions?.[secondaryFallbackLocale] ??
+		getOwnLocaleValue(descriptions, locale) ??
+		getOwnLocaleValue(descriptions, base) ??
+		getOwnLocaleValue(descriptions, preferredFallbackLocale) ??
+		getOwnLocaleValue(descriptions, secondaryFallbackLocale) ??
 		item.manifest.description ??
 		"";
 
