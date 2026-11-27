@@ -143,7 +143,12 @@ function WebCloudChatRecovery({ provider }: { provider: "webllm" | "nextain" }) 
 			) {
 				throw new Error("Cloud chat selection is unavailable");
 			}
-			await writeNaiaConfig(applyNaiaCloudModelDefaults(current, models));
+			await writeNaiaConfig(
+				applyNaiaCloudModelDefaults(current, models) as unknown as Record<
+					string,
+					unknown
+				>,
+			);
 			const latest = loadConfig();
 			if (getAdkPath() === path && getNaiaKey() === key && latest &&
 				effectiveMainRole(latest).provider === provider &&
