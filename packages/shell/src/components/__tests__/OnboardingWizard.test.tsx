@@ -140,10 +140,12 @@ describe("OnboardingWizard", () => {
 	});
 
 	it.each([
-		["Terra", ["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna"], "gpt-6.1-terra", "xhigh"],
-		["Solar", ["solar-pro4", "gpt-5.6-luna"], "solar-pro4", undefined],
-	])("IT-SM-05 first login selects %s from mocked catalog", async (_label, ids, main, thinking) => {
-		vi.mocked(fetchGatewayModelCatalog).mockResolvedValue((ids as string[]).map(id => ({ id, provider: "azure", price: { input: 1, output: 1 } })));
+		["Luna", ["deepseek-v4.1-flash", "gpt-6-luna"], "gpt-6-luna", "high", "gpt-6-luna", { provider: "nextain", model: "deepseek-v4.1-flash", webAutoDefaultModel: true }],
+		["Terra", ["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna"], "gpt-6.1-terra", "xhigh", "gpt-5.6-luna", null],
+		["Solar", ["solar-pro4", "gpt-5.6-luna"], "solar-pro4", undefined, "gpt-5.6-luna", null],
+	] as const)("IT-SM-05 first login selects %s from mocked catalog", async (_label, ids, main, thinking, small, seed) => {
+		vi.mocked(fetchGatewayModelCatalog).mockResolvedValue(ids.map(id => ({ id, provider: "azure", price: { input: 1, output: 1 } })));
+		if (seed) localStorage.setItem("naia-config", JSON.stringify(seed));
 		localStorage.setItem("naia-adk-path", "/adk-test");
 		renderAtAgentName();
 		await act(async () => { await Promise.resolve(); });
@@ -158,7 +160,7 @@ describe("OnboardingWizard", () => {
 		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(config.model).toBe(main);
 		expect(config.llmRoles.main.thinkingLevel).toBe(thinking);
-		expect(config.llmRoles.sub).toMatchObject({ model: "gpt-5.6-luna", thinkingLevel: "low" });
+		expect(config.llmRoles.sub).toMatchObject({ model: small, thinkingLevel: "low" });
 		expect(activateNaiaLlm).toHaveBeenCalledWith("test-key", "nextain", main);
 	});
 

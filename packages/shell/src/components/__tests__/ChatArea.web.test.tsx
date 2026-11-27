@@ -4254,7 +4254,11 @@ describe("ChatArea", () => {
 		vi.stubEnv("MODE", "web");
 		setWebAssetsModeForTests(true);
 		setWebAdkStatus({ phase: "ready" });
-		const model = getDefaultLlmModel("nextain");
+		const model = "gpt-6-luna";
+		const catalog = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify([
+			{ model_key: "azure:deepseek-v4.1-flash", capabilities: ["llm"] },
+			{ model_key: "azure:gpt-6-luna", capabilities: ["llm"] },
+		])));
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
 		localStorage.setItem("naia-config", JSON.stringify({
 			provider: "webllm",
@@ -4296,7 +4300,7 @@ describe("ChatArea", () => {
 			await act(async () => saved.resolve());
 			expect(writes).toBe(2);
 			expect(start).toHaveBeenCalledWith({ model: null });
-			expect(loadConfig()).toMatchObject({ provider: "nextain", llmRoles: { main: { provider: "nextain", model } } });
+		expect(loadConfig()).toMatchObject({ provider: "nextain", llmRoles: { main: { provider: "nextain", model, thinkingLevel: "high" } } });
 			expect(input).toBeEnabled();
 			expect(input).toHaveValue("Hello from my device");
 			fireEvent.keyDown(input, { key: "Enter" });
@@ -4306,6 +4310,7 @@ describe("ChatArea", () => {
 			})));
 		} finally {
 			saved.resolve();
+			catalog.mockRestore();
 			localStorage.removeItem(WEB_REMOTE_KEY_STORAGE_KEY);
 		}
 	});

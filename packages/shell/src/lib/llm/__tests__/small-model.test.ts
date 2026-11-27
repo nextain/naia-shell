@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultMainModel, defaultSmallModel, defaultThinkingLevel, smallModelChoices } from "../small-model";
 import { readConfiguredLlmRoles, writeConfiguredLlmRole } from "../roles";
 import { applyNaiaSlotDefaults } from "../../slots/model";
@@ -86,4 +86,19 @@ describe("UT-LUNA-DEFAULTS Luna defaults (alpha-luna-defaults-20261127)", () => 
    expect(defaultMainModel([meta("gpt-6.1-terra"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" });
    expect(defaultSmallModel([meta("deepseek-v4.1-flash"), meta("gpt-5.6-luna")])).toEqual({ provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "low" });
  });
+});
+
+it.each([
+	[["deepseek-v4.1-flash", "gpt-6-luna"], "deepseek-v4.1-flash", "xhigh"],
+	[["gpt-6-luna"], "gpt-6-luna", "max"],
+] as const)("keeps the pre-Luna-default kiosk fallback for %j", (ids, model, thinkingLevel) => {
+	const catalog = ids.map(meta);
+	expect(defaultMainModel(catalog)).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "high" });
+	vi.stubEnv("MODE", "web");
+	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+	try {
+		expect(defaultMainModel(catalog)).toEqual({ provider: "nextain", model, thinkingLevel });
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });

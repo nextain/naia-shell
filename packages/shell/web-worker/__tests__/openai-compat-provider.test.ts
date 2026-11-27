@@ -20,6 +20,30 @@ describe("browser gateway provider", () => {
 		for await (const _ of provider.chat({ provider: "nextain", model }, [], {})) { /* consume */ }
 		expect(JSON.parse(fetcher.mock.calls[0][1].body).reasoning_effort).toBe("high");
 	});
+	it.each([
+		["gpt-6-luna", "low", "low"],
+		["gpt-6-luna", "high", "high"],
+		["gpt-6-luna", "max", "max"],
+		["gpt-6-luna", "xhigh", undefined],
+		["deepseek-v4.1-flash", "max", undefined],
+	] as const)("sends the supported gateway effort for %s %s", async (model, thinkingLevel, effort) => {
+		const fetcher = vi.fn().mockResolvedValue({
+			ok: true,
+			body: bodyOf('data: {"choices":[{"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+		});
+		const provider = makeOpenAICompatProvider({
+			baseUrl: "https://gateway.test/v1",
+			apiKey: "test-key",
+			auth: "x-anyllm",
+			supportsThinkingLevel: true,
+			fetch: fetcher,
+		});
+		for await (const _ of provider.chat({ provider: "nextain", model, thinkingLevel }, [], {})) {
+			/* consume */
+		}
+		expect(JSON.parse(fetcher.mock.calls[0][1].body).reasoning_effort).toBe(effort);
+	});
+
 	it("sends authenticated server model requests and streams text without a local engine", async () => {
 		const stream = new ReadableStream({
 			start(controller) {

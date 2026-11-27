@@ -10,7 +10,9 @@ import {
 	loadConfig,
 } from "../../config";
 import { bootWebRuntimeAndModel } from "../auto-install";
+import { WEB_ADK_PATH, webAdkOpfsPath } from "../web-adk-path";
 import { setWebAssetsModeForTests } from "../web-assets";
+import { createMemoryWebFs, setWebFsForTests } from "../web-fs";
 import {
 	WEB_OAUTH_STATE_STORAGE_KEY,
 	buildWebLoginRedirectUrl,
@@ -31,12 +33,14 @@ describe("web-auth (item 5)", () => {
 		setWebAssetsModeForTests(true);
 		localStorage.clear();
 		sessionStorage.clear();
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 503 }));
 		setWebLoginRequiredForTests(null);
 	});
 
 	afterEach(() => {
 		setWebAssetsModeForTests(null);
 		setWebLoginRequiredForTests(null);
+		setWebFsForTests(null);
 		vi.restoreAllMocks();
 	});
 
@@ -221,15 +225,80 @@ describe("web-auth (item 5)", () => {
 		expect(loadConfig()?.naiaUserId).toBeUndefined();
 	});
 
-	it("uses the server model on a fresh login and exposes the login key to balance requests", async () => {
+	function serveModels(models: readonly string[]) {
+		vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify(
+			models.map((model) => ({
+				model_key: `azure:${model}`,
+				capabilities: ["llm"],
+				operational_status: "live",
+			})),
+		)));
+	}
+
+	it("uses Luna high and Luna low on first login and persists the roles for workspace hydration", async () => {
+		serveModels(["deepseek-v4.1-flash", "gpt-6-luna"]);
+		const fs = createMemoryWebFs();
+		setWebFsForTests(fs);
 		const { installWebRuntime } = await import("../install");
 		installWebRuntime();
+		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
+		const expected = {
+			provider: "nextain",
+			model: "gpt-6-luna",
+			llmRoles: {
+				main: { provider: "nextain", model: "gpt-6-luna", thinkingLevel: "high" },
+				sub: { provider: "nextain", model: "gpt-6-luna", thinkingLevel: "low" },
+			},
+		};
+		expect(loadConfig()).toMatchObject(expected);
+		const saved = JSON.parse((await fs.readText(webAdkOpfsPath("naia-settings/config.json"))) ?? "{}");
+		expect(saved).toMatchObject({ ...expected, agentName: "Naia", naiaUserId: "test-user" });
+		expect(saved).not.toHaveProperty("naiaKey");
+		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
+	});
+
+	it.each(["webllm", "nextain"] as const)("uses the available fallback for an automatic %s seed when Luna is absent", async (provider) => {
+		serveModels(["gpt-6.1-terra", "solar-pro4"]);
+		localStorage.setItem("naia-config", JSON.stringify({
+			provider,
+			model: provider === "webllm" ? "Qwen3-4B-q4f32_1-MLC" : "deepseek-v4.1-flash",
+			webAutoDefaultModel: true,
+		}));
 		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
 		expect(loadConfig()).toMatchObject({
 			provider: "nextain",
 			model: "gpt-6.1-terra",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" } },
 		});
-		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
+	});
+
+	it("keeps the existing cloud fallback when the catalog is unavailable", async () => {
+		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
+		expect(loadConfig()).toMatchObject({
+			model: "deepseek-v4.1-flash",
+			llmRoles: { main: { model: "deepseek-v4.1-flash", thinkingLevel: "xhigh" } },
+		});
+	});
+
+	it("preserves explicit workspace choices after a cache loss on login", async () => {
+		serveModels(["deepseek-v4.1-flash", "gpt-6-luna"]);
+		const fs = createMemoryWebFs();
+		setWebFsForTests(fs);
+		localStorage.setItem("naia-adk-path", WEB_ADK_PATH);
+		const selected = {
+			provider: "nextain",
+			model: "gpt-6-luna",
+			llmRoles: {
+				main: { provider: "nextain", model: "gpt-6-luna", thinkingLevel: "max" },
+				sub: { provider: "nextain", model: "gpt-5.6-luna", thinkingLevel: "low" },
+			},
+		};
+		await fs.writeBytes(webAdkOpfsPath("naia-settings/config.json"), JSON.stringify(selected));
+		const { installWebRuntime } = await import("../install");
+		installWebRuntime();
+		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
+		expect(loadConfig()).toMatchObject(selected);
+		expect(fetch).not.toHaveBeenCalled();
 	});
 
 	it("defers startWebModel until login completes when login gate is enabled, and starts immediately by default (pl-04)", async () => {
