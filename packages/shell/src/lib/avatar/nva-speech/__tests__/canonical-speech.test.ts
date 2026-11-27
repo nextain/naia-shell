@@ -312,6 +312,28 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		expect(scanDrift("lib/voice/audio-queue.ts", vrmMeter)).toEqual([]);
 	});
 
+	it("the drift scan flags any extra analyser line added to the VRM playback meter file", () => {
+		const allowedMeter = [
+			"const analyser = source.context.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+		].join("\n");
+		expect(scanDrift("lib/voice/audio-queue.ts", allowedMeter)).toEqual([]);
+		const withExtraLoop = [
+			"const analyser = source.context.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+			"const extraAnalyser = source.context.createAnalyser();",
+			"analyser.getByteTimeDomainData(bytes);",
+		].join("\n");
+		expect(
+			scanDrift("lib/voice/audio-queue.ts", withExtraLoop).map(
+				(entry) => entry.split(" ")[0],
+			),
+		).toEqual([
+			"lib/voice/audio-queue.ts:3",
+			"lib/voice/audio-queue.ts:4",
+		]);
+	});
+
 	it("the drift scan keeps aiueo, drawn mouth and approximate forbidden in the VRM playback meter file", () => {
 		const traces = [
 			"const AIUEO = ['a','i','u','e','o'];",
