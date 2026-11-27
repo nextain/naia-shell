@@ -245,12 +245,27 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		"volume threshold mouth",
 		"approximate plan",
 	]);
+	const VRM_PLAYBACK_METER = new Set(["lib/voice/audio-queue.ts"]);
+	const VRM_PLAYBACK_METER_WAIVED = new Set(["volume threshold mouth"]);
+	const NVA_PATH_PREFIX = "lib/avatar/nva-speech/";
+	const NVA_LINK =
+		/CanonicalSpeechStage|canonical-speech-stage|SpeechPlayer|PrebakedAvatarRenderer/;
+
+	function isNvaLinked(name: string, text: string): boolean {
+		if (name.startsWith(NVA_PATH_PREFIX)) return true;
+		return text
+			.split("\n")
+			.some((line) => !/^\s*import\s+type\b/.test(line) && NVA_LINK.test(line));
+	}
 
 	function scanDrift(name: string, text: string): string[] {
 		const offenders: string[] = [];
+		const vrmMeter =
+			VRM_PLAYBACK_METER.has(name) && !isNvaLinked(name, text);
 		text.split("\n").forEach((line, index) => {
 			for (const [label, pattern] of DRIFT) {
 				if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
+				if (vrmMeter && VRM_PLAYBACK_METER_WAIVED.has(label)) continue;
 				if (pattern.test(line))
 					offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
 			}

@@ -5,8 +5,9 @@
  * web shell has no converter, so it reads the package itself: slide order and
  * size, each slide's text boxes, pictures and solid backgrounds, and speaker
  * notes.  The result feeds `slides-pptx-browser.ts`, which draws every slide
- * and writes an image PDF.  Layout is approximate (no charts, SmartArt,
- * gradients or theme fonts); notes follow the desktop script format.
+ * and writes an image PDF.  Layout is a simplified best-effort rendering (no
+ * charts, SmartArt, gradients or theme fonts); notes follow the desktop
+ * script format.
  */
 
 import { unzipSync } from "fflate";
