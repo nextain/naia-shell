@@ -170,8 +170,12 @@ async function resetKioskSettingsToSeed(): Promise<void> {
 				ttsEnabled: true,
 			}),
 		);
-		const { seedKioskAdkWorkspace } = await import("./knowledge");
-		await seedKioskAdkWorkspace(fs);
+		try {
+			const { seedKioskAdkWorkspace } = await import("./knowledge");
+			await seedKioskAdkWorkspace(fs);
+		} catch {
+			Logger.warn("KioskDemo", "kiosk knowledge seed failed");
+		}
 		// 손님이 고친 ADK 파일(AGENTS.md·규칙·지식·.agents·.users)을 원본으로 되돌린다.
 		await restoreKioskAdkOriginals(fs);
 	} catch {

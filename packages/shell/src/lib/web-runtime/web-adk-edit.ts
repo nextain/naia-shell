@@ -69,8 +69,12 @@ export async function restoreKioskAdkOriginals(
 	fs: WebFs = getWebFs(),
 ): Promise<void> {
 	if (!isKioskDemo()) return;
-	const { writeKioskBundledOriginals } = await import("../kiosk-demo/knowledge");
-	await writeKioskBundledOriginals(fs);
+	try {
+		const { writeKioskBundledOriginals } = await import("../kiosk-demo/knowledge");
+		await writeKioskBundledOriginals(fs);
+	} catch {
+		Logger.warn("WebAdk", "kiosk knowledge restore failed");
+	}
 	try {
 		await provisionWebAdk({ fs, force: true });
 	} catch {
