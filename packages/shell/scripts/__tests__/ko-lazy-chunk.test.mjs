@@ -1,7 +1,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { setLocale, t, tKo } from "../../src/lib/i18n";
+
+const koLoaded = vi.hoisted(() => vi.fn());
+vi.mock("../../src/lib/locales/ko", async (importOriginal) => {
+	koLoaded();
+	return importOriginal();
+});
 
 const shellDirectory = resolve(
 	dirname(fileURLToPath(import.meta.url)),
@@ -41,6 +48,19 @@ function sourceFiles(directory) {
 }
 
 describe("ko table stays out of the entry chunk", () => {
+	it("fixed Korean lookup works before the full ko table loads", async () => {
+		await setLocale("en");
+		expect(tKo("speech.reading.word.ai")).toBe("에이아이");
+		expect(tKo("kiosk.sourceLabel")).toBe("넥스테인·나이아 공개 지식");
+		expect(koLoaded).not.toHaveBeenCalled();
+		expect(() => tKo("toString")).toThrow("missing_ko_translation");
+
+		await setLocale("ko");
+		expect(koLoaded).toHaveBeenCalledTimes(1);
+		expect(t("chat.outputStage.thinking")).toBe("생각 중…");
+		expect(tKo("speech.reading.word.ai")).toBe("에이아이");
+	});
+
 	it("i18n.ts loads ko only through a dynamic import()", () => {
 		const source = readFileSync(i18nPath, "utf8");
 		expect(staticKoImports(source)).toEqual([]);
