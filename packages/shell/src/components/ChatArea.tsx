@@ -1899,7 +1899,7 @@ export function ChatArea({
 		const config = loadConfig();
 		if (!config) return;
 		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
-		const greeting = getLocale() === "ko" ? KIOSK_DEMO_GREETING : KIOSK_DEMO_GREETING_EN;
+		const greeting = t("kiosk.demoGreeting");
 		const initialMessages = useChatStore.getState().messages;
 		if (initialMessages.length === 1 && initialMessages[0].content === KIOSK_DEMO_GREETING && greeting !== KIOSK_DEMO_GREETING) {
 			useChatStore.getState().setMessages([{ ...initialMessages[0], content: greeting }]);

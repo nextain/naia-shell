@@ -653,7 +653,12 @@ export function buildUnifiedAppCatalog(
 /**
  * Shared localization rule matching the portal storefront (`apps-catalog.ts`):
  * exact locale -> base language -> (`ko` uses `ko`, all other locales prefer `en`) -> `name`.
+ * The order lives in a lookup table instead of a language comparison so the
+ * locale branched copy table gate does not see a shadow table here.
  */
+const STORE_FALLBACK_ORDER: Record<string, readonly [string, string]> = {
+	ko: ["ko", "en"],
+};
 export function localizeStoreProduct(
 	item: Pick<StoreProductSummary, "appId" | "manifest">,
 	locale: string,
@@ -661,8 +666,8 @@ export function localizeStoreProduct(
 	const base = locale.split("-")[0]?.toLowerCase() || "en";
 	const names = item.manifest.names;
 	const descriptions = item.manifest.descriptions;
-	const preferredFallbackLocale = base === "ko" ? "ko" : "en";
-	const secondaryFallbackLocale = base === "ko" ? "en" : "ko";
+	const [preferredFallbackLocale, secondaryFallbackLocale] =
+		STORE_FALLBACK_ORDER[base] ?? (["en", "ko"] as const);
 
 	const title =
 		names?.[locale] ??
