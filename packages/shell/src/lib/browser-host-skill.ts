@@ -339,7 +339,7 @@ function injectedPorts(): BrowserHostPortsOverride | undefined {
 
 const NO_TERMINAL: ConstructorParameters<typeof EnvironmentToolService>[1] = {
 	async exec() {
-		throw new Error(t("g1b.hostNoTerminalPort"));
+		throw new Error("이 조립에는 터미널 포트가 없다");
 	},
 };
 

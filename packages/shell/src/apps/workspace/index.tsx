@@ -205,8 +205,9 @@ function stopWorkspaceWatcher() {
 
 appRegistry.register({
 	id: "workspace",
-	name: "워크스페이스",
-	names: { ko: "워크스페이스", en: "Workspace" },
+	get name() {
+		return t("appbar.workspace");
+	},
 	icon: "💻",
 	builtIn: true,
 	source: "code",

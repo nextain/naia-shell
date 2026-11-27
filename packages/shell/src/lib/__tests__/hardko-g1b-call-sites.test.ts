@@ -125,7 +125,7 @@ const calls: Record<string, readonly Site[]> = {
 		["kiosk previous", "g1b.slidesKioskPrev", '@aria-label → button#onAction("previous") → footer.slides-app__controls--kiosk'],
 		["kiosk previous label", "g1b.slidesKioskPrev", 'button#onAction("previous") → footer.slides-app__controls--kiosk'],
 		["kiosk pause", "g1b.slidesKioskPause", 'then:state.mode === "presenting" → button.slides-app__primary → footer.slides-app__controls--kiosk'],
-		["kiosk resume", "g1b.slidesKioskResume", 'then:state.mode === "paused" || state.mode === "answering" → else:state.mode === "presenting" → button.slides-app__primary'],
+		["kiosk resume", "g1b.slidesKioskResume", 'then:state.mode === "paused" || state.mode === "answering" → else:state.mode === "presenting" → button.slides-app__primary → footer.slides-app__controls--kiosk'],
 		["kiosk next", "g1b.slidesKioskNext", '@aria-label → button#onAction("next") → footer.slides-app__controls--kiosk'],
 		["kiosk next label", "g1b.slidesKioskNext", 'button#onAction("next") → footer.slides-app__controls--kiosk'],
 		["kiosk stop", "g1b.slidesKioskStop", '@aria-label → button#onAction("stop") → footer.slides-app__controls--kiosk'],
@@ -188,12 +188,9 @@ const calls: Record<string, readonly Site[]> = {
 	],
 };
 
-function jsxAttributes(node: ts.JsxElement | ts.JsxSelfClosingElement) {
-	return (ts.isJsxElement(node) ? node.openingElement : node).attributes.properties;
-}
-
 function jsxAttribute(node: ts.JsxElement | ts.JsxSelfClosingElement, name: string) {
-	return jsxAttributes(node).find((attr): attr is ts.JsxAttribute =>
+	const element = ts.isJsxElement(node) ? node.openingElement : node;
+	return element.attributes.properties.find((attr): attr is ts.JsxAttribute =>
 		ts.isJsxAttribute(attr) && attr.name.getText() === name,
 	)?.initializer;
 }
@@ -364,15 +361,9 @@ for (const [file, rows] of Object.entries(calls)) {
 				assert.notEqual(literalText(literal), oldText, `Found legacy text: ${oldText}`);
 			}
 			const matches = translations.filter((call) => usesLocation(call, location));
-			const expected = matches.filter((call) => translationKey(call) === key);
 			const found = matches.map(translationKey).join(", ") || "none";
-			const actualLocations = translations
-				.filter((call) => translationKey(call) === key)
-				.map((call) => locationOf(call).map((step) => step.join(" / ")).join(" → "));
-			assert.equal(expected.length, 1,
-				`Expected t("${key}") at ${location}; found ${found}\n${actualLocations.join("\n")}`,
-			);
-			assertTranslation(expected[0], key, params);
+			assert.equal(matches.length, 1, `Expected one translation at ${location}; found ${found}`);
+			assertTranslation(matches[0], key, params);
 		});
 	}
 }
@@ -387,6 +378,7 @@ test("the development-only terminal port keeps its original diagnostic", () => {
 });
 
 const STRINGS: Record<string, readonly [ko: string, en: string]> = {
+	"g1b.slidesAppName": ["슬라이드", "Slides"],
 	"g1b.editorPdfLoadFailed": ["PDF 로드 실패: {error}", "PDF load failed: {error}"],
 	"g1b.editorMarkdownLimit": ["Markdown 파일이 5 MiB 미리보기 한도를 초과했습니다", "Markdown file exceeds the 5 MiB preview limit"],
 	"g1b.editorCopyPath": ["경로 복사", "Copy path"],

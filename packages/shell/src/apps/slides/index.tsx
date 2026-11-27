@@ -1,18 +1,21 @@
 import { type AppDescriptor, appRegistry } from "../../lib/app-registry";
+import { t } from "../../lib/i18n";
 import { isKioskDemo } from "../../lib/kiosk-demo/flag";
 import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 import { useAppStore } from "../../stores/app";
 import { SlidesCenterArea } from "./SlidesCenterArea";
 import slidesIconSvg from "./package-public/icon.svg?raw";
 
-/** Store-package metadata. The app is registered only after signed installation. */
-export const NAIA_SLIDES_DESCRIPTOR: Omit<AppDescriptor, "center"> = {
+/** Shell descriptor used when registering the bundled kiosk app. */
+export const NAIA_SLIDES_DESCRIPTOR: AppDescriptor = {
 	id: "land.naia.slides",
-	name: "슬라이드",
-	names: { ko: "슬라이드", en: "Slides" },
+	get name() {
+		return t("g1b.slidesAppName");
+	},
 	icon: "▣",
 	// 앱 꾸러미와 같은 아이콘(대표님 11/13 "슬라이드는 이걸로").
 	iconSvg: slidesIconSvg,
+	center: SlidesCenterArea,
 	tools: [
 		{
 			name: "skill_slide_presenter",
@@ -52,10 +55,7 @@ export const NAIA_SLIDES_DESCRIPTOR: Omit<AppDescriptor, "center"> = {
 export function syncKioskSlidesAppRegistration(): void {
 	if (!isKioskDemo()) return;
 	if (appRegistry.get(NAIA_SLIDES_DESCRIPTOR.id)) return;
-	appRegistry.register({
-		...NAIA_SLIDES_DESCRIPTOR,
-		center: SlidesCenterArea,
-	});
+	appRegistry.register(NAIA_SLIDES_DESCRIPTOR);
 	useAppStore.getState().bumpAppListVersion();
 }
 

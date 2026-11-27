@@ -8,6 +8,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { closeRunningApp, isMiniAppRunning } from "../lib/app-lifecycle";
@@ -61,8 +62,14 @@ interface AppBarProps {
 	onAddApp?: () => void;
 }
 
+function subscribeToLocale(onChange: () => void) {
+	window.addEventListener("naia:locale-change", onChange);
+	return () => window.removeEventListener("naia:locale-change", onChange);
+}
+
 export function AppBar({ onAddApp }: AppBarProps) {
 	const paymentLinksHidden = usePaymentLinksHidden();
+	const locale = useSyncExternalStore(subscribeToLocale, getLocale, getLocale);
 	const {
 		activeApp,
 		setActiveApp,
@@ -128,6 +135,12 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		// appListVersion is the reactive dependency — registry is not observable directly
 		[appListVersion],
 	);
+	const browserName = appRegistry.get("browser")?.name ?? t("appbar.browser");
+	const workspaceName = appRegistry.get("workspace")?.name ?? t("appbar.workspace");
+	const settingsName =
+		activeApp === "settings"
+			? t("appBar.closeSettings")
+			: appRegistry.get("settings")?.name ?? t("settings.title");
 
 	useEffect(() => {
 		if (isWeb) {
@@ -205,7 +218,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		window.setTimeout(navigate, 50);
 	}
 
-	const storeUrl = `${NAIA_WEB_BASE_URL.replace(/\/$/u, "")}/${getLocale()}/apps`;
+	const storeUrl = `${NAIA_WEB_BASE_URL.replace(/\/$/u, "")}/${locale}/apps`;
 
 	async function openAppStore() {
 		// The web app store sells apps for credits: not reachable from the Steam build.
@@ -413,7 +426,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						type="button"
 						className={`app-bar-tab${activeApp === "browser" ? " app-bar-tab--active" : ""}`}
 						data-app-id="browser"
-						aria-label={t("appbar.browser")}
+						title={browserName}
+						aria-label={browserName}
 						data-usage-event="app-bar.set-active-app-3.click"
 						onClick={() => setActiveApp("browser")}
 					>
@@ -424,7 +438,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					type="button"
 					className={`app-bar-tab${activeApp === "workspace" ? " app-bar-tab--active" : ""}`}
 					data-app-id="workspace"
-					aria-label={t("appbar.workspace")}
+					title={workspaceName}
+					aria-label={workspaceName}
 					data-usage-event="app-bar.set-active-app-4.click"
 					onClick={() =>
 						setActiveApp(
@@ -497,7 +512,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 								type="button"
 								className={`app-bar-tab${activeApp === mode.id ? " app-bar-tab--active" : ""}${isRunning ? " app-bar-tab--running" : ""}`}
 								data-app-id={mode.id}
-								title={mode.names?.[getLocale()] ?? mode.name}
+								title={mode.names?.[locale] ?? mode.name}
 								data-usage-event="app-bar.set-active-app-6.click"
 								onClick={() =>
 									setActiveApp(activeApp === mode.id ? null : mode.id)
@@ -524,7 +539,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 									type="button"
 									className="app-bar-tab-remove app-bar-tab-remove--shortcut"
 									title={t("hardkoG1a.appBar.deleteMode", {
-										name: mode.names?.[getLocale()] ?? mode.name,
+										name: mode.names?.[locale] ?? mode.name,
 									})}
 									onClick={(e) => handleRemoveApp(e, mode.id)}
 								>
@@ -872,8 +887,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				onClick={() =>
 					setActiveApp(activeApp === "settings" ? null : "settings")
 				}
-				title={activeApp === "settings" ? t("appBar.closeSettings") : t("settings.title")}
-				aria-label={activeApp === "settings" ? t("appBar.closeSettings") : t("settings.title")}
+				title={settingsName}
+				aria-label={settingsName}
 			>
 				{activeApp === "settings" && <span className="web-mobile-settings-close">✕</span>}
 				<svg

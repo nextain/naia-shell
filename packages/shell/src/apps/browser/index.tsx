@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { appRegistry } from "../../lib/app-registry";
 import type { AppCenterProps, AppDescriptor } from "../../lib/app-registry";
+import { t } from "../../lib/i18n";
 import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 import { isWebMode } from "../../lib/web-runtime/web-assets";
 
@@ -21,8 +22,9 @@ function DeferredBrowserCenterArea(props: AppCenterProps) {
 
 export const BROWSER_APP_DESCRIPTOR: AppDescriptor = {
 	id: "browser",
-	name: "인터넷",
-	names: { ko: "인터넷", en: "Internet" },
+	get name() {
+		return t("appbar.browser");
+	},
 	icon: "🌐",
 	builtIn: true,
 	keepAlive: true, // visibility controlled by browser_wv_hide/show on app switch
