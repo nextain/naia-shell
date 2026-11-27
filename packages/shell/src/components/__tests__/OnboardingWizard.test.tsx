@@ -23,6 +23,10 @@ const secureStore = vi.hoisted(() => ({
 	set: vi.fn().mockResolvedValue(undefined),
 	delete: vi.fn().mockResolvedValue(undefined),
 }));
+const coreOnboarding = vi.hoisted(() => ({
+	enabled: false,
+	completeWith: vi.fn().mockResolvedValue(undefined),
+}));
 
 // Mock Tauri invoke
 const loggedOutMocks = vi.hoisted(() => ({
@@ -94,7 +98,7 @@ vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
 	sendAuthUpdateStrict: vi.fn().mockResolvedValue(undefined),
 	reloadAgentSettings: vi.fn().mockResolvedValue(undefined),
-	isNewCore: () => false, // 기본 old 경로(비파괴 graft) — new-core graft 검증은 onboarding-core.test.ts
+	isNewCore: () => coreOnboarding.enabled,
 }));
 vi.mock("../../lib/onboarding-core", () => ({
 	completeOnboardingNewCore: vi.fn().mockResolvedValue(undefined),
@@ -104,7 +108,7 @@ vi.mock("../../lib/onboarding-core", () => ({
 		submit: vi.fn().mockResolvedValue({ step: "welcome" }),
 		onNaiaAuthCallback: vi.fn().mockResolvedValue({ step: "provider" }),
 		currentStep: () => "welcome",
-		completeWith: vi.fn().mockResolvedValue(undefined),
+		completeWith: coreOnboarding.completeWith,
 	})),
 }));
 
@@ -188,7 +192,12 @@ describe("OnboardingWizard", () => {
 
 	it("IT-SM-05 keeps the cloud roles when a browser completes onboarding after OAuth", async () => {
 		setWebAssetsModeForTests(true);
-		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
+		coreOnboarding.enabled = true;
+		vi.stubGlobal("fetch", vi.fn(async (input: string) =>
+			input.endsWith("/v1/models")
+				? new Response(null, { status: 503 })
+				: new Response(JSON.stringify({ credits: 10 })),
+		));
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
 		localStorage.setItem("naia-remote-key", "fixture-oauth-session-key");
 		const llmRoles = {
@@ -208,7 +217,15 @@ describe("OnboardingWizard", () => {
 		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
 		await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
 		const stored = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
-		expect(stored).toMatchObject({ provider: "nextain", model: "gpt-6-luna", llmRoles });
+		expect(stored).toMatchObject({
+			provider: "nextain",
+			model: "gpt-6-luna",
+			llmRoles,
+			onboardingComplete: true,
+		});
+		expect(coreOnboarding.completeWith).not.toHaveBeenCalled();
+		await act(async () => { vi.advanceTimersByTime(1200); });
+		expect(onComplete).toHaveBeenCalledOnce();
 	});
 
 	it("IT-SM-14 first onboarding retains legacy memory when Luna is available", async () => {
@@ -231,6 +248,8 @@ describe("OnboardingWizard", () => {
 	});
 
 	afterEach(() => {
+		coreOnboarding.enabled = false;
+		coreOnboarding.completeWith.mockClear();
 		setWebAssetsModeForTests(null);
 		vi.unstubAllGlobals();
 		vi.runAllTimers();
