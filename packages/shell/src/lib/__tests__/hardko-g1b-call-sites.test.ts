@@ -37,7 +37,7 @@ const workspaceTools = [
 	["set_surface", "wsSetSurface"],
 	["focus_space", "wsFocusSpace"],
 	["terminal_exec", "wsTermExec"],
-	["terminal_output", "wsTermOutput"],
+	["get_terminal_output", "wsTermOutput"],
 ] as const;
 
 const browserTools = [
@@ -69,111 +69,111 @@ const recoveryHints = [
 
 const calls: Record<string, readonly Site[]> = {
 	"apps/workspace/Editor.tsx": [
-		["pdf load failed (read)", "g1b.editorPdfLoadFailed", "arg:setLoadError:0 > callback:e > arg:.catch:0", { error: "String(e)" }, "PDF 로드 실패:"],
-		["pdf load failed (document)", "g1b.editorPdfLoadFailed", "arg:setLoadError:0 > callback:err > @onLoadError > Document", { error: "String(err?.message ?? err)" }, "PDF 로드 실패:"],
-		["markdown size limit", "g1b.editorMarkdownLimit", 'new:Error:0 > throw > if:typeof size === "number" && size > 5 * 1024 * 1024'],
-		["copy path title (load error)", "g1b.editorCopyPath", "@title > button#editor.button-1.click"],
-		["copy path title (header)", "g1b.editorCopyPath", "@title > button#editor.button-3.click"],
-		["open failed", "g1b.editorOpenFailed", "p > div.workspace-editor__load-error", { error: "loadError" }, "파일을 열 수 없습니다:"],
-		...editorButtons.map(([name, key, event]): Site => [name, `g1b.editor${key}`, `@title > button#${event}`]),
-		["saving", "settings.saving", "span.workspace-editor__saving > rhs:saving &&", undefined, "저장 중…"],
-		["save failed", "g1b.editorSaveFailed", "span.workspace-editor__error > rhs:saveError &&"],
-		["read only", "g1b.editorReadOnly", "span.workspace-editor__readonly > rhs:readOnly &&"],
+		["pdf load failed (read)", "g1b.editorPdfLoadFailed", "arg:setLoadError:0 → callback:e → arg:.catch:0", { error: "String(e)" }, "PDF 로드 실패:"],
+		["pdf load failed (document)", "g1b.editorPdfLoadFailed", "arg:setLoadError:0 → callback:err → @onLoadError → Document", { error: "String(err?.message ?? err)" }, "PDF 로드 실패:"],
+		["markdown size limit", "g1b.editorMarkdownLimit", 'new:Error:0 → throw → if:typeof size === "number" && size > 5 * 1024 * 1024'],
+		["copy path title (load error)", "g1b.editorCopyPath", "@title → button#editor.button-1.click"],
+		["copy path title (header)", "g1b.editorCopyPath", "@title → button#editor.button-3.click"],
+		["open failed", "g1b.editorOpenFailed", "p → div.workspace-editor__load-error", { error: "loadError" }, "파일을 열 수 없습니다:"],
+		...editorButtons.map(([name, key, event]): Site => [name, `g1b.editor${key}`, `@title → button#${event}`]),
+		["saving", "settings.saving", "span.workspace-editor__saving → rhs:saving &&", undefined, "저장 중…"],
+		["save failed", "g1b.editorSaveFailed", "span.workspace-editor__error → rhs:saveError &&"],
+		["read only", "g1b.editorReadOnly", "span.workspace-editor__readonly → rhs:readOnly &&"],
 		["edit button", "g1b.editorEdit", "button#editor.set-view-mode-5.click"],
 		["preview only button", "g1b.editorPreviewOnly", "button#editor.set-view-mode-6.click"],
 		["editor only button", "g1b.editorEditorOnly", "button#editor.set-view-mode-7.click"],
 		["preview button", "g1b.editorPreview", "button#editor.set-view-mode-8.click"],
 		["playback rate", "g1b.editorPlaybackRate", "label.workspace-editor__media-rate"],
 		["zoom fit button label", "g1b.editorZoomFit", "button#editor.set-image-zoom-11.click"],
-		["zoom fit indicator", "g1b.editorZoomFit", 'then:imageZoom === "fit" > span.workspace-editor__image-zoom-label'],
-		["image loading", "g1b.editorImageLoading", "div.workspace-editor__image-loading > else:imageBlobUrl"],
-		["pdf loading", "g1b.editorPdfLoading", "div.workspace-editor__pdf-loading > @loading > Document"],
-		["hwp extracting", "g1b.editorHwpExtracting", "div.workspace-editor__hwp-placeholder-text > div.workspace-editor__hwp-placeholder > then:hwpLoading"],
-		["hwp unavailable", "g1b.editorHwpUnavailable", "div.workspace-editor__hwp-placeholder-text > div.workspace-editor__hwp-placeholder > else:hwpSidecar !== null"],
+		["zoom fit indicator", "g1b.editorZoomFit", 'then:imageZoom === "fit" → span.workspace-editor__image-zoom-label'],
+		["image loading", "g1b.editorImageLoading", "div.workspace-editor__image-loading → else:imageBlobUrl"],
+		["pdf loading", "g1b.editorPdfLoading", "div.workspace-editor__pdf-loading → @loading → Document"],
+		["hwp extracting", "g1b.editorHwpExtracting", "div.workspace-editor__hwp-placeholder-text → div.workspace-editor__hwp-placeholder → then:hwpLoading"],
+		["hwp unavailable", "g1b.editorHwpUnavailable", "div.workspace-editor__hwp-placeholder-text → div.workspace-editor__hwp-placeholder → else:hwpSidecar !== null"],
 		["hwp sidecar hint", "g1b.editorHwpSidecarHint", "div.workspace-editor__hwp-placeholder-hint"],
-		["csv empty", "g1b.editorCsvEmpty", "div.workspace-editor__empty-hint > else:csvResult && csvResult.data.length > 0"],
+		["csv empty", "g1b.editorCsvEmpty", "div.workspace-editor__empty-hint → else:csvResult && csvResult.data.length > 0"],
 	],
 	"apps/workspace/WebWorkspace.tsx": [
-		["reverted notice", "g1b.webwsReverted", "arg:setRevertNotice:0 > try > fn:revertToOriginal"],
-		["revert failed notice", "g1b.webwsRevertFailed", "arg:setRevertNotice:0 > catch > fn:revertToOriginal"],
-		["close explorer label", "g1b.webwsCloseExplorer", "@aria-label > button#web-workspace-tree-collapse"],
+		["reverted notice", "g1b.webwsReverted", "arg:setRevertNotice:0 → try → fn:revertToOriginal"],
+		["revert failed notice", "g1b.webwsRevertFailed", "arg:setRevertNotice:0 → catch → fn:revertToOriginal"],
+		["close explorer label", "g1b.webwsCloseExplorer", "@aria-label → button#web-workspace-tree-collapse"],
 		["collapse button", "g1b.webwsCollapse", "button#web-workspace-tree-collapse"],
-		["resize explorer label", "g1b.webwsResizeExplorer", "@aria-label > div#web-workspace-resizer"],
+		["resize explorer label", "g1b.webwsResizeExplorer", "@aria-label → div#web-workspace-resizer"],
 		["revert button", "g1b.webwsRevert", "button#web-workspace-revert"],
-		["edit hint fallback", "g1b.webwsEditHint", "rhs:revertNotice || > p.web-workspace-edit-hint"],
+		["edit hint fallback", "g1b.webwsEditHint", "rhs:revertNotice || → p.web-workspace-edit-hint"],
 	],
 	"apps/workspace/DocTabBar.tsx": [
-		["tab list label", "g1b.docOpenDocs", "@aria-label > div.doc-tab-bar"],
+		["tab list label", "g1b.docOpenDocs", "@aria-label → div.doc-tab-bar"],
 		["empty tabs", "g1b.docEmpty", "span.doc-tab-bar__empty"],
-		["ask ai title", "g1b.docAskAiTitle", "@title > button.doc-tab__ask"],
-		["ask ai label", "g1b.docAskAiLabel", "@aria-label > button.doc-tab__ask", { name: "basename(path)" }, "AI에게 질의:"],
-		["close label", "g1b.docCloseLabel", "@aria-label > button.doc-tab__close", { name: "basename(path)" }, "문서 닫기:"],
+		["ask ai title", "g1b.docAskAiTitle", "@title → button.doc-tab__ask"],
+		["ask ai label", "g1b.docAskAiLabel", "@aria-label → button.doc-tab__ask", { name: "basename(path)" }, "AI에게 질의:"],
+		["close label", "g1b.docCloseLabel", "@aria-label → button.doc-tab__close", { name: "basename(path)" }, "문서 닫기:"],
 	],
 	"apps/workspace/MarkdownPreview.tsx": [
-		["image error", "g1b.mdImageError", "output.workspace-markdown__image-error > return", { detail: 'alt || src || t("g1b.mdUnknownImage")' }, "이미지를 열 수 없습니다:"],
-		["unknown image fallback", "g1b.mdUnknownImage", "rhs:alt || src || > prop:detail > arg:t:1 > output.workspace-markdown__image-error"],
-		["image loading", "g1b.mdImageLoading", "output > else:blobUrl > return"],
-		["preview label", "g1b.mdPreviewLabel", "@aria-label > article.workspace-editor__preview"],
-		["external link", "g1b.mdExternalLink", "then:external > @aria-label > a#markdown-preview.open-url-1.click", { label: "String(children)" }, "(외부 링크)"],
+		["image error", "g1b.mdImageError", "output.workspace-markdown__image-error → return", { detail: 'alt || src || t("g1b.mdUnknownImage")' }, "이미지를 열 수 없습니다:"],
+		["unknown image fallback", "g1b.mdUnknownImage", "rhs:alt || src || → prop:detail → arg:t:1 → output.workspace-markdown__image-error"],
+		["image loading", "g1b.mdImageLoading", "output → else:blobUrl → return"],
+		["preview label", "g1b.mdPreviewLabel", "@aria-label → article.workspace-editor__preview"],
+		["external link", "g1b.mdExternalLink", "then:external → @aria-label → a#markdown-preview.open-url-1.click", { label: "String(children)" }, "(외부 링크)"],
 	],
 	"apps/workspace/QuickOpen.tsx": [
-		["search placeholder", "g1b.qoSearch", "@placeholder > input.quick-open__input"],
-		["loading", "g1b.qoLoading", "div.quick-open__empty > rhs:loading &&"],
-		["empty", "g1b.qoEmpty", "div.quick-open__empty > rhs:!loading && results.length === 0 && query.trim() &&"],
+		["search placeholder", "g1b.qoSearch", "@placeholder → input.quick-open__input"],
+		["loading", "g1b.qoLoading", "div.quick-open__empty → rhs:loading &&"],
+		["empty", "g1b.qoEmpty", "div.quick-open__empty → rhs:!loading && results.length === 0 && query.trim() &&"],
 	],
 	"apps/slides/SlidesControls.tsx": [
-		["kiosk previous", "g1b.slidesKioskPrev", '@aria-label > button#onAction("previous") > footer.slides-app__controls--kiosk'],
-		["kiosk previous label", "g1b.slidesKioskPrev", 'button#onAction("previous") > footer.slides-app__controls--kiosk'],
-		["kiosk pause", "g1b.slidesKioskPause", 'then:state.mode === "presenting" > button.slides-app__primary > footer.slides-app__controls--kiosk'],
-		["kiosk resume", "g1b.slidesKioskResume", 'then:state.mode === "paused" || state.mode === "answering" > else:state.mode === "presenting" > button.slides-app__primary'],
-		["kiosk next", "g1b.slidesKioskNext", '@aria-label > button#onAction("next") > footer.slides-app__controls--kiosk'],
-		["kiosk next label", "g1b.slidesKioskNext", 'button#onAction("next") > footer.slides-app__controls--kiosk'],
-		["kiosk stop", "g1b.slidesKioskStop", '@aria-label > button#onAction("stop") > footer.slides-app__controls--kiosk'],
-		["kiosk stop label", "g1b.slidesKioskStop", 'button#onAction("stop") > footer.slides-app__controls--kiosk'],
+		["kiosk previous", "g1b.slidesKioskPrev", '@aria-label → button#onAction("previous") → footer.slides-app__controls--kiosk'],
+		["kiosk previous label", "g1b.slidesKioskPrev", 'button#onAction("previous") → footer.slides-app__controls--kiosk'],
+		["kiosk pause", "g1b.slidesKioskPause", 'then:state.mode === "presenting" → button.slides-app__primary → footer.slides-app__controls--kiosk'],
+		["kiosk resume", "g1b.slidesKioskResume", 'then:state.mode === "paused" || state.mode === "answering" → else:state.mode === "presenting" → button.slides-app__primary'],
+		["kiosk next", "g1b.slidesKioskNext", '@aria-label → button#onAction("next") → footer.slides-app__controls--kiosk'],
+		["kiosk next label", "g1b.slidesKioskNext", 'button#onAction("next") → footer.slides-app__controls--kiosk'],
+		["kiosk stop", "g1b.slidesKioskStop", '@aria-label → button#onAction("stop") → footer.slides-app__controls--kiosk'],
+		["kiosk stop label", "g1b.slidesKioskStop", 'button#onAction("stop") → footer.slides-app__controls--kiosk'],
 	],
 	"apps/generic-installed/GenericInstalledApp.tsx": [
-		["not loaded", "g1b.genericNotLoaded", "p.generic-installed-app__msg > div.generic-installed-app"],
-		["add index", "g1b.genericAddIndex", "p.generic-installed-app__hint > div.generic-installed-app"],
+		["not loaded", "g1b.genericNotLoaded", "p.generic-installed-app__msg → div.generic-installed-app"],
+		["add index", "g1b.genericAddIndex", "p.generic-installed-app__hint → div.generic-installed-app"],
 	],
 	"apps/sample-note/SampleNoteCenterArea.tsx": [
-		["hint", "g1b.noteHint", "span.sample-note-app__hint > div.sample-note-app__header"],
-		["placeholder", "g1b.notePlaceholder", "@placeholder > textarea.sample-note-app__editor"],
+		["hint", "g1b.noteHint", "span.sample-note-app__hint → div.sample-note-app__header"],
+		["placeholder", "g1b.notePlaceholder", "@placeholder → textarea.sample-note-app__editor"],
 	],
 	"apps/workspace/index.tsx": workspaceTools.map(([name, key]) => [
 		`${name.replaceAll("_", " ")} description`,
 		`g1b.${key}`,
-		`return > get:description > object:skill_workspace_${name}`,
+		`return → get:description → object:skill_workspace_${name}`,
 	]),
 	"components/BrowserHostResult.tsx": [
 		...recoveryHints.map(([name, code, key]): Site => [
 			`${name} hint`, `g1b.${key}`,
-			`return > ${code === null ? "default" : `case:"${code}"`} > fn:recoveryHint`,
+			`return → ${code === null ? "default" : `case:"${code}"`} → fn:recoveryHint`,
 		]),
-		["workspace title", "g1b.hostWorkspaceTitle", "@title > span.browser-host-space"],
-		["no workspace", "g1b.hostNoWorkspace", "rhs:card.workspaceId || > span.browser-host-space"],
-		["status running", "g1b.hostStatusRunning", 'then:status === "running" || card.status === "pending" > span.browser-host-badge'],
-		["status done", "g1b.hostStatusDone", 'then:card.status === "success" > else:status === "running" || card.status === "pending" > span.browser-host-badge'],
-		["status refused", "g1b.hostStatusRefused", 'then:card.status === "refused" > else:card.status === "success" > else:status === "running" || card.status === "pending" > span.browser-host-badge'],
-		["status error", "chat.error", 'else:card.status === "refused" > else:card.status === "success" > else:status === "running" || card.status === "pending" > span.browser-host-badge', undefined, "오류"],
-		["progress", "g1b.hostProgress", 'output.browser-host-progress > rhs:status === "running" &&'],
-		["address label", "g1b.hostAddrLabel", "dt > evidence:evidence.url > dl.browser-host-evidence"],
-		["revision", "g1b.hostRevisionLabel", "span.browser-host-revision > dd.browser-host-url", { revision: "evidence.urlRevision" }, "개정"],
-		["snapshot label", "g1b.hostSnapshotLabel", "dt > evidence:evidence.snapshotRef > dl.browser-host-evidence"],
-		["snapshot missing", "g1b.hostNone", "rhs:evidence.snapshotRef || > dd > evidence:evidence.snapshotRef"],
-		["capture label", "g1b.hostCaptureLabel", "dt > evidence:evidence.screenshotRef > dl.browser-host-evidence"],
-		["capture missing", "g1b.hostNone", "rhs:evidence.screenshotRef || > dd > evidence:evidence.screenshotRef"],
-		["empty workspaces", "g1b.hostEmptyWorkspaces", "p.browser-host-empty > then:workspaces.length === 0"],
-		["headless mode", "g1b.hostHeadlessMode", 'then:space.mode === "headless" > span.browser-host-space-meta'],
+		["workspace title", "g1b.hostWorkspaceTitle", "@title → span.browser-host-space"],
+		["no workspace", "g1b.hostNoWorkspace", "rhs:card.workspaceId || → span.browser-host-space"],
+		["status running", "g1b.hostStatusRunning", 'then:status === "running" || card.status === "pending" → span.browser-host-badge'],
+		["status done", "g1b.hostStatusDone", 'then:card.status === "success" → else:status === "running" || card.status === "pending" → span.browser-host-badge'],
+		["status refused", "g1b.hostStatusRefused", 'then:card.status === "refused" → else:card.status === "success" → else:status === "running" || card.status === "pending" → span.browser-host-badge'],
+		["status error", "chat.error", 'else:card.status === "refused" → else:card.status === "success" → else:status === "running" || card.status === "pending" → span.browser-host-badge', undefined, "오류"],
+		["progress", "g1b.hostProgress", 'output.browser-host-progress → rhs:status === "running" &&'],
+		["address label", "g1b.hostAddrLabel", "dt → evidence:evidence.url → dl.browser-host-evidence"],
+		["revision", "g1b.hostRevisionLabel", "span.browser-host-revision → dd.browser-host-url", { revision: "evidence.urlRevision" }, "개정"],
+		["snapshot label", "g1b.hostSnapshotLabel", "dt → evidence:evidence.snapshotRef → dl.browser-host-evidence"],
+		["snapshot missing", "g1b.hostNone", "rhs:evidence.snapshotRef || → dd → evidence:evidence.snapshotRef"],
+		["capture label", "g1b.hostCaptureLabel", "dt → evidence:evidence.screenshotRef → dl.browser-host-evidence"],
+		["capture missing", "g1b.hostNone", "rhs:evidence.screenshotRef || → dd → evidence:evidence.screenshotRef"],
+		["empty workspaces", "g1b.hostEmptyWorkspaces", "p.browser-host-empty → then:workspaces.length === 0"],
+		["headless mode", "g1b.hostHeadlessMode", 'then:space.mode === "headless" → span.browser-host-space-meta'],
 		["workspace revision", "g1b.hostRevisionLabel", "span.browser-host-space-meta", { revision: "space.revision" }, "· 개정"],
 	],
 	"lib/browser-host-skill.ts": [
 		...browserTools.map(([name, key]): Site => [
 			`${name.replaceAll("_", " ")} description`, `g1b.${key}`,
-			`return > get:description > object:env_browser_${name}`,
+			`return → get:description → object:env_browser_${name}`,
 		]),
-		["element target ref or coords", "g1b.hostTargetRefOrCoords", "return > if:x === null || y === null > fn:elementTarget"],
-		["element target why", "g1b.hostTargetWhyNeeded", "return > if:!why > fn:elementTarget"],
-		["not a browser host tool", "g1b.hostNotBrowserHost", "arg:failed:2 > return > if:!isBrowserHostTool(toolName) > fn:executeBrowserHostSkill", { tool: "toolName" }, "브라우저 호스트 도구가 아니다:"],
+		["element target ref or coords", "g1b.hostTargetRefOrCoords", "return → if:x === null || y === null → fn:elementTarget"],
+		["element target why", "g1b.hostTargetWhyNeeded", "return → if:!why → fn:elementTarget"],
+		["not a browser host tool", "g1b.hostNotBrowserHost", "arg:failed:2 → return → if:!isBrowserHostTool(toolName) → fn:executeBrowserHostSkill", { tool: "toolName" }, "브라우저 호스트 도구가 아니다:"],
 		...([
 			["open", "url", "url 이 필요하다"],
 			["navigate", "url", "url 이 필요하다"],
@@ -181,10 +181,10 @@ const calls: Record<string, readonly Site[]> = {
 			["script", "code", "code 가 필요하다"],
 		] as const).map(([rpc, arg, legacy]): Site => [
 			`missing ${arg} argument (${rpc})`, "g1b.hostArgNeeded",
-			`prop:detail > arg:refused:2 > return > if:!${arg} > case:"env_browser_${rpc}"`,
+			`prop:detail → arg:refused:2 → return → if:!${arg} → case:"env_browser_${rpc}"`,
 			{ arg: JSON.stringify(arg) }, legacy,
 		]),
-		["not an evidence rpc", "g1b.hostNotEvidenceRpc", "arg:failed:2 > return > default > fn:runEvidenceRpc", { tool: "toolName" }, "증거 RPC 가 아니다:"],
+		["not an evidence rpc", "g1b.hostNotEvidenceRpc", "arg:failed:2 → return → default → fn:runEvidenceRpc", { tool: "toolName" }, "증거 RPC 가 아니다:"],
 	],
 };
 
@@ -302,7 +302,7 @@ function locationOf(node: ts.Node): string[][] {
 
 function usesLocation(node: ts.Node, location: string): boolean {
 	const steps = locationOf(node);
-	return location.split(" > ").every((step, index) => steps[index]?.includes(step));
+	return location.split(" → ").every((step, index) => steps[index]?.includes(step));
 }
 
 function translationKey(node: ts.CallExpression): string | undefined {
@@ -366,7 +366,12 @@ for (const [file, rows] of Object.entries(calls)) {
 			const matches = translations.filter((call) => usesLocation(call, location));
 			const expected = matches.filter((call) => translationKey(call) === key);
 			const found = matches.map(translationKey).join(", ") || "none";
-			assert.equal(expected.length, 1, `Expected t("${key}") at ${location}; found ${found}`);
+			const actualLocations = translations
+				.filter((call) => translationKey(call) === key)
+				.map((call) => locationOf(call).map((step) => step.join(" / ")).join(" → "));
+			assert.equal(expected.length, 1,
+				`Expected t("${key}") at ${location}; found ${found}\n${actualLocations.join("\n")}`,
+			);
 			assertTranslation(expected[0], key, params);
 		});
 	}
@@ -374,7 +379,7 @@ for (const [file, rows] of Object.entries(calls)) {
 
 test("the development-only terminal port keeps its original diagnostic", () => {
 	const { literals, translations } = sourceNodes("lib/browser-host-skill.ts");
-	const location = "new:Error:0 > throw > method:exec > var:NO_TERMINAL";
+	const location = "new:Error:0 → throw → method:exec → var:NO_TERMINAL";
 	assert.ok(literals.some((literal) =>
 		usesLocation(literal, location) && literalText(literal) === "이 조립에는 터미널 포트가 없다",
 	), "Missing original terminal-port diagnostic in NO_TERMINAL.exec");
