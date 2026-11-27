@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -28,6 +29,8 @@ vi.mock("../../lib/logger", () => ({
 		error: vi.fn(),
 	},
 }));
+
+vi.mock("../../components/BgmPlayer", () => ({ BgmPlayer: () => null }));
 
 // ─── Mock NaiaContextBridge ──────────────────────────────────────────────────
 
@@ -321,5 +324,55 @@ describe("SampleNote App — tool interaction", () => {
 			const latest = noteContexts[noteContexts.length - 1];
 			expect(latest?.data.content).toBe("Typed by user");
 		});
+	});
+});
+
+describe("built-in app names", () => {
+	it("renders Korean, English and Japanese app titles in the app bar", async () => {
+		const { AppBar } = await import("../../components/AppBar");
+		const { getLocale, setLocale } = await import("../../lib/i18n");
+		const { syncKioskSlidesAppRegistration } = await import("../slides");
+		await import("../browser");
+		await import("../workspace");
+		await import("../settings");
+		const previousLocale = getLocale();
+		const slidesId = "land.naia.slides";
+		const previousSlides = appRegistry.get(slidesId);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		try {
+			syncKioskSlidesAppRegistration();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+
+		try {
+			await setLocale("ko");
+			const { container } = render(<AppBar />);
+			const ids = ["workspace", "browser", "settings", slidesId];
+			const buttons = ids.map((id) =>
+				container.querySelector<HTMLButtonElement>(
+					id === "settings" ? ".app-bar-settings" : `button[data-app-id="${id}"]`,
+				),
+			);
+			const namesByLocale = [
+				["ko", ["작업공간", "브라우저", "설정", "슬라이드"]],
+				["en", ["Workspace", "Browser", "Settings", "Slides"]],
+				["ja", ["ワークスペース", "ブラウザ", "設定", "スライド"]],
+			] as const;
+
+			for (const [locale, expected] of namesByLocale) {
+				await act(async () => {
+					await setLocale(locale);
+					window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: locale }));
+				});
+				expect(buttons.map((button) => button?.title), locale).toEqual(expected);
+				expect(ids.map((id) => appRegistry.get(id)?.name), locale).toEqual(expected);
+			}
+		} finally {
+			cleanup();
+			if (!previousSlides) appRegistry.unregister(slidesId);
+			await setLocale(previousLocale);
+		}
 	});
 });
