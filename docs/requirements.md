@@ -1,8 +1,11 @@
 # 요구사항 (P03 — FR/NFR) — 2단계 산출물
 
-## WebGPU hosted model defaults (2026-11-24)
+## WebGPU hosted model defaults (2026-11-27)
 
-웹 모드 `nextain` 메인은 `deepseek-v4.1-flash`(기본, `xhigh`), `gpt-6.1-terra`(`xhigh`), `gpt-6-luna`(`max`)이며, 보조는 `deepseek-v4.1-flash`(기본, `low`)와 `gpt-6-luna`(`low`)이다. 부분 카탈로그에서도 이 순서의 안전한 폴백을 유지한다.
+| ID | 요구사항 | 검증 |
+|---|---|---|
+| FR-WEBGPU-MODEL-DEFAULTS.1 | 로그인 또는 클라우드 전환 시 기본 메인은 카탈로그에 있는 `gpt-6-luna`(`high`), `deepseek-v4.1-flash`(`xhigh`), `gpt-6.1-terra`(`xhigh`), `solar-pro4` 순서로 고른다. 기본 보조는 Luna(`low`)를 우선한다. 저장된 사용자 설정과 키오스크 전용 기본값 및 폴백을 보존한다. | 첫 로그인·온보딩·클라우드 전환 및 일반·키오스크 카탈로그 집중 시험 완료 |
+| FR-WEBGPU-MODEL-DEFAULTS.2 | 웹 두뇌 설정은 Luna의 `max`를 제공한다. 사용자가 명시적으로 고른 `max`는 웹 워커의 게이트웨이 요청에 포함된다. | 설정 선택 코드와 모의 전송 집중 시험 확인 |
 
 > **현재 Windows 로컬 표현 기준 (2026-08-06):** 별도 GPU 프로파일은 없다. NVA는 GPU·로그인과 무관한 사전 생성 web-player다. 감지 VRAM 6GB 이상이면 Voice 설정에서만 `voxCPM 2 local voice`를 명시적으로 켜고 끌 수 있으며 로그인은 필요하지 않다. 자세한 활성 계약은 이 문서의 `2026-08-06 active Windows NVA/Voice/Media contract`와 [`windows-6gb-voice.md`](windows-6gb-voice.md)를 따른다. [`windows-8gb-nva.md`](windows-8gb-nva.md) 및 FR-CASCADE.1~22의 Ditto/TRT/Cascade 프로파일 조항은 비규범 이력이다.
 

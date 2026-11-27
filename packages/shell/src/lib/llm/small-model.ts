@@ -6,7 +6,12 @@ import {
 } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import type { LlmModelMeta } from "./types";
-import { sortModels } from "./registry";
+import {
+	fetchNaiaModelMetadata,
+	gatewayServedModelIds,
+	getDefaultLlmModel,
+	sortModels,
+} from "./registry";
 
 export const LOCAL_SMALL_MODEL = "huihui_ai/qwen3.5-abliterated:4B";
 
@@ -31,18 +36,41 @@ export function defaultThinkingLevel(modelId: string): "high" | "xhigh" | "max" 
 	return undefined;
 }
 
+/** The registered default is the offline fallback when the gateway list is unavailable. */
+export function fallbackNaiaMainModel(): LlmRoleConfig {
+	const model = getDefaultLlmModel("nextain");
+	return { provider: "nextain", model, thinkingLevel: defaultThinkingLevel(model) };
+}
+
+export async function fetchNaiaChatModels(gatewayUrl: string): Promise<LlmModelMeta[] | null> {
+	const metadata = await fetchNaiaModelMetadata(gatewayUrl);
+	if (!metadata) return null;
+	const served = gatewayServedModelIds(metadata);
+	return Array.from(metadata, ([id, { capabilities }]) => ({
+		id,
+		label: id,
+		capabilities,
+	})).filter((model) => served?.has(model.id) && model.capabilities.includes("llm"));
+}
+
 /** Only select a recommended server model actually reported by the catalog. */
 export function defaultMainModel(models: readonly LlmModelMeta[]): LlmRoleConfig | undefined {
- if (isKioskDemo()) {
-  const target = resolveKioskDemoMainModel().toLowerCase();
-  const luna = smallModelChoices(models).find(model => model.id.toLowerCase() === target);
-  if (luna) return { provider: "nextain", model: luna.id, thinkingLevel: KIOSK_DEMO_THINKING_LEVEL };
- }
-	const choices = smallModelChoices(models).filter(model => model.id !== "solar-mini");
-	const first = ["gpt-6-luna", "deepseek-v4.1-flash", "gpt-6.1-terra", "solar-pro4"].map(id => choices.find(model => model.id === id)).find((model): model is LlmModelMeta => Boolean(model))
-		?? sortModels(choices, "recommended")[0];
+	const kiosk = isKioskDemo();
+	const eligible = smallModelChoices(models);
+	if (kiosk) {
+		const target = resolveKioskDemoMainModel().toLowerCase();
+		const selected = eligible.find((model) => model.id.toLowerCase() === target);
+		if (selected) return { provider: "nextain", model: selected.id, thinkingLevel: KIOSK_DEMO_THINKING_LEVEL };
+	}
+	const choices = eligible.filter((model) => model.id !== "solar-mini");
+	const preferred = kiosk
+		? ["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna", "solar-pro4"]
+		: ["gpt-6-luna", "deepseek-v4.1-flash", "gpt-6.1-terra", "solar-pro4"];
+	const first = preferred
+		.map((id) => choices.find((model) => model.id === id))
+		.find((model) => model !== undefined) ?? sortModels(choices, "recommended")[0];
 	if (!first) return undefined;
-	const thinkingLevel = defaultThinkingLevel(first.id);
+	const thinkingLevel = kiosk && first.id === "gpt-6-luna" ? "max" : defaultThinkingLevel(first.id);
 	return { provider: "nextain", model: first.id, ...(thinkingLevel ? { thinkingLevel } : {}) };
 }
 

@@ -1,5 +1,5 @@
 import { KioskDemoGate } from "./components/KioskDemoGate";
-import "./lib/web-runtime/auto-install";
+import { bootWebRuntimeAndModel } from "./lib/web-runtime/auto-install";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
@@ -75,6 +75,8 @@ if (!isWebMode() && "__TAURI_INTERNALS__" in window) {
 }
 
 async function bootstrap() {
+	// Complete OAuth's workspace write before App hydrates the browser cache.
+	if (isWebMode() && !isKioskDemo()) await bootWebRuntimeAndModel();
 	if (!isWebMode() && "__TAURI_INTERNALS__" in window) await bootstrapAdkPath();
 	const { App } = await import("./App");
 	await bootstrapShell({

@@ -252,7 +252,7 @@ describe("web-auth (item 5)", () => {
 		};
 		expect(loadConfig()).toMatchObject(expected);
 		const saved = JSON.parse((await fs.readText(webAdkOpfsPath("naia-settings/config.json"))) ?? "{}");
-		expect(saved).toMatchObject({ ...expected, agentName: "Naia", naiaUserId: "test-user" });
+		expect(saved).toMatchObject({ ...expected, agentName: "Naia" });
 		expect(saved).not.toHaveProperty("naiaKey");
 		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
 	});

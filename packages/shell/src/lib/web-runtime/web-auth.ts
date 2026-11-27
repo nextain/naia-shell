@@ -1,5 +1,12 @@
 import { useChatStore } from "../../stores/chat";
-import { LAB_GATEWAY_URL, loadConfig, saveConfig } from "../config";
+import { getAdkPath, writeNaiaConfigAtPath } from "../adk-store";
+import {
+	type AppConfig,
+	CONFIG_STORAGE_KEY,
+	LAB_GATEWAY_URL,
+	loadConfig,
+	saveConfig,
+} from "../config";
 import { getLocale } from "../i18n";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import {
@@ -8,13 +15,17 @@ import {
 	primeLabCredits,
 } from "../lab-balance";
 import { getDefaultLlmModel } from "../llm/registry";
+import { fetchNaiaChatModels } from "../llm/small-model";
 import { Logger } from "../logger";
 import { makeOnboardingSession } from "../onboarding-core";
+import { applyNaiaCloudModelDefaults, effectiveMainRole } from "../slots/model";
 import { getDefaultDragonVoiceForLocale } from "../tts/registry";
 import { emitWebEvent } from "./event-bus";
-import { WEB_ADK_PATH } from "./web-adk-path";
+import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
 import { readWebAppInstallId, WEB_APP_INSTALL_PARAM } from "./web-app-install-link";
 import { getWebBasePath, isWebMode } from "./web-assets";
+import { getWebFs } from "./web-fs";
+import { INITIAL_WEB_WORKSPACE_CONFIG } from "./web-workspace-commands";
 
 export const WEB_OAUTH_STATE_STORAGE_KEY = "naia-web-oauth-state";
 const WEB_OAUTH_INSTALL_STORAGE_KEY = "naia-web-oauth-install-app";
@@ -275,6 +286,8 @@ export async function completeWebNaiaLogin(
 	if (!isValidWebAuthKey(naiaKey)) {
 		throw new Error("invalid_naia_key");
 	}
+	const adkPath = getAdkPath();
+	const kiosk = isKioskDemo();
 	try {
 		const session = makeOnboardingSession();
 		await session.onNaiaAuthCallback(naiaKey, WEB_ADK_PATH);
@@ -284,16 +297,57 @@ export async function completeWebNaiaLogin(
 
 	const previousUserId = getWebAuthenticatedUserId();
 	const nextUserId = naiaUserId?.trim() || undefined;
-	if (typeof localStorage !== "undefined") {
-		localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, naiaKey);
-		if (nextUserId) {
-			localStorage.setItem(WEB_REMOTE_USER_ID_STORAGE_KEY, nextUserId);
-		} else {
-			localStorage.removeItem(WEB_REMOTE_USER_ID_STORAGE_KEY);
+	let workspace: Partial<AppConfig> | null = null;
+	let canWriteWorkspace = false;
+	if (!kiosk && adkPath === WEB_ADK_PATH) {
+		try {
+			const raw = await getWebFs().readText(webAdkOpfsPath("naia-settings/config.json"));
+			const parsed: unknown = raw === null ? null : JSON.parse(raw);
+			if (raw === null || (parsed && typeof parsed === "object" && !Array.isArray(parsed))) {
+				workspace = parsed as Partial<AppConfig> | null;
+				canWriteWorkspace = true;
+			}
+		} catch {
+			// Keep the render cache available if the workspace cannot be read.
 		}
 	}
-
-	const existing = loadConfig();
+	let existing = loadConfig();
+	const cachedConfig = typeof localStorage === "undefined"
+		? null
+		: localStorage.getItem(CONFIG_STORAGE_KEY);
+	// The initial cache is a placeholder until the workspace has been hydrated.
+	if (!existing || existing.webAutoDefaultModel === true) {
+		if (workspace) {
+			existing = {
+				...existing,
+				...workspace,
+				webAutoDefaultModel: workspace.webAutoDefaultModel,
+			} as AppConfig;
+		} else if (canWriteWorkspace) {
+			existing = { ...INITIAL_WEB_WORKSPACE_CONFIG, ...existing } as AppConfig;
+		}
+	}
+	const usesCloudDefault = (config: AppConfig | null) => {
+		if (!config) return true;
+		const main = effectiveMainRole(config);
+		if (!main.provider || !main.model) return true;
+		return !opts?.keepLocalModel &&
+			config.webAutoDefaultModel === true &&
+			(main.provider === "webllm" ||
+				(main.provider === "nextain" && !previousUserId && !config.naiaUserId && !config.userName));
+	};
+	const models = !kiosk && usesCloudDefault(existing)
+		? await fetchNaiaChatModels(LAB_GATEWAY_URL)
+		: null;
+	if (getAdkPath() !== adkPath) {
+		throw new Error("The login callback belongs to a different ADK.");
+	}
+	if (typeof localStorage !== "undefined" && localStorage.getItem(CONFIG_STORAGE_KEY) !== cachedConfig) {
+		const latest = loadConfig();
+		if (latest && (latest.webAutoDefaultModel !== true || !workspace || workspace.webAutoDefaultModel === true)) {
+			existing = latest;
+		}
+	}
 	const hasActiveCardBeforeLogin =
 		typeof existing?.uiPreferences?.b2cActiveCardId === "string" &&
 		existing.uiPreferences.b2cActiveCardId.trim().length > 0;
@@ -305,37 +359,20 @@ export async function completeWebNaiaLogin(
 				nextUserId,
 				explicitOnboardingComplete: opts?.onboardingComplete,
 			});
-	const shouldUpgradeAutoSeedToCloud =
-		!existing ||
-		(!opts?.keepLocalModel &&
-			existing.webAutoDefaultModel === true &&
-			existing.provider === "webllm");
-	const nextProvider = shouldUpgradeAutoSeedToCloud
-		? "nextain"
-		: existing?.provider || "nextain";
-	const nextModel = shouldUpgradeAutoSeedToCloud
-		? getDefaultLlmModel("nextain")
-		: existing?.model || getDefaultLlmModel("nextain");
+	const useCloudDefault = !kiosk && usesCloudDefault(existing);
+	const existingMain = existing ? effectiveMainRole(existing) : undefined;
 	const shouldUpgradeToDragonVoice =
-		!isKioskDemo() &&
+		!kiosk &&
 		!existing?.ttsVoice &&
 		(!existing?.ttsProvider || existing.ttsProvider === "browser");
 	const dragonDefaultVoice = getDefaultDragonVoiceForLocale(
 		existing?.locale || getLocale(),
 	);
-	saveConfig({
+	let next: AppConfig = {
 		...(existing ?? {}),
-		provider: nextProvider,
-		model: nextModel,
+		provider: existingMain?.provider || existing?.provider || "nextain",
+		model: existingMain?.model || existing?.model || getDefaultLlmModel("nextain"),
 		apiKey: existing?.apiKey ?? "",
-		...(shouldUpgradeAutoSeedToCloud
-			? {
-					llmRoles: {
-						...(existing?.llmRoles ?? {}),
-						main: { provider: nextProvider, model: nextModel },
-					},
-				}
-			: {}),
 		...(shouldUpgradeToDragonVoice
 			? {
 					ttsEnabled: existing?.ttsEnabled ?? true,
@@ -345,7 +382,29 @@ export async function completeWebNaiaLogin(
 			: {}),
 		naiaUserId: nextUserId,
 		onboardingComplete,
-	});
+	};
+	if (useCloudDefault) {
+		next = applyNaiaCloudModelDefaults(next, models);
+		if (canWriteWorkspace) {
+			try {
+				await writeNaiaConfigAtPath(next as unknown as Record<string, unknown>, adkPath);
+			} catch {
+				Logger.warn("WebAuth", "Could not persist the cloud model selection");
+			}
+			if (getAdkPath() !== adkPath) {
+				throw new Error("The login callback belongs to a different ADK.");
+			}
+		}
+	}
+	if (typeof localStorage !== "undefined") {
+		localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, naiaKey);
+		if (nextUserId) {
+			localStorage.setItem(WEB_REMOTE_USER_ID_STORAGE_KEY, nextUserId);
+		} else {
+			localStorage.removeItem(WEB_REMOTE_USER_ID_STORAGE_KEY);
+		}
+	}
+	saveConfig(next);
 
 	if (previousUserId !== nextUserId) {
 		useChatStore.getState().newConversation();

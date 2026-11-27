@@ -2,7 +2,9 @@
 
 ## UC-WEBGPU-MODEL-DEFAULTS-20261124
 
-웹 사용자는 `deepseek-v4.1-flash`를 메인(`xhigh`)과 보조(`low`) 기본값으로 받고, 메인에서 Terra(`xhigh`) 또는 Luna(`max`), 보조에서 Luna(`low`)를 선택한다. 부분 카탈로그에서도 안전한 후보 순서와 저장된 기존 선택 보존으로 설정을 계속 사용할 수 있다.
+웹 사용자가 처음 나이아 클라우드에 연결하면 이용 가능한 `gpt-6-luna`를 메인 `high`와 보조 `low`로 사용한다. 두뇌 설정에서 Luna의 `max`를 직접 선택할 수 있다. 카탈로그에 Luna가 없으면 다음 후보를 쓰고, 이전에 저장한 모델과 강도는 보존한다.
+
+검증은 `web-auth.test.ts`의 첫 로그인·저장·폴백, `OnboardingWizard.test.tsx`의 IT-SM-05, `ChatArea.web.test.tsx`의 R21-2, `small-model.test.ts`의 일반·키오스크 카탈로그, `openai-compat-provider.test.ts`의 요청 본문을 사용한다.
 
 > **현재 Windows 로컬 표현 시나리오:** GPU 감지는 온보딩에서 로컬 음성 사용 가능성만 안내하며 프로파일을 자동 활성화하지 않는다. 사용자는 이후 음성 설정에서 로컬 음성과 레퍼런스 음성을 선택한다. 사전 생성 NVA 외모는 GPU 프로파일과 독립적으로 선택한다. 과거 8GB 서버 렌더링 NVA 기록은 [`windows-8gb-nva.md`](windows-8gb-nva.md)에 보존한다.
 
@@ -4128,4 +4130,4 @@ Test Coverage Map (P02)
 | UC-WEB-VRM-HUB | 아바타 선택 VRoid Hub 연결 | `SettingsTab.test.tsx`, `e2e/web-vroid-hub-r41.spec.ts` |
 | UC-WEB-VRM-LIP-SYNC | 말하는 아바타 입 움직임 | `e2e/web-vrm-lip-sync-r43.spec.ts`, `lip-sync.test.ts` |
 | UC-WEB-WORKSPACE-IMPORT | 작업 파일 아바타 가져오기 | `web-workspace-path.test.tsx`, `web-settings-catalog.test.ts`, `web-nva-archive.test.ts` |
-| UC-WEBGPU-MODEL-DEFAULTS-20261124 | 기본 모델 순서 기존 선택 보존 | `registry.test.ts`, `WebModelStatusBar.test.tsx` |
+| UC-WEBGPU-MODEL-DEFAULTS-20261124 | 첫 로그인·온보딩·클라우드 전환의 Luna high/low, 카탈로그 폴백, 기존 선택과 키오스크 보존, 명시 max 전송 | `web-auth.test.ts`, `OnboardingWizard.test.tsx` IT-SM-05, `ChatArea.web.test.tsx` R21-2, `small-model.test.ts`, `openai-compat-provider.test.ts` |

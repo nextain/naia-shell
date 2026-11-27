@@ -1,5 +1,6 @@
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { getDefaultLlmModel, unregisterLlmProvider } from "../llm/registry";
+import { fallbackNaiaMainModel } from "../llm/small-model";
 import { Logger } from "../logger";
 import {
 	registerCallback,
@@ -97,8 +98,9 @@ export function installWebRuntime(): void {
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify({
-					provider: "nextain",
-					model: getDefaultLlmModel("nextain"),
+					...(isKioskDemo()
+						? { provider: "nextain", model: getDefaultLlmModel("nextain") }
+						: { ...fallbackNaiaMainModel(), webAutoDefaultModel: true }),
 				}),
 			);
 		} else {

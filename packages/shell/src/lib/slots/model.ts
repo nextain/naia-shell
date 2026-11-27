@@ -11,7 +11,7 @@ import {
 	resolveEffectiveLlmRoles,
 	writeConfiguredLlmRole,
 } from "../llm/roles";
-import { defaultMainModel, defaultSmallModel } from "../llm/small-model";
+import { defaultMainModel, defaultSmallModel, fallbackNaiaMainModel } from "../llm/small-model";
 import type { LlmModelMeta } from "../llm/types";
 import type { ProviderId } from "../types";
 
@@ -315,6 +315,23 @@ function isMainSet(c: AppConfig): boolean {
 }
 export function hasSmallModelSetting(c: AppConfig): boolean {
 	return c.llmRoles?.sub !== undefined || !!(c.subLlmProvider || c.subLlmModel || c.subLlmBaseUrl || c.subLlmCredentialRef || c.memoryLlmProvider || c.memoryLlmModel || c.memoryLlmBaseUrl || c.memoryLlmCredentialRef) || !!(c.llmRoles?.memory && !c.llmRoles.memory.inherit);
+}
+
+/** Replace the main role when a web user first starts using Naia Cloud. */
+export function applyNaiaCloudModelDefaults(
+	config: AppConfig,
+	models: readonly LlmModelMeta[] | null,
+): AppConfig {
+	const main = (models && defaultMainModel(models)) || fallbackNaiaMainModel();
+	const next = {
+		...writeConfiguredLlmRole(config, "main", main),
+		thinkingLevel: main.thinkingLevel,
+		enableThinking: Boolean(main.thinkingLevel && main.thinkingLevel !== "off"),
+		webAutoDefaultModel: false,
+	};
+	return models?.length && !hasSmallModelSetting(next)
+		? writeConfiguredLlmRole(next, "sub", defaultSmallModel(models))
+		: next;
 }
 function isEmbeddingSet(c: AppConfig): boolean {
 	return !!c.memoryEmbeddingProvider && c.memoryEmbeddingProvider !== "none";

@@ -18,11 +18,9 @@ import {
 	onWebCreditRefresh,
 	parseLabCredits,
 } from "../lib/lab-balance";
-import { getDefaultLlmModel } from "../lib/llm/registry";
-import { writeConfiguredLlmRole } from "../lib/llm/roles";
-import { defaultThinkingLevel } from "../lib/llm/small-model";
+import { fetchNaiaChatModels } from "../lib/llm/small-model";
 import { Logger } from "../lib/logger";
-import { effectiveMainRole } from "../lib/slots/model";
+import { applyNaiaCloudModelDefaults, effectiveMainRole } from "../lib/slots/model";
 import { getStartableAgentBridge } from "../lib/web-runtime/agent-bridge";
 import {
 	isValidWebAuthKey,
@@ -131,32 +129,28 @@ function WebCloudChatRecovery({ provider }: { provider: "webllm" | "nextain" }) 
 		switchingRef.current = true;
 		setSwitching(true);
 		setSwitchFailed(false);
-		const model = getDefaultLlmModel("nextain");
-		Logger.debug("WebModelStatusBar", "switching to cloud chat", { model });
 		try {
-			const current = loadConfig();
 			const path = getAdkPath();
+			const beforeCatalog = loadConfig();
+			const models = await fetchNaiaChatModels(LAB_GATEWAY_URL);
+			const current = loadConfig();
 			if (
-				!current || !path || !model ||
+				!current || !path || getAdkPath() !== path || getNaiaKey() !== key ||
 				isNaiaConfigHydrationPending() ||
-				effectiveMainRole(current).provider !== provider
+				effectiveMainRole(current).provider !== provider ||
+				!beforeCatalog || effectiveMainRole(current).model !== effectiveMainRole(beforeCatalog).model ||
+				current.webAutoDefaultModel !== beforeCatalog.webAutoDefaultModel
 			) {
 				throw new Error("Cloud chat selection is unavailable");
 			}
-			const defaultLevel = defaultThinkingLevel(model);
-		const selection = { provider: "nextain", model, ...(defaultLevel ? { thinkingLevel: defaultLevel } : {}) };
-			const next = {
-				...writeConfiguredLlmRole(current, "main", selection),
-				webAutoDefaultModel: false,
-			};
-			await writeNaiaConfig(next);
+			await writeNaiaConfig(applyNaiaCloudModelDefaults(current, models));
 			const latest = loadConfig();
-			if (getAdkPath() === path && latest && effectiveMainRole(latest).provider === provider) {
+			if (getAdkPath() === path && getNaiaKey() === key && latest &&
+				effectiveMainRole(latest).provider === provider &&
+				effectiveMainRole(latest).model === effectiveMainRole(current).model &&
+				latest.webAutoDefaultModel === current.webAutoDefaultModel) {
 				getStartableAgentBridge().start({ model: null });
-				saveConfig({
-					...writeConfiguredLlmRole(latest, "main", selection),
-					webAutoDefaultModel: false,
-				});
+				saveConfig(applyNaiaCloudModelDefaults(latest, models));
 			}
 		} catch {
 			Logger.warn("WebModelStatusBar", "could not switch to cloud chat");

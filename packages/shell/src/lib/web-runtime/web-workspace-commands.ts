@@ -1,5 +1,7 @@
 import { getLocale } from "../i18n";
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { getDefaultLlmModel } from "../llm/registry";
+import { fallbackNaiaMainModel } from "../llm/small-model";
 import { Logger } from "../logger";
 import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
 import {
@@ -194,7 +196,11 @@ export async function handleWebWorkspaceCommand(
 			return migrated.text;
 		}
 		const initialText = JSON.stringify(
-			{ ...INITIAL_WEB_WORKSPACE_CONFIG, NAIA_LOCALE: getLocale() },
+			{
+				...INITIAL_WEB_WORKSPACE_CONFIG,
+				...(!isKioskDemo() ? fallbackNaiaMainModel() : {}),
+				NAIA_LOCALE: getLocale(),
+			},
 			null,
 			2,
 		);

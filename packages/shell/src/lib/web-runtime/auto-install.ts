@@ -126,7 +126,3 @@ export async function bootWebRuntimeAndModel(
 	});
 	return { startedImmediately: false };
 }
-
-if (import.meta.env.MODE === "web" && !isKioskDemo()) {
-	void bootWebRuntimeAndModel();
-}

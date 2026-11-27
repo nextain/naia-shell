@@ -167,7 +167,7 @@ describe("OnboardingWizard", () => {
 
 	it.each([
 		["existing selection", { provider: "nextain", model: "chosen", apiKey: "" }, "chosen"],
-		["failed catalog", null, ""],
+		["failed catalog", null, "deepseek-v4.1-flash"],
 	])("IT-SM-05 preserves %s", async (_label, existing, expected) => {
 		localStorage.setItem("naia-adk-path", "/adk-test");
 		if (existing) localStorage.setItem("naia-config", JSON.stringify(existing));
@@ -188,6 +188,7 @@ describe("OnboardingWizard", () => {
 
 	it("IT-SM-05 keeps the cloud roles when a browser completes onboarding after OAuth", async () => {
 		setWebAssetsModeForTests(true);
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
 		localStorage.setItem("naia-remote-key", "fixture-oauth-session-key");
 		const llmRoles = {

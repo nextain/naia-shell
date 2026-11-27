@@ -38,6 +38,7 @@ import {
 	DEFAULT_LOCAL_VOICE_HOST,
 	LAB_GATEWAY_URL,
 	NAIA_WEB_BASE_URL,
+	getNaiaKey,
 	hasNaiaKeySecure,
 	loadConfig,
 	saveConfig,
@@ -48,6 +49,7 @@ import {
 	usePaymentLinksHidden,
 } from "../lib/distribution";
 import { type Locale, type TranslationKey, getLocale, t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	fetchLabBalancePayload,
 	parseLabCredits,
@@ -59,6 +61,7 @@ import {
 } from "../lib/llm/logged-out-default";
 import { fetchGatewayModelCatalog } from "../lib/llm/registry";
 import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import { fallbackNaiaMainModel, fetchNaiaChatModels } from "../lib/llm/small-model";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import {
 	defaultClipOf,
@@ -77,7 +80,7 @@ import {
 	saveSecretKeyAtPath,
 } from "../lib/secure-store";
 import {
-	NAIA_SLOT_DEFAULTS,
+	applyNaiaCloudModelDefaults,
 	applyNaiaSlotDefaults,
 	effectiveMainRole,
 } from "../lib/slots/model";
@@ -87,6 +90,8 @@ import {
 	clearLocalVoiceAccessToken,
 	localVoiceFacadeUrlFromReady,
 } from "../lib/voice/local-runtime";
+import { isWebMode } from "../lib/web-runtime/web-assets";
+import { getWebAuthenticatedUserId, startWebLoginRedirect } from "../lib/web-runtime/web-auth";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
@@ -1104,6 +1109,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			setNaiaLoginWaiting(false);
 		}, 300_000);
 		try {
+			if (isWebMode()) {
+				startWebLoginRedirect();
+				return;
+			}
 			const lang = getLocale();
 			// Onboarding runs before the browser app is mounted, so
 			// browser_open_login would succeed but the app can't show.
@@ -1166,10 +1175,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			provider: "",
 			model: "",
 		};
-		const catalog = auth ? await fetchGatewayModelCatalog(LAB_GATEWAY_URL) : null;
-		const catalogModels = (catalog ?? [])
-			.filter((m) => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase()))
-			.map((m) => ({ id: m.id, label: m.id, capabilities: ["llm" as const] }));
+		const web = isWebMode() && !isKioskDemo();
+		const catalog = auth && !web ? await fetchGatewayModelCatalog(LAB_GATEWAY_URL) : null;
+		const catalogModels = auth && web
+			? (await fetchNaiaChatModels(LAB_GATEWAY_URL)) ?? []
+			: (catalog ?? [])
+					.filter((m) => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase()))
+					.map((m) => ({ id: m.id, label: m.id, capabilities: ["llm" as const] }));
 		// FR-LLM-LOGOUT.1: 로그인을 건너뛰면 키 없는 나이아 계정도 gemini 도 저장하지
 		// 않는다. 이미 고른 CLI·로컬 제공자는 두고, 아니면 "LLM 없음".
 		const baseMainProvider =
@@ -1205,7 +1217,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		const completedFlat: Record<string, unknown> = {
 			...base,
 			provider: auth ? (base.provider ?? "") : (loggedOutLlm?.provider ?? base.provider),
-			model: auth ? (base.model || NAIA_SLOT_DEFAULTS.main.model) : (loggedOutLlm?.model ?? base.model),
+			model: auth ? (base.model ?? "") : (loggedOutLlm?.model ?? base.model),
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,
@@ -1251,15 +1263,24 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		};
 		// FR-SM: 목록에 있는 모델만 빈 역할의 기본값으로 적용한다.
 		// 로그인하지 않았으면 구조화된 main 역할도 로그인하지 않은 상태의 LLM 으로 맞춘다.
-		const finalConfig: AppConfig = auth
-			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig, catalogModels)
+		const draft = completedFlat as unknown as AppConfig;
+		const replaceAutoMain = auth && !isKioskDemo() &&
+			base.webAutoDefaultModel === true && baseMainProvider === "nextain";
+		let finalConfig: AppConfig = auth
+			? applyNaiaSlotDefaults(
+					replaceAutoMain ? applyNaiaCloudModelDefaults(draft, catalogModels) : draft,
+					catalogModels,
+				)
 			: loggedOutLlm
 				? writeConfiguredLlmRole(
 						{ ...(completedFlat as unknown as AppConfig), ...loggedOutLlm },
 						"main",
 						loggedOutLlm,
 					)
-				: (completedFlat as unknown as AppConfig);
+				: draft;
+		if (auth && !effectiveMainRole(finalConfig).model) {
+			finalConfig = writeConfiguredLlmRole(finalConfig, "main", fallbackNaiaMainModel());
+		}
 		await saveConfigSecure(finalConfig);
 
 		if (vrmPath) setAvatarModelPath(vrmPath);
@@ -1275,12 +1296,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			// persisted writes; a late ADK switch must never redirect them to the new
 			// workspace.
 			const sourceAdkPath = getAdkPath();
+			const web = isWebMode();
+			const webKey = web ? getNaiaKey() : undefined;
 			const assertCurrentAdk = () => {
 				if (sourceAdkPath && getAdkPath() !== sourceAdkPath)
 					throw new Error("Onboarding completion belongs to a different ADK.");
 			};
 			const completedFlat = await saveCompletedConfig(
-				naiaAuthPayload ?? undefined,
+				webKey ? { naiaKey: webKey, naiaUserId: getWebAuthenticatedUserId() } : naiaAuthPayload ?? undefined,
 			);
 			assertCurrentAdk();
 			// G-01: sync to naia-settings/config.json so the standalone agent picks
@@ -1298,7 +1321,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			);
 			assertCurrentAdk();
 			// Write naiaKey to OS keychain so standalone naia-agent can read it.
-			if (typeof completedFlat.naiaKey === "string")
+			if (!web && typeof completedFlat.naiaKey === "string")
 				await writeAgentKeyStrictAtPath(
 					String(completedFlat.provider || "nextain"),
 					"naiaKey",
@@ -1309,7 +1332,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			if (typeof completedFlat.naiaKey === "string") {
 				await sendAuthUpdateStrict(completedFlat.naiaKey, sourceAdkPath);
 				assertCurrentAdk();
-				if (completedFlat.provider && completedFlat.model) {
+				if (!web && completedFlat.provider && completedFlat.model) {
 					await activateNaiaLlm(
 						completedFlat.naiaKey,
 						String(completedFlat.provider),
