@@ -480,7 +480,7 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		expect(nextPlay).toHaveBeenCalledExactlyOnceWith(clock);
 		expect(currentStopCallsAtNextPlay).toBe(1);
 		expect(currentStage.stop).toHaveBeenCalledTimes(1);
-		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		expect(currentStage.dispose).not.toHaveBeenCalled();
 		renderer.setSpeakingVisual(false);
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		renderer.stop();
@@ -522,6 +522,7 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const prepared = await renderer.prefetchSpeechTiming(plan("aligned"));
 		renderer.cancelPrefetchedSpeechTiming();
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		expect(nextStage.dispose).not.toHaveBeenCalled();
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
 		expect(await prepared?.play(timing.clock)).toBe(false);
@@ -530,7 +531,6 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(renderer.updateSpeechPlan(timing.plan)).toBe(true);
 		expect(currentStage.update).toHaveBeenCalledExactlyOnceWith(timing.plan);
-		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
 		renderer.stop();
 		// Final teardown disposes the spare standby and the active stage.
 		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
