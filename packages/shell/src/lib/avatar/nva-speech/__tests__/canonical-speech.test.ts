@@ -246,21 +246,68 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 		"approximate plan",
 	]);
 
+	function scanDrift(name: string, text: string): string[] {
+		const offenders: string[] = [];
+		text.split("\n").forEach((line, index) => {
+			for (const [label, pattern] of DRIFT) {
+				if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
+				if (pattern.test(line))
+					offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
+			}
+		});
+		return offenders;
+	}
+
 	it("no product line carries an SoT 3 drift trace (volume threshold, drawn mouth, approximate, aiueo, talking loop)", () => {
 		const offenders: string[] = [];
 		for (const file of productFiles(shellSrc)) {
 			const name = relative(shellSrc, file).split("\\").join("/");
-			readFileSync(file, "utf8")
-				.split("\n")
-				.forEach((line, index) => {
-					for (const [label, pattern] of DRIFT) {
-						if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
-						if (pattern.test(line))
-							offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
-					}
-				});
+			offenders.push(...scanDrift(name, readFileSync(file, "utf8")));
 		}
 		expect(offenders).toEqual([]);
+	});
+
+	it("the drift scan flags an analyser-driven mouth on the NVA path", () => {
+		const nvaFile = [
+			"const analyser = ctx.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+			"mouth.open = rms > 0.1;",
+		].join("\n");
+		expect(
+			scanDrift("lib/avatar/nva-speech/mouth-loop.ts", nvaFile).map(
+				(entry) => entry.split(": ")[0],
+			),
+		).toEqual([
+			"lib/avatar/nva-speech/mouth-loop.ts:1 volume threshold mouth",
+			"lib/avatar/nva-speech/mouth-loop.ts:2 volume threshold mouth",
+			"lib/avatar/nva-speech/mouth-loop.ts:3 volume threshold mouth",
+		]);
+		const stageLinked = [
+			'import { CanonicalSpeechStage } from "../avatar/nva-speech/canonical-speech-stage";',
+			"const analyser = source.context.createAnalyser();",
+		].join("\n");
+		expect(scanDrift("lib/voice/audio-queue.ts", stageLinked)).toHaveLength(1);
+	});
+
+	it("the drift scan lets the VRM-only playback meter read the output level", () => {
+		const vrmMeter = [
+			'import type { AudioPlaybackClock } from "../avatar/nva-speech/speech-timing";',
+			"const analyser = source.context.createAnalyser();",
+			"analyser.getFloatTimeDomainData(samples);",
+		].join("\n");
+		expect(scanDrift("lib/voice/audio-queue.ts", vrmMeter)).toEqual([]);
+	});
+
+	it("the drift scan keeps aiueo, drawn mouth and approximate forbidden in the VRM playback meter file", () => {
+		const traces = [
+			"const AIUEO = ['a','i','u','e','o'];",
+			"drawMouth(ctx, openness);",
+			"// layout is approximate",
+		];
+		for (const trace of traces)
+			expect(scanDrift("lib/voice/audio-queue.ts", trace), trace).toHaveLength(
+				1,
+			);
 	});
 
 	it("the drift scan catches each forbidden trace", () => {
