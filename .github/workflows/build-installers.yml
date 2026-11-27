@@ -970,7 +970,7 @@ jobs:
         if: matrix.platform == 'win32'
         shell: pwsh
         run: |
-          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $resourceDir = Join-Path $env:LOCALAPPDATA "${{ env.NAIA_INSTALLER_NAME }}"
           $installer = Get-ChildItem packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           $inside = $null
           $outside = $null
