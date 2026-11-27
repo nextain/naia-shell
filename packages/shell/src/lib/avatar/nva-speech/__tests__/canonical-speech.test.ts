@@ -444,7 +444,11 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 			dispose: vi.fn(),
 			speaking: true,
 		};
-		const nextPlay = vi.fn(async () => true);
+		let currentStopCallsAtNextPlay = -1;
+		const nextPlay = vi.fn(async () => {
+			currentStopCallsAtNextPlay = currentStage.stop.mock.calls.length;
+			return true;
+		});
 		const nextStage = {
 			start: vi.fn(async () => true),
 			prepare: vi.fn(async () => ({ play: nextPlay })),
@@ -478,6 +482,7 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 
 		expect(await prepared?.play(clock)).toBe(true);
 		expect(nextPlay).toHaveBeenCalledWith(clock);
+		expect(currentStopCallsAtNextPlay).toBe(1);
 		// retireSpeechStage stops the previous stage at once and keeps it as
 		// the spare instead of disposing it immediately.
 		expect(currentStage.stop).toHaveBeenCalledTimes(1);
@@ -523,13 +528,16 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		};
 		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
 		stagedRenderer.cancelPrefetchedSpeechTiming();
-		expect(await prepared?.play(() => 0)).toBe(false);
-		// Cancelling retires the standby: stopped at once, kept as the spare
-		// instead of disposed immediately; the active stage is untouched.
+		// Cancelling retires the standby synchronously: stopped at once, kept
+		// as the spare instead of disposed immediately; the active stage is
+		// untouched.
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		expect(nextStage.dispose).not.toHaveBeenCalled();
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
+		expect(await prepared?.play(() => 0)).toBe(false);
+		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		expect(currentStage.stop).not.toHaveBeenCalled();
 		renderer.stop();
 		// Final teardown disposes the spare standby and the active stage.
 		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
