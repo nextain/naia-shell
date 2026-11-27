@@ -478,10 +478,16 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 
 		expect(await prepared?.play(clock)).toBe(true);
 		expect(nextPlay).toHaveBeenCalledWith(clock);
-		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		// retireSpeechStage stops the previous stage at once and keeps it as
+		// the spare instead of disposing it immediately.
+		expect(currentStage.stop).toHaveBeenCalledTimes(1);
+		expect(currentStage.dispose).not.toHaveBeenCalled();
 		renderer.setSpeakingVisual(false);
 		expect(nextStage.stop).toHaveBeenCalledTimes(1);
 		renderer.stop();
+		// Final teardown disposes the promoted stage and the spare.
+		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
 	});
 
 	it("cancels a standby canonical plan without disturbing the active stage", async () => {
@@ -518,10 +524,16 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
 		stagedRenderer.cancelPrefetchedSpeechTiming();
 		expect(await prepared?.play(() => 0)).toBe(false);
-		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
+		// Cancelling retires the standby: stopped at once, kept as the spare
+		// instead of disposed immediately; the active stage is untouched.
+		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		expect(nextStage.dispose).not.toHaveBeenCalled();
 		expect(currentStage.stop).not.toHaveBeenCalled();
 		expect(currentStage.dispose).not.toHaveBeenCalled();
 		renderer.stop();
+		// Final teardown disposes the spare standby and the active stage.
+		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
+		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
 	});
 
 	it("routes playSpeechTiming/updateSpeechPlan to the stage and stops it when speech ends", async () => {
