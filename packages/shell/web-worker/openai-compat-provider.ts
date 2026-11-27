@@ -360,20 +360,22 @@ export function makeOpenAICompatProvider(deps: {
 			//   ⚠️ **로컬 엔진에만**(supportsReasoningEffort) — 셸이 설정을 저장했을 때만 enableThinking:false 를 전송하므로
 			//      게이트 없이 붙이면 gpt-4o 등 비추론 원격 모델이 400 난다(FR-THINK-2).
 			//   enableThinking 이 true/미지정이면 아무 것도 싣지 않는다(무회귀 — 추론 모델 기본=생각 켬).
-			// FR-THINK-9: 게이트웨이 경로(supportsThinkingLevel)는 low/high 일 때만 reasoning_effort 전송. off/미지정은 무전송.
+			// FR-THINK-9: 게이트웨이에는 low/high 또는 GPT-6 Luna의 max를 전송한다.
 			// 둘이 동시에 켜질 수 없음을 코드로 보장(게이트웨이 경로는 supportsReasoningEffort=false).
-			// FR-WEB-KIOSK-FIX.8: 운영 게이트웨이(api.nextain.io)는 reasoning_effort 로 none·minimal·low·medium·high·auto 만 받는다.
-			//   "xhigh" 는 422 literal_error 로 대화 전체가 실패하므로(2026-11-06 실측) 이 두 모델도 가장 센 허용 값 "high" 를 보낸다.
+			// FR-WEB-KIOSK-FIX.8: Terra와 GPT-5.6 Luna에는 기존 호환 값 high를 유지한다.
 			const requestModel = deps.model ?? config.model;
-			const thinkingLevelBody =
-				deps.supportsThinkingLevel &&
-				(requestModel === "gpt-6.1-terra" || requestModel === "gpt-5.6-luna")
-					? { reasoning_effort: "high" as const }
-					:
-				deps.supportsThinkingLevel &&
-				(config.thinkingLevel === "low" || config.thinkingLevel === "high")
-					? { reasoning_effort: config.thinkingLevel }
-					: undefined;
+			let thinkingLevelBody: { reasoning_effort: "low" | "high" | "max" } | undefined;
+			if (deps.supportsThinkingLevel) {
+				const level = config.thinkingLevel;
+				if (requestModel === "gpt-6.1-terra" || requestModel === "gpt-5.6-luna") {
+					thinkingLevelBody = { reasoning_effort: "high" };
+				} else if (
+					level === "low" || level === "high" ||
+					(level === "max" && requestModel === "gpt-6-luna")
+				) {
+					thinkingLevelBody = { reasoning_effort: level };
+				}
+			}
 			const noThinkBody =
 				!deps.supportsThinkingLevel &&
 				deps.supportsReasoningEffort === true &&
