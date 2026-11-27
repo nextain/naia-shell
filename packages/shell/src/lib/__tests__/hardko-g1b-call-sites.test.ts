@@ -496,7 +496,7 @@ test("g1b 새 키가 열네 로케일에 자체 항목으로 있고 한·영 원
 			const { default: table } = await import(`../locales/${locale}.ts`);
 			await setLocale(locale);
 			for (const [key, [ko, en]] of Object.entries(STRINGS)) {
-				assert.ok(Object.hasOwn(table, key), `${locale}: missing own key ${key}`);
+				assert.ok(Object.prototype.hasOwnProperty.call(table, key), `${locale}: missing own key ${key}`);
 				if (locale === "ko" || locale === "en") {
 					assert.equal(t(key as TranslationKey), locale === "ko" ? ko : en, `${locale}: ${key}`);
 				}
