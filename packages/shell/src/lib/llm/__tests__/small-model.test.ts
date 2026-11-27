@@ -10,7 +10,7 @@ const meta = (id: string) => ({ id, label: id, capabilities: ["llm"] as ("llm")[
 
 describe("UT-SM-01 small model selection", () => {
  it("chooses catalog Luna or inherits main", () => {
-   expect(defaultSmallModel(models)).toEqual({ provider: "nextain", model: "deepseek-v4.1-flash", thinkingLevel: "low" });
+   expect(defaultSmallModel(models)).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "low" });
   expect(defaultSmallModel([])).toEqual({ inherit: "main" });
  });
  it("filters nano but retains solar and explicit selections", () => {
@@ -55,7 +55,7 @@ describe("UT-SM-04 Terra present", () => {
 });
 describe("UT-SM-05 Terra absent", () => {
  it("selects the next available recommendation", () => {
-   expect(defaultMainModel([meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "max" });
+   expect(defaultMainModel([meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "high" });
  });
  it("falls back to solar-pro4 without a thinking default when the lineup is otherwise absent", () => {
    expect(defaultMainModel([meta("solar-pro4"), meta("motif-3")])).toEqual({ provider: "nextain", model: "solar-pro4" });
@@ -65,7 +65,7 @@ describe("UT-SM-06 default thinking levels (webgpu 3-model lineup)", () => {
  it("maps the webgpu lineup to its per-model default strength", () => {
    expect(defaultThinkingLevel("deepseek-v4.1-flash")).toBe("xhigh");
    expect(defaultThinkingLevel("gpt-6.1-terra")).toBe("xhigh");
-   expect(defaultThinkingLevel("gpt-6-luna")).toBe("max");
+   expect(defaultThinkingLevel("gpt-6-luna")).toBe("high");
  });
  it("leaves non-lineup models without a default", () => {
    expect(defaultThinkingLevel("solar-pro4")).toBeUndefined();
@@ -73,7 +73,7 @@ describe("UT-SM-06 default thinking levels (webgpu 3-model lineup)", () => {
    expect(defaultThinkingLevel("")).toBeUndefined();
  });
 });
-describe("UT-LUNA-DEFAULTS Luna defaults (alpha-luna-defaults-20261127 RED)", () => {
+describe("UT-LUNA-DEFAULTS Luna defaults (alpha-luna-defaults-20261127)", () => {
  it("uses Luna high as the default main model when the catalog contains Luna", () => {
    expect(defaultMainModel([meta("deepseek-v4.1-flash"), meta("gpt-6.1-terra"), meta("gpt-6-luna"), meta("solar-pro4")])).toEqual({ provider: "nextain", model: "gpt-6-luna", thinkingLevel: "high" });
    expect(defaultThinkingLevel("gpt-6-luna")).toBe("high");

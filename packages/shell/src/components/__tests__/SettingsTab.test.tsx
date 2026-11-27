@@ -481,7 +481,7 @@ describe("webgpu model defaults (v2-20261124)", () => {
 			expect(JSON.parse(localStorage.getItem("naia-config")!).llmRoles?.main).toMatchObject({
 				provider: "nextain",
 				model: "gpt-6-luna",
-				thinkingLevel: "max",
+				thinkingLevel: "high",
 			});
 		});
 	});

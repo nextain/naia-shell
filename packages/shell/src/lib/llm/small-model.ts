@@ -20,13 +20,13 @@ export function defaultSmallModel(models: readonly LlmModelMeta[]): LlmRoleConfi
 		return kiosk ? { provider: "nextain", model: kiosk.id, thinkingLevel: KIOSK_DEMO_THINKING_LEVEL } : { inherit: "main" };
 	}
 	const choices = smallModelChoices(models);
-	const preferred = ["deepseek-v4.1-flash", "gpt-6-luna", "gpt-5.6-luna"];
+	const preferred = ["gpt-6-luna", "deepseek-v4.1-flash", "gpt-5.6-luna"];
 	const selected = preferred.map(id => choices.find(model => model.id.toLowerCase() === id)).find((model): model is LlmModelMeta => Boolean(model));
 	return selected ? { provider: "nextain", model: selected.id, thinkingLevel: "low" } : { inherit: "main" };
 }
 
-export function defaultThinkingLevel(modelId: string): "xhigh" | "max" | undefined {
-	if (modelId === "gpt-6-luna") return "max";
+export function defaultThinkingLevel(modelId: string): "high" | "xhigh" | "max" | undefined {
+	if (modelId === "gpt-6-luna") return "high";
 	if (modelId === "deepseek-v4.1-flash" || modelId === "gpt-6.1-terra") return "xhigh";
 	return undefined;
 }
@@ -39,7 +39,7 @@ export function defaultMainModel(models: readonly LlmModelMeta[]): LlmRoleConfig
   if (luna) return { provider: "nextain", model: luna.id, thinkingLevel: KIOSK_DEMO_THINKING_LEVEL };
  }
 	const choices = smallModelChoices(models).filter(model => model.id !== "solar-mini");
-	const first = ["deepseek-v4.1-flash", "gpt-6.1-terra", "gpt-6-luna", "solar-pro4"].map(id => choices.find(model => model.id === id)).find((model): model is LlmModelMeta => Boolean(model))
+	const first = ["gpt-6-luna", "deepseek-v4.1-flash", "gpt-6.1-terra", "solar-pro4"].map(id => choices.find(model => model.id === id)).find((model): model is LlmModelMeta => Boolean(model))
 		?? sortModels(choices, "recommended")[0];
 	if (!first) return undefined;
 	const thinkingLevel = defaultThinkingLevel(first.id);

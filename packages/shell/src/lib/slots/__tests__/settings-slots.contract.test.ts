@@ -260,13 +260,17 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 			{ id: "gpt-5.6-luna", label: "Old Luna", capabilities: ["llm"] },
 		]);
 		expect(filled.provider).toBe("nextain");
-		expect(filled.model).toBe("deepseek-v4.1-flash");
-		expect(filled.llmRoles?.main?.thinkingLevel).toBe("xhigh");
+		expect(filled.model).toBe("gpt-6-luna");
+		expect(filled.llmRoles?.main).toMatchObject({
+			provider: "nextain",
+			model: "gpt-6-luna",
+			thinkingLevel: "high",
+		});
 		expect(filled.subLlmProvider).toBe("nextain");
-		expect(filled.subLlmModel).toBe("deepseek-v4.1-flash");
+		expect(filled.subLlmModel).toBe("gpt-6-luna");
 		expect(filled.llmRoles?.sub).toMatchObject({
 			provider: "nextain",
-			model: "deepseek-v4.1-flash",
+			model: "gpt-6-luna",
 			thinkingLevel: "low",
 		});
 		expect(filled.memoryLlmProvider).toBeUndefined();
