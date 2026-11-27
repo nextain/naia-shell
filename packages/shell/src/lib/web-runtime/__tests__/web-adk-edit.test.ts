@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KIOSK_AGENTS_MD } from "../../kiosk-demo/knowledge";
-import { revertKioskAdkFile, writeKioskAdkFile } from "../web-adk-edit";
+import { Logger } from "../../logger";
+import * as webAdk from "../web-adk";
+import {
+	restoreKioskAdkOriginals,
+	revertKioskAdkFile,
+	writeKioskAdkFile,
+} from "../web-adk-edit";
 import {
 	WEB_ADK_EDIT_MAX_BYTES,
 	isKioskEditableWebAdkPath,
@@ -31,7 +37,11 @@ describe("kiosk ADK 열람·편집 정책", () => {
 		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 	});
-	afterEach(() => vi.unstubAllEnvs());
+	afterEach(() => {
+		vi.doUnmock("../../kiosk-demo/knowledge");
+		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
+	});
 
 	it("허용 목록 경로만 고칠 수 있고 비공개·이탈 경로는 막는다", () => {
 		for (const ok of ["AGENTS.md", "rules/response-rules.md", "knowledge/naia.md", ".agents/context/agents-rules.json", ".users/commands-list.md"])
@@ -69,5 +79,23 @@ describe("kiosk ADK 열람·편집 정책", () => {
 		const restored = await revertKioskAdkFile("opfs://naia-adk/AGENTS.md", fs);
 		expect(restored).toBe(KIOSK_AGENTS_MD);
 		expect(fs.files.get("naia-adk/AGENTS.md")).toBe(KIOSK_AGENTS_MD);
+	});
+
+	it("force-provisions the web ADK bundle when the kiosk knowledge import fails", async () => {
+		const loadKnowledge = vi.fn(() => {
+			throw new Error("knowledge chunk unavailable");
+		});
+		vi.doMock("../../kiosk-demo/knowledge", loadKnowledge);
+		const warn = vi.spyOn(Logger, "warn").mockImplementation(() => {});
+		const provision = vi
+			.spyOn(webAdk, "provisionWebAdk")
+			.mockResolvedValue({ ok: true, written: [] });
+		const fs = memoryFs();
+
+		await restoreKioskAdkOriginals(fs);
+
+		expect(loadKnowledge).toHaveBeenCalledOnce();
+		expect(provision).toHaveBeenCalledExactlyOnceWith({ fs, force: true });
+		expect(warn).toHaveBeenCalledWith("WebAdk", "kiosk knowledge restore failed");
 	});
 });

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { Logger } from "../logger";
 import { WEB_REMOTE_KEY_STORAGE_KEY } from "../web-runtime/web-auth";
+import * as webAdkEdit from "../web-runtime/web-adk-edit";
 import { createMemoryWebFs, setWebFsForTests } from "../web-runtime/web-fs";
 import {
 	KIOSK_VISIT_ACTIVE_SESSION_KEY,
@@ -25,6 +27,9 @@ beforeEach(() => {
 	setWebFsForTests(null);
 });
 afterEach(() => {
+	vi.doUnmock("./knowledge");
+	vi.restoreAllMocks();
+	vi.unstubAllEnvs();
 	idleOverrideHolder.__NAIA_KIOSK_IDLE_TIMEOUT_MS__ = undefined;
 	setWebFsForTests(null);
 });
@@ -84,6 +89,40 @@ it("waits for cancellation, memory reset and OPFS conversation cleanup before ne
 	expect(localStorage.getItem(KIOSK_VISIT_LAST_ACTIVE_KEY)).toBeNull();
 	expect(sessionStorage.getItem(KIOSK_VISIT_ACTIVE_SESSION_KEY)).toBeNull();
 });
+
+it("logs a kiosk knowledge import failure and still restores ADK and resets the visit", async () => {
+	vi.stubEnv("MODE", "web");
+	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+	const loadKnowledge = vi.fn(() => {
+		throw new Error("knowledge chunk unavailable");
+	});
+	vi.doMock("./knowledge", loadKnowledge);
+	const warn = vi.spyOn(Logger, "warn").mockImplementation(() => {});
+	const restore = vi
+		.spyOn(webAdkEdit, "restoreKioskAdkOriginals")
+		.mockResolvedValue(undefined);
+	const fs = createMemoryWebFs();
+	setWebFsForTests(fs);
+	recordKioskVisitActivity(1_000);
+	const newConversation = vi.fn();
+	const reload = vi.fn();
+
+	await resetKioskVisit({
+		cancel: vi.fn(),
+		clearConversations: vi.fn().mockResolvedValue(undefined),
+		newConversation,
+		reload,
+	});
+
+	expect(loadKnowledge).toHaveBeenCalledOnce();
+	expect(newConversation).toHaveBeenCalledOnce();
+	expect(reload).toHaveBeenCalledOnce();
+	expect(sessionStorage.getItem(KIOSK_VISIT_ACTIVE_SESSION_KEY)).toBeNull();
+	expect(localStorage.getItem(KIOSK_VISIT_LAST_ACTIVE_KEY)).toBeNull();
+	expect(warn).toHaveBeenCalledWith("KioskDemo", "kiosk knowledge seed failed");
+	expect(restore).toHaveBeenCalledWith(fs);
+});
+
 it("does not discard the conversation or reload when memory reset fails", async () => {
 	const next = vi.fn();
 	const reload = vi.fn();
