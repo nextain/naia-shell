@@ -267,7 +267,7 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 		mockInvoke.mockResolvedValueOnce("");
 		render(<Editor filePath="/data/empty.csv" />);
 		await waitFor(() =>
-			expect(screen.getByText("CSV 데이터가 없습니다")).toBeInTheDocument(),
+			expect(screen.getByText(t("g1b.editorCsvEmpty"))).toBeInTheDocument(),
 		);
 	});
 
@@ -371,7 +371,7 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 	it("reports codec errors and changes playback speed", () => {
 		render(<Editor filePath="/media/clip.mp4" />);
 		const video = screen.getByLabelText(/video player/i) as HTMLVideoElement;
-		fireEvent.change(screen.getByLabelText("재생 속도"), {
+		fireEvent.change(screen.getByLabelText(t("g1b.editorPlaybackRate")), {
 			target: { value: "1.5" },
 		});
 		expect(video.playbackRate).toBe(1.5);
@@ -436,7 +436,7 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 		mockInvoke.mockRejectedValueOnce(new Error("permission denied"));
 		render(<Editor filePath="/root/secret.csv" />);
 		await waitFor(() =>
-			expect(screen.getByText(/파일을 열 수 없습니다/)).toBeInTheDocument(),
+			expect(screen.getByText(/Cannot open file/)).toBeInTheDocument(),
 		);
 		expect(
 			screen.getByRole("button", { name: t("common.retry") }),
@@ -447,20 +447,20 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 		mockInvoke.mockResolvedValueOnce("hello world");
 		render(<Editor filePath="/docs/test.txt" />);
 		await waitFor(() =>
-			expect(screen.getByTitle("디스크에서 다시 읽기")).toBeInTheDocument(),
+			expect(screen.getByTitle(t("g1b.editorReloadDisk"))).toBeInTheDocument(),
 		);
-		expect(screen.getByTitle("디스크에서 다시 읽기").textContent).toBe("↻");
+		expect(screen.getByTitle(t("g1b.editorReloadDisk")).textContent).toBe("↻");
 	});
 
 	it("reload button re-reads file from disk", async () => {
 		mockInvoke.mockResolvedValueOnce("original content");
 		render(<Editor filePath="/docs/test.txt" />);
 		await waitFor(() =>
-			expect(screen.getByTitle("디스크에서 다시 읽기")).toBeInTheDocument(),
+			expect(screen.getByTitle(t("g1b.editorReloadDisk"))).toBeInTheDocument(),
 		);
 		// Second call returns updated content
 		mockInvoke.mockResolvedValueOnce("updated content");
-		fireEvent.click(screen.getByTitle("디스크에서 다시 읽기"));
+		fireEvent.click(screen.getByTitle(t("g1b.editorReloadDisk")));
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("workspace_read_file", {
 				path: "/docs/test.txt",
@@ -475,7 +475,7 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 		render(<Editor filePath="/docs/readme.md" />);
 		await waitFor(() =>
 			// Preview mode shows "편집" button to switch to edit mode
-			expect(screen.getByTitle("편집 모드로 전환")).toBeInTheDocument(),
+			expect(screen.getByTitle(t("g1b.editorSwitchToEdit"))).toBeInTheDocument(),
 		);
 		// The preview div should be rendered
 		const preview = document.querySelector(".workspace-editor__preview");
@@ -490,7 +490,7 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 		});
 		render(<Editor filePath="/docs/huge.markdown" />);
 		await waitFor(() =>
-			expect(screen.getByText(/5 MiB 미리보기 한도/)).toBeInTheDocument(),
+			expect(screen.getByText(/exceeds the 5 MiB preview limit/)).toBeInTheDocument(),
 		);
 		expect(mockInvoke).not.toHaveBeenCalledWith(
 			"workspace_read_file",
@@ -539,7 +539,7 @@ describe("Editor — header and empty state", () => {
 		);
 
 		// 마크다운은 미리보기로 열리므로 "편집" 단추가 보인다.
-		expect(screen.getByText("편집")).toBeDefined();
+		expect(screen.getByText(t("g1b.editorEdit"))).toBeDefined();
 	});
 
 	it("shows read-only label for ref- directories", async () => {
@@ -550,7 +550,7 @@ describe("Editor — header and empty state", () => {
 		);
 
 		await waitFor(() => {
-			expect(screen.getByText("읽기 전용")).toBeDefined();
+			expect(screen.getByText(t("g1b.editorReadOnly"))).toBeDefined();
 		});
 	});
 });

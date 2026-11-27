@@ -7,7 +7,9 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../../lib/i18n";
+import en from "../../lib/locales/en";
 
 const mockInvoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -19,6 +21,10 @@ import { QuickOpen } from "../workspace/QuickOpen";
 afterEach(() => {
 	cleanup();
 	vi.clearAllMocks();
+});
+
+beforeEach(async () => {
+	await setLocale("en");
 });
 
 const FAKE_FILES = [
@@ -84,7 +90,7 @@ describe("QuickOpen", () => {
 		);
 
 		// Input is rendered
-		expect(screen.getByPlaceholderText(/파일 이름/)).toBeInTheDocument();
+		expect(screen.getByPlaceholderText(en["g1b.qoSearch"])).toBeInTheDocument();
 
 		// Files should appear after loading
 		await waitFor(() => {
@@ -118,7 +124,7 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(en["g1b.qoSearch"]);
 		fireEvent.change(input, { target: { value: "edit" } });
 
 		// Only Editor.tsx should match
@@ -142,7 +148,7 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(en["g1b.qoSearch"]);
 		fireEvent.keyDown(input, { key: "Enter" });
 
 		expect(onSelect).toHaveBeenCalled();
@@ -161,7 +167,7 @@ describe("QuickOpen", () => {
 			/>,
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(en["g1b.qoSearch"]);
 		fireEvent.keyDown(input, { key: "Escape" });
 
 		expect(onClose).toHaveBeenCalled();
@@ -181,7 +187,7 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(en["g1b.qoSearch"]);
 
 		// First item is selected by default
 		expect(
@@ -215,9 +221,9 @@ describe("QuickOpen", () => {
 			expect(screen.getByText("App.tsx")).toBeInTheDocument(),
 		);
 
-		const input = screen.getByPlaceholderText(/파일 이름/);
+		const input = screen.getByPlaceholderText(en["g1b.qoSearch"]);
 		fireEvent.change(input, { target: { value: "zzzznoexist" } });
 
-		expect(screen.getByText("일치하는 파일이 없습니다")).toBeInTheDocument();
+		expect(screen.getByText(en["g1b.qoEmpty"])).toBeInTheDocument();
 	});
 });

@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 
 interface MarkdownPreviewProps {
@@ -131,14 +132,14 @@ function MarkdownImage({
 	if (failed) {
 		return (
 			<output className="workspace-markdown__image-error">
-				이미지를 열 수 없습니다: {alt || src || "알 수 없는 이미지"}
+				{t("g1b.mdImageError", { detail: alt || src || t("g1b.mdUnknownImage") })}
 			</output>
 		);
 	}
 	return blobUrl ? (
 		<img src={blobUrl} alt={alt ?? ""} />
 	) : (
-		<output>이미지 로딩 중…</output>
+		<output>{t("g1b.mdImageLoading")}</output>
 	);
 }
 
@@ -163,7 +164,7 @@ export function MarkdownPreview({
 		<article
 			ref={articleRef}
 			className="workspace-editor__preview"
-			aria-label="Markdown 미리보기"
+			aria-label={t("g1b.mdPreviewLabel")}
 			onScroll={(event) =>
 				previewScrollPositions.set(filePath, event.currentTarget.scrollTop)
 			}
@@ -193,7 +194,7 @@ export function MarkdownPreview({
 							<a
 								href={blocked ? undefined : href}
 								aria-label={
-									external ? `${String(children)} (외부 링크)` : undefined
+									external ? t("g1b.mdExternalLink", { label: String(children) }) : undefined
 								}
 								data-usage-event="markdown-preview.open-url-1.click"
 								onClick={(event) => {

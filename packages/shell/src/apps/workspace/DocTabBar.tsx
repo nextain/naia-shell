@@ -5,6 +5,7 @@
  * "ask AI" action (✦) that hands the file to the conversation rail, and a close
  * action (×).
  */
+import { t } from "../../lib/i18n";
 interface DocTabBarProps {
 	/** Ordered list of open document paths (tabs). */
 	docs: string[];
@@ -30,9 +31,9 @@ export function DocTabBar({
 	onAskAi,
 }: DocTabBarProps) {
 	return (
-		<div className="doc-tab-bar" role="tablist" aria-label="열린 문서">
+		<div className="doc-tab-bar" role="tablist" aria-label={t("g1b.docOpenDocs")}>
 			{docs.length === 0 ? (
-				<span className="doc-tab-bar__empty">열린 문서 없음</span>
+				<span className="doc-tab-bar__empty">{t("g1b.docEmpty")}</span>
 			) : (
 				docs.map((path) => (
 					<div
@@ -52,8 +53,8 @@ export function DocTabBar({
 						<button
 							type="button"
 							className="doc-tab__ask"
-							title="이 문서를 AI에게 질의"
-							aria-label={`AI에게 질의: ${basename(path)}`}
+							title={t("g1b.docAskAiTitle")}
+							aria-label={t("g1b.docAskAiLabel", { name: basename(path) })}
 							data-usage-event="doc-tab-bar.stop-propagation-2.click"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -65,7 +66,7 @@ export function DocTabBar({
 						<button
 							type="button"
 							className="doc-tab__close"
-							aria-label={`문서 닫기: ${basename(path)}`}
+							aria-label={t("g1b.docCloseLabel", { name: basename(path) })}
 							data-usage-event="doc-tab-bar.stop-propagation-3.click"
 							onClick={(e) => {
 								e.stopPropagation();

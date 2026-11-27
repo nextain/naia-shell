@@ -8,6 +8,8 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../../lib/i18n";
+import en from "../../lib/locales/en";
 import {
 	MarkdownPreview,
 	resolveWorkspaceReference,
@@ -66,7 +68,8 @@ describe("MarkdownPreview workspace boundary", () => {
 		).toBeNull();
 	});
 
-	it("renders GFM structure without executing raw HTML", () => {
+	it("renders GFM structure without executing raw HTML", async () => {
+		await setLocale("en");
 		render(
 			<MarkdownPreview
 				content={
@@ -77,14 +80,15 @@ describe("MarkdownPreview workspace boundary", () => {
 			/>,
 		);
 		expect(
-			screen.getByRole("article", { name: "Markdown 미리보기" }),
+			screen.getByRole("article", { name: en["g1b.mdPreviewLabel"] }),
 		).toBeInTheDocument();
 		expect(screen.getByRole("table")).toBeInTheDocument();
 		expect(screen.getByRole("checkbox")).toBeChecked();
 		expect(document.querySelector("script")).not.toBeInTheDocument();
 	});
 
-	it("opens external links explicitly and local links in the workspace viewer", () => {
+	it("opens external links explicitly and local links in the workspace viewer", async () => {
+		await setLocale("en");
 		const onOpenFile = vi.fn();
 		render(
 			<MarkdownPreview
@@ -94,14 +98,38 @@ describe("MarkdownPreview workspace boundary", () => {
 				onOpenFile={onOpenFile}
 			/>,
 		);
-		fireEvent.click(screen.getByRole("link", { name: /site.*외부 링크/ }));
+		fireEvent.click(
+			screen.getByRole("link", {
+				name: en["g1b.mdExternalLink"].replace("{label}", "site"),
+			}),
+		);
 		expect(mockOpenUrl).toHaveBeenCalledWith("https://example.com");
 		fireEvent.click(screen.getByRole("link", { name: "guide" }));
 		expect(onOpenFile).toHaveBeenCalledWith("/work/docs/guide.md");
 		expect(screen.getByText("bad").closest("a")).toHaveAttribute("href", "");
 	});
 
+	it("names the unknown image when neither alt nor src is present", async () => {
+		await setLocale("en");
+		render(
+			<MarkdownPreview
+				content="![]( )"
+				filePath="/work/docs/readme.md"
+				workspaceRoot="/work"
+			/>,
+		);
+		await waitFor(() =>
+			expect(screen.getByRole("status")).toHaveTextContent(
+				en["g1b.mdImageError"].replace(
+					"{detail}",
+					en["g1b.mdUnknownImage"],
+				),
+			),
+		);
+	});
+
 	it("loads local images through the bounded workspace command and reports missing assets", async () => {
+		await setLocale("en");
 		mockInvoke.mockResolvedValueOnce([137, 80, 78, 71]);
 		const { rerender } = render(
 			<MarkdownPreview
@@ -129,7 +157,7 @@ describe("MarkdownPreview workspace boundary", () => {
 		);
 		await waitFor(() =>
 			expect(screen.getByRole("status")).toHaveTextContent(
-				"이미지를 열 수 없습니다",
+				en["g1b.mdImageError"].replace("{detail}", "missing"),
 			),
 		);
 	});

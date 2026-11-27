@@ -2,6 +2,7 @@ import { installInstalledAppContextBridge } from "./installed-app-context-bridge
 import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { t } from "../../lib/i18n";
 import {
 	resolveAppToolTargetOrigin,
 	validateAppToolParameters,
@@ -188,10 +189,10 @@ export function createGenericInstalledApp(
 			<div className="generic-installed-app">
 				<div className="generic-installed-app__icon">📦</div>
 				<p className="generic-installed-app__msg">
-					이 앱은 설치됐지만 아직 로드되지 않았습니다.
+					{t("g1b.genericNotLoaded")}
 				</p>
 				<p className="generic-installed-app__hint">
-					앱 디렉터리에 index.html을 추가하면 즉시 표시됩니다.
+					{t("g1b.genericAddIndex")}
 				</p>
 			</div>
 		);

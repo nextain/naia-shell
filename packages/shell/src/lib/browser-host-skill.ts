@@ -37,6 +37,7 @@ import {
 	type EnvironmentToolWiring,
 } from "@nextain/naia-os-core/composition";
 import type { NaiaTool } from "./app-registry";
+import { t } from "./i18n";
 import { getAdkPath } from "./adk-store";
 import { loadConfig } from "./config";
 import { Logger } from "./logger";
@@ -106,8 +107,9 @@ const REF_ARG = {
 export const BROWSER_HOST_TOOLS: readonly NaiaTool[] = [
 	{
 		name: "env_browser_create_workspace",
-		description:
-			"에이전트 전용 브라우저에 격리된 작업 공간을 하나 연다. 이 공간은 사용자의 브라우저가 아니고 화면도 없으며 로그인되어 있지 않다. 이후의 브라우저 도구는 이 공간에서 돈다.",
+		get description() {
+			return t("g1b.hostToolCreate");
+		},
 		parameters: objectSchema({
 			name: { type: "string", description: "이 일감을 부르는 짧은 이름." },
 		}),
@@ -115,13 +117,17 @@ export const BROWSER_HOST_TOOLS: readonly NaiaTool[] = [
 	},
 	{
 		name: "env_browser_list_workspaces",
-		description: "지금 열려 있는 브라우저 작업 공간을 나열한다. 보기만 한다.",
+		get description() {
+			return t("g1b.hostToolList");
+		},
 		parameters: objectSchema({}),
 		tier: 1,
 	},
 	{
 		name: "env_browser_close_workspace",
-		description: "작업 공간 하나를 닫는다. 그 공간의 탭·쿠키·저장소가 사라진다.",
+		get description() {
+			return t("g1b.hostToolCloseWorkspace");
+		},
 		parameters: objectSchema(
 			{ workspace_id: { type: "string", description: "닫을 공간의 손잡이." } },
 			["workspace_id"],
@@ -130,27 +136,33 @@ export const BROWSER_HOST_TOOLS: readonly NaiaTool[] = [
 	},
 	{
 		name: "env_browser_open",
-		description: "작업 공간에 새 탭을 열어 주소로 간다. 사용자의 창은 열리지 않는다.",
+		get description() {
+			return t("g1b.hostToolOpen");
+		},
 		parameters: objectSchema({ url: { type: "string", description: "http/https 주소." } }, ["url"]),
 		tier: 1,
 	},
 	{
 		name: "env_browser_navigate",
-		description: "지금 탭에서 다른 주소로 간다.",
+		get description() {
+			return t("g1b.hostToolNavigate");
+		},
 		parameters: objectSchema({ url: { type: "string", description: "http/https 주소." } }, ["url"]),
 		tier: 1,
 	},
 	{
 		name: "env_browser_snapshot",
-		description:
-			"지금 페이지의 접근성 구조를 참조가 달린 글로 받는다. 조작하기 전에 이것을 먼저 부른다 — 참조는 이 호출이 만든다.",
+		get description() {
+			return t("g1b.hostToolSnapshot");
+		},
 		parameters: objectSchema({}),
 		tier: 1,
 	},
 	{
 		name: "env_browser_click",
-		description:
-			"스냅샷의 참조로 요소를 누른다. 참조로 못 잡을 때만 좌표를 쓰고, 그때는 why 에 이유를 적는다 — 그 사실이 결과에 남는다.",
+		get description() {
+			return t("g1b.hostToolClick");
+		},
 		parameters: objectSchema({
 			...REF_ARG,
 			x: { type: "number", description: "좌표 조작일 때의 x(CSS 픽셀)." },
@@ -161,7 +173,9 @@ export const BROWSER_HOST_TOOLS: readonly NaiaTool[] = [
 	},
 	{
 		name: "env_browser_fill",
-		description: "스냅샷의 참조가 가리키는 입력란에 값을 넣는다.",
+		get description() {
+			return t("g1b.hostToolFill");
+		},
 		parameters: objectSchema({ ...REF_ARG, value: { type: "string", description: "넣을 값." } }, [
 			"value",
 		]),
@@ -169,8 +183,9 @@ export const BROWSER_HOST_TOOLS: readonly NaiaTool[] = [
 	},
 	{
 		name: "env_browser_evaluate",
-		description:
-			"페이지 안에서 한 덩어리 자바스크립트를 평가하고 값을 받는다. 효과가 고정된 평가다 — 여러 단계를 묶어 돌리는 것은 env_browser_script 이고 등급이 다르다.",
+		get description() {
+			return t("g1b.hostToolEvaluate");
+		},
 		parameters: objectSchema(
 			{ expression: { type: "string", description: "한 번에 값을 내는 식." } },
 			["expression"],
@@ -179,21 +194,25 @@ export const BROWSER_HOST_TOOLS: readonly NaiaTool[] = [
 	},
 	{
 		name: "env_browser_screenshot",
-		description:
-			"지금 페이지를 캡처한다. 저장 위치는 감독자가 정하고 결과에는 그 참조만 온다 — 경로를 지정하지 않는다.",
+		get description() {
+			return t("g1b.hostToolScreenshot");
+		},
 		parameters: objectSchema({}),
 		tier: 1,
 	},
 	{
 		name: "env_browser_close",
-		description: "지금 탭을 닫는다. 작업 공간은 남는다.",
+		get description() {
+			return t("g1b.hostToolCloseTab");
+		},
 		parameters: objectSchema({}),
 		tier: 1,
 	},
 	{
 		name: "env_browser_script",
-		description:
-			"여러 단계를 자바스크립트 한 덩어리로 묶어 브라우저에서 실행한다. 터미널에서 명령을 돌리는 것과 같은 등급이며 호출마다 사용자 승인이 필요하다. 승인이 없으면 거부되고, 거부는 실패다 — 형식 도구를 늘어놓아 같은 효과를 내려 하지 않는다.",
+		get description() {
+			return t("g1b.hostToolScript");
+		},
 		parameters: objectSchema({ code: { type: "string", description: "실행할 자바스크립트." } }, [
 			"code",
 		]),
@@ -320,7 +339,7 @@ function injectedPorts(): BrowserHostPortsOverride | undefined {
 
 const NO_TERMINAL: ConstructorParameters<typeof EnvironmentToolService>[1] = {
 	async exec() {
-		throw new Error("이 조립에는 터미널 포트가 없다");
+		throw new Error(t("g1b.hostNoTerminalPort"));
 	},
 };
 
@@ -491,9 +510,9 @@ export function elementTarget(args: Record<string, unknown>): ElementTarget | st
 	if (ref) return { kind: "reference", ref };
 	const x = num(args, "x");
 	const y = num(args, "y");
-	if (x === null || y === null) return "참조(ref)나 좌표(x, y)가 필요하다 — 먼저 env_browser_snapshot 을 부른다";
+	if (x === null || y === null) return t("g1b.hostTargetRefOrCoords");
 	const why = str(args, "why");
-	if (!why) return "좌표로 찍으려면 why 에 참조를 쓸 수 없는 이유를 적어야 한다";
+	if (!why) return t("g1b.hostTargetWhyNeeded");
 	return { kind: "coordinate", x, y, why };
 }
 
@@ -540,7 +559,7 @@ export async function executeBrowserHostSkill(
 	deps: BrowserHostDeps,
 ): Promise<BrowserHostResult> {
 	if (!isBrowserHostTool(toolName)) {
-		return failed(toolName, deps.workspaceId, `브라우저 호스트 도구가 아니다: ${toolName}`);
+		return failed(toolName, deps.workspaceId, t("g1b.hostNotBrowserHost", { tool: toolName }));
 	}
 	const workspaceId = deps.workspaceId;
 	const service = deps.service;
@@ -615,13 +634,13 @@ async function runEvidenceRpc(
 	switch (toolName) {
 		case "env_browser_open": {
 			const url = str(args, "url");
-			if (!url) return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: "url 이 필요하다" }]);
+			if (!url) return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: t("g1b.hostArgNeeded", { arg: "url" }) }]);
 			outcome = await service.open(request(deps, "workspace-write"), url);
 			break;
 		}
 		case "env_browser_navigate": {
 			const url = str(args, "url");
-			if (!url) return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: "url 이 필요하다" }]);
+			if (!url) return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: t("g1b.hostArgNeeded", { arg: "url" }) }]);
 			outcome = await service.navigate(request(deps, "workspace-write"), url);
 			break;
 		}
@@ -650,19 +669,19 @@ async function runEvidenceRpc(
 		case "env_browser_evaluate": {
 			const expression = str(args, "expression");
 			if (!expression) {
-				return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: "expression 이 필요하다" }]);
+				return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: t("g1b.hostArgNeeded", { arg: "expression" }) }]);
 			}
 			outcome = await service.evaluate(request(deps, "workspace-write"), { expression });
 			break;
 		}
 		case "env_browser_script": {
 			const code = str(args, "code");
-			if (!code) return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: "code 가 필요하다" }]);
+			if (!code) return refused(toolName, workspaceId, [{ code: "workspace-escape", detail: t("g1b.hostArgNeeded", { arg: "code" }) }]);
 			outcome = await service.script(request(deps, "workspace-write"), code);
 			break;
 		}
 		default:
-			return failed(toolName, workspaceId, `증거 RPC 가 아니다: ${toolName}`);
+			return failed(toolName, workspaceId, t("g1b.hostNotEvidenceRpc", { tool: toolName }));
 	}
 	if (!outcome.ok) return refused(toolName, workspaceId, outcome.rejections);
 	const operation = outcome.operation;

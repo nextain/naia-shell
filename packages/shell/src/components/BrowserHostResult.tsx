@@ -15,6 +15,7 @@
  */
 
 import { isBrowserHostTool, type BrowserHostCard } from "../lib/browser-host-skill";
+import { t } from "../lib/i18n";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
 	value !== null && typeof value === "object" && !Array.isArray(value);
@@ -54,23 +55,23 @@ export function browserHostCardFor(
 export function recoveryHint(code: string): string {
 	switch (code) {
 		case "approval-missing":
-			return "이 실행은 호출마다 승인이 필요합니다. 승인한 뒤 다시 요청하세요.";
+			return t("g1b.hostRecApproval");
 		case "capability-denied":
-			return "이 작업에 필요한 권한이 부여되어 있지 않습니다. 설정에서 권한을 확인하세요.";
+			return t("g1b.hostRecCapability");
 		case "timeout":
-			return "제한 시간 안에 끝나지 않았습니다. 범위를 좁혀 다시 시도하세요.";
+			return t("g1b.hostRecTimeout");
 		case "cancelled":
-			return "중단된 작업입니다. 이미 일어난 변화는 그대로 남아 있습니다.";
+			return t("g1b.hostRecCancelled");
 		case "disconnected":
-			return "브라우저 호스트에 닿지 못했습니다. 잠시 뒤 다시 시도하세요.";
+			return t("g1b.hostRecDisconnected");
 		case "stale-ref":
-			return "참조가 낡았습니다. 스냅샷을 다시 찍은 뒤 그 참조로 조작하세요.";
+			return t("g1b.hostRecStaleRef");
 		case "method-denied":
-			return "정책이 막은 동작입니다. 다른 방법을 찾거나 사람이 직접 하세요.";
+			return t("g1b.hostRecMethodDenied");
 		case "workspace-escape":
-			return "요청 형식이 맞지 않습니다. 인자를 확인하세요.";
+			return t("g1b.hostRecWorkspaceEscape");
 		default:
-			return "같은 요청을 그대로 반복하지 말고 원인을 먼저 확인하세요.";
+			return t("g1b.hostRecDefault");
 	}
 }
 
@@ -87,42 +88,42 @@ export function BrowserHostResult({ card, status }: Props) {
 	return (
 		<div className="browser-host-card" data-tool={card.tool} data-status={card.status}>
 			<div className="browser-host-head">
-				<span className="browser-host-space" title="작업 공간">
-					{card.workspaceId || "작업 공간 선택 전"}
+				<span className="browser-host-space" title={t("g1b.hostWorkspaceTitle")}>
+					{card.workspaceId || t("g1b.hostNoWorkspace")}
 				</span>
 				<span className="browser-host-badge" data-state={card.status}>
 					{status === "running" || card.status === "pending"
-						? "실행 중"
+						? t("g1b.hostStatusRunning")
 						: card.status === "success"
-							? "완료"
+							? t("g1b.hostStatusDone")
 							: card.status === "refused"
-								? "거절됨"
-								: "오류"}
+								? t("g1b.hostStatusRefused")
+								: t("chat.error")}
 				</span>
 			</div>
 
 			{status === "running" && (
 				<output className="browser-host-progress" aria-live="polite">
-					브라우저에서 실행 중입니다 — 증거를 받는 중
+					{t("g1b.hostProgress")}
 				</output>
 			)}
 
 			{evidence && (
 				<dl className="browser-host-evidence">
 					<div className="browser-host-evidence-row">
-						<dt>주소</dt>
+						<dt>{t("g1b.hostAddrLabel")}</dt>
 						<dd className="browser-host-url">
 							{evidence.url}
-							<span className="browser-host-revision">개정 {evidence.urlRevision}</span>
+							<span className="browser-host-revision">{t("g1b.hostRevisionLabel", { revision: evidence.urlRevision })}</span>
 						</dd>
 					</div>
 					<div className="browser-host-evidence-row">
-						<dt>스냅샷</dt>
-						<dd>{evidence.snapshotRef || "없음"}</dd>
+						<dt>{t("g1b.hostSnapshotLabel")}</dt>
+						<dd>{evidence.snapshotRef || t("g1b.hostNone")}</dd>
 					</div>
 					<div className="browser-host-evidence-row">
-						<dt>캡처</dt>
-						<dd>{evidence.screenshotRef || "없음"}</dd>
+						<dt>{t("g1b.hostCaptureLabel")}</dt>
+						<dd>{evidence.screenshotRef || t("g1b.hostNone")}</dd>
 					</div>
 				</dl>
 			)}
@@ -130,7 +131,7 @@ export function BrowserHostResult({ card, status }: Props) {
 			{workspaces !== undefined &&
 				(workspaces.length === 0 ? (
 					<p className="browser-host-empty">
-						열려 있는 작업 공간이 없습니다. 새 공간을 열면 그 안에서 웹 작업이 시작됩니다.
+						{t("g1b.hostEmptyWorkspaces")}
 					</p>
 				) : (
 					<ul className="browser-host-spaces">
@@ -138,7 +139,7 @@ export function BrowserHostResult({ card, status }: Props) {
 							<li key={space.id}>
 								<span className="browser-host-space-id">{space.id}</span>
 								<span className="browser-host-space-meta">
-									{space.mode === "headless" ? "화면 없음" : space.mode} · 개정 {space.revision}
+									{space.mode === "headless" ? t("g1b.hostHeadlessMode") : space.mode} · {t("g1b.hostRevisionLabel", { revision: space.revision })}
 								</span>
 							</li>
 						))}

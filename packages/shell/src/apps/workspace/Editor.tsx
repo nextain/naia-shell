@@ -359,7 +359,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 			.catch((e) => {
 				if (filePathRef.current !== thisPath) return;
 				loadErrorRef.current = true;
-				setLoadError(`PDF 로드 실패: ${String(e)}`);
+				setLoadError(t("g1b.editorPdfLoadFailed", { error: String(e) }));
 			});
 		return () => {
 			setPdfBlobUrl((prev) => {
@@ -427,7 +427,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					path: thisPath,
 				});
 				if (typeof size === "number" && size > 5 * 1024 * 1024) {
-					throw new Error("Markdown 파일이 5 MiB 미리보기 한도를 초과했습니다");
+					throw new Error(t("g1b.editorMarkdownLimit"));
 				}
 				return invoke<string>("workspace_read_file", { path: thisPath });
 			}
@@ -799,13 +799,13 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						className="workspace-editor__view-btn workspace-editor__copy-path-btn"
 						data-usage-event="editor.button-1.click"
 						onClick={() => void navigator.clipboard.writeText(filePath)}
-						title="경로 복사"
+						title={t("g1b.editorCopyPath")}
 					>
 						📋
 					</button>
 				</div>
 				<div className="workspace-editor__load-error">
-					<p>파일을 열 수 없습니다: {loadError}</p>
+					<p>{t("g1b.editorOpenFailed", { error: loadError })}</p>
 					<button
 						type="button"
 						data-usage-event="editor.button-2.click"
@@ -837,7 +837,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					className="workspace-editor__view-btn workspace-editor__copy-path-btn"
 					data-usage-event="editor.button-3.click"
 					onClick={() => void navigator.clipboard.writeText(filePath)}
-					title="경로 복사"
+					title={t("g1b.editorCopyPath")}
 				>
 					📋
 				</button>
@@ -848,18 +848,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					data-usage-event="editor.button-4.click"
 					onClick={() => void reloadFile()}
 					disabled={reloading}
-					title="디스크에서 다시 읽기"
+					title={t("g1b.editorReloadDisk")}
 				>
 					{reloading ? "…" : "↻"}
 				</button>
-				{saving && <span className="workspace-editor__saving">저장 중…</span>}
+				{saving && <span className="workspace-editor__saving">{t("settings.saving")}</span>}
 				{saveError && (
 					<span className="workspace-editor__error" title={saveError}>
-						저장 실패
+						{t("g1b.editorSaveFailed")}
 					</span>
 				)}
 				{readOnly && (
-					<span className="workspace-editor__readonly">읽기 전용</span>
+					<span className="workspace-editor__readonly">{t("g1b.editorReadOnly")}</span>
 				)}
 				{isMd && viewMode === "preview" && (
 					<button
@@ -869,9 +869,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						onClick={() =>
 							setViewMode(isNarrowPortraitScreen() ? "editor" : "split")
 						}
-						title="편집 모드로 전환"
+						title={t("g1b.editorSwitchToEdit")}
 					>
-						편집
+						{t("g1b.editorEdit")}
 					</button>
 				)}
 				{isMd && viewMode === "split" && (
@@ -881,18 +881,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 							className="workspace-editor__view-btn"
 							data-usage-event="editor.set-view-mode-6.click"
 							onClick={() => setViewMode("preview")}
-							title="미리보기만 표시"
+							title={t("g1b.editorShowPreviewOnly")}
 						>
-							미리보기만
+							{t("g1b.editorPreviewOnly")}
 						</button>
 						<button
 							type="button"
 							className="workspace-editor__view-btn workspace-editor__view-btn--active"
 							data-usage-event="editor.set-view-mode-7.click"
 							onClick={() => setViewMode("editor")}
-							title="편집기만 표시"
+							title={t("g1b.editorShowEditorOnly")}
 						>
-							편집만
+							{t("g1b.editorEditorOnly")}
 						</button>
 					</>
 				)}
@@ -902,9 +902,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						className="workspace-editor__view-btn"
 						data-usage-event="editor.set-view-mode-8.click"
 						onClick={() => setViewMode("preview")}
-						title="미리보기 모드로 전환"
+						title={t("g1b.editorSwitchToPreview")}
 					>
-						미리보기
+						{t("g1b.editorPreview")}
 					</button>
 				)}
 				<button
@@ -928,7 +928,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 							window.print();
 						}
 					}}
-					title="인쇄"
+					title={t("g1b.editorPrint")}
 				>
 					🖨
 				</button>
@@ -973,7 +973,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						/>
 					)}
 					<label className="workspace-editor__media-rate">
-						재생 속도
+						{t("g1b.editorPlaybackRate")}
 						<select
 							value={playbackRate}
 							data-usage-event="editor.set-playback-rate-10.select"
@@ -1007,16 +1007,16 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 							className={`workspace-editor__image-btn${imageZoom === "fit" ? " workspace-editor__image-btn--active" : ""}`}
 							data-usage-event="editor.set-image-zoom-11.click"
 							onClick={() => setImageZoom("fit")}
-							title="화면 맞춤"
+							title={t("g1b.editorZoomFitTitle")}
 						>
-							맞춤
+							{t("g1b.editorZoomFit")}
 						</button>
 						<button
 							type="button"
 							className={`workspace-editor__image-btn${imageZoom === "original" ? " workspace-editor__image-btn--active" : ""}`}
 							data-usage-event="editor.set-image-zoom-12.click"
 							onClick={() => setImageZoom("original")}
-							title="원본 크기"
+							title={t("g1b.editorZoomOriginalTitle")}
 						>
 							1:1
 						</button>
@@ -1031,13 +1031,13 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 									return Math.max(0.1, current - 0.25);
 								})
 							}
-							title="축소"
+							title={t("g1b.editorZoomOut")}
 						>
 							−
 						</button>
 						<span className="workspace-editor__image-zoom-label">
 							{imageZoom === "fit"
-								? "맞춤"
+								? t("g1b.editorZoomFit")
 								: imageZoom === "original"
 									? "100%"
 									: `${Math.round(imageZoom * 100)}%`}
@@ -1053,7 +1053,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 									return Math.min(5, current + 0.25);
 								})
 							}
-							title="확대"
+							title={t("g1b.editorZoomIn")}
 						>
 							+
 						</button>
@@ -1099,8 +1099,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 							/>
 						) : (
 							<div className="workspace-editor__image-loading">
-								이미지 로딩 중…
-							</div>
+							{t("g1b.editorImageLoading")}
+						</div>
 						)}
 					</div>
 				</div>
@@ -1111,10 +1111,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						onLoadSuccess={({ numPages }) => setPdfNumPages(numPages)}
 						onLoadError={(err) => {
 							loadErrorRef.current = true;
-							setLoadError(`PDF 로드 실패: ${String(err?.message ?? err)}`);
+							setLoadError(t("g1b.editorPdfLoadFailed", { error: String(err?.message ?? err) }));
 						}}
 						loading={
-							<div className="workspace-editor__pdf-loading">PDF 로딩 중…</div>
+							<div className="workspace-editor__pdf-loading">{t("g1b.editorPdfLoading")}</div>
 						}
 					>
 						{Array.from({ length: pdfNumPages }, (_, i) => (
@@ -1136,7 +1136,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 					{hwpLoading ? (
 						<div className="workspace-editor__hwp-placeholder">
 							<div className="workspace-editor__hwp-placeholder-text">
-								텍스트 추출 중…
+								{t("g1b.editorHwpExtracting")}
 							</div>
 						</div>
 					) : hwpSidecar !== null ? (
@@ -1145,10 +1145,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						<div className="workspace-editor__hwp-placeholder">
 							<div className="workspace-editor__hwp-placeholder-icon">📄</div>
 							<div className="workspace-editor__hwp-placeholder-text">
-								HWP/HWPX 파일 미리보기를 사용할 수 없습니다
+								{t("g1b.editorHwpUnavailable")}
 							</div>
 							<div className="workspace-editor__hwp-placeholder-hint">
-								사이드카 .txt 파일이 없습니다. /read-doc 스킬로 추출하세요.
+								{t("g1b.editorHwpSidecarHint")}
 							</div>
 						</div>
 					)}
@@ -1210,7 +1210,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 						</table>
 					) : (
 						<div className="workspace-editor__empty-hint">
-							CSV 데이터가 없습니다
+							{t("g1b.editorCsvEmpty")}
 						</div>
 					)}
 				</div>
